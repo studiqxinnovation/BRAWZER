@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -25,6 +26,11 @@ export const users = pgTable("users", {
   emailVerifiedAt: timestamptz(),
   /** argon2id hash. Nullable for future passkey-only accounts. */
   passwordHash: text(),
+  /**
+   * Random WebAuthn user handle (base64url), created with the first passkey.
+   * Passkeys store this instead of the email address or database ID.
+   */
+  webauthnUserId: text().unique("users_webauthn_user_id_unique"),
   createdAt: timestamptz().notNull().defaultNow(),
   updatedAt: timestamptz().notNull().defaultNow(),
 });
@@ -143,6 +149,34 @@ export const securityEvents = pgTable(
   (table) => [index("security_events_user_occurred_idx").on(table.userId, table.occurredAt)],
 );
 
+/** Passkeys. Only public keys are stored; private keys never leave the authenticator. */
+export const webauthnCredentials = pgTable(
+  "webauthn_credentials",
+  {
+    id: id(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The authenticator's credential ID, base64url. */
+    credentialId: text().notNull().unique("webauthn_credentials_credential_id_unique"),
+    /** COSE public key, base64url. */
+    publicKey: text().notNull(),
+    /** Signature counter, to notice cloned authenticators (0 for most synced passkeys). */
+    counter: bigint({ mode: "number" }).notNull().default(0),
+    transports: jsonb().$type<string[]>().notNull().default([]),
+    /** "multiDevice" for synced passkeys, "singleDevice" for device-bound ones. */
+    deviceType: text().notNull(),
+    backedUp: boolean().notNull().default(false),
+    /** Authenticator model identifier, when reported. */
+    aaguid: text(),
+    /** The owner's label, such as "iPhone". */
+    name: text().notNull(),
+    createdAt: timestamptz().notNull().defaultNow(),
+    lastUsedAt: timestamptz(),
+  },
+  (table) => [index("webauthn_credentials_user_id_idx").on(table.userId)],
+);
+
 export const authChallengePurpose = pgEnum("auth_challenge_purpose", [
   "passkey_registration",
   "passkey_authentication",
@@ -180,4 +214,5 @@ export type EmailToken = typeof emailTokens.$inferSelect;
 export type SecurityEventType = (typeof securityEventType.enumValues)[number];
 export type EmailTokenPurpose = (typeof emailTokenPurpose.enumValues)[number];
 export type AuthChallenge = typeof authChallenges.$inferSelect;
+export type WebauthnCredential = typeof webauthnCredentials.$inferSelect;
 export type AuthChallengePurpose = (typeof authChallengePurpose.enumValues)[number];

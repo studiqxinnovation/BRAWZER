@@ -46,6 +46,12 @@ export const envSchema = z.object({
   BREACHED_PASSWORD_CHECK: z.stringbool().optional(),
   /** How long the security history is kept, in days. */
   SECURITY_HISTORY_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(365),
+  /** Passkey domain (WebAuthn RP ID). Defaults to WEB_ORIGIN's hostname; passkeys only work on it. */
+  WEBAUTHN_RP_ID: z
+    .string()
+    .regex(/^[a-z0-9.-]+$/, "must be a lowercase host name")
+    .optional(),
+  WEBAUTHN_RP_NAME: z.string().min(1).max(64).default("Brawzer"),
   /** Who holds the key-encryption keys: "local" (development only) or "vault" (Vault/OpenBao Transit). */
   KEY_PROVIDER: z.enum(["local", "vault"]).default("local"),
   /** Local provider: comma-separated `id:base64` 256-bit keys; the first one encrypts new secrets. */
@@ -130,6 +136,12 @@ export interface AppConfig {
   readonly breachedPasswordCheck: boolean;
   readonly securityHistoryRetentionDays: number;
   readonly encryption: EncryptionConfig;
+  /** Passkeys are bound to `rpId`; `origins` are the pages allowed to use them. */
+  readonly webauthn: {
+    readonly rpId: string;
+    readonly rpName: string;
+    readonly origins: readonly string[];
+  };
 }
 
 /** Raised at startup when the environment is incomplete or invalid. */
@@ -216,6 +228,12 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
   if (values.EMAIL_TRANSPORT === "resend" && !values.RESEND_API_KEY) {
     issues.push("RESEND_API_KEY: is required when EMAIL_TRANSPORT is resend");
   }
+  const webOriginHost = new URL(webOrigin).hostname;
+  const rpId = values.WEBAUTHN_RP_ID ?? webOriginHost;
+  if (webOriginHost !== rpId && !webOriginHost.endsWith(`.${rpId}`)) {
+    issues.push("WEBAUTHN_RP_ID: must be WEB_ORIGIN's host name or a parent domain of it");
+  }
+
   let encryption: EncryptionConfig | undefined;
   if (values.KEY_PROVIDER === "local") {
     if (isProduction) {
@@ -260,6 +278,17 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
     breachedPasswordCheck: values.BREACHED_PASSWORD_CHECK ?? isProduction,
     securityHistoryRetentionDays: values.SECURITY_HISTORY_RETENTION_DAYS,
     encryption: Object.freeze(encryption),
+    webauthn: Object.freeze({
+      rpId,
+      rpName: values.WEBAUTHN_RP_NAME,
+      // Passkeys work only on pages under the RP ID (IP-address origins never qualify).
+      origins: Object.freeze(
+        [webOrigin, ...extraOrigins].filter((origin) => {
+          const host = new URL(origin).hostname;
+          return host === rpId || host.endsWith(`.${rpId}`);
+        }),
+      ),
+    }),
     email: Object.freeze({
       transport: values.EMAIL_TRANSPORT,
       from: values.EMAIL_FROM,

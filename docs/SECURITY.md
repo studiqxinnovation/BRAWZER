@@ -117,6 +117,8 @@ bounded in-memory counters until Redis returns. The client address comes from
 the connection unless `TRUST_PROXY` lists the reverse proxies allowed to
 report it, and anything that isn't a valid IP address is discarded.
 
+**Passkeys** ([ADR 0009](adr/0009-passkeys-and-two-factor.md)). Sign-in with Face ID, a fingerprint, a device PIN, a security key or a phone, with no password typed. Only public keys are stored. User verification is always required. Challenges are single use, expire after 5 minutes and are bound to their session. Signature counters reveal cloned device-bound authenticators. Passkeys carry a random user handle, never the email address. In shared-computer sessions, new passkeys can only be saved on a phone or security key, never on the computer itself. Adding or removing one needs a recent sign-in and sends an email.
+
 **Secrets at rest** ([ADR 0008](adr/0008-secrets-and-step-up.md)). Secrets Brawzer must read back (authenticator-app secrets, proxy credentials) use envelope encryption: a fresh AES-256-GCM data key per secret, wrapped by a key-encryption key held in Vault/OpenBao Transit in production (a local key in development, refused in production). Each ciphertext is bound to its record, so values can't be swapped between rows.
 
 **Confirm it's you.** Sensitive changes need a sign-in or confirmation from the last 10 minutes on that session; otherwise Brawzer asks for the password (or a passkey) first. Wrong passwords count towards a lockout (5 per 15 minutes). Today this protects signing other devices out; Phase 2 adds passkeys, two-factor, email changes and account deletion.

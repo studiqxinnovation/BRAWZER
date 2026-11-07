@@ -146,3 +146,28 @@ export function passwordChangedMessage(
     footnote: "If you didn’t do this, reset your password straight away from the sign-in page.",
   });
 }
+
+export function passkeyAddedMessage(
+  name: string,
+  when: string,
+  device: string | null,
+): EmailContent {
+  return compose("A passkey was added to your Brawzer account", {
+    preheader: `The passkey "${name}" can now sign in to your account.`,
+    heading: "A passkey was added",
+    paragraphs: [
+      `The passkey "${name}" was added to your Brawzer account on ${when}${device ? ` from ${device}` : ""}. It can now sign in without a password.`,
+    ],
+    footnote:
+      "If you didn’t add it, sign in, remove it under Account, change your password and sign out other devices in Sessions.",
+  });
+}
+
+export function passkeyRemovedMessage(name: string, when: string): EmailContent {
+  return compose("A passkey was removed from your Brawzer account", {
+    preheader: `The passkey "${name}" can no longer sign in.`,
+    heading: "A passkey was removed",
+    paragraphs: [`The passkey "${name}" was removed from your Brawzer account on ${when}.`],
+    footnote: "If you didn’t remove it, change your password and review Sessions.",
+  });
+}

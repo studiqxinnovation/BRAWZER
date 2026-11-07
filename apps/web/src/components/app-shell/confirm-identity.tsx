@@ -21,6 +21,8 @@ import {
   useState,
 } from "react";
 import { reauthenticate } from "@/lib/api/account";
+import { confirmationOptions, verifyConfirmation } from "@/lib/api/passkeys";
+import { requestPasskey, usePasskeysSupported } from "@/lib/passkeys";
 import type { ApiResult } from "@/lib/api/client";
 import { leaveSignedInArea } from "@/lib/session-channel";
 
@@ -39,11 +41,40 @@ function ConfirmIdentityDialog({
   const [error, setError] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [passkeyPending, setPasskeyPending] = useState(false);
+  const passkeysSupported = usePasskeysSupported();
+
+  async function confirmWithPasskey() {
+    setFailure(null);
+    setPasskeyPending(true);
+    const options = await confirmationOptions();
+    if (!options.ok) {
+      setPasskeyPending(false);
+      if (options.status === 401) leaveSignedInArea("expired");
+      else setFailure(options.error.message);
+      return;
+    }
+    const ceremony = await requestPasskey(options.data.options);
+    if (!ceremony.ok) {
+      setPasskeyPending(false);
+      if (!ceremony.cancelled) setFailure(ceremony.message);
+      return;
+    }
+    const result = await verifyConfirmation({
+      challengeId: options.data.challengeId,
+      response: ceremony.response,
+    });
+    setPasskeyPending(false);
+    if (result.ok) finish(true);
+    else if (result.status === 401) leaveSignedInArea("expired");
+    else setFailure(result.error.message);
+  }
 
   function finish(confirmed: boolean) {
     setError(null);
     setFailure(null);
     setPending(false);
+    setPasskeyPending(false);
     onDone(confirmed);
   }
 
@@ -87,6 +118,15 @@ function ConfirmIdentityDialog({
             <PasswordInput name="password" autoComplete="current-password" required />
             {error && <FieldError match>{error}</FieldError>}
           </Field>
+          {passkeysSupported && (
+            <Button
+              variant="secondary"
+              loading={passkeyPending}
+              onClick={() => void confirmWithPasskey()}
+            >
+              Use a passkey instead
+            </Button>
+          )}
           <DialogFooter className="mt-2">
             <Button
               variant="secondary"

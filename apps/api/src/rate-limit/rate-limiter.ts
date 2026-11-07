@@ -23,6 +23,7 @@ export const RATE_LIMITS = {
   linkPasswordFailures: { name: "link-fail", limit: 5, windowSeconds: 60 * 60 },
   passwordChangeFailures: { name: "password-change-fail", limit: 5, windowSeconds: 15 * 60 },
   reauthFailures: { name: "reauth-fail", limit: 5, windowSeconds: 15 * 60 },
+  passkeyAttemptsPerIp: { name: "passkey-ip", limit: 60, windowSeconds: 15 * 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {

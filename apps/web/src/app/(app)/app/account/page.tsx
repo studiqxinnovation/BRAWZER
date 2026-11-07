@@ -1,3 +1,4 @@
+import { passkeyListSchema } from "@brawzer/contracts";
 import { Badge } from "@brawzer/ui/components/badge";
 import { DevState } from "@brawzer/ui/components/dev-state";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
@@ -5,6 +6,7 @@ import { BadgeCheck } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { ChangePasswordForm } from "@/components/account/change-password-form";
+import { PasskeysSection } from "@/components/account/passkeys-section";
 import {
   PageContainer,
   PageHeader,
@@ -14,7 +16,7 @@ import {
 } from "@/components/app-shell/page";
 import { AccentControl, ThemeControl } from "@/components/appearance-controls";
 import { LocalDate } from "@/components/local-date";
-import { signInAgain } from "@/lib/server-api";
+import { serverGet, signInAgain } from "@/lib/server-api";
 import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Account", robots: { index: false, follow: false } };
@@ -51,6 +53,22 @@ async function AccountDetails() {
   );
 }
 
+async function Passkeys() {
+  const [state, list] = await Promise.all([
+    getSession(),
+    serverGet("/auth/passkeys", passkeyListSchema),
+  ]);
+  if (state.kind === "signed-out" || list.kind === "signed-out") signInAgain("/app/account");
+  if (state.kind === "unavailable" || list.kind === "unavailable") return <Unavailable />;
+  return (
+    <PasskeysSection
+      passkeys={list.data.passkeys}
+      sharedComputer={!state.data.session.persistent}
+      renderedAt={list.receivedAt}
+    />
+  );
+}
+
 export default function AccountPage() {
   return (
     <PageContainer>
@@ -63,6 +81,15 @@ export default function AccountPage() {
           <Suspense fallback={<Skeleton className="h-28 w-full rounded-xl" />}>
             <AccountDetails />
           </Suspense>
+        </section>
+
+        <section aria-labelledby="passkeys-heading" className="flex flex-col gap-4">
+          <SectionHeading id="passkeys-heading">Passkeys</SectionHeading>
+          <Panel className="p-5 sm:p-6">
+            <Suspense fallback={<Skeleton className="h-24 w-full rounded-lg" />}>
+              <Passkeys />
+            </Suspense>
+          </Panel>
         </section>
 
         <section aria-labelledby="password-heading" className="flex flex-col gap-4">
@@ -94,7 +121,6 @@ export default function AccountPage() {
           title="More account controls aren’t available yet"
           milestone="Phase 2"
           requires={[
-            "Passkeys, including signing in with your phone",
             "Two-factor authentication codes",
             "Changing your email address",
             "Deleting your account",

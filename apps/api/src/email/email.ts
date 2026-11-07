@@ -4,6 +4,8 @@ import type { AppConfig } from "../config/env.js";
 import {
   accountExistsMessage,
   type EmailContent,
+  passkeyAddedMessage,
+  passkeyRemovedMessage,
   passwordChangedMessage,
   resetPasswordMessage,
   type SignedOutScope,
@@ -50,6 +52,23 @@ export class EmailService {
 
   sendAccountExists(to: string): void {
     this.dispatch(to, accountExistsMessage(this.link("/sign-in")));
+  }
+
+  private now(): string {
+    const when = new Intl.DateTimeFormat("en-GB", {
+      dateStyle: "long",
+      timeStyle: "short",
+      timeZone: "UTC",
+    }).format(new Date());
+    return `${when} UTC`;
+  }
+
+  sendPasskeyAdded(to: string, name: string, device: string | null): void {
+    this.dispatch(to, passkeyAddedMessage(name, this.now(), device));
+  }
+
+  sendPasskeyRemoved(to: string, name: string): void {
+    this.dispatch(to, passkeyRemovedMessage(name, this.now()));
   }
 
   sendPasswordChanged(to: string, device: string | null, scope: SignedOutScope): void {

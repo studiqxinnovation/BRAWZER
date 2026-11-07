@@ -17,6 +17,7 @@ export type {
   EmailTokenPurpose,
   SecurityEventType,
   User,
+  WebauthnCredential,
 } from "./schema/index.ts";
 // Query operators, re-exported so every service builds queries with the same
 // drizzle-orm instance as the schema (two copies would not type-check together).
