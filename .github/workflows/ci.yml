@@ -59,6 +59,10 @@ jobs:
       - run: pnpm db:migrate
       - name: Install Chromium for Playwright
         run: pnpm --filter @brawzer/web exec playwright install --with-deps chromium
+      # Browser tests run against production builds: next dev compiles
+      # routes on demand, which is too slow on a shared runner.
+      - name: Production build for the browser tests
+        run: pnpm build
       - name: Browser tests (desktop and phone)
         run: pnpm test:e2e
       - name: Keep the report when tests fail

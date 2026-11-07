@@ -25,14 +25,16 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "pnpm --filter @brawzer/api run dev",
+      command: process.env.CI
+        ? "pnpm --filter @brawzer/api run start"
+        : "pnpm --filter @brawzer/api run dev",
       cwd: "../..",
       url: apiHealthUrl,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
     {
-      command: "pnpm run dev",
+      command: process.env.CI ? "pnpm run start" : "pnpm run dev",
       url: webUrl,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
