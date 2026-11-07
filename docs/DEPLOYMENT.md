@@ -88,12 +88,20 @@ Every action is pinned to a full commit SHA, the token is read-only,
 checkout doesn't keep credentials, and pnpm is installed from npm at the
 version in `package.json`. The workflow passes `actionlint`. The browser tests run against the production build (below), because `next dev` compiles routes on demand and is too slow on a shared runner.
 
+## Drive storage and scanning
+
+Drive needs two services the API can't do without:
+
+- **An S3-compatible object store** (`STORAGE_*`): AWS S3, Cloudflare R2 or similar. The bucket must exist in production (development creates it); its only client is the API, with credentials from the secret manager or an IAM role. Objects are ciphertext (ADR 0011), so bucket-level encryption and versioning are optional extras, not controls Brawzer relies on. Custom endpoints must be `https`.
+- **ClamAV's `clamd`** (`CLAMAV_HOST`, `CLAMAV_PORT`): reachable only from the API. Uploads are refused while it is down, so run it with a health check and keep signatures updated with `freshclam` (the compose files disable updates and use the image's bundled signatures). Set `StreamMaxLength` to at least 100M, as the compose files do with `CLAMD_CONF_StreamMaxLength`.
+
 ## Not done yet
 
 - **Image registry, production hosting and a managed key service:** chosen in Phase 7.
 - **A verified Resend sending domain.** It needs the website domain.
 - **The cloud browser runtime and its TURN servers:** see `docs/plans/phase-3.md`.
 - **Automated image rebuilds for base-image security updates:** Phase 7.
+- **A reconciliation job for orphaned Drive objects** (a store failure during deletion): Phase 7.
 
 ## Running the browser tests against a production build
 

@@ -1,6 +1,6 @@
 # Phase 4 plan: Brawzer Drive
 
-- **Status:** Accepted 2026-11-07 under the standing instruction to build every phase; decisions taken as recommended (table at the end).
+- **Status:** Built 2026-11-07 (milestones 4.1–4.5; see the [review](../reviews/phase-4.md)). Accepted under the standing instruction to build every phase; decisions taken as recommended (table at the end).
 - **Date:** 2026-11-07
 - **Builds on:** Phase 2 ([review](../reviews/phase-2.md)); Phase 3 is unfinished (no cloud browser yet, see [its plan](phase-3.md)).
 

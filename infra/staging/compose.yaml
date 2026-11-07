@@ -91,6 +91,8 @@ services:
     restart: unless-stopped
     environment:
       CLAMAV_NO_FRESHCLAMD: "true"
+      # Drive accepts files up to 100 MiB; clamd's default stream limit is 25M.
+      CLAMD_CONF_StreamMaxLength: 105M
     healthcheck:
       test: ["CMD", "clamdcheck.sh"]
       interval: 10s
