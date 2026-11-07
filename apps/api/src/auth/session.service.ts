@@ -61,6 +61,7 @@ export type RevocationReason =
   | "replaced"
   | "password_reset"
   | "password_changed"
+  | "email_change_undone"
   | "signed_out_remotely"
   | "signed_out_everywhere_else";
 

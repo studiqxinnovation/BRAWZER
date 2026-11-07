@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { emailLinkTokenSchema, emailSchema } from "./auth.ts";
+import { emailLinkTokenSchema, emailSchema, newPasswordSchema } from "./auth.ts";
 import { browserEngineSchema, profileColorSchema } from "./profiles.ts";
 import { proxyKindSchema, proxyProtocolSchema, proxyRotationSchema } from "./proxies.ts";
 import { securityEventSchema } from "./security.ts";
@@ -9,6 +9,14 @@ export const changeEmailRequestSchema = z.object({ email: emailSchema });
 export const confirmEmailChangeRequestSchema = z.object({ token: emailLinkTokenSchema });
 
 export const confirmEmailChangeResponseSchema = z.object({ email: z.email() });
+
+/** From the link sent to the old address: restores it and sets a new password. */
+export const undoEmailChangeRequestSchema = z.object({
+  token: emailLinkTokenSchema,
+  password: newPasswordSchema,
+});
+
+export const undoEmailChangeResponseSchema = z.object({ email: z.email() });
 
 export const deleteAccountRequestSchema = z.object({
   /** Typed by the person to confirm they mean it. */

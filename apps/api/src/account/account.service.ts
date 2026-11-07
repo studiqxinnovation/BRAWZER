@@ -1,7 +1,9 @@
 import type { AccountExport } from "@brawzer/contracts";
 import { and, type DatabaseHandle, eq, ne, schema } from "@brawzer/db";
 import { Inject, Injectable, Logger } from "@nestjs/common";
+import { BreachedPasswordCheck } from "../auth/breached-passwords.js";
 import { EmailTokenService } from "../auth/email-token.service.js";
+import { assertAcceptablePassword, hashPassword } from "../auth/password.js";
 import { MfaService } from "../auth/mfa/mfa.service.js";
 import { PasskeyService } from "../auth/passkeys/passkey.service.js";
 import { type AuthContext, SessionService } from "../auth/session.service.js";
@@ -40,6 +42,7 @@ export class AccountService {
     @Inject(SecurityHistoryService) private readonly history: SecurityHistoryService,
     @Inject(ProfilesService) private readonly profiles: ProfilesService,
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
+    @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
   ) {}
 
   /**
@@ -86,6 +89,7 @@ export class AccountService {
     if (!found || !newEmail) throw linkInvalid();
     const oldEmail = found.user.email;
 
+    let undoToken = "";
     try {
       await this.database.db.transaction(async (tx) => {
         if (!(await this.emailTokens.consume(found.token.id, tx))) throw linkInvalid();
@@ -104,14 +108,87 @@ export class AccountService {
           .set({ email: newEmail, emailVerifiedAt: now, updatedAt: now })
           .where(eq(schema.users.id, found.user.id));
         await this.emailTokens.invalidateAll(found.user.id, ["change_email"], tx);
+        // The old address can undo this for 7 days (see undoEmailChange).
+        undoToken = await this.emailTokens.issue(
+          found.user.id,
+          "undo_email_change",
+          { previousEmail: oldEmail },
+          tx,
+        );
       });
     } catch (error) {
       if (isUniqueViolation(error)) throw addressTaken();
       throw error;
     }
-    this.email.sendEmailChanged(oldEmail, newEmail);
+    this.email.sendEmailChanged(oldEmail, newEmail, undoToken);
     await this.events.record({ type: "email.changed", userId: found.user.id, meta });
     return newEmail;
+  }
+
+  /**
+   * From the link sent to the old address when an email change completed.
+   * Whoever changed the address had the password too, so undoing also sets a
+   * new password, signs out every device and cancels outstanding links. The
+   * link proves access to the old inbox, like a password reset does.
+   */
+  async undoEmailChange(token: string, password: string, meta: RequestMeta): Promise<string> {
+    await this.limiter.enforce(RATE_LIMITS.linkAttemptsPerIp, ipOf(meta));
+    const found = await this.emailTokens.find(token, "undo_email_change");
+    const restored = found?.token.previousEmail;
+    if (!found || !restored) throw linkInvalid();
+    assertAcceptablePassword(password, restored);
+    await this.breached.assertNotBreached(password);
+    const passwordHash = await hashPassword(password);
+    const removed = found.user.email;
+
+    let revoked = 0;
+    try {
+      revoked = await this.database.db.transaction(async (tx) => {
+        if (!(await this.emailTokens.consume(found.token.id, tx))) throw linkInvalid();
+        const [holder] = await tx
+          .select({ id: schema.users.id, emailVerifiedAt: schema.users.emailVerifiedAt })
+          .from(schema.users)
+          .where(and(eq(schema.users.email, restored), ne(schema.users.id, found.user.id)))
+          .limit(1);
+        if (holder?.emailVerifiedAt) throw addressTaken();
+        if (holder) await tx.delete(schema.users).where(eq(schema.users.id, holder.id));
+        const now = new Date();
+        await tx
+          .update(schema.users)
+          .set({ email: restored, emailVerifiedAt: now, passwordHash, updatedAt: now })
+          .where(eq(schema.users.id, found.user.id));
+        await this.emailTokens.invalidateAll(
+          found.user.id,
+          ["reset_password", "change_email", "undo_email_change"],
+          tx,
+        );
+        return this.sessions.revokeAll(found.user.id, "email_change_undone", { executor: tx });
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) throw addressTaken();
+      throw error;
+    }
+
+    const userId = found.user.id;
+    await this.limiter.reset(RATE_LIMITS.signInFailuresPerAccount, restored);
+    await this.events.record({ type: "email.change_undone", userId, meta });
+    await this.events.record({
+      type: "password.reset",
+      userId,
+      meta,
+      metadata: { method: "undo_email_change" },
+    });
+    if (revoked > 0) {
+      await this.events.record({
+        type: "sessions.revoked",
+        userId,
+        meta,
+        metadata: { reason: "email_change_undone", count: revoked },
+      });
+    }
+    this.email.sendEmailChangeUndone(restored);
+    if (removed !== restored) this.email.sendEmailChangeReverted(removed);
+    return restored;
   }
 
   /** Deletes the account and everything stored with it, immediately and irreversibly. */

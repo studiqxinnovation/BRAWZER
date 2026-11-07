@@ -15,6 +15,7 @@ describe("strict content security policy", () => {
       "/verify-email",
       "/reset-password",
       "/confirm-email-change",
+      "/undo-email-change",
     ]) {
       expect(needsStrictCsp(path), path).toBe(true);
     }

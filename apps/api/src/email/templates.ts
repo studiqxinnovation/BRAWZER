@@ -233,15 +233,46 @@ export function emailChangeRequestedMessage(maskedNewEmail: string, when: string
   });
 }
 
-export function emailChangedMessage(maskedNewEmail: string, when: string): EmailContent {
+export function emailChangedMessage(
+  maskedNewEmail: string,
+  when: string,
+  undoUrl: string,
+): EmailContent {
   return compose("Your Brawzer email address was changed", {
-    preheader: `Your account now uses ${maskedNewEmail}.`,
+    preheader: `Your account now uses ${maskedNewEmail}. Undo it if this wasn’t you.`,
     heading: "Your email address was changed",
     paragraphs: [
       `On ${when}, your Brawzer account’s email address was changed to ${maskedNewEmail}. This address will no longer receive emails about the account.`,
+      "If this wasn’t you, undo it: your account goes back to this address, you choose a new password, and every device is signed out.",
+    ],
+    action: { label: "Undo this change", url: undoUrl },
+    footnote:
+      "The undo link works once and expires in 7 days. If the change was yours, ignore this email.",
+  });
+}
+
+export function emailChangeUndoneMessage(when: string, signInUrl: string): EmailContent {
+  return compose("Your Brawzer email address was restored", {
+    preheader: "This address is your Brawzer sign-in again.",
+    heading: "Your email address was restored",
+    paragraphs: [
+      `On ${when}, an email change on your Brawzer account was undone. This address is your sign-in again, your new password is set, and every device was signed out.`,
+      "Sign in with your new password. If you use passkeys or two-factor authentication, check them under Account: anyone who had your old password may have changed them.",
+    ],
+    action: { label: "Sign in", url: signInUrl },
+    footnote: "Brawzer sends this whenever an email change is undone.",
+  });
+}
+
+export function emailChangeRevertedMessage(when: string): EmailContent {
+  return compose("This address was removed from a Brawzer account", {
+    preheader: "The account went back to its previous email address.",
+    heading: "This address was removed from a Brawzer account",
+    paragraphs: [
+      `On ${when}, the owner of the previous email address undid the change that made this address the account’s sign-in. The account went back to that address, and every device was signed out.`,
     ],
     footnote:
-      "If this wasn’t you, sign in, change your password and change the email address back under Account straight away.",
+      "If you made the original change yourself, the previous address’s inbox was used to undo it. Sign in from that address to continue.",
   });
 }
 

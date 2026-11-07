@@ -27,7 +27,7 @@ export class EmailTokenService {
   async issue(
     userId: string,
     purpose: EmailTokenPurpose,
-    options: { pendingPasswordHash?: string; newEmail?: string } = {},
+    options: { pendingPasswordHash?: string; newEmail?: string; previousEmail?: string } = {},
     executor: DatabaseExecutor = this.database.db,
   ): Promise<string> {
     const token = generateToken();
@@ -37,6 +37,7 @@ export class EmailTokenService {
       tokenHash: hashToken(token),
       pendingPasswordHash: options.pendingPasswordHash ?? null,
       newEmail: options.newEmail ?? null,
+      previousEmail: options.previousEmail ?? null,
       expiresAt: new Date(Date.now() + EMAIL_LINK_LIFETIME_SECONDS[purpose] * 1000),
     });
     return token;

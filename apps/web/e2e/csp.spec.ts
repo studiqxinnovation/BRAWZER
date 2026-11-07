@@ -76,6 +76,7 @@ test.describe("strict script policy", () => {
       "/create-account",
       "/forgot-password",
       "/confirm-email-change",
+      "/undo-email-change",
     ]) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

@@ -71,6 +71,7 @@ export const emailTokenPurpose = pgEnum("email_token_purpose", [
   "verify_email",
   "reset_password",
   "change_email",
+  "undo_email_change",
 ]);
 
 /** Single-use links sent by email. Only the token's hash is stored. */
@@ -91,6 +92,8 @@ export const emailTokens = pgTable(
     pendingPasswordHash: text(),
     /** Email change only: the new address this link confirms. */
     newEmail: text(),
+    /** For undo_email_change: the address the link restores. */
+    previousEmail: text(),
     expiresAt: timestamptz().notNull(),
     usedAt: timestamptz(),
     createdAt: timestamptz().notNull().defaultNow(),
@@ -119,6 +122,7 @@ export const securityEventType = pgEnum("security_event_type", [
   "mfa.failed",
   "email.change_requested",
   "email.changed",
+  "email.change_undone",
   "data.exported",
   "profile.created",
   "profile.deleted",

@@ -25,6 +25,7 @@ export const securityEventTypes = [
   "mfa.failed",
   "email.change_requested",
   "email.changed",
+  "email.change_undone",
   "data.exported",
   "profile.created",
   "profile.deleted",

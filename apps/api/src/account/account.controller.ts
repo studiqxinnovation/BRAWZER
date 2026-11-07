@@ -7,6 +7,8 @@ import {
   deleteAccountRequestSchema,
   type MessageResponse,
   messageResponseSchema,
+  undoEmailChangeRequestSchema,
+  undoEmailChangeResponseSchema,
 } from "@brawzer/contracts";
 import {
   Body,
@@ -87,6 +89,26 @@ export class AccountController {
     @Req() request: FastifyRequest,
   ): Promise<{ email: string }> {
     return { email: await this.account.confirmEmailChange(body.token, requestMeta(request)) };
+  }
+
+  @Post("email/undo")
+  @HttpCode(HttpStatus.OK)
+  @SerializeOptions({ schema: undoEmailChangeResponseSchema })
+  @ApiOperation({
+    summary: "Undo an email change",
+    description:
+      "With the token from the link sent to the old address: restores it, sets the new password and signs out every device.",
+  })
+  @ApiOkResponse({ description: "Restored.", standardSchema: undoEmailChangeResponseSchema })
+  @ApiBadRequestResponse({ description: "The link is invalid, expired or used." })
+  async undoEmailChange(
+    @Body({ schema: undoEmailChangeRequestSchema })
+    body: z.output<typeof undoEmailChangeRequestSchema>,
+    @Req() request: FastifyRequest,
+  ): Promise<{ email: string }> {
+    return {
+      email: await this.account.undoEmailChange(body.token, body.password, requestMeta(request)),
+    };
   }
 
   @Post("delete")
