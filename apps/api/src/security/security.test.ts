@@ -1,6 +1,8 @@
 import {
   browserEngines,
   profileColors,
+  driveFileSources,
+  driveFileStatuses,
   proxyKinds,
   proxyProtocols,
   proxyRotations,
@@ -23,5 +25,7 @@ describe("enums shared by the database and the contracts", () => {
     expect([...schema.proxyProtocol.enumValues]).toEqual([...proxyProtocols]);
     expect([...schema.proxyKind.enumValues]).toEqual([...proxyKinds]);
     expect([...schema.proxyRotation.enumValues]).toEqual([...proxyRotations]);
+    expect([...schema.driveFileStatus.enumValues]).toEqual([...driveFileStatuses]);
+    expect([...schema.driveFileSource.enumValues]).toEqual([...driveFileSources]);
   });
 });

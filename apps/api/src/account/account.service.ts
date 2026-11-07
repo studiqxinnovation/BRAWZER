@@ -11,6 +11,7 @@ import { ApiException } from "../common/api-exception.js";
 import { isUniqueViolation } from "../common/database-errors.js";
 import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
+import { DriveService } from "../drive/drive.service.js";
 import { EmailService } from "../email/email.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
@@ -42,6 +43,7 @@ export class AccountService {
     @Inject(SecurityHistoryService) private readonly history: SecurityHistoryService,
     @Inject(ProfilesService) private readonly profiles: ProfilesService,
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
+    @Inject(DriveService) private readonly drive: DriveService,
     @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
   ) {}
 
@@ -199,7 +201,10 @@ export class AccountService {
         details: ["email: Type your email address exactly as it is shown."],
       });
     }
+    // Drive's objects aren't rows: list them first, remove them once the rows are gone.
+    const objectKeys = await this.drive.objectKeysOf(user.id);
     await this.database.db.delete(schema.users).where(eq(schema.users.id, user.id));
+    await this.drive.removeAllObjects(objectKeys);
     this.email.sendAccountDeleted(user.email);
     logger.log(`Account ${user.id} deleted by its owner`);
   }
@@ -207,13 +212,14 @@ export class AccountService {
   /** Everything Brawzer holds about the account, except secrets. */
   async export(auth: AuthContext, meta: RequestMeta): Promise<AccountExport> {
     const { user, session } = auth;
-    const [passkeys, mfa, devices, history, profiles, proxies] = await Promise.all([
+    const [passkeys, mfa, devices, history, profiles, proxies, drive] = await Promise.all([
       this.passkeys.list(user.id),
       this.mfa.status(user.id),
       this.sessions.listActive(auth),
       this.history.all(user.id),
       this.profiles.list(user.id),
       this.proxies.forExport(user.id),
+      this.drive.forExport(user.id),
     ]);
     await this.events.record({
       type: "data.exported",
@@ -251,6 +257,7 @@ export class AccountService {
         updatedAt,
       })),
       proxies,
+      drive,
     };
   }
 }

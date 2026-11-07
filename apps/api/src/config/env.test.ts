@@ -208,6 +208,16 @@ describe("parseConfig", () => {
     ]);
   });
 
+  it("lets tests lower Drive's per-file limit, but never production", () => {
+    expect(parseConfig(minimal, "1").drive.maxFileBytes).toBe(100 * 1024 * 1024);
+    expect(parseConfig({ ...minimal, DRIVE_MAX_FILE_BYTES: "4096" }, "1").drive.maxFileBytes).toBe(
+      4096,
+    );
+    expect(issuesOf({ ...production, DRIVE_MAX_FILE_BYTES: "4096" })).toEqual([
+      "DRIVE_MAX_FILE_BYTES: must not be set in production",
+    ]);
+  });
+
   it("keeps every protection on in a complete production configuration", () => {
     const config = parseConfig(production, "1");
     expect(config).toMatchObject({

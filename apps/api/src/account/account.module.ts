@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
 import { DatabaseModule } from "../database/database.module.js";
+import { DriveModule } from "../drive/drive.module.js";
 import { ProfilesModule } from "../profiles/profiles.module.js";
 import { ProxiesModule } from "../proxies/proxies.module.js";
 import { EmailModule } from "../email/email.js";
@@ -20,6 +21,7 @@ import { AccountService } from "./account.service.js";
     SecurityModule,
     ProfilesModule,
     ProxiesModule,
+    DriveModule,
   ],
   controllers: [AccountController],
   providers: [AccountService],

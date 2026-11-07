@@ -31,6 +31,18 @@ export interface TestBrowser {
     headers?: Record<string, string>,
   ): Promise<LightMyRequestResponse>;
   delete(path: string, headers?: Record<string, string>): Promise<LightMyRequestResponse>;
+  /** A multipart upload of one file, as a browser form would send it. */
+  upload(
+    path: string,
+    file: { name: string; content: Buffer; type?: string },
+  ): Promise<LightMyRequestResponse>;
+  /** A request with a raw body and explicit headers. */
+  raw(
+    method: "POST" | "PUT",
+    path: string,
+    body: Buffer,
+    headers: Record<string, string>,
+  ): Promise<LightMyRequestResponse>;
   session: string | undefined;
 }
 
@@ -76,7 +88,7 @@ export async function createHarness(options: { ipPrefix: string; env?: NodeJS.Pr
     async function send(
       method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
       path: string,
-      payload?: object,
+      payload?: object | Buffer,
       headers: Record<string, string> = {},
     ): Promise<LightMyRequestResponse> {
       const response = await app.inject({
@@ -102,6 +114,17 @@ export async function createHarness(options: { ipPrefix: string; env?: NodeJS.Pr
       patch: (path, payload, headers) => send("PATCH", path, payload, headers),
       put: (path, payload, headers) => send("PUT", path, payload, headers),
       delete: (path, headers) => send("DELETE", path, undefined, headers),
+      upload: (path, file) => {
+        const boundary = `----brawzer${randomUUID().replaceAll("-", "")}`;
+        const head = Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.name.replaceAll('"', "%22")}"\r\nContent-Type: ${file.type ?? "application/octet-stream"}\r\n\r\n`,
+        );
+        const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+        return send("POST", path, Buffer.concat([head, file.content, tail]), {
+          "content-type": `multipart/form-data; boundary=${boundary}`,
+        });
+      },
+      raw: (method, path, body, headers) => send(method, path, body, headers),
       get session() {
         return session;
       },

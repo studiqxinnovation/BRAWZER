@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isIP } from "node:net";
 import path from "node:path";
+import { DRIVE_LIMITS } from "@brawzer/contracts";
 import { z } from "zod";
 
 const logLevels = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
@@ -92,6 +93,8 @@ export const envSchema = z.object({
   /** ClamAV's clamd, which scans every Drive upload. */
   CLAMAV_HOST: z.string().min(1).default("127.0.0.1"),
   CLAMAV_PORT: z.coerce.number().int().min(1).max(65_535).default(3310),
+  /** Lowers Drive's per-file limit so tests can hit it quickly. Development and tests only. */
+  DRIVE_MAX_FILE_BYTES: z.coerce.number().int().min(1).max(DRIVE_LIMITS.maxFileBytes).optional(),
   BUILD_SHA: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/, "must be a git commit SHA")
@@ -176,6 +179,10 @@ export interface AppConfig {
   readonly encryption: EncryptionConfig;
   readonly storage: StorageConfig;
   readonly scanner: { readonly host: string; readonly port: number };
+  readonly drive: {
+    /** Per-file limit in bytes; the contract's value unless lowered for tests. */
+    readonly maxFileBytes: number;
+  };
   readonly proxyTests: {
     /** The fixed destination of every proxy test. */
     readonly url: string;
@@ -318,6 +325,9 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
   ) {
     issues.push("STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY: set both or neither");
   }
+  if (isProduction && values.DRIVE_MAX_FILE_BYTES !== undefined) {
+    issues.push("DRIVE_MAX_FILE_BYTES: must not be set in production");
+  }
   if (issues.length > 0) throw new ConfigError(issues);
 
   return Object.freeze({
@@ -360,6 +370,9 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       createBucket: !isProduction,
     }),
     scanner: Object.freeze({ host: values.CLAMAV_HOST, port: values.CLAMAV_PORT }),
+    drive: Object.freeze({
+      maxFileBytes: values.DRIVE_MAX_FILE_BYTES ?? DRIVE_LIMITS.maxFileBytes,
+    }),
     webauthn: Object.freeze({
       rpId,
       rpName: values.WEBAUTHN_RP_NAME,
