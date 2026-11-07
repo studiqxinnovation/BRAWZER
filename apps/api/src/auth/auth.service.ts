@@ -11,11 +11,14 @@ import type { z } from "zod";
 import { ApiException, rateLimited } from "../common/api-exception.js";
 import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
+import { createDefaultProfile } from "../profiles/default-profile.js";
 import { EmailService } from "../email/email.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { BreachedPasswordCheck } from "./breached-passwords.js";
 import { EmailTokenService } from "./email-token.service.js";
+import { MfaService } from "./mfa/mfa.service.js";
+import { NewDeviceService } from "./new-device.service.js";
 import {
   assertAcceptablePassword,
   burnPasswordCheck,
@@ -35,6 +38,11 @@ type ChangePasswordInput = z.output<typeof changePasswordRequestSchema>;
 export interface SignedIn {
   issued: IssuedSession;
   user: User;
+}
+
+/** Password sign-in on a two-factor account: no session yet, a second step instead. */
+export interface SecondStepRequired {
+  mfa: { ticket: string; expiresAt: Date };
 }
 
 const linkInvalid = () =>
@@ -63,6 +71,8 @@ export class AuthService {
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
     @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
+    @Inject(MfaService) private readonly mfa: MfaService,
+    @Inject(NewDeviceService) private readonly newDevices: NewDeviceService,
   ) {}
 
   private async findUserByEmail(email: string): Promise<User | undefined> {
@@ -145,9 +155,15 @@ export class AuthService {
         .where(and(eq(schema.users.id, found.user.id), isNull(schema.users.emailVerifiedAt)))
         .returning();
       if (!user) return null;
+      await createDefaultProfile(tx, user.id);
       // Other sign-up links for this address, possibly carrying someone else's password, die now.
       await this.emailTokens.invalidateAll(user.id, ["verify_email"], tx);
-      const issued = await this.sessions.create(user.id, input.keepSignedIn, meta, tx);
+      const issued = await this.sessions.create(
+        user.id,
+        { persistent: input.keepSignedIn, method: "sign_up_link" },
+        meta,
+        tx,
+      );
       return { user, issued };
     });
     if (!result) throw linkInvalid();
@@ -165,10 +181,15 @@ export class AuthService {
       meta,
       metadata: { method: "sign_up_link", persistent: input.keepSignedIn },
     });
+    await this.newDevices.recordSignIn(result.user, meta, result.issued.session.id);
     return result;
   }
 
-  async login(input: LoginInput, meta: RequestMeta, presentedToken?: string): Promise<SignedIn> {
+  async login(
+    input: LoginInput,
+    meta: RequestMeta,
+    presentedToken?: string,
+  ): Promise<SignedIn | SecondStepRequired> {
     await this.limiter.enforce(RATE_LIMITS.signInPerIp, ipOf(meta));
     // Keyed by the submitted address whether or not it has an account, so lockouts reveal nothing.
     const lockout = await this.limiter.isBlocked(RATE_LIMITS.signInFailuresPerAccount, input.email);
@@ -202,9 +223,16 @@ export class AuthService {
         .set({ passwordHash: await hashPassword(input.password), updatedAt: new Date() })
         .where(eq(schema.users.id, user.id));
     }
+    if (await this.mfa.isEnabled(user.id)) {
+      return { mfa: await this.mfa.createTicket(user, input.keepSignedIn) };
+    }
     // A browser that was already signed in (perhaps as someone else) leaves that session behind.
     await this.sessions.revokeByToken(presentedToken, "replaced");
-    const issued = await this.sessions.create(user.id, input.keepSignedIn, meta);
+    const issued = await this.sessions.create(
+      user.id,
+      { persistent: input.keepSignedIn, method: "password" },
+      meta,
+    );
     await this.events.record({
       type: "sign_in.succeeded",
       userId: user.id,
@@ -212,6 +240,7 @@ export class AuthService {
       meta,
       metadata: { method: "password", persistent: input.keepSignedIn },
     });
+    await this.newDevices.recordSignIn(user, meta, issued.session.id);
     return { user, issued };
   }
 
@@ -289,7 +318,13 @@ export class AuthService {
         .update(schema.users)
         .set({ passwordHash, emailVerifiedAt: found.user.emailVerifiedAt ?? now, updatedAt: now })
         .where(eq(schema.users.id, found.user.id));
-      await this.emailTokens.invalidateAll(found.user.id, ["verify_email", "reset_password"], tx);
+      // A reset link also confirms an account that was never confirmed.
+      if (found.user.emailVerifiedAt === null) await createDefaultProfile(tx, found.user.id);
+      await this.emailTokens.invalidateAll(
+        found.user.id,
+        ["verify_email", "reset_password", "change_email"],
+        tx,
+      );
       return this.sessions.revokeAll(found.user.id, "password_reset", { executor: tx });
     });
     if (revoked === null) throw linkInvalid();
@@ -358,8 +393,9 @@ export class AuthService {
         .update(schema.users)
         .set({ passwordHash, updatedAt: new Date() })
         .where(eq(schema.users.id, user.id));
-      // A reset link requested earlier must not undo this change.
-      await this.emailTokens.invalidateAll(user.id, ["reset_password"], tx);
+      // A reset link requested earlier must not undo this change, and a pending
+      // email change is cancelled along with everything else an intruder set up.
+      await this.emailTokens.invalidateAll(user.id, ["reset_password", "change_email"], tx);
       return this.sessions.revokeAll(user.id, "password_changed", {
         except: session.id,
         executor: tx,
@@ -385,6 +421,43 @@ export class AuthService {
     }
     this.email.sendPasswordChanged(user.email, describeUserAgent(meta.userAgent), "other-devices");
     return { issued: await this.sessions.rotate(auth), signedOut };
+  }
+
+  /**
+   * Proves who you are again, for sensitive changes. Wrong passwords count
+   * towards a lockout like sign-in does; success refreshes the session's
+   * "recently confirmed" time for RecentAuthGuard.
+   */
+  async reauthenticate(
+    auth: AuthContext,
+    password: string,
+    code: string | undefined,
+    meta: RequestMeta,
+  ): Promise<Date> {
+    const { user, session } = auth;
+    const lockout = await this.limiter.isBlocked(RATE_LIMITS.reauthFailures, user.id);
+    if (!lockout.allowed) throw rateLimited(lockout.retryAfterSeconds);
+
+    const correct = user.passwordHash
+      ? await verifyPassword(user.passwordHash, password)
+      : await burnPasswordCheck(password);
+    if (!correct) {
+      await this.limiter.hit(RATE_LIMITS.reauthFailures, user.id);
+      throw new ApiException("validation_failed", 400, "Check your password.", {
+        details: ["password: That isn’t your password."],
+      });
+    }
+    await this.mfa.checkCodeForConfirmation(user.id, code);
+    await this.limiter.reset(RATE_LIMITS.reauthFailures, user.id);
+    const at = await this.sessions.confirmIdentity(session.id);
+    await this.events.record({
+      type: "reauthenticated",
+      userId: user.id,
+      sessionId: session.id,
+      meta,
+      metadata: { method: "password" },
+    });
+    return at;
   }
 
   /** Signs out one of the account's other devices. */

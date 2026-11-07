@@ -223,3 +223,26 @@ test.describe("accessibility of account pages", () => {
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 });
+
+test.describe("before the page is interactive", () => {
+  // With scripts off, the browser submits the form itself, as it would for
+  // someone who presses Enter before the page has finished loading.
+  test("a submitted form never puts what was typed in the address", async ({
+    browser,
+    baseURL,
+  }) => {
+    const context = await browser.newContext({ baseURL, javaScriptEnabled: false });
+    const page = await context.newPage();
+    for (const path of ["/sign-in", "/create-account"]) {
+      await page.goto(path);
+      await page.getByRole("textbox", { name: "Email" }).fill("someone@example.com");
+      const password = page.getByLabel("Password", { exact: true });
+      await password.fill("violet-harbor-lantern");
+      await password.press("Enter");
+      await page.waitForLoadState();
+      expect(page.url(), path).not.toContain("violet-harbor-lantern");
+      expect(new URL(page.url()).search, path).toBe("");
+    }
+    await context.close();
+  });
+});

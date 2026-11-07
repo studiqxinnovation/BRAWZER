@@ -2,6 +2,8 @@ import {
   type CurrentSessionResponse,
   currentSessionResponseSchema,
   type LoginRequest,
+  type LoginResponse,
+  loginResponseSchema,
   type MessageResponse,
   messageResponseSchema,
   type RegisterRequest,
@@ -24,11 +26,12 @@ export const verifyEmail = (body: VerifyEmailRequest) =>
     schema: currentSessionResponseSchema,
   });
 
+/** A session, or a two-factor challenge for accounts with two-factor authentication. */
 export const login = (body: LoginRequest) =>
-  apiRequest<CurrentSessionResponse>("/auth/login", {
+  apiRequest<LoginResponse>("/auth/login", {
     method: "POST",
     body,
-    schema: currentSessionResponseSchema,
+    schema: loginResponseSchema,
   });
 
 export const logout = () => apiRequest<undefined>("/auth/logout", { method: "POST" });

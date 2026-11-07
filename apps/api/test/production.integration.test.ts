@@ -20,6 +20,11 @@ const config = parseConfig({
   EMAIL_TRANSPORT: "resend",
   RESEND_API_KEY: "re_test_not_a_real_key",
   BREACHED_PASSWORD_CHECK: "false",
+  // The local OpenBao from `pnpm infra:up` stands in for the production key service.
+  KEY_PROVIDER: "vault",
+  VAULT_ADDR: process.env.VAULT_ADDR,
+  VAULT_TOKEN: process.env.VAULT_TOKEN,
+  PROXY_TEST_URL: "https://echo.brawzer.example/ip",
 });
 
 let app: NestFastifyApplication;
@@ -104,6 +109,10 @@ describe("production configuration", () => {
       WEB_ORIGIN: ORIGIN,
       EMAIL_TRANSPORT: "resend",
       RESEND_API_KEY: "re_test_not_a_real_key",
+      KEY_PROVIDER: "vault",
+      VAULT_ADDR: process.env.VAULT_ADDR,
+      VAULT_TOKEN: process.env.VAULT_TOKEN,
+      PROXY_TEST_URL: "https://echo.brawzer.example/ip",
     });
     expect(defaults.breachedPasswordCheck).toBe(true);
     expect(defaults.rateLimitScale).toBe(1);

@@ -3,6 +3,7 @@ import { Logo } from "@brawzer/ui/brand";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AccountPanel, AccountPanelSkeleton } from "@/components/app-shell/account-panel";
+import { ConfirmIdentityProvider } from "@/components/app-shell/confirm-identity";
 import { MobileNav } from "@/components/app-shell/mobile-nav";
 import { AppNav } from "@/components/app-shell/nav";
 import { SessionKeeperLoader } from "@/components/app-shell/session-keeper-loader";
@@ -54,7 +55,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           <SignOutButton className="ml-auto" compact />
         </header>
         <main id="main-content" className="flex-1">
-          {children}
+          <ConfirmIdentityProvider>{children}</ConfirmIdentityProvider>
         </main>
       </div>
 

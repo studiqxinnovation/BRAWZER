@@ -2,6 +2,8 @@ import {
   type SecurityEventPage,
   securityEventPageSchema,
   securityEventQuerySchema,
+  type SecurityOverview,
+  securityOverviewSchema,
 } from "@brawzer/contracts";
 import { Controller, Get, Inject, Query, SerializeOptions, UseGuards } from "@nestjs/common";
 import {
@@ -25,6 +27,17 @@ import { SecurityHistoryService } from "./security.service.js";
 @Controller({ path: "security", version: "1" })
 export class SecurityController {
   constructor(@Inject(SecurityHistoryService) private readonly history: SecurityHistoryService) {}
+
+  @Get("overview")
+  @SerializeOptions({ schema: securityOverviewSchema })
+  @ApiOperation({
+    summary: "Shield overview",
+    description: "Protection status, recommendations and new-device sign-ins.",
+  })
+  @ApiOkResponse({ description: "Overview.", standardSchema: securityOverviewSchema })
+  overview(@CurrentAuth() auth: AuthContext): Promise<SecurityOverview> {
+    return this.history.overview(auth);
+  }
 
   @Get("events")
   @SerializeOptions({ schema: securityEventPageSchema })

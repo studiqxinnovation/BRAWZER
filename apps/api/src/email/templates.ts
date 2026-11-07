@@ -146,3 +146,145 @@ export function passwordChangedMessage(
     footnote: "If you didn’t do this, reset your password straight away from the sign-in page.",
   });
 }
+
+export function passkeyAddedMessage(
+  name: string,
+  when: string,
+  device: string | null,
+): EmailContent {
+  return compose("A passkey was added to your Brawzer account", {
+    preheader: `The passkey "${name}" can now sign in to your account.`,
+    heading: "A passkey was added",
+    paragraphs: [
+      `The passkey "${name}" was added to your Brawzer account on ${when}${device ? ` from ${device}` : ""}. It can now sign in without a password.`,
+    ],
+    footnote:
+      "If you didn’t add it, sign in, remove it under Account, change your password and sign out other devices in Sessions.",
+  });
+}
+
+export function passkeyRemovedMessage(name: string, when: string): EmailContent {
+  return compose("A passkey was removed from your Brawzer account", {
+    preheader: `The passkey "${name}" can no longer sign in.`,
+    heading: "A passkey was removed",
+    paragraphs: [`The passkey "${name}" was removed from your Brawzer account on ${when}.`],
+    footnote: "If you didn’t remove it, change your password and review Sessions.",
+  });
+}
+
+export function mfaEnabledMessage(when: string): EmailContent {
+  return compose("Two-factor authentication is on for your Brawzer account", {
+    preheader: "Signing in with your password now also needs a code.",
+    heading: "Two-factor authentication is on",
+    paragraphs: [
+      `Two-factor authentication was turned on for your Brawzer account on ${when}. Signing in with your password now also needs a code from your authenticator app, or one of your recovery codes.`,
+    ],
+    footnote: "If you didn’t turn it on, change your password and review Sessions straight away.",
+  });
+}
+
+export function mfaDisabledMessage(when: string): EmailContent {
+  return compose("Two-factor authentication was turned off", {
+    preheader: "Your Brawzer account no longer asks for a code when you sign in with a password.",
+    heading: "Two-factor authentication was turned off",
+    paragraphs: [
+      `Two-factor authentication was turned off for your Brawzer account on ${when}. Signing in with your password no longer asks for a code.`,
+    ],
+    footnote:
+      "If you didn’t turn it off, change your password, turn it back on and review Sessions.",
+  });
+}
+
+export function recoveryCodeUsedMessage(when: string, remaining: number): EmailContent {
+  const left = remaining === 1 ? "1 recovery code is" : `${String(remaining)} recovery codes are`;
+  return compose("A recovery code was used to sign in to Brawzer", {
+    preheader: `${left} left.`,
+    heading: "A recovery code was used",
+    paragraphs: [
+      `Someone signed in to your Brawzer account with a recovery code on ${when}. ${left} left.`,
+      "If you’ve lost your authenticator, create new recovery codes under Account after signing in.",
+    ],
+    footnote: "If it wasn’t you, change your password and review Sessions straight away.",
+  });
+}
+
+export function confirmEmailChangeMessage(url: string): EmailContent {
+  return compose("Confirm your new email address for Brawzer", {
+    preheader: "Confirm this address to make it your Brawzer sign-in.",
+    heading: "Confirm your new email address",
+    paragraphs: [
+      "Someone signed in to Brawzer asked to use this address for their account. If it was you, confirm it.",
+      "The link works once and expires in 24 hours.",
+    ],
+    action: { label: "Confirm new email", url },
+    footnote: "If you didn’t ask for this, ignore this email. Nothing will change.",
+  });
+}
+
+export function emailChangeRequestedMessage(maskedNewEmail: string, when: string): EmailContent {
+  return compose("Your Brawzer email address may change", {
+    preheader: `A change to ${maskedNewEmail} was requested.`,
+    heading: "Email change requested",
+    paragraphs: [
+      `On ${when}, someone signed in to your Brawzer account asked to change its email address to ${maskedNewEmail}. It changes only if that address is confirmed.`,
+    ],
+    footnote:
+      "If this wasn’t you, sign in, change your password and review Sessions straight away.",
+  });
+}
+
+export function emailChangedMessage(maskedNewEmail: string, when: string): EmailContent {
+  return compose("Your Brawzer email address was changed", {
+    preheader: `Your account now uses ${maskedNewEmail}.`,
+    heading: "Your email address was changed",
+    paragraphs: [
+      `On ${when}, your Brawzer account’s email address was changed to ${maskedNewEmail}. This address will no longer receive emails about the account.`,
+    ],
+    footnote:
+      "If this wasn’t you, sign in, change your password and change the email address back under Account straight away.",
+  });
+}
+
+export function emailInUseMessage(signInUrl: string): EmailContent {
+  return compose("Someone tried to use your email for another Brawzer account", {
+    preheader: "This address already belongs to a Brawzer account.",
+    heading: "This address already has an account",
+    paragraphs: [
+      "Someone signed in to a different Brawzer account asked to change its email address to this one. An address can belong to only one account, so nothing changed.",
+      "If it was you, sign in to the account that already uses this address.",
+    ],
+    action: { label: "Sign in", url: signInUrl },
+    footnote: "If it wasn’t you, you don’t need to do anything. Your account is unchanged.",
+  });
+}
+
+export function accountDeletedMessage(when: string): EmailContent {
+  return compose("Your Brawzer account was deleted", {
+    preheader: "Your account and its data are gone.",
+    heading: "Your account was deleted",
+    paragraphs: [
+      `Your Brawzer account and everything stored with it were deleted on ${when}. Every device was signed out.`,
+      "This can’t be undone. You’re welcome to create a new account at any time.",
+    ],
+    footnote:
+      "If you didn’t delete it, someone had access to your account: change the passwords you reuse elsewhere.",
+  });
+}
+
+export function newDeviceSignInMessage(
+  device: string,
+  ip: string | null,
+  when: string,
+  url: string,
+): EmailContent {
+  return compose("New sign-in to your Brawzer account", {
+    preheader: `${device} signed in to your account.`,
+    heading: "New sign-in",
+    paragraphs: [
+      `Your Brawzer account was signed in to on ${when} from ${device}${ip ? ` (IP address ${ip})` : ""}, which it hasn’t been used from recently.`,
+      "If this was you, there’s nothing to do. If not, sign that device out in Sessions and change your password.",
+    ],
+    action: { label: "Review sessions", url },
+    footnote: "Brawzer sends this when a browser or network is new to your account.",
+  });
+}

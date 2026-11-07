@@ -15,6 +15,48 @@
       "when": 1794013992573,
       "tag": "0001_password_changed_event",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794047827136,
+      "tag": "0002_phase2_foundations",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794048652825,
+      "tag": "0003_passkeys",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794049290238,
+      "tag": "0004_two_factor",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794049817324,
+      "tag": "0005_account_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794051951091,
+      "tag": "0006_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794053240165,
+      "tag": "0007_proxies",
+      "breakpoints": true
     }
   ]
 }

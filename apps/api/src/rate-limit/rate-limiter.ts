@@ -22,6 +22,12 @@ export const RATE_LIMITS = {
   linkAttemptsPerIp: { name: "link-ip", limit: 30, windowSeconds: 15 * 60 },
   linkPasswordFailures: { name: "link-fail", limit: 5, windowSeconds: 60 * 60 },
   passwordChangeFailures: { name: "password-change-fail", limit: 5, windowSeconds: 15 * 60 },
+  reauthFailures: { name: "reauth-fail", limit: 5, windowSeconds: 15 * 60 },
+  passkeyAttemptsPerIp: { name: "passkey-ip", limit: 60, windowSeconds: 15 * 60 },
+  mfaAttemptsPerIp: { name: "mfa-ip", limit: 30, windowSeconds: 15 * 60 },
+  mfaFailuresPerAccount: { name: "mfa-fail", limit: 10, windowSeconds: 15 * 60 },
+  proxyTestsPerAccount: { name: "proxy-test", limit: 30, windowSeconds: 15 * 60 },
+  echoPerIp: { name: "echo-ip", limit: 120, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {

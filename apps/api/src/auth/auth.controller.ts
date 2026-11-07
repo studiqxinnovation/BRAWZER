@@ -1,9 +1,14 @@
 import {
+  type ReauthenticateResponse,
+  reauthenticateRequestSchema,
+  reauthenticateResponseSchema,
   changePasswordRequestSchema,
   type CurrentSessionResponse,
   currentSessionResponseSchema,
   emailRequestSchema,
+  type LoginResponse,
   loginRequestSchema,
+  loginResponseSchema,
   type MessageResponse,
   messageResponseSchema,
   registerRequestSchema,
@@ -42,6 +47,7 @@ import { requestMeta } from "../common/request-meta.js";
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 import { AuthService } from "./auth.service.js";
+import { RECENT_AUTH_SECONDS } from "./recent-auth.guard.js";
 import { type AuthContext, SessionService } from "./session.service.js";
 import { CurrentAuth, PassiveSession, SessionGuard } from "./session.guard.js";
 
@@ -111,13 +117,16 @@ export class AuthController {
 
   @Post("login")
   @HttpCode(HttpStatus.OK)
-  @SerializeOptions({ schema: currentSessionResponseSchema })
+  @SerializeOptions({ schema: loginResponseSchema })
   @ApiOperation({
     summary: "Sign in",
     description:
-      "Sets the session cookie. Without keepSignedIn the cookie ends with the browser and the session ends after 30 idle minutes.",
+      "Sets the session cookie, or, for accounts with two-factor authentication, returns a ticket for POST /auth/mfa/verify. Without keepSignedIn the cookie ends with the browser and the session ends after 30 idle minutes.",
   })
-  @ApiOkResponse({ description: "Signed in.", standardSchema: currentSessionResponseSchema })
+  @ApiOkResponse({
+    description: "Signed in, or a two-factor challenge.",
+    standardSchema: loginResponseSchema,
+  })
   @ApiUnauthorizedResponse({ description: "Email or password is incorrect." })
   @ApiForbiddenResponse({
     description: "The email address isn't confirmed yet; a new link was sent.",
@@ -127,14 +136,24 @@ export class AuthController {
     @Body({ schema: loginRequestSchema }) body: z.output<typeof loginRequestSchema>,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
-  ): Promise<CurrentSessionResponse> {
-    const { user, issued } = await this.auth.login(
+  ): Promise<LoginResponse> {
+    const result = await this.auth.login(
       body,
       requestMeta(request),
       this.sessions.readToken(request),
     );
-    this.sessions.setCookie(reply, issued);
-    return { account: accountOf(user), session: this.sessions.describe(issued.session) };
+    if ("mfa" in result) {
+      return {
+        mfaRequired: true,
+        ticket: result.mfa.ticket,
+        expiresAt: result.mfa.expiresAt.toISOString(),
+      };
+    }
+    this.sessions.setCookie(reply, result.issued);
+    return {
+      account: accountOf(result.user),
+      session: this.sessions.describe(result.issued.session),
+    };
   }
 
   @Post("logout")
@@ -228,6 +247,29 @@ export class AuthController {
       message:
         "If there’s an account for that address, we’ve emailed a link to reset the password.",
     };
+  }
+
+  @Post("reauthenticate")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: reauthenticateResponseSchema })
+  @ApiOperation({
+    summary: "Confirm it's you",
+    description:
+      "Proves who you are again before a sensitive change. Valid for 10 minutes on this session.",
+  })
+  @ApiOkResponse({ description: "Confirmed.", standardSchema: reauthenticateResponseSchema })
+  @ApiBadRequestResponse({ description: "Wrong password." })
+  @ApiTooManyRequestsResponse({ description: "Too many wrong passwords." })
+  async reauthenticate(
+    @Body({ schema: reauthenticateRequestSchema })
+    body: z.output<typeof reauthenticateRequestSchema>,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<ReauthenticateResponse> {
+    const at = await this.auth.reauthenticate(auth, body.password, body.code, requestMeta(request));
+    return { confirmedUntil: new Date(at.getTime() + RECENT_AUTH_SECONDS * 1000).toISOString() };
   }
 
   @Post("password/change")

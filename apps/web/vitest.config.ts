@@ -8,6 +8,9 @@ export default defineConfig({
     alias: { "@": path.resolve(import.meta.dirname, "src") },
   },
   test: {
+    // Its own module cache: the default is shared by every package at the
+    // workspace root, and parallel runs race when it is rebuilt.
+    fsModuleCachePath: path.join(import.meta.dirname, "node_modules", ".vitest-cache"),
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./src/test/setup.ts"],

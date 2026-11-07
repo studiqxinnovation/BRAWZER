@@ -46,6 +46,34 @@ export const envSchema = z.object({
   BREACHED_PASSWORD_CHECK: z.stringbool().optional(),
   /** How long the security history is kept, in days. */
   SECURITY_HISTORY_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(365),
+  /** Passkey domain (WebAuthn RP ID). Defaults to WEB_ORIGIN's hostname; passkeys only work on it. */
+  WEBAUTHN_RP_ID: z
+    .string()
+    .regex(/^[a-z0-9.-]+$/, "must be a lowercase host name")
+    .optional(),
+  WEBAUTHN_RP_NAME: z.string().min(1).max(64).default("Brawzer"),
+  /** Who holds the key-encryption keys: "local" (development only) or "vault" (Vault/OpenBao Transit). */
+  KEY_PROVIDER: z.enum(["local", "vault"]).default("local"),
+  /** Local provider: comma-separated `id:base64` 256-bit keys; the first one encrypts new secrets. */
+  ENCRYPTION_KEYS: z.string().optional(),
+  VAULT_ADDR: z.url({ protocol: /^https?$/, error: "must be an http(s) URL" }).optional(),
+  VAULT_TOKEN: z.string().min(1).optional(),
+  VAULT_TRANSIT_MOUNT: z
+    .string()
+    .regex(/^[a-z0-9_-]+$/, "may only contain lowercase letters, digits, _ and -")
+    .default("transit"),
+  VAULT_TRANSIT_KEY: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]+$/, "may only contain letters, digits, _ and -")
+    .default("brawzer"),
+  /**
+   * Proxy tests fetch this URL through the proxy; it must answer with the
+   * caller's IP address as plain text. Defaults to this API's own
+   * /api/v1/network/echo. Must be https in production.
+   */
+  PROXY_TEST_URL: z.url({ protocol: /^https?$/, error: "must be an http(s) URL" }).optional(),
+  /** Lets proxy tests reach private and local addresses. Development and tests only. */
+  PROXY_TEST_ALLOW_PRIVATE: z.stringbool().default(false),
   BUILD_SHA: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/, "must be a git commit SHA")
@@ -57,6 +85,40 @@ export interface EmailConfig {
   readonly from: string;
   readonly mailpitApiUrl: string;
   readonly resendApiKey: string | undefined;
+}
+
+export type EncryptionConfig =
+  | { readonly provider: "local"; readonly keys: readonly { id: string; key: Buffer }[] }
+  | {
+      readonly provider: "vault";
+      readonly vault: { address: string; token: string; mount: string; keyName: string };
+    };
+
+/** Parses ENCRYPTION_KEYS ("id:base64,id:base64"). Problems are reported without the key material. */
+function parseLocalKeys(
+  value: string | undefined,
+  issues: string[],
+): { id: string; key: Buffer }[] {
+  if (!value) {
+    issues.push("ENCRYPTION_KEYS: is required when KEY_PROVIDER is local");
+    return [];
+  }
+  const keys: { id: string; key: Buffer }[] = [];
+  for (const entry of value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)) {
+    const separator = entry.indexOf(":");
+    const id = entry.slice(0, separator);
+    const key = Buffer.from(entry.slice(separator + 1), "base64");
+    if (separator <= 0 || !/^[A-Za-z0-9_-]{1,64}$/.test(id) || key.length !== 32) {
+      issues.push("ENCRYPTION_KEYS: each entry must be id:base64 with a 256-bit key");
+      return [];
+    }
+    keys.push({ id, key });
+  }
+  if (keys.length === 0) issues.push("ENCRYPTION_KEYS: is required when KEY_PROVIDER is local");
+  return keys;
 }
 
 export interface AppConfig {
@@ -81,6 +143,19 @@ export interface AppConfig {
   readonly email: EmailConfig;
   readonly breachedPasswordCheck: boolean;
   readonly securityHistoryRetentionDays: number;
+  readonly encryption: EncryptionConfig;
+  readonly proxyTests: {
+    /** The fixed destination of every proxy test. */
+    readonly url: string;
+    /** Never true in production. */
+    readonly allowPrivate: boolean;
+  };
+  /** Passkeys are bound to `rpId`; `origins` are the pages allowed to use them. */
+  readonly webauthn: {
+    readonly rpId: string;
+    readonly rpName: string;
+    readonly origins: readonly string[];
+  };
 }
 
 /** Raised at startup when the environment is incomplete or invalid. */
@@ -167,6 +242,41 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
   if (values.EMAIL_TRANSPORT === "resend" && !values.RESEND_API_KEY) {
     issues.push("RESEND_API_KEY: is required when EMAIL_TRANSPORT is resend");
   }
+  const webOriginHost = new URL(webOrigin).hostname;
+  const rpId = values.WEBAUTHN_RP_ID ?? webOriginHost;
+  if (webOriginHost !== rpId && !webOriginHost.endsWith(`.${rpId}`)) {
+    issues.push("WEBAUTHN_RP_ID: must be WEB_ORIGIN's host name or a parent domain of it");
+  }
+
+  let encryption: EncryptionConfig | undefined;
+  if (values.KEY_PROVIDER === "local") {
+    if (isProduction) {
+      issues.push("KEY_PROVIDER: must be a key management service (vault) in production");
+    }
+    encryption = { provider: "local", keys: parseLocalKeys(values.ENCRYPTION_KEYS, issues) };
+  } else {
+    if (!values.VAULT_ADDR) issues.push("VAULT_ADDR: is required when KEY_PROVIDER is vault");
+    if (!values.VAULT_TOKEN) issues.push("VAULT_TOKEN: is required when KEY_PROVIDER is vault");
+    encryption = {
+      provider: "vault",
+      vault: {
+        address: values.VAULT_ADDR ?? "",
+        token: values.VAULT_TOKEN ?? "",
+        mount: values.VAULT_TRANSIT_MOUNT,
+        keyName: values.VAULT_TRANSIT_KEY,
+      },
+    };
+  }
+  const echoHost =
+    values.API_HOST === "0.0.0.0" || values.API_HOST === "::" ? "127.0.0.1" : values.API_HOST;
+  const proxyTestUrl =
+    values.PROXY_TEST_URL ?? `http://${echoHost}:${String(values.API_PORT)}/api/v1/network/echo`;
+  if (isProduction && !proxyTestUrl.startsWith("https://")) {
+    issues.push("PROXY_TEST_URL: must be set to an https URL in production");
+  }
+  if (isProduction && values.PROXY_TEST_ALLOW_PRIVATE) {
+    issues.push("PROXY_TEST_ALLOW_PRIVATE: must not be enabled in production");
+  }
   if (issues.length > 0) throw new ConfigError(issues);
 
   return Object.freeze({
@@ -191,6 +301,19 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
     // Off by default locally, so development and tests never depend on the internet.
     breachedPasswordCheck: values.BREACHED_PASSWORD_CHECK ?? isProduction,
     securityHistoryRetentionDays: values.SECURITY_HISTORY_RETENTION_DAYS,
+    encryption: Object.freeze(encryption),
+    proxyTests: Object.freeze({ url: proxyTestUrl, allowPrivate: values.PROXY_TEST_ALLOW_PRIVATE }),
+    webauthn: Object.freeze({
+      rpId,
+      rpName: values.WEBAUTHN_RP_NAME,
+      // Passkeys work only on pages under the RP ID (IP-address origins never qualify).
+      origins: Object.freeze(
+        [webOrigin, ...extraOrigins].filter((origin) => {
+          const host = new URL(origin).hostname;
+          return host === rpId || host.endsWith(`.${rpId}`);
+        }),
+      ),
+    }),
     email: Object.freeze({
       transport: values.EMAIL_TRANSPORT,
       from: values.EMAIL_FROM,

@@ -1,4 +1,10 @@
-import { type DeviceSession, type SessionInfo, sessionCookieName } from "@brawzer/contracts";
+import {
+  type AuthMethod,
+  authMethodSchema,
+  type DeviceSession,
+  type SessionInfo,
+  sessionCookieName,
+} from "@brawzer/contracts";
 import {
   and,
   type AuthSession,
@@ -28,6 +34,12 @@ import {
 } from "./session-policy.js";
 import { generateToken, hashToken, isWellFormedToken } from "./tokens.js";
 import { describeUserAgent } from "./user-agent.js";
+
+/** Stored as text; anything unexpected reads as a password sign-in. */
+export function toAuthMethod(value: string): AuthMethod {
+  const parsed = authMethodSchema.safeParse(value);
+  return parsed.success ? parsed.data : "password";
+}
 
 /** The signed-in person and session behind a request. */
 export interface AuthContext {
@@ -66,7 +78,7 @@ export class SessionService {
 
   async create(
     userId: string,
-    persistent: boolean,
+    { persistent, method }: { persistent: boolean; method: AuthMethod },
     meta: RequestMeta,
     executor: DatabaseExecutor = this.database.db,
   ): Promise<IssuedSession> {
@@ -78,6 +90,8 @@ export class SessionService {
         userId,
         tokenHash: hashToken(token),
         persistent,
+        authMethod: method,
+        reauthenticatedAt: now,
         userAgent: meta.userAgent,
         ipAddress: meta.ip,
         createdAt: now,
@@ -162,6 +176,16 @@ export class SessionService {
       )
       .returning();
     return session ? { token, session } : null;
+  }
+
+  /** Records that the owner just proved who they are (see RecentAuthGuard). */
+  async confirmIdentity(sessionId: string): Promise<Date> {
+    const now = new Date();
+    await this.database.db
+      .update(schema.authSessions)
+      .set({ reauthenticatedAt: now })
+      .where(eq(schema.authSessions.id, sessionId));
+    return now;
   }
 
   async revoke(sessionId: string, reason: RevocationReason): Promise<void> {
@@ -253,6 +277,7 @@ export class SessionService {
         current: session.id === context.session.id,
         persistent: session.persistent,
         device: describeUserAgent(session.userAgent),
+        authMethod: toAuthMethod(session.authMethod),
         ipAddress: session.ipAddress,
         createdAt: session.createdAt.toISOString(),
         lastActiveAt: session.lastSeenAt.toISOString(),
@@ -297,6 +322,7 @@ export class SessionService {
       createdAt: session.createdAt.toISOString(),
       expiresAt: session.expiresAt.toISOString(),
       idleTimeoutMinutes: sessionLifetime(session.persistent).idleSeconds / 60,
+      authMethod: toAuthMethod(session.authMethod),
     };
   }
 }

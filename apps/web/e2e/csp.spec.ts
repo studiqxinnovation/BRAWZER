@@ -67,7 +67,12 @@ test.describe("strict script policy", () => {
 
   test("account pages load without violations and block injected markup", async ({ page }) => {
     const violations = await watchViolations(page);
-    for (const path of ["/sign-in", "/create-account", "/forgot-password"]) {
+    for (const path of [
+      "/sign-in",
+      "/create-account",
+      "/forgot-password",
+      "/confirm-email-change",
+    ]) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       expect(await violations(), path).toEqual([]);

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import type { z } from "zod";
 import { SESSION_COOKIE_NAMES } from "./session-cookie";
 
@@ -19,6 +20,9 @@ export async function serverGet<T>(
   path: `/${string}`,
   schema: z.ZodType<T>,
 ): Promise<ServerResult<T>> {
+  // Request-time only. Without this, a prerender pass (such as the dev
+  // server's checks after a recompile) could reach Date.now() below.
+  await connection();
   const jar = await cookies();
   const name = SESSION_COOKIE_NAMES.find((candidate) => jar.has(candidate));
   const value = name ? jar.get(name)?.value : undefined;

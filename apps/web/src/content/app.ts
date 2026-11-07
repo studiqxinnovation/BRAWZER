@@ -1,4 +1,4 @@
-import type { SecurityEvent } from "@brawzer/contracts";
+import type { Recommendation, SecurityEvent } from "@brawzer/contracts";
 import {
   AppWindow,
   CircleUserRound,
@@ -33,9 +33,9 @@ export const appNav: readonly AppNavGroup[] = [
     label: "Browse",
     items: [
       { href: "/app/browser", label: "Browser", icon: AppWindow, status: "planned" },
-      { href: "/app/profiles", label: "Profiles", icon: Layers, status: "planned" },
+      { href: "/app/profiles", label: "Profiles", icon: Layers, status: "available" },
       { href: "/app/drive", label: "Drive", icon: HardDriveDownload, status: "planned" },
-      { href: "/app/proxy", label: "Proxy", icon: Globe, status: "planned" },
+      { href: "/app/proxy", label: "Proxy", icon: Globe, status: "available" },
       { href: "/app/extensions", label: "Extensions", icon: Puzzle, status: "planned" },
     ],
   },
@@ -77,20 +77,6 @@ export const plannedModules = {
       "Chromium runtime streamed over a secure WebSocket (3a), then WebRTC with a TURN server (3b)",
     ],
   },
-  profiles: {
-    title: "Profiles",
-    lede: "Separate browsers for work, personal life, research and anything else. Each keeps its own cookies, history, extensions and proxy.",
-    milestone: "Phase 2",
-    plans: [
-      "Create, rename, colour and delete profiles.",
-      "Each profile’s browsing data is isolated from the others.",
-      "Profiles live in your account, so they follow you to any computer.",
-    ],
-    requires: [
-      "Profile records and API (Phase 2)",
-      "Encrypted storage volume for each profile’s browser data (Phase 4)",
-    ],
-  },
   drive: {
     title: "Drive",
     lede: "Every download saved to your account in the cloud instead of the computer in front of you.",
@@ -104,21 +90,6 @@ export const plannedModules = {
       "S3-compatible object storage (bucket and credentials, server-side only)",
       "Download interception in the browser runtime (Phase 3)",
       "A malware-scanning service",
-    ],
-  },
-  proxy: {
-    title: "Proxy",
-    lede: "Route a profile’s traffic through a SOCKS5 or HTTP proxy of your choice, with live connection status.",
-    milestone: "Phases 2 and 5",
-    plans: [
-      "SOCKS4, SOCKS5, HTTP and HTTPS proxies, with or without authentication.",
-      "A different proxy for each profile, with a connection test before you use it.",
-      "Proxy passwords are encrypted on Brawzer’s servers and never sent to the computer you’re using.",
-    ],
-    requires: [
-      "Proxy settings API with envelope encryption through a key management service",
-      "An egress-proxy sidecar beside each browser container (Phase 5)",
-      "WebRTC and DNS leak prevention (Phase 5)",
     ],
   },
   extensions: {
@@ -182,5 +153,81 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
       return { title: "Password reset", tone: "success" };
     case "password.changed":
       return { title: "Password changed", tone: "success" };
+    case "reauthenticated":
+      return { title: "Confirmed it’s you", tone: "neutral" };
+    case "passkey.added":
+      return { title: "Passkey added", tone: "success" };
+    case "passkey.removed":
+      return { title: "Passkey removed", tone: "neutral" };
+    case "mfa.enabled":
+      return { title: "Two-factor authentication turned on", tone: "success" };
+    case "mfa.disabled":
+      return { title: "Two-factor authentication turned off", tone: "warning" };
+    case "mfa.recovery_codes_regenerated":
+      return { title: "New recovery codes created", tone: "neutral" };
+    case "mfa.recovery_code_used":
+      return { title: "Signed in with a recovery code", tone: "warning" };
+    case "mfa.failed":
+      return { title: "Wrong two-factor code entered", tone: "warning" };
+    case "email.change_requested":
+      return { title: "Email change requested", tone: "neutral" };
+    case "email.changed":
+      return { title: "Email address changed", tone: "success" };
+    case "data.exported":
+      return { title: "Account data downloaded", tone: "neutral" };
+    case "profile.created":
+      return { title: "Profile created", tone: "neutral" };
+    case "profile.deleted":
+      return { title: "Profile deleted", tone: "neutral" };
+    case "proxy.created":
+      return { title: "Proxy added", tone: "neutral" };
+    case "proxy.updated":
+      return { title: "Proxy changed", tone: "neutral" };
+    case "proxy.deleted":
+      return { title: "Proxy removed", tone: "neutral" };
+    case "phone_sign_in.approved":
+      return { title: "Approved a sign-in from your phone", tone: "neutral" };
+    case "sign_in.new_device":
+      return { title: "Signed in from a new device", tone: "warning" };
   }
 }
+
+/** How a device signed in, for the Sessions list. */
+export const authMethodLabels = {
+  password: "Signed in with a password",
+  password_totp: "Signed in with a password and code",
+  passkey: "Signed in with a passkey",
+  phone: "Signed in with your phone",
+  sign_up_link: "Signed in after confirming the email address",
+} as const;
+
+/** What Shield suggests, and where to do it. */
+export const recommendationContent: Record<
+  Recommendation["id"],
+  { title: string; body: string; href: Route; action: string }
+> = {
+  add_passkey: {
+    title: "Add a passkey",
+    body: "Sign in with your phone, face, fingerprint or a security key. A passkey works only on Brawzer’s real site, so a fake sign-in page can’t use it.",
+    href: "/app/account#passkeys-heading",
+    action: "Add a passkey",
+  },
+  enable_two_factor: {
+    title: "Turn on two-factor authentication",
+    body: "Ask for a code from an authenticator app after your password, so a stolen password isn’t enough on its own.",
+    href: "/app/account#two-factor-heading",
+    action: "Set up two-factor",
+  },
+  recovery_codes_low: {
+    title: "You’re running out of recovery codes",
+    body: "Create a new set, so you can still sign in if you lose your authenticator.",
+    href: "/app/account#two-factor-heading",
+    action: "Create new codes",
+  },
+  review_devices: {
+    title: "Review your signed-in devices",
+    body: "Your account is signed in on several devices. Sign out any you don’t recognise or no longer use.",
+    href: "/app/sessions",
+    action: "Review sessions",
+  },
+};

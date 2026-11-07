@@ -32,6 +32,7 @@ import { z } from "zod";
 import { requestMeta } from "../common/request-meta.js";
 import { SESSION_AUTH } from "./auth.controller.js";
 import { AuthService } from "./auth.service.js";
+import { RecentAuthGuard } from "./recent-auth.guard.js";
 import { CurrentAuth, SessionGuard } from "./session.guard.js";
 import { type AuthContext, SessionService } from "./session.service.js";
 
@@ -62,6 +63,7 @@ export class SessionsController {
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(RecentAuthGuard)
   @ApiOperation({
     summary: "Sign out another device",
     description:
@@ -80,6 +82,7 @@ export class SessionsController {
 
   @Post("revoke-others")
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RecentAuthGuard)
   @SerializeOptions({ schema: revokeOtherSessionsResponseSchema })
   @ApiOperation({
     summary: "Sign out every other device",

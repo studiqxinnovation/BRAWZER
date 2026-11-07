@@ -60,7 +60,13 @@ export function ChangePasswordForm() {
   }
 
   return (
-    <form ref={formRef} noValidate onSubmit={handleSubmit} className="flex max-w-sm flex-col gap-5">
+    <form
+      method="post"
+      ref={formRef}
+      noValidate
+      onSubmit={handleSubmit}
+      className="flex max-w-sm flex-col gap-5"
+    >
       {result && <FormMessage tone={result.tone}>{result.message}</FormMessage>}
 
       <Field name="currentPassword" invalid={Boolean(errors.currentPassword)}>

@@ -59,6 +59,15 @@ export const resetPasswordRequestSchema = z.object({
   password: newPasswordSchema,
 });
 
+/** How a session signed in. */
+export const authMethodSchema = z.enum([
+  "password",
+  "password_totp",
+  "passkey",
+  "phone",
+  "sign_up_link",
+]);
+
 export const accountSchema = z.object({
   id: z.uuid(),
   email: z.email(),
@@ -75,6 +84,7 @@ export const sessionInfoSchema = z.object({
   expiresAt: z.iso.datetime(),
   /** Minutes of inactivity after which the session ends. */
   idleTimeoutMinutes: z.number().int().positive(),
+  authMethod: authMethodSchema,
 });
 
 export const currentSessionResponseSchema = z.object({
@@ -93,6 +103,21 @@ export const changePasswordRequestSchema = z.object({
   newPassword: newPasswordSchema,
 });
 
+/** Proves who you are again before a sensitive change. */
+export const reauthenticateRequestSchema = z.object({
+  password: z
+    .string({ error: "Enter your password." })
+    .min(1, "Enter your password.")
+    .max(PASSWORD_MAX_LENGTH, "Enter your password."),
+  /** Required when two-factor authentication is on. */
+  code: z.string().trim().max(40).optional(),
+});
+
+export const reauthenticateResponseSchema = z.object({
+  /** Sensitive changes are allowed without asking again until this time. */
+  confirmedUntil: z.iso.datetime(),
+});
+
 /** A device that is signed in to the account (one sign-in session). */
 export const deviceSessionSchema = z.object({
   id: z.uuid(),
@@ -101,6 +126,7 @@ export const deviceSessionSchema = z.object({
   persistent: z.boolean(),
   /** Such as "Chrome on Windows"; null when the browser didn't say. */
   device: z.string().nullable(),
+  authMethod: authMethodSchema,
   ipAddress: z.string().nullable(),
   createdAt: z.iso.datetime(),
   lastActiveAt: z.iso.datetime(),
@@ -122,6 +148,9 @@ export type SessionInfo = z.infer<typeof sessionInfoSchema>;
 export type CurrentSessionResponse = z.infer<typeof currentSessionResponseSchema>;
 export type MessageResponse = z.infer<typeof messageResponseSchema>;
 export type ChangePasswordRequest = z.infer<typeof changePasswordRequestSchema>;
+export type ReauthenticateRequest = z.infer<typeof reauthenticateRequestSchema>;
+export type ReauthenticateResponse = z.infer<typeof reauthenticateResponseSchema>;
+export type AuthMethod = z.infer<typeof authMethodSchema>;
 export type DeviceSession = z.infer<typeof deviceSessionSchema>;
 export type DeviceSessionList = z.infer<typeof deviceSessionListSchema>;
 export type RevokeOtherSessionsResponse = z.infer<typeof revokeOtherSessionsResponseSchema>;

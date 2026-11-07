@@ -79,17 +79,21 @@ In production the edge should route `/api/v1` straight to the API, so that
 `TRUST_PROXY` can name the edge as the only source of client addresses (see
 [SECURITY.md](SECURITY.md)).
 
-### API modules (milestones 1.4–1.5)
+### API modules (milestones 1.4–2.6)
 
-| Module            | Responsibility                                                                                                                     |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `auth`            | Sign-up, email confirmation, sign-in/out, refresh, password reset and change, signed-in devices (`/auth/sessions`); `SessionGuard` |
-| `security`        | Shield: reads the account's security history (`/security/events`)                                                                  |
-| `maintenance`     | Retention job: deletes expired security history, ended sessions, used links and abandoned sign-ups                                 |
-| `rate-limit`      | Fixed-window counters in Redis, keyed by hashed subjects                                                                           |
-| `email`           | Templates (HTML + text, escaped) and transports: Mailpit, Resend, log                                                              |
-| `security-events` | The account's security history; recording never fails a request                                                                    |
-| `health`          | Database and Redis reachability                                                                                                    |
+| Module            | Responsibility                                                                                                                                                                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `auth`            | Sign-up, email confirmation, sign-in/out (password, passkey, two-factor), refresh, password reset and change, passkeys, authenticator codes and recovery codes, confirm-it's-you, signed-in devices, new-device detection; `SessionGuard`, `RecentAuthGuard` |
+| `crypto`          | Envelope encryption for secrets at rest; key providers: local (development) and Vault/OpenBao Transit                                                                                                                                                        |
+| `security`        | Shield: the protection overview and recommendations (`/security/overview`) and the security history (`/security/events`)                                                                                                                                     |
+| `account`         | Changing the email address, deleting the account, downloading its data (`/account/*`)                                                                                                                                                                        |
+| `profiles`        | Browser profiles: create, rename, recolour, reorder, delete (`/profiles`); the first profile, "Personal", is created when an account is confirmed                                                                                                            |
+| `proxies`         | Proxy settings with encrypted, write-only credentials (`/proxies`); the SSRF-safe tester (ADR 0010); the echo endpoint proxy tests fetch (`/network/echo`)                                                                                                   |
+| `maintenance`     | Retention job: deletes expired security history, ended sessions, used links, expired challenges, stale known devices and abandoned sign-ups                                                                                                                  |
+| `rate-limit`      | Fixed-window counters in Redis, keyed by hashed subjects                                                                                                                                                                                                     |
+| `email`           | Templates (HTML + text, escaped) and transports: Mailpit, Resend, log                                                                                                                                                                                        |
+| `security-events` | The account's security history; recording never fails a request                                                                                                                                                                                              |
+| `health`          | Database and Redis reachability                                                                                                                                                                                                                              |
 
 ## Key decisions
 
@@ -130,20 +134,20 @@ common in public places.
 
 ## Phases
 
-| Phase | Scope                                                                              | Status                             |
-| ----- | ---------------------------------------------------------------------------------- | ---------------------------------- |
-| 1.1   | Workspace, tooling, API foundation, local services, docs                           | **Done**                           |
-| 1.2   | Brand concepts, design tokens, components, `/design` review page                   | **Done**, awaiting brand decisions |
-| 1.3   | Public website: Home, Product, Security, Profiles, Drive, Pricing, About           | **Done**                           |
-| 1.4   | Authentication end to end (register, verify, sign in/out, reset)                   | **Done**                           |
-| 1.5   | Signed-in app shell and navigation                                                 | **Done**                           |
-| 1.6   | Phase review and security review ([review](reviews/phase-1.md))                    | **Done**                           |
-| 2     | Passkeys and MFA, profiles, proxies, sessions, security centre, account            | Next                               |
-| 3     | Cloud browser: gateway, orchestrator, runtime, Chromium (3a), WebRTC (3b), Firefox | Planned                            |
-| 4     | Persistent profiles, Brawzer Drive, downloads, previews, extensions                | Planned                            |
-| 5     | Proxy engine, encryption, egress controls, device security                         | Planned                            |
-| 6     | Subscriptions (Stripe), limits, administration                                     | Planned                            |
-| 7     | Load, isolation and security testing; deployment                                   | Planned                            |
+| Phase | Scope                                                                                              | Status                             |
+| ----- | -------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 1.1   | Workspace, tooling, API foundation, local services, docs                                           | **Done**                           |
+| 1.2   | Brand concepts, design tokens, components, `/design` review page                                   | **Done**, awaiting brand decisions |
+| 1.3   | Public website: Home, Product, Security, Profiles, Drive, Pricing, About                           | **Done**                           |
+| 1.4   | Authentication end to end (register, verify, sign in/out, reset)                                   | **Done**                           |
+| 1.5   | Signed-in app shell and navigation                                                                 | **Done**                           |
+| 1.6   | Phase review and security review ([review](reviews/phase-1.md))                                    | **Done**                           |
+| 2     | Passkeys and MFA, profiles, proxies, sessions, security centre, account ([plan](plans/phase-2.md)) | Next                               |
+| 3     | Cloud browser: gateway, orchestrator, runtime, Chromium (3a), WebRTC (3b), Firefox                 | Planned                            |
+| 4     | Persistent profiles, Brawzer Drive, downloads, previews, extensions                                | Planned                            |
+| 5     | Proxy engine, encryption, egress controls, device security                                         | Planned                            |
+| 6     | Subscriptions (Stripe), limits, administration                                                     | Planned                            |
+| 7     | Load, isolation and security testing; deployment                                                   | Planned                            |
 
 ## Decision records
 
@@ -154,3 +158,5 @@ common in public places.
 - [0005 Session model](adr/0005-session-model.md)
 - [0006 Browser streaming](adr/0006-browser-streaming.md)
 - [0007 Content Security Policy](adr/0007-content-security-policy.md)
+- [0008 Secrets at rest and recent sign-in](adr/0008-secrets-and-step-up.md)
+- [0009 Passkeys and two-factor authentication](adr/0009-passkeys-and-two-factor.md)

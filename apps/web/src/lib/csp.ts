@@ -14,6 +14,7 @@ export const STRICT_CSP_PATHS = [
   "/verify-email",
   "/forgot-password",
   "/reset-password",
+  "/confirm-email-change",
 ] as const;
 
 export function needsStrictCsp(pathname: string): boolean {

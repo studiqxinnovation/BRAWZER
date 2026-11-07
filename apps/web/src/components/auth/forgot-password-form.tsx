@@ -71,7 +71,13 @@ export function ForgotPasswordForm() {
         <p>Enter the email address for your Brawzer account and we’ll email you a link.</p>
       </AuthHeading>
 
-      <form ref={formRef} noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
+      <form
+        method="post"
+        ref={formRef}
+        noValidate
+        onSubmit={handleSubmit}
+        className="flex flex-col gap-5"
+      >
         {failure && <FormMessage tone="danger">{failure}</FormMessage>}
 
         <Field name="email" invalid={Boolean(errors.email)}>

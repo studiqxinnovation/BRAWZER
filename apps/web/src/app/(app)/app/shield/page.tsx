@@ -1,5 +1,4 @@
-import { securityEventPageSchema } from "@brawzer/contracts";
-import { DevState } from "@brawzer/ui/components/dev-state";
+import { securityEventPageSchema, securityOverviewSchema } from "@brawzer/contracts";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -10,6 +9,7 @@ import {
   Unavailable,
 } from "@/components/app-shell/page";
 import { ActivityList } from "@/components/shield/activity-list";
+import { SecurityOverviewSections } from "@/components/shield/security-overview";
 import { serverGet, signInAgain } from "@/lib/server-api";
 
 export const metadata: Metadata = { title: "Shield", robots: { index: false, follow: false } };
@@ -21,32 +21,32 @@ async function Activity() {
   return <ActivityList initial={result.data} renderedAt={result.receivedAt} />;
 }
 
+async function Overview() {
+  const result = await serverGet("/security/overview", securityOverviewSchema);
+  if (result.kind === "signed-out") signInAgain("/app/shield");
+  if (result.kind === "unavailable") return <Unavailable />;
+  return <SecurityOverviewSections overview={result.data} renderedAt={result.receivedAt} />;
+}
+
 export default function ShieldPage() {
   return (
     <PageContainer>
       <PageHeader title="Shield">
         <p>
-          Your security centre. Every sign-in, failed attempt and password change on your account,
-          newest first. It never records the sites you visit.
+          Your security centre: how your account is protected, sign-ins from new places, and
+          everything that happened on your account. It never records the sites you visit.
         </p>
       </PageHeader>
       <div className="flex flex-col gap-10">
+        <Suspense fallback={<Skeleton className="h-48 w-full rounded-xl" />}>
+          <Overview />
+        </Suspense>
         <section aria-labelledby="activity-heading" className="flex flex-col gap-4">
           <SectionHeading id="activity-heading">Activity</SectionHeading>
           <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
             <Activity />
           </Suspense>
         </section>
-        <DevState
-          title="Alerts and recommendations aren’t available yet"
-          milestone="Phase 2"
-          requires={[
-            "Email and in-app alerts when a new device signs in",
-            "Recommendations, such as adding a passkey",
-          ]}
-        >
-          Shield will tell you about unusual activity instead of waiting for you to look.
-        </DevState>
       </div>
     </PageContainer>
   );

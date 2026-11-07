@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { horizontalOverflow, wcagViolations } from "./accessibility";
+import { expireIdentityConfirmation } from "./database";
 import { createConfirmedAccount, otherDevice, signIn, uniqueEmail } from "./mailbox";
 
 // The signed-in app against the real API, Postgres, Valkey and Mailpit.
@@ -143,6 +144,57 @@ test.describe("sessions", () => {
       await context.close();
     }
     expect((await page.request.get("/api/v1/auth/session/status")).status()).toBe(204);
+  });
+});
+
+test.describe("confirming it's you", () => {
+  test("signing a device out after a while asks for the password first", async ({
+    page,
+    browser,
+    baseURL,
+  }) => {
+    const email = await signedIn(page, baseURL, "confirm");
+    const phone = await otherDevice(browser, baseURL ?? "", email, PASSWORD);
+    await expireIdentityConfirmation(email);
+
+    await page.goto("/app/sessions");
+    await page
+      .getByRole("listitem")
+      .getByRole("button", { name: /^Sign out / })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "Confirm it’s you" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Password", { exact: true })).toBeFocused();
+
+    await dialog.getByLabel("Password", { exact: true }).fill("not-my-password");
+    await dialog.getByRole("button", { name: "Confirm" }).click();
+    await expect(dialog.getByText("That isn’t your password.")).toBeVisible();
+
+    await dialog.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await dialog.getByRole("button", { name: "Confirm" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText("No other devices are signed in.")).toBeVisible();
+    expect((await phone.request.get("/api/v1/auth/session/status")).status()).toBe(401);
+    await phone.close();
+  });
+
+  test("cancelling leaves everything as it was", async ({ page, browser, baseURL }) => {
+    const email = await signedIn(page, baseURL, "confirm-cancel");
+    const phone = await otherDevice(browser, baseURL ?? "", email, PASSWORD);
+    await expireIdentityConfirmation(email);
+
+    await page.goto("/app/sessions");
+    await page
+      .getByRole("listitem")
+      .getByRole("button", { name: /^Sign out / })
+      .click();
+    await page
+      .getByRole("dialog", { name: "Confirm it’s you" })
+      .getByRole("button", { name: "Cancel" })
+      .click();
+    await expect(page.getByRole("dialog", { name: "Confirm it’s you" })).toBeHidden();
+    expect((await phone.request.get("/api/v1/auth/session/status")).status()).toBe(204);
+    await phone.close();
   });
 });
 
