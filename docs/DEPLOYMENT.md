@@ -95,3 +95,19 @@ no GitHub remote yet, so it hasn't run on GitHub; its steps were run locally.
 - **A verified Resend sending domain.** It needs the website domain.
 - **The cloud browser runtime and its TURN servers:** see `docs/plans/phase-3.md`.
 - **Automated image rebuilds for base-image security updates:** Phase 7.
+
+## Running the browser tests against a production build
+
+CI runs the e2e suite against the standalone production build, not `next dev`.
+To reproduce that locally:
+
+```bash
+BRAWZER_DEV_PAGES=enabled pnpm build   # /dev and /design are compiled out otherwise
+CI=1 pnpm --filter @brawzer/web exec playwright test
+```
+
+Notes:
+- `next start` does not serve `output: "standalone"`; use `pnpm --filter @brawzer/web run start:standalone`.
+- Zod probes `Function("")` once to detect a strict CSP. The browser reports it
+  as `script-src eval` with an empty sample; `e2e/csp.spec.ts` ignores that one case.
+- `BRAWZER_DEV_PAGES` is read at build time and is part of Turbo's cache key (`globalEnv`).
