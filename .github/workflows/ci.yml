@@ -62,7 +62,10 @@ jobs:
       # Browser tests run against production builds: next dev compiles
       # routes on demand, which is too slow on a shared runner.
       - name: Production build for the browser tests
+        # /dev and /design are compiled out of production builds unless enabled.
         run: pnpm build
+        env:
+          BRAWZER_DEV_PAGES: enabled
       - name: Browser tests (desktop and phone)
         run: pnpm test:e2e
       - name: Keep the report when tests fail
