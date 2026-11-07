@@ -1,0 +1,11 @@
+pnpm-lock.yaml
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/playwright-report
+**/test-results
+**/next-env.d.ts
+packages/db/migrations
+# Written and maintained by `next dev`.
+apps/web/AGENTS.md

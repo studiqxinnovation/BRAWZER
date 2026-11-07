@@ -1,0 +1,16 @@
+import { type DynamicModule, Module } from "@nestjs/common";
+import { AuthModule } from "./auth/auth.module.js";
+import { ConfigModule } from "./config/config.module.js";
+import type { AppConfig } from "./config/env.js";
+import { HealthModule } from "./health/health.module.js";
+
+@Module({})
+export class AppModule {
+  /** Builds the module graph around an already-validated configuration. */
+  static register(config: AppConfig): DynamicModule {
+    return {
+      module: AppModule,
+      imports: [ConfigModule.forRoot(config), HealthModule, AuthModule],
+    };
+  }
+}

@@ -1,0 +1,59 @@
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    /* Base UI: lets dialog backdrops cover the visual viewport on iOS 26+. */
+    position: relative;
+    background-color: var(--bw-canvas);
+    color: var(--bw-ink);
+  }
+
+  /* Popups portal outside this element and always layer above page content. */
+  [data-brawzer-root] {
+    isolation: isolate;
+  }
+
+  /* While the theme or accent changes, every colour switches at once. */
+  [data-appearance-switching] *,
+  [data-appearance-switching] *::before,
+  [data-appearance-switching] *::after {
+    transition: none !important;
+  }
+
+  ::selection {
+    background-color: var(--bw-selection);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--bw-focus);
+    outline-offset: 2px;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+  }
+}
+
+/*
+ * Reduced motion: transitions become instant and decorative animation stops.
+ * Indicators that communicate progress opt out with data-motion="essential".
+ */
+@media (prefers-reduced-motion: reduce) {
+  *:not([data-motion="essential"]),
+  *:not([data-motion="essential"])::before,
+  *:not([data-motion="essential"])::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

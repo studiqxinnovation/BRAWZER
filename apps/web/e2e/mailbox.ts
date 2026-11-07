@@ -1,0 +1,74 @@
+import { randomUUID } from "node:crypto";
+import { type APIRequestContext, expect } from "@playwright/test";
+
+/** Mailpit catches every email the local API sends (`pnpm infra:up`). */
+const MAILPIT = process.env.MAILPIT_API_URL ?? "http://127.0.0.1:8125";
+
+export const uniqueEmail = (tag: string) => `e2e-${tag}-${randomUUID().slice(0, 8)}@example.com`;
+
+interface Summary {
+  ID: string;
+  Subject: string;
+}
+
+/**
+ * Waits for the newest email to `to` whose subject contains `subject`, and
+ * returns the link in it, moved onto the origin the tests browse. Emails link
+ * to WEB_ORIGIN (localhost:3100); the tests use 127.0.0.1:3100, the same
+ * server under a different cookie host.
+ */
+export async function linkFromEmail(
+  request: APIRequestContext,
+  to: string,
+  subject: string,
+  baseURL: string,
+): Promise<string> {
+  let found: Summary | undefined;
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(`${MAILPIT}/api/v1/search`, {
+          params: { query: `to:"${to}"` },
+        });
+        const { messages } = (await response.json()) as { messages: Summary[] };
+        found = messages.find((message) => message.Subject.includes(subject));
+        return found !== undefined;
+      },
+      { message: `waiting for "${subject}" to ${to}`, timeout: 10_000 },
+    )
+    .toBe(true);
+
+  const message = (await (
+    await request.get(`${MAILPIT}/api/v1/message/${found?.ID ?? ""}`)
+  ).json()) as {
+    Text: string;
+  };
+  const link = /(https?:\/\/\S+#token=[A-Za-z0-9_-]{43})/.exec(message.Text)?.[1];
+  if (!link) throw new Error(`No link in "${subject}"`);
+  const url = new URL(link);
+  return `${new URL(baseURL).origin}${url.pathname}${url.hash}`;
+}
+
+/** Creates and confirms an account through the API, as a person would through the pages. */
+export async function createConfirmedAccount(
+  request: APIRequestContext,
+  baseURL: string,
+  email: string,
+  password: string,
+): Promise<void> {
+  const origin = new URL(baseURL).origin;
+  const registered = await request.post("/api/v1/auth/register", {
+    data: { email, password },
+    headers: { origin },
+  });
+  expect(registered.status()).toBe(202);
+  const link = await linkFromEmail(request, email, "Confirm your email", baseURL);
+  const token = new URL(link).hash.replace("#token=", "");
+  const verified = await request.post("/api/v1/auth/verify-email", {
+    data: { token, password },
+    headers: { origin },
+  });
+  expect(verified.status()).toBe(200);
+  // Verification signs in; start the browser tests signed out.
+  await request.post("/api/v1/auth/logout", { headers: { origin } });
+}

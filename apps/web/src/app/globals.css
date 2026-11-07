@@ -1,0 +1,5 @@
+@import "tailwindcss";
+@import "@brawzer/ui/styles.css";
+
+/* Scan the design system's source for class names. */
+@source "../../../../packages/ui/src";

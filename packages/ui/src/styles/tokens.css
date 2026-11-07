@@ -1,0 +1,203 @@
+/*
+ * Brawzer design tokens
+ * ─────────────────────
+ * Semantic custom properties. Components reach them through the Tailwind
+ * utilities defined in theme.css: bg-canvas, text-ink, border-line, ...
+ *
+ * Theming. Light is the default. Dark applies through [data-theme="dark"] on
+ * any element (a whole page or one section), or follows the operating system
+ * when no theme has been chosen. Every token is declared in every theme block
+ * so that nested theme scopes resolve correctly.
+ *
+ * Contrast. Text tokens meet WCAG AA (4.5:1) on canvas, canvas-subtle, surface
+ * and surface-sunken in both themes. The /design page measures them live.
+ */
+
+/* ── Accent palettes: a light-mode and a dark-mode value for each ───────── */
+
+:root,
+[data-accent="cobalt"] {
+  --bw-accent-light: #2b5be0;
+  --bw-accent-light-hover: #234fcb;
+  --bw-accent-light-ink: #2453cf;
+  --bw-accent-dark: #3366e8;
+  --bw-accent-dark-hover: #3a6df0;
+  --bw-accent-dark-ink: #7da2ff;
+}
+
+[data-accent="copper"] {
+  --bw-accent-light: #b4592b;
+  --bw-accent-light-hover: #a04e25;
+  --bw-accent-light-ink: #a4501f;
+  --bw-accent-dark: #b85a2c;
+  --bw-accent-dark-hover: #aa5228;
+  --bw-accent-dark-ink: #e8956a;
+}
+
+[data-accent="glacier"] {
+  --bw-accent-light: #0f7a80;
+  --bw-accent-light-hover: #0c6a70;
+  --bw-accent-light-ink: #0b6e74;
+  --bw-accent-dark: #138088;
+  --bw-accent-dark-hover: #0f737a;
+  --bw-accent-dark-ink: #5cc8cf;
+}
+
+/* ── Light theme (default) ─────────────────────────────────────────────── */
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bw-canvas: #f8f7f4;
+  --bw-canvas-subtle: #f2f1ed;
+  --bw-surface: #ffffff;
+  --bw-surface-raised: #ffffff;
+  --bw-surface-sunken: #f0efeb;
+  --bw-line: #e4e2dd;
+  --bw-line-strong: #d2cfc9;
+  /* Form-control boundaries: at least 3:1 against surfaces (WCAG 1.4.11). */
+  --bw-line-control: #8a867f;
+
+  --bw-ink: #1c1b19;
+  --bw-ink-secondary: #5e5b56;
+  --bw-ink-tertiary: #6f6b65;
+  --bw-ink-disabled: #aba79f;
+
+  --bw-accent: var(--bw-accent-light);
+  --bw-accent-hover: var(--bw-accent-light-hover);
+  --bw-accent-ink: var(--bw-accent-light-ink);
+  --bw-accent-soft: color-mix(in srgb, var(--bw-accent-light) 11%, transparent);
+  --bw-on-accent: #ffffff;
+
+  --bw-success: #1b7046;
+  --bw-success-soft: color-mix(in srgb, #1b7046 11%, transparent);
+  --bw-warning: #8a5100;
+  --bw-warning-soft: color-mix(in srgb, #8a5100 11%, transparent);
+  --bw-danger: #bf342b;
+  --bw-danger-soft: color-mix(in srgb, #bf342b 10%, transparent);
+  --bw-danger-fill: #bf342b;
+
+  --bw-hover: color-mix(in srgb, #1c1b19 5%, transparent);
+  --bw-pressed: color-mix(in srgb, #1c1b19 9%, transparent);
+  --bw-selection: color-mix(in srgb, var(--bw-accent-light) 22%, transparent);
+  --bw-focus: var(--bw-accent-light-ink);
+  --bw-overlay: rgb(28 27 25 / 0.32);
+
+  --bw-shadow-xs: 0 1px 1px rgb(28 27 25 / 0.05);
+  --bw-shadow-sm: 0 1px 2px rgb(28 27 25 / 0.06), 0 1px 1px rgb(28 27 25 / 0.04);
+  --bw-shadow-md: 0 4px 12px -2px rgb(28 27 25 / 0.08), 0 2px 4px -2px rgb(28 27 25 / 0.06);
+  --bw-shadow-lg: 0 12px 32px -8px rgb(28 27 25 / 0.14), 0 4px 10px -4px rgb(28 27 25 / 0.08);
+  --bw-shadow-xl: 0 24px 64px -16px rgb(28 27 25 / 0.24), 0 8px 20px -8px rgb(28 27 25 / 0.1);
+}
+
+/* ── Dark theme ─────────────────────────────────────────────────────────── */
+/* Keep these two blocks identical; a unit test enforces it. */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bw-canvas: #121211;
+  --bw-canvas-subtle: #171716;
+  --bw-surface: #1b1a19;
+  --bw-surface-raised: #222120;
+  --bw-surface-sunken: #0e0e0d;
+  --bw-line: #2c2b29;
+  --bw-line-strong: #3b3936;
+  --bw-line-control: #6e6a63;
+
+  --bw-ink: #edebe7;
+  --bw-ink-secondary: #a8a49e;
+  --bw-ink-tertiary: #8f8b84;
+  --bw-ink-disabled: #5a5753;
+
+  --bw-accent: var(--bw-accent-dark);
+  --bw-accent-hover: var(--bw-accent-dark-hover);
+  --bw-accent-ink: var(--bw-accent-dark-ink);
+  --bw-accent-soft: color-mix(in srgb, var(--bw-accent-dark) 18%, transparent);
+  --bw-on-accent: #ffffff;
+
+  --bw-success: #4cc38a;
+  --bw-success-soft: color-mix(in srgb, #4cc38a 14%, transparent);
+  --bw-warning: #e8a84a;
+  --bw-warning-soft: color-mix(in srgb, #e8a84a 14%, transparent);
+  --bw-danger: #ff7b72;
+  --bw-danger-soft: color-mix(in srgb, #ff7b72 14%, transparent);
+  --bw-danger-fill: #c93a30;
+
+  --bw-hover: color-mix(in srgb, #edebe7 6%, transparent);
+  --bw-pressed: color-mix(in srgb, #edebe7 10%, transparent);
+  --bw-selection: color-mix(in srgb, var(--bw-accent-dark) 34%, transparent);
+  --bw-focus: var(--bw-accent-dark-ink);
+  --bw-overlay: rgb(0 0 0 / 0.56);
+
+  --bw-shadow-xs: 0 1px 1px rgb(0 0 0 / 0.3);
+  --bw-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.45);
+  --bw-shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+  --bw-shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 4px 10px -4px rgb(0 0 0 / 0.4);
+  --bw-shadow-xl: 0 24px 64px -16px rgb(0 0 0 / 0.7), 0 8px 20px -8px rgb(0 0 0 / 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bw-canvas: #121211;
+    --bw-canvas-subtle: #171716;
+    --bw-surface: #1b1a19;
+    --bw-surface-raised: #222120;
+    --bw-surface-sunken: #0e0e0d;
+    --bw-line: #2c2b29;
+    --bw-line-strong: #3b3936;
+    --bw-line-control: #6e6a63;
+
+    --bw-ink: #edebe7;
+    --bw-ink-secondary: #a8a49e;
+    --bw-ink-tertiary: #8f8b84;
+    --bw-ink-disabled: #5a5753;
+
+    --bw-accent: var(--bw-accent-dark);
+    --bw-accent-hover: var(--bw-accent-dark-hover);
+    --bw-accent-ink: var(--bw-accent-dark-ink);
+    --bw-accent-soft: color-mix(in srgb, var(--bw-accent-dark) 18%, transparent);
+    --bw-on-accent: #ffffff;
+
+    --bw-success: #4cc38a;
+    --bw-success-soft: color-mix(in srgb, #4cc38a 14%, transparent);
+    --bw-warning: #e8a84a;
+    --bw-warning-soft: color-mix(in srgb, #e8a84a 14%, transparent);
+    --bw-danger: #ff7b72;
+    --bw-danger-soft: color-mix(in srgb, #ff7b72 14%, transparent);
+    --bw-danger-fill: #c93a30;
+
+    --bw-hover: color-mix(in srgb, #edebe7 6%, transparent);
+    --bw-pressed: color-mix(in srgb, #edebe7 10%, transparent);
+    --bw-selection: color-mix(in srgb, var(--bw-accent-dark) 34%, transparent);
+    --bw-focus: var(--bw-accent-dark-ink);
+    --bw-overlay: rgb(0 0 0 / 0.56);
+
+    --bw-shadow-xs: 0 1px 1px rgb(0 0 0 / 0.3);
+    --bw-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.45);
+    --bw-shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+    --bw-shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 4px 10px -4px rgb(0 0 0 / 0.4);
+    --bw-shadow-xl: 0 24px 64px -16px rgb(0 0 0 / 0.7), 0 8px 20px -8px rgb(0 0 0 / 0.5);
+  }
+}
+
+/* ── Motion ─────────────────────────────────────────────────────────────── */
+
+:root {
+  --bw-duration-instant: 90ms;
+  --bw-duration-fast: 150ms;
+  --bw-duration-base: 220ms;
+  --bw-duration-slow: 360ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --bw-duration-instant: 0ms;
+    --bw-duration-fast: 0ms;
+    --bw-duration-base: 0ms;
+    --bw-duration-slow: 0ms;
+  }
+}
