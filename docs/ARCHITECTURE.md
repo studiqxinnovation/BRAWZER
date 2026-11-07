@@ -130,20 +130,20 @@ common in public places.
 
 ## Phases
 
-| Phase | Scope                                                                              | Status                             |
-| ----- | ---------------------------------------------------------------------------------- | ---------------------------------- |
-| 1.1   | Workspace, tooling, API foundation, local services, docs                           | **Done**                           |
-| 1.2   | Brand concepts, design tokens, components, `/design` review page                   | **Done**, awaiting brand decisions |
-| 1.3   | Public website: Home, Product, Security, Profiles, Drive, Pricing, About           | **Done**                           |
-| 1.4   | Authentication end to end (register, verify, sign in/out, reset)                   | **Done**                           |
-| 1.5   | Signed-in app shell and navigation                                                 | **Done**                           |
-| 1.6   | Phase review and security review ([review](reviews/phase-1.md))                    | **Done**                           |
-| 2     | Passkeys and MFA, profiles, proxies, sessions, security centre, account            | Next                               |
-| 3     | Cloud browser: gateway, orchestrator, runtime, Chromium (3a), WebRTC (3b), Firefox | Planned                            |
-| 4     | Persistent profiles, Brawzer Drive, downloads, previews, extensions                | Planned                            |
-| 5     | Proxy engine, encryption, egress controls, device security                         | Planned                            |
-| 6     | Subscriptions (Stripe), limits, administration                                     | Planned                            |
-| 7     | Load, isolation and security testing; deployment                                   | Planned                            |
+| Phase | Scope                                                                                              | Status                             |
+| ----- | -------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 1.1   | Workspace, tooling, API foundation, local services, docs                                           | **Done**                           |
+| 1.2   | Brand concepts, design tokens, components, `/design` review page                                   | **Done**, awaiting brand decisions |
+| 1.3   | Public website: Home, Product, Security, Profiles, Drive, Pricing, About                           | **Done**                           |
+| 1.4   | Authentication end to end (register, verify, sign in/out, reset)                                   | **Done**                           |
+| 1.5   | Signed-in app shell and navigation                                                                 | **Done**                           |
+| 1.6   | Phase review and security review ([review](reviews/phase-1.md))                                    | **Done**                           |
+| 2     | Passkeys and MFA, profiles, proxies, sessions, security centre, account ([plan](plans/phase-2.md)) | Next                               |
+| 3     | Cloud browser: gateway, orchestrator, runtime, Chromium (3a), WebRTC (3b), Firefox                 | Planned                            |
+| 4     | Persistent profiles, Brawzer Drive, downloads, previews, extensions                                | Planned                            |
+| 5     | Proxy engine, encryption, egress controls, device security                                         | Planned                            |
+| 6     | Subscriptions (Stripe), limits, administration                                                     | Planned                            |
+| 7     | Load, isolation and security testing; deployment                                                   | Planned                            |
 
 ## Decision records
 
