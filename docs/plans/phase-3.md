@@ -1,6 +1,7 @@
 # Phase 3 plan: the cloud browser
 
 - **Status:** Accepted 2026-11-07 under the standing instruction to build every phase; decisions taken as recommended (table at the end).
+- **Progress:** 3.1 done (results in ADR 0006).
 - **Date:** 2026-11-07
 - **Builds on:** Phase 2 ([review](../reviews/phase-2.md)), [ADR 0006](../adr/0006-browser-streaming.md) (streaming), [ADR 0010](../adr/0010-proxy-tests-and-ssrf.md) (address rules).
 

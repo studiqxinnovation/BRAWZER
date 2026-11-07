@@ -1,6 +1,6 @@
 # 0006 Browser streaming
 
-- **Status:** Proposed. Phase 3 begins with a short benchmark spike.
+- **Status:** Accepted for step 3a after the milestone 3.1 measurements (2026-11-07). Step 3b stays proposed.
 - **Date:** 2026-11-06
 
 ## Context
@@ -29,3 +29,28 @@ hotel networks.
 - Keyboard shortcuts reserved by the local browser (⌘/Ctrl+W, T, N) can't be captured by a web page. Brawzer defines its own shortcuts, and uses the Keyboard Lock API in full-screen where the local browser supports it.
 - Media with DRM (some video services) is expected to be limited.
 - Streaming bandwidth (estimated 0.5–2 GB per active hour) drives hosting costs. Choose providers from Phase 3 measurements.
+
+## Measurements (milestone 3.1)
+
+Headless Chromium 1248 (Playwright's build) on Apple Silicon, 1280×800, one
+tab, no network between the browser and the reader of the frames. Scripts:
+`infra/bench/screencast.mjs` and `infra/bench/screencast-rich.mjs`.
+
+| Scene                                   | JPEG quality | Frames per second | Size per frame | Bandwidth    |
+| --------------------------------------- | ------------ | ----------------- | -------------- | ------------ |
+| Simple animation                        | 50 to 85     | 60                | 8 KB           | 3.7–4 Mbit/s |
+| Brawzer's home page, scrolling non-stop | 50           | 50                | 33 KB          | 13.6 Mbit/s  |
+| Same                                    | 70           | 40                | 57 KB          | 19 Mbit/s    |
+| Same, frames acknowledged 100 ms late   | 50           | 25                | 45 KB          | 9.1 Mbit/s   |
+| Same, frames acknowledged 250 ms late   | 50           | 11                | 47 KB          | 4.4 Mbit/s   |
+
+- **Input to next frame** (key press on a still page): median 16–22 ms, 90th percentile 21–32 ms, before any network time.
+- **Chromium paces itself by acknowledgements**, keeping about three frames in flight. A slow viewer therefore gets fewer frames rather than a growing backlog.
+- A still page sends no frames at all, so the hourly figure depends on how much of the hour is scrolling or video.
+
+## Settings chosen for step 3a
+
+- **JPEG quality 60** by default: text stays crisp while frames stay near the quality-50 size.
+- **Frames at device pixel ratio 1**, up to 1920×1080. High-density screens are scaled up locally; streaming at 2× would roughly quadruple the bytes.
+- **Acknowledgements travel end to end.** The agent acknowledges a frame to Chromium only when the viewer reports it has drawn that frame, so each viewer's connection sets its own frame rate.
+- **Frames replace, never queue.** If a newer frame arrives before an older one is sent, the older one is dropped.
