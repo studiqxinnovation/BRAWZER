@@ -86,8 +86,7 @@ docker compose -f infra/staging/compose.yaml --env-file infra/staging/staging.en
 
 Every action is pinned to a full commit SHA, the token is read-only,
 checkout doesn't keep credentials, and pnpm is installed from npm at the
-version in `package.json`. The workflow passes `actionlint`. The repository has
-no GitHub remote yet, so it hasn't run on GitHub; its steps were run locally.
+version in `package.json`. The workflow passes `actionlint`. The browser tests run against the production build (below), because `next dev` compiles routes on demand and is too slow on a shared runner.
 
 ## Not done yet
 
@@ -107,6 +106,7 @@ CI=1 pnpm --filter @brawzer/web exec playwright test
 ```
 
 Notes:
+
 - `next start` does not serve `output: "standalone"`; use `pnpm --filter @brawzer/web run start:standalone`.
 - Zod probes `Function("")` once to detect a strict CSP. The browser reports it
   as `script-src eval` with an empty sample; `e2e/csp.spec.ts` ignores that one case.
