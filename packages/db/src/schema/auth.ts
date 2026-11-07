@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 /** Time-ordered UUIDs (PostgreSQL 18's built-in uuidv7) keep indexes compact. */
 const id = () =>
@@ -39,6 +49,10 @@ export const authSessions = pgTable(
     rotatedAt: timestamptz(),
     /** "Keep me signed in" was chosen; otherwise shared-computer rules apply. */
     persistent: boolean().notNull().default(false),
+    /** How this session signed in: password, password_totp, passkey, phone, sign_up_link. */
+    authMethod: text().notNull().default("password"),
+    /** When the owner last proved who they are; sensitive actions need this to be recent. */
+    reauthenticatedAt: timestamptz().notNull().defaultNow(),
     userAgent: text(),
     ipAddress: text(),
     createdAt: timestamptz().notNull().defaultNow(),
@@ -90,6 +104,24 @@ export const securityEventType = pgEnum("security_event_type", [
   "password.reset_requested",
   "password.reset",
   "password.changed",
+  "reauthenticated",
+  "passkey.added",
+  "passkey.removed",
+  "mfa.enabled",
+  "mfa.disabled",
+  "mfa.recovery_codes_regenerated",
+  "mfa.recovery_code_used",
+  "mfa.failed",
+  "email.change_requested",
+  "email.changed",
+  "data.exported",
+  "profile.created",
+  "profile.deleted",
+  "proxy.created",
+  "proxy.updated",
+  "proxy.deleted",
+  "phone_sign_in.approved",
+  "sign_in.new_device",
 ]);
 
 /**
@@ -111,8 +143,41 @@ export const securityEvents = pgTable(
   (table) => [index("security_events_user_occurred_idx").on(table.userId, table.occurredAt)],
 );
 
+export const authChallengePurpose = pgEnum("auth_challenge_purpose", [
+  "passkey_registration",
+  "passkey_authentication",
+  "mfa",
+  "phone_approval",
+]);
+
+/**
+ * Short-lived, single-use steps of a sign-in or confirmation: passkey
+ * challenges, two-factor tickets, phone approvals. Removed by the retention
+ * job once expired.
+ */
+export const authChallenges = pgTable(
+  "auth_challenges",
+  {
+    id: id(),
+    purpose: authChallengePurpose().notNull(),
+    userId: uuid().references(() => users.id, { onDelete: "cascade" }),
+    sessionId: uuid(),
+    /** Random value the client must prove it holds (for passkeys, the WebAuthn challenge). */
+    challenge: text().notNull(),
+    /** Purpose-specific facts, never secrets in plain text. */
+    data: jsonb().$type<Record<string, string | number | boolean | null>>().notNull().default({}),
+    attempts: integer().notNull().default(0),
+    expiresAt: timestamptz().notNull(),
+    usedAt: timestamptz(),
+    createdAt: timestamptz().notNull().defaultNow(),
+  },
+  (table) => [index("auth_challenges_expires_idx").on(table.expiresAt)],
+);
+
 export type User = typeof users.$inferSelect;
 export type AuthSession = typeof authSessions.$inferSelect;
 export type EmailToken = typeof emailTokens.$inferSelect;
 export type SecurityEventType = (typeof securityEventType.enumValues)[number];
 export type EmailTokenPurpose = (typeof emailTokenPurpose.enumValues)[number];
+export type AuthChallenge = typeof authChallenges.$inferSelect;
+export type AuthChallengePurpose = (typeof authChallengePurpose.enumValues)[number];

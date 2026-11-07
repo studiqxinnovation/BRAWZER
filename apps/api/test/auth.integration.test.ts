@@ -827,3 +827,65 @@ describe("passive session checks", () => {
     expect((await replay.get("/auth/session/status")).statusCode).toBe(401);
   });
 });
+
+describe("confirming it's you", () => {
+  async function expireConfirmation(email: string): Promise<void> {
+    await database.pool.query(
+      `update auth_sessions set reauthenticated_at = now() - interval '11 minutes'
+       where user_id = (select id from users where email = $1)`,
+      [email],
+    );
+  }
+
+  it("asks before signing devices out once the sign-in is more than 10 minutes old", async () => {
+    const email = uniqueEmail("reauth");
+    const laptop = browser();
+    const phone = browser(IPHONE_SAFARI);
+    await signUp(laptop, email, "violet-harbor-lantern");
+    await signIn(phone, email, "violet-harbor-lantern");
+    const phoneSession = (await listSessions(laptop)).find((session) => !session.current);
+    if (!phoneSession) throw new Error("expected the phone's session");
+    expect(phoneSession.authMethod).toBe("password");
+    expect((await listSessions(laptop)).find((session) => session.current)?.authMethod).toBe(
+      "sign_up_link",
+    );
+
+    await expireConfirmation(email);
+    const blocked = await laptop.delete(`/auth/sessions/${phoneSession.id}`);
+    expect(blocked.statusCode).toBe(403);
+    expect(errorOf(blocked).code).toBe("reauthentication_required");
+    expect(errorOf(await laptop.post("/auth/sessions/revoke-others")).code).toBe(
+      "reauthentication_required",
+    );
+
+    const wrong = await laptop.post("/auth/reauthenticate", { password: "not-my-password" });
+    expect(wrong.statusCode).toBe(400);
+    expect(errorOf(wrong).details).toEqual(["password: That isn’t your password."]);
+
+    const confirmed = await laptop.post("/auth/reauthenticate", {
+      password: "violet-harbor-lantern",
+    });
+    expect(confirmed.statusCode).toBe(200);
+    const until = Date.parse(confirmed.json<{ confirmedUntil: string }>().confirmedUntil);
+    expect(until - Date.now()).toBeGreaterThan(9 * 60 * 1000);
+
+    expect((await laptop.delete(`/auth/sessions/${phoneSession.id}`)).statusCode).toBe(204);
+    expect(await eventTypes(email)).toContain("reauthenticated");
+  });
+
+  it("locks re-confirmation after repeated wrong passwords", async () => {
+    const client = browser();
+    await signUp(client, uniqueEmail("reauth-lock"), "violet-harbor-lantern");
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect(
+        (
+          await client.post("/auth/reauthenticate", {
+            password: `wrong-${String(attempt)}-password`,
+          })
+        ).statusCode,
+      ).toBe(400);
+    }
+    const locked = await client.post("/auth/reauthenticate", { password: "violet-harbor-lantern" });
+    expect(locked.statusCode).toBe(429);
+  });
+});

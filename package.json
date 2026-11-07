@@ -20,7 +20,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run test",
-    "infra:up": "docker compose --project-directory . -f infra/compose/compose.yaml up -d --wait",
+    "infra:up": "docker compose --project-directory . -f infra/compose/compose.yaml up -d --wait && node infra/scripts/init-openbao.mjs",
     "infra:down": "docker compose --project-directory . -f infra/compose/compose.yaml down",
     "infra:reset": "docker compose --project-directory . -f infra/compose/compose.yaml down --volumes",
     "infra:status": "docker compose --project-directory . -f infra/compose/compose.yaml ps",

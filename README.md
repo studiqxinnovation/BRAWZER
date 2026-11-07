@@ -23,7 +23,7 @@ Profiles, history and downloads stay with your account, not on the machine.
 | Website        | Home, Product, Security, Profiles, Drive, Pricing and About, plus draft Privacy and Terms. Honest pre-launch notice, no invented prices or facts, sitemap, search engines blocked until launch.                                                                                                                                                                       |
 | Web app        | Next.js 16. Account pages and the signed-in app: Home, **Sessions** (every signed-in device, sign any out remotely), **Shield** (security history), **Account** (password, appearance). Idle warning and sign-out on shared computers. Unbuilt modules (Browser, Profiles, Drive, Proxy, Extensions) are clearly labelled. `/dev` and `/design` are development-only. |
 | Design system  | Tokens for light and dark themes, three accent options, three logo concepts, and 20 accessible components built on Base UI.                                                                                                                                                                                                                                           |
-| Local services | PostgreSQL 18, Valkey (Redis-compatible) and Mailpit in Docker, bound to `127.0.0.1` only.                                                                                                                                                                                                                                                                            |
+| Local services | PostgreSQL 18, Valkey (Redis-compatible), Mailpit and OpenBao (Vault-compatible key service) in Docker, bound to `127.0.0.1` only.                                                                                                                                                                                                                                    |
 | Quality        | Strict TypeScript, type-aware ESLint with accessibility rules, unit, integration and end-to-end tests including automated WCAG 2.2 AA checks on every page. Lighthouse: 100 for performance, accessibility and best practices.                                                                                                                                        |
 
 Anything not built yet is either absent or clearly marked with a
@@ -44,7 +44,7 @@ Anything not built yet is either absent or clearly marked with a
 ```bash
 cp .env.example .env      # local development settings (no real secrets)
 pnpm install              # install dependencies
-pnpm infra:up             # start PostgreSQL, Valkey and Mailpit, wait until healthy
+pnpm infra:up             # start PostgreSQL, Valkey, Mailpit and OpenBao, wait until healthy
 pnpm db:migrate           # check the database connection and apply migrations
 pnpm dev                  # start the API and the web app
 ```
@@ -62,8 +62,9 @@ Then open:
 | API docs (development only) | <http://localhost:4100/api/docs>       |
 | Email inbox (Mailpit)       | <http://localhost:8125>                |
 
-Brawzer uses its own ports (3100, 4100, 5433, 6380, 1125, 8125) so it can run
-beside other projects that use the common defaults.
+Brawzer uses its own ports (3100, 4100, 5433, 6380, 1125, 8125, 8210) so it can
+run beside other projects that use the common defaults. OpenBao on 8210 is a
+local, in-memory stand-in for the production key service.
 
 ### Try an account locally
 

@@ -6,6 +6,7 @@ import { HealthService, probe } from "./health.service.js";
 const env = {
   DATABASE_URL: "postgres://u:p@127.0.0.1:5433/db",
   REDIS_URL: "redis://127.0.0.1:6380",
+  ENCRYPTION_KEYS: `test-1:${"A".repeat(43)}=`,
 };
 const devConfig = parseConfig(env, "1.0.0");
 const prodConfig = parseConfig(
@@ -15,6 +16,9 @@ const prodConfig = parseConfig(
     WEB_ORIGIN: "https://brawzer.example",
     EMAIL_TRANSPORT: "resend",
     RESEND_API_KEY: "re_not_a_real_key",
+    KEY_PROVIDER: "vault",
+    VAULT_ADDR: "https://vault.internal:8200",
+    VAULT_TOKEN: "not-a-real-token",
   },
   "1.0.0",
 );

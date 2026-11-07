@@ -182,5 +182,50 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
       return { title: "Password reset", tone: "success" };
     case "password.changed":
       return { title: "Password changed", tone: "success" };
+    case "reauthenticated":
+      return { title: "Confirmed it’s you", tone: "neutral" };
+    case "passkey.added":
+      return { title: "Passkey added", tone: "success" };
+    case "passkey.removed":
+      return { title: "Passkey removed", tone: "neutral" };
+    case "mfa.enabled":
+      return { title: "Two-factor authentication turned on", tone: "success" };
+    case "mfa.disabled":
+      return { title: "Two-factor authentication turned off", tone: "warning" };
+    case "mfa.recovery_codes_regenerated":
+      return { title: "New recovery codes created", tone: "neutral" };
+    case "mfa.recovery_code_used":
+      return { title: "Signed in with a recovery code", tone: "warning" };
+    case "mfa.failed":
+      return { title: "Wrong two-factor code entered", tone: "warning" };
+    case "email.change_requested":
+      return { title: "Email change requested", tone: "neutral" };
+    case "email.changed":
+      return { title: "Email address changed", tone: "success" };
+    case "data.exported":
+      return { title: "Account data downloaded", tone: "neutral" };
+    case "profile.created":
+      return { title: "Profile created", tone: "neutral" };
+    case "profile.deleted":
+      return { title: "Profile deleted", tone: "neutral" };
+    case "proxy.created":
+      return { title: "Proxy added", tone: "neutral" };
+    case "proxy.updated":
+      return { title: "Proxy changed", tone: "neutral" };
+    case "proxy.deleted":
+      return { title: "Proxy removed", tone: "neutral" };
+    case "phone_sign_in.approved":
+      return { title: "Approved a sign-in from your phone", tone: "neutral" };
+    case "sign_in.new_device":
+      return { title: "Signed in from a new device", tone: "warning" };
   }
 }
+
+/** How a device signed in, for the Sessions list. */
+export const authMethodLabels = {
+  password: "Signed in with a password",
+  password_totp: "Signed in with a password and code",
+  passkey: "Signed in with a passkey",
+  phone: "Signed in with your phone",
+  sign_up_link: "Signed in after confirming the email address",
+} as const;

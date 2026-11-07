@@ -15,6 +15,13 @@
       "when": 1794013992573,
       "tag": "0001_password_changed_event",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794047827136,
+      "tag": "0002_phase2_foundations",
+      "breakpoints": true
     }
   ]
 }

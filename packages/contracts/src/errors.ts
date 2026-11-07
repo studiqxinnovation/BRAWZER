@@ -8,6 +8,7 @@ export const apiErrorCodeSchema = z.enum([
   "invalid_credentials",
   "email_not_verified",
   "token_invalid",
+  "reauthentication_required",
   "forbidden",
   "not_found",
   "method_not_allowed",

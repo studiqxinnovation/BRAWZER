@@ -46,6 +46,20 @@ export const envSchema = z.object({
   BREACHED_PASSWORD_CHECK: z.stringbool().optional(),
   /** How long the security history is kept, in days. */
   SECURITY_HISTORY_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(365),
+  /** Who holds the key-encryption keys: "local" (development only) or "vault" (Vault/OpenBao Transit). */
+  KEY_PROVIDER: z.enum(["local", "vault"]).default("local"),
+  /** Local provider: comma-separated `id:base64` 256-bit keys; the first one encrypts new secrets. */
+  ENCRYPTION_KEYS: z.string().optional(),
+  VAULT_ADDR: z.url({ protocol: /^https?$/, error: "must be an http(s) URL" }).optional(),
+  VAULT_TOKEN: z.string().min(1).optional(),
+  VAULT_TRANSIT_MOUNT: z
+    .string()
+    .regex(/^[a-z0-9_-]+$/, "may only contain lowercase letters, digits, _ and -")
+    .default("transit"),
+  VAULT_TRANSIT_KEY: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]+$/, "may only contain letters, digits, _ and -")
+    .default("brawzer"),
   BUILD_SHA: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/, "must be a git commit SHA")
@@ -57,6 +71,40 @@ export interface EmailConfig {
   readonly from: string;
   readonly mailpitApiUrl: string;
   readonly resendApiKey: string | undefined;
+}
+
+export type EncryptionConfig =
+  | { readonly provider: "local"; readonly keys: readonly { id: string; key: Buffer }[] }
+  | {
+      readonly provider: "vault";
+      readonly vault: { address: string; token: string; mount: string; keyName: string };
+    };
+
+/** Parses ENCRYPTION_KEYS ("id:base64,id:base64"). Problems are reported without the key material. */
+function parseLocalKeys(
+  value: string | undefined,
+  issues: string[],
+): { id: string; key: Buffer }[] {
+  if (!value) {
+    issues.push("ENCRYPTION_KEYS: is required when KEY_PROVIDER is local");
+    return [];
+  }
+  const keys: { id: string; key: Buffer }[] = [];
+  for (const entry of value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)) {
+    const separator = entry.indexOf(":");
+    const id = entry.slice(0, separator);
+    const key = Buffer.from(entry.slice(separator + 1), "base64");
+    if (separator <= 0 || !/^[A-Za-z0-9_-]{1,64}$/.test(id) || key.length !== 32) {
+      issues.push("ENCRYPTION_KEYS: each entry must be id:base64 with a 256-bit key");
+      return [];
+    }
+    keys.push({ id, key });
+  }
+  if (keys.length === 0) issues.push("ENCRYPTION_KEYS: is required when KEY_PROVIDER is local");
+  return keys;
 }
 
 export interface AppConfig {
@@ -81,6 +129,7 @@ export interface AppConfig {
   readonly email: EmailConfig;
   readonly breachedPasswordCheck: boolean;
   readonly securityHistoryRetentionDays: number;
+  readonly encryption: EncryptionConfig;
 }
 
 /** Raised at startup when the environment is incomplete or invalid. */
@@ -167,6 +216,25 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
   if (values.EMAIL_TRANSPORT === "resend" && !values.RESEND_API_KEY) {
     issues.push("RESEND_API_KEY: is required when EMAIL_TRANSPORT is resend");
   }
+  let encryption: EncryptionConfig | undefined;
+  if (values.KEY_PROVIDER === "local") {
+    if (isProduction) {
+      issues.push("KEY_PROVIDER: must be a key management service (vault) in production");
+    }
+    encryption = { provider: "local", keys: parseLocalKeys(values.ENCRYPTION_KEYS, issues) };
+  } else {
+    if (!values.VAULT_ADDR) issues.push("VAULT_ADDR: is required when KEY_PROVIDER is vault");
+    if (!values.VAULT_TOKEN) issues.push("VAULT_TOKEN: is required when KEY_PROVIDER is vault");
+    encryption = {
+      provider: "vault",
+      vault: {
+        address: values.VAULT_ADDR ?? "",
+        token: values.VAULT_TOKEN ?? "",
+        mount: values.VAULT_TRANSIT_MOUNT,
+        keyName: values.VAULT_TRANSIT_KEY,
+      },
+    };
+  }
   if (issues.length > 0) throw new ConfigError(issues);
 
   return Object.freeze({
@@ -191,6 +259,7 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
     // Off by default locally, so development and tests never depend on the internet.
     breachedPasswordCheck: values.BREACHED_PASSWORD_CHECK ?? isProduction,
     securityHistoryRetentionDays: values.SECURITY_HISTORY_RETENTION_DAYS,
+    encryption: Object.freeze(encryption),
     email: Object.freeze({
       transport: values.EMAIL_TRANSPORT,
       from: values.EMAIL_FROM,

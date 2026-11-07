@@ -2,6 +2,7 @@ import {
   type ChangePasswordRequest,
   currentSessionResponseSchema,
   messageResponseSchema,
+  reauthenticateResponseSchema,
   revokeOtherSessionsResponseSchema,
   securityEventPageSchema,
 } from "@brawzer/contracts";
@@ -36,3 +37,11 @@ export const reportActivity = () =>
 /** Activity plus a fresh session token. */
 export const rotateSession = () =>
   apiRequest("/auth/refresh", { method: "POST", schema: currentSessionResponseSchema });
+
+/** Proves who you are again before a sensitive change. */
+export const reauthenticate = (password: string) =>
+  apiRequest("/auth/reauthenticate", {
+    method: "POST",
+    body: { password },
+    schema: reauthenticateResponseSchema,
+  });

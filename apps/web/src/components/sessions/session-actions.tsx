@@ -13,6 +13,7 @@ import { Button } from "@brawzer/ui/components/button";
 import { useToast } from "@brawzer/ui/components/toast";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useConfirmedRequest } from "@/components/app-shell/confirm-identity";
 import { endOtherSessions, endSession } from "@/lib/api/account";
 import { leaveSignedInArea } from "@/lib/session-channel";
 
@@ -21,12 +22,13 @@ const devicesLabel = (count: number) => (count === 1 ? "1 device" : `${String(co
 /** Signs out one other device. The accessible name includes the device. */
 export function EndSessionButton({ id, device }: { id: string; device: string }) {
   const router = useRouter();
+  const confirmed = useConfirmedRequest();
   const toast = useToast();
   const [pending, setPending] = useState(false);
 
   async function end() {
     setPending(true);
-    const result = await endSession(id);
+    const result = await confirmed(() => endSession(id));
     if (!result.ok && result.status === 401) {
       leaveSignedInArea("expired");
       return;
@@ -57,13 +59,14 @@ export function EndSessionButton({ id, device }: { id: string; device: string })
 /** Signs out every device except this one, after confirming. */
 export function EndOtherSessionsButton({ count }: { count: number }) {
   const router = useRouter();
+  const confirmed = useConfirmedRequest();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
 
   async function confirm() {
     setPending(true);
-    const result = await endOtherSessions();
+    const result = await confirmed(() => endOtherSessions());
     if (!result.ok && result.status === 401) {
       leaveSignedInArea("expired");
       return;

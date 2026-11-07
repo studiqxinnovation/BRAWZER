@@ -7,6 +7,7 @@ import { ConfigError, findInWorkspace, parseConfig } from "./env.js";
 const minimal = {
   DATABASE_URL: "postgres://brawzer:local@127.0.0.1:5433/brawzer",
   REDIS_URL: "redis://127.0.0.1:6380",
+  ENCRYPTION_KEYS: "test-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
 };
 
 const production = {
@@ -15,6 +16,9 @@ const production = {
   WEB_ORIGIN: "https://brawzer.example",
   EMAIL_TRANSPORT: "resend",
   RESEND_API_KEY: "re_not_a_real_key",
+  KEY_PROVIDER: "vault",
+  VAULT_ADDR: "https://vault.internal:8200",
+  VAULT_TOKEN: "not-a-real-token",
 };
 
 function issuesOf(env: NodeJS.ProcessEnv): readonly string[] {
@@ -60,6 +64,43 @@ describe("parseConfig", () => {
 
   it("reports every missing required variable", () => {
     expect(issuesOf({})).toEqual(["DATABASE_URL: is required", "REDIS_URL: is required"]);
+  });
+
+  it("reads local encryption keys, the first one being current", () => {
+    const config = parseConfig(
+      { ...minimal, ENCRYPTION_KEYS: `new-2:${"B".repeat(43)}=, old-1:${"A".repeat(43)}=` },
+      "1",
+    );
+    expect(config.encryption.provider).toBe("local");
+    if (config.encryption.provider !== "local") return;
+    expect(config.encryption.keys.map((key) => key.id)).toEqual(["new-2", "old-1"]);
+  });
+
+  it("rejects malformed keys without echoing them", () => {
+    const issues = issuesOf({ ...minimal, ENCRYPTION_KEYS: "dev:c2hvcnQ=" });
+    expect(issues).toEqual(["ENCRYPTION_KEYS: each entry must be id:base64 with a 256-bit key"]);
+    expect(issues.join()).not.toContain("c2hvcnQ");
+    expect(issuesOf({ ...minimal, ENCRYPTION_KEYS: undefined })).toEqual([
+      "ENCRYPTION_KEYS: is required when KEY_PROVIDER is local",
+    ]);
+  });
+
+  it("requires a key management service in production", () => {
+    expect(
+      issuesOf({ ...production, KEY_PROVIDER: "local", ENCRYPTION_KEYS: minimal.ENCRYPTION_KEYS }),
+    ).toEqual(["KEY_PROVIDER: must be a key management service (vault) in production"]);
+    expect(issuesOf({ ...production, VAULT_TOKEN: undefined })).toEqual([
+      "VAULT_TOKEN: is required when KEY_PROVIDER is vault",
+    ]);
+    expect(parseConfig(production, "1").encryption).toEqual({
+      provider: "vault",
+      vault: {
+        address: "https://vault.internal:8200",
+        token: "not-a-real-token",
+        mount: "transit",
+        keyName: "brawzer",
+      },
+    });
   });
 
   it("rejects URLs with the wrong protocol", () => {
@@ -120,6 +161,7 @@ describe("parseConfig", () => {
     expect(issuesOf({ ...minimal, NODE_ENV: "production" })).toEqual([
       "WEB_ORIGIN: must use https in production",
       "EMAIL_TRANSPORT: must be resend in production",
+      "KEY_PROVIDER: must be a key management service (vault) in production",
     ]);
     expect(issuesOf({ ...production, RESEND_API_KEY: undefined })).toEqual([
       "RESEND_API_KEY: is required when EMAIL_TRANSPORT is resend",

@@ -10,6 +10,8 @@ export { hasMigrations, migrationsFolder } from "./migrations-state.ts";
 export { runMigrations } from "./migrator.ts";
 export * as schema from "./schema/index.ts";
 export type {
+  AuthChallenge,
+  AuthChallengePurpose,
   AuthSession,
   EmailToken,
   EmailTokenPurpose,

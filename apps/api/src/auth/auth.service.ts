@@ -147,7 +147,12 @@ export class AuthService {
       if (!user) return null;
       // Other sign-up links for this address, possibly carrying someone else's password, die now.
       await this.emailTokens.invalidateAll(user.id, ["verify_email"], tx);
-      const issued = await this.sessions.create(user.id, input.keepSignedIn, meta, tx);
+      const issued = await this.sessions.create(
+        user.id,
+        { persistent: input.keepSignedIn, method: "sign_up_link" },
+        meta,
+        tx,
+      );
       return { user, issued };
     });
     if (!result) throw linkInvalid();
@@ -204,7 +209,11 @@ export class AuthService {
     }
     // A browser that was already signed in (perhaps as someone else) leaves that session behind.
     await this.sessions.revokeByToken(presentedToken, "replaced");
-    const issued = await this.sessions.create(user.id, input.keepSignedIn, meta);
+    const issued = await this.sessions.create(
+      user.id,
+      { persistent: input.keepSignedIn, method: "password" },
+      meta,
+    );
     await this.events.record({
       type: "sign_in.succeeded",
       userId: user.id,
@@ -385,6 +394,37 @@ export class AuthService {
     }
     this.email.sendPasswordChanged(user.email, describeUserAgent(meta.userAgent), "other-devices");
     return { issued: await this.sessions.rotate(auth), signedOut };
+  }
+
+  /**
+   * Proves who you are again, for sensitive changes. Wrong passwords count
+   * towards a lockout like sign-in does; success refreshes the session's
+   * "recently confirmed" time for RecentAuthGuard.
+   */
+  async reauthenticate(auth: AuthContext, password: string, meta: RequestMeta): Promise<Date> {
+    const { user, session } = auth;
+    const lockout = await this.limiter.isBlocked(RATE_LIMITS.reauthFailures, user.id);
+    if (!lockout.allowed) throw rateLimited(lockout.retryAfterSeconds);
+
+    const correct = user.passwordHash
+      ? await verifyPassword(user.passwordHash, password)
+      : await burnPasswordCheck(password);
+    if (!correct) {
+      await this.limiter.hit(RATE_LIMITS.reauthFailures, user.id);
+      throw new ApiException("validation_failed", 400, "Check your password.", {
+        details: ["password: That isn’t your password."],
+      });
+    }
+    await this.limiter.reset(RATE_LIMITS.reauthFailures, user.id);
+    const at = await this.sessions.confirmIdentity(session.id);
+    await this.events.record({
+      type: "reauthenticated",
+      userId: user.id,
+      sessionId: session.id,
+      meta,
+      metadata: { method: "password" },
+    });
+    return at;
   }
 
   /** Signs out one of the account's other devices. */

@@ -1,4 +1,7 @@
 import {
+  type ReauthenticateResponse,
+  reauthenticateRequestSchema,
+  reauthenticateResponseSchema,
   changePasswordRequestSchema,
   type CurrentSessionResponse,
   currentSessionResponseSchema,
@@ -42,6 +45,7 @@ import { requestMeta } from "../common/request-meta.js";
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 import { AuthService } from "./auth.service.js";
+import { RECENT_AUTH_SECONDS } from "./recent-auth.guard.js";
 import { type AuthContext, SessionService } from "./session.service.js";
 import { CurrentAuth, PassiveSession, SessionGuard } from "./session.guard.js";
 
@@ -228,6 +232,29 @@ export class AuthController {
       message:
         "If there’s an account for that address, we’ve emailed a link to reset the password.",
     };
+  }
+
+  @Post("reauthenticate")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: reauthenticateResponseSchema })
+  @ApiOperation({
+    summary: "Confirm it's you",
+    description:
+      "Proves who you are again before a sensitive change. Valid for 10 minutes on this session.",
+  })
+  @ApiOkResponse({ description: "Confirmed.", standardSchema: reauthenticateResponseSchema })
+  @ApiBadRequestResponse({ description: "Wrong password." })
+  @ApiTooManyRequestsResponse({ description: "Too many wrong passwords." })
+  async reauthenticate(
+    @Body({ schema: reauthenticateRequestSchema })
+    body: z.output<typeof reauthenticateRequestSchema>,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<ReauthenticateResponse> {
+    const at = await this.auth.reauthenticate(auth, body.password, requestMeta(request));
+    return { confirmedUntil: new Date(at.getTime() + RECENT_AUTH_SECONDS * 1000).toISOString() };
   }
 
   @Post("password/change")

@@ -84,6 +84,7 @@ In production the edge should route `/api/v1` straight to the API, so that
 | Module            | Responsibility                                                                                                                     |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `auth`            | Sign-up, email confirmation, sign-in/out, refresh, password reset and change, signed-in devices (`/auth/sessions`); `SessionGuard` |
+| `crypto`          | Envelope encryption for secrets at rest; key providers: local (development) and Vault/OpenBao Transit                              |
 | `security`        | Shield: reads the account's security history (`/security/events`)                                                                  |
 | `maintenance`     | Retention job: deletes expired security history, ended sessions, used links and abandoned sign-ups                                 |
 | `rate-limit`      | Fixed-window counters in Redis, keyed by hashed subjects                                                                           |
@@ -154,3 +155,4 @@ common in public places.
 - [0005 Session model](adr/0005-session-model.md)
 - [0006 Browser streaming](adr/0006-browser-streaming.md)
 - [0007 Content Security Policy](adr/0007-content-security-policy.md)
+- [0008 Secrets at rest and recent sign-in](adr/0008-secrets-and-step-up.md)

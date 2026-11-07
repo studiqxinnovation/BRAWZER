@@ -4,6 +4,7 @@ import { Skeleton } from "@brawzer/ui/components/skeleton";
 import { Laptop, Monitor, MonitorSmartphone, Smartphone } from "lucide-react";
 import { Panel, Unavailable } from "@/components/app-shell/page";
 import { LocalDate } from "@/components/local-date";
+import { authMethodLabels } from "@/content/app";
 import { serverGet, signInAgain } from "@/lib/server-api";
 import { timeAgo } from "@/lib/time";
 import { EndOtherSessionsButton, EndSessionButton } from "./session-actions";
@@ -40,7 +41,7 @@ function DeviceRow({ session, now }: { session: DeviceSession; now: number }) {
             {session.current ? "Active now" : `Active ${timeAgo(session.lastActiveAt, now)}`}
           </p>
           <p className="text-footnote text-ink-secondary">
-            Signed in <LocalDate iso={session.createdAt} />
+            {authMethodLabels[session.authMethod]} · <LocalDate iso={session.createdAt} />
             {session.ipAddress && <> · IP {session.ipAddress}</>}
           </p>
         </div>
