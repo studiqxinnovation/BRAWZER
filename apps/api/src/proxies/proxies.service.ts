@@ -32,7 +32,7 @@ import type { SecretBox } from "../crypto/secret-box.js";
 import { DATABASE } from "../database/database.module.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
-import { isObviouslyLocal, parseHost } from "./address-policy.js";
+import { isObviouslyLocal, parseHost } from "@brawzer/net-policy";
 import type { ProxyTester } from "./proxy-tester.js";
 
 export const PROXY_TESTER = Symbol.for("brawzer.api.proxy-tester");

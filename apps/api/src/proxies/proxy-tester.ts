@@ -5,7 +5,7 @@ import type { Duplex } from "node:stream";
 import { type ConnectionOptions, connect as tlsConnect } from "node:tls";
 import type { ProxyProtocol, ProxyTestReason } from "@brawzer/contracts";
 import { SocksClient } from "socks";
-import { isPublicAddress, parseHost } from "./address-policy.js";
+import { isPublicAddress, parseHost } from "@brawzer/net-policy";
 
 export type Lookup = (hostname: string) => Promise<readonly { address: string; family: number }[]>;
 
