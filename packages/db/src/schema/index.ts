@@ -3,3 +3,4 @@
  * (`pnpm db:generate`), applied with `pnpm db:migrate`.
  */
 export * from "./auth.ts";
+export * from "./profiles.ts";

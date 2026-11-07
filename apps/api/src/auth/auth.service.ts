@@ -11,6 +11,7 @@ import type { z } from "zod";
 import { ApiException, rateLimited } from "../common/api-exception.js";
 import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
+import { createDefaultProfile } from "../profiles/default-profile.js";
 import { EmailService } from "../email/email.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
@@ -154,6 +155,7 @@ export class AuthService {
         .where(and(eq(schema.users.id, found.user.id), isNull(schema.users.emailVerifiedAt)))
         .returning();
       if (!user) return null;
+      await createDefaultProfile(tx, user.id);
       // Other sign-up links for this address, possibly carrying someone else's password, die now.
       await this.emailTokens.invalidateAll(user.id, ["verify_email"], tx);
       const issued = await this.sessions.create(
@@ -316,6 +318,8 @@ export class AuthService {
         .update(schema.users)
         .set({ passwordHash, emailVerifiedAt: found.user.emailVerifiedAt ?? now, updatedAt: now })
         .where(eq(schema.users.id, found.user.id));
+      // A reset link also confirms an account that was never confirmed.
+      if (found.user.emailVerifiedAt === null) await createDefaultProfile(tx, found.user.id);
       await this.emailTokens.invalidateAll(
         found.user.id,
         ["verify_email", "reset_password", "change_email"],

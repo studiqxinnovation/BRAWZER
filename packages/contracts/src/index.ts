@@ -4,4 +4,5 @@ export * from "./errors.ts";
 export * from "./health.ts";
 export * from "./mfa.ts";
 export * from "./passkeys.ts";
+export * from "./profiles.ts";
 export * from "./security.ts";

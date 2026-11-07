@@ -79,7 +79,7 @@ In production the edge should route `/api/v1` straight to the API, so that
 `TRUST_PROXY` can name the edge as the only source of client addresses (see
 [SECURITY.md](SECURITY.md)).
 
-### API modules (milestones 1.4–2.4)
+### API modules (milestones 1.4–2.5)
 
 | Module            | Responsibility                                                                                                                                                                                                                                               |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -87,6 +87,7 @@ In production the edge should route `/api/v1` straight to the API, so that
 | `crypto`          | Envelope encryption for secrets at rest; key providers: local (development) and Vault/OpenBao Transit                                                                                                                                                        |
 | `security`        | Shield: the protection overview and recommendations (`/security/overview`) and the security history (`/security/events`)                                                                                                                                     |
 | `account`         | Changing the email address, deleting the account, downloading its data (`/account/*`)                                                                                                                                                                        |
+| `profiles`        | Browser profiles: create, rename, recolour, reorder, delete (`/profiles`); the first profile, "Personal", is created when an account is confirmed                                                                                                            |
 | `maintenance`     | Retention job: deletes expired security history, ended sessions, used links, expired challenges, stale known devices and abandoned sign-ups                                                                                                                  |
 | `rate-limit`      | Fixed-window counters in Redis, keyed by hashed subjects                                                                                                                                                                                                     |
 | `email`           | Templates (HTML + text, escaped) and transports: Mailpit, Resend, log                                                                                                                                                                                        |

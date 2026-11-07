@@ -12,6 +12,7 @@ import { DATABASE } from "../database/database.module.js";
 import { EmailService } from "../email/email.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
+import { ProfilesService } from "../profiles/profiles.service.js";
 import { SecurityHistoryService } from "../security/security.service.js";
 
 const logger = new Logger("Account");
@@ -36,6 +37,7 @@ export class AccountService {
     @Inject(MfaService) private readonly mfa: MfaService,
     @Inject(PasskeyService) private readonly passkeys: PasskeyService,
     @Inject(SecurityHistoryService) private readonly history: SecurityHistoryService,
+    @Inject(ProfilesService) private readonly profiles: ProfilesService,
   ) {}
 
   /**
@@ -126,11 +128,12 @@ export class AccountService {
   /** Everything Brawzer holds about the account, except secrets. */
   async export(auth: AuthContext, meta: RequestMeta): Promise<AccountExport> {
     const { user, session } = auth;
-    const [passkeys, mfa, devices, history] = await Promise.all([
+    const [passkeys, mfa, devices, history, profiles] = await Promise.all([
       this.passkeys.list(user.id),
       this.mfa.status(user.id),
       this.sessions.listActive(auth),
       this.history.all(user.id),
+      this.profiles.list(user.id),
     ]);
     await this.events.record({
       type: "data.exported",
@@ -160,7 +163,13 @@ export class AccountService {
         lastActiveAt,
       })),
       securityHistory: history,
-      profiles: [],
+      profiles: profiles.map(({ name, color, engine, createdAt, updatedAt }) => ({
+        name,
+        color,
+        engine,
+        createdAt,
+        updatedAt,
+      })),
       proxies: [],
     };
   }

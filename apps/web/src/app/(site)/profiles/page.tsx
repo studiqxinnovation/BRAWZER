@@ -11,7 +11,9 @@ import {
 } from "lucide-react";
 import type { Metadata } from "next";
 import { CtaBand } from "@/components/site/blocks";
-import { ProfileAvatar, ProfileStack } from "@/components/site/illustrations";
+import { ProfileAvatar } from "@/components/profile-avatar";
+import { ProfileStack } from "@/components/site/illustrations";
+import { profileColorShades } from "@/lib/profiles";
 import { Container, PageHero, SectionIntro, SpecList } from "@/components/site/layout-primitives";
 
 export const metadata: Metadata = {
@@ -71,27 +73,27 @@ const keptApart = [
 
 const ideas = [
   {
-    icon: <ProfileAvatar initial="P" color="#4a5bd4" size="sm" />,
+    icon: <ProfileAvatar initial="P" color={profileColorShades.indigo.hex} size="sm" />,
     title: "Personal",
     description: "Email, banking and social accounts, kept away from everything else.",
   },
   {
-    icon: <ProfileAvatar initial="W" color="#237a6f" size="sm" />,
+    icon: <ProfileAvatar initial="W" color={profileColorShades.teal.hex} size="sm" />,
     title: "Work",
     description: "Company tools and sign-ins, with your employer’s proxy if you need one.",
   },
   {
-    icon: <ProfileAvatar initial="R" color="#a2552a" size="sm" />,
+    icon: <ProfileAvatar initial="R" color={profileColorShades.copper.hex} size="sm" />,
     title: "Research",
     description: "Signed out of everything, browsing through a proxy in another country.",
   },
   {
-    icon: <ProfileAvatar initial="S" color="#7b45b8" size="sm" />,
+    icon: <ProfileAvatar initial="S" color={profileColorShades.violet.hex} size="sm" />,
     title: "Shopping",
     description: "Store accounts and loyalty cards, with third-party cookies blocked.",
   },
   {
-    icon: <ProfileAvatar initial="D" color="#2b4a8b" size="sm" />,
+    icon: <ProfileAvatar initial="D" color={profileColorShades.navy.hex} size="sm" />,
     title: "Development",
     description: "Test sites and developer extensions, separate from your real accounts.",
   },

@@ -13,6 +13,7 @@ export const apiErrorCodeSchema = z.enum([
   "not_found",
   "method_not_allowed",
   "conflict",
+  "limit_reached",
   "payload_too_large",
   "unsupported_media_type",
   "rate_limited",

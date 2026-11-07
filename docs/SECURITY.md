@@ -25,7 +25,7 @@ exposure; it cannot remove these risks:
 Brawzer's marketing and interface must never claim to be "100% invisible",
 "zero footprint" or "immune to malware".
 
-## Controls in place today (Phase 1, and Phase 2 milestones 2.1–2.4)
+## Controls in place today (Phase 1, and Phase 2 milestones 2.1–2.5)
 
 ### Web app
 
@@ -134,6 +134,8 @@ report it, and anything that isn't a valid IP address is discarded.
 **Downloading your data.** Needs a recent sign-in. A JSON file with the account, two-factor status, passkey names, signed-in devices and full security history. It never contains password hashes, session tokens, two-factor secrets or recovery codes (a test checks the raw response). The download itself is recorded in the history.
 
 **New-device alerts.** Each sign-in's browser and OS family plus network (IPv4 /24, IPv6 /48) is hashed into a known-device key, kept for 90 days after it was last seen. A sign-in from a key the account hasn't used sends an email and appears in Shield with a "This wasn't me" path to Sessions. An account's first sign-in never alerts. It's a notice, not a barrier: see Remaining risks.
+
+**Profiles.** Each account's profiles are only ever read or changed through queries scoped to that account (another account's profile is "not found"). Names are limited to 40 characters and can't contain control characters or text-direction overrides that could disguise them. Creating and deleting take a lock on the account, so simultaneous requests can't exceed the temporary limit of 10 or delete the last profile. Profiles hold no browsing data until Phases 3 and 4; creating and deleting them is recorded in the security history.
 
 **Shield overview.** Shows how the account is protected (passkeys, two-factor, signed-in devices, failed attempts in the last 7 days), recommends what's missing, and lists sign-ins from new devices in the last 30 days.
 

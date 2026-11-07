@@ -33,7 +33,7 @@ export const appNav: readonly AppNavGroup[] = [
     label: "Browse",
     items: [
       { href: "/app/browser", label: "Browser", icon: AppWindow, status: "planned" },
-      { href: "/app/profiles", label: "Profiles", icon: Layers, status: "planned" },
+      { href: "/app/profiles", label: "Profiles", icon: Layers, status: "available" },
       { href: "/app/drive", label: "Drive", icon: HardDriveDownload, status: "planned" },
       { href: "/app/proxy", label: "Proxy", icon: Globe, status: "planned" },
       { href: "/app/extensions", label: "Extensions", icon: Puzzle, status: "planned" },
@@ -75,20 +75,6 @@ export const plannedModules = {
       "Session gateway with single-use stream tickets that expire within 60 seconds",
       "Orchestrator that starts one container per session (Docker locally, Kubernetes later)",
       "Chromium runtime streamed over a secure WebSocket (3a), then WebRTC with a TURN server (3b)",
-    ],
-  },
-  profiles: {
-    title: "Profiles",
-    lede: "Separate browsers for work, personal life, research and anything else. Each keeps its own cookies, history, extensions and proxy.",
-    milestone: "Phase 2",
-    plans: [
-      "Create, rename, colour and delete profiles.",
-      "Each profile’s browsing data is isolated from the others.",
-      "Profiles live in your account, so they follow you to any computer.",
-    ],
-    requires: [
-      "Profile records and API (Phase 2)",
-      "Encrypted storage volume for each profile’s browser data (Phase 4)",
     ],
   },
   drive: {

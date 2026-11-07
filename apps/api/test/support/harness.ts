@@ -25,6 +25,11 @@ export interface TestBrowser {
     payload?: object,
     headers?: Record<string, string>,
   ): Promise<LightMyRequestResponse>;
+  put(
+    path: string,
+    payload?: object,
+    headers?: Record<string, string>,
+  ): Promise<LightMyRequestResponse>;
   delete(path: string, headers?: Record<string, string>): Promise<LightMyRequestResponse>;
   session: string | undefined;
 }
@@ -69,7 +74,7 @@ export async function createHarness(options: { ipPrefix: string; env?: NodeJS.Pr
     let session: string | undefined;
 
     async function send(
-      method: "GET" | "POST" | "PATCH" | "DELETE",
+      method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
       path: string,
       payload?: object,
       headers: Record<string, string> = {},
@@ -95,6 +100,7 @@ export async function createHarness(options: { ipPrefix: string; env?: NodeJS.Pr
       get: (path, headers) => send("GET", path, undefined, headers),
       post: (path, payload, headers) => send("POST", path, payload, headers),
       patch: (path, payload, headers) => send("PATCH", path, payload, headers),
+      put: (path, payload, headers) => send("PUT", path, payload, headers),
       delete: (path, headers) => send("DELETE", path, undefined, headers),
       get session() {
         return session;

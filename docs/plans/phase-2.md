@@ -1,7 +1,7 @@
 # Phase 2 plan: identity, profiles and proxies
 
 - **Status:** Approved 2026-11-07, with every decision taken as recommended (table at the end).
-- **Progress:** 2.1, 2.2, 2.3 and 2.4 done.
+- **Progress:** 2.1, 2.2, 2.3, 2.4 and 2.5 done.
 - **Date:** 2026-11-07
 - **Builds on:** Phase 1 ([review](../reviews/phase-1.md)).
 
@@ -132,6 +132,7 @@ Each milestone ships on its own, with tests, docs and a commit, like Phase 1.
   - Deleting asks for confirmation.
   - The page states that browsing in a profile arrives in Phase 3.
 - **Tests:** API, integration and browser.
+- **Built as planned, plus:** names are unique ignoring case and can't contain control characters or text-direction overrides; an account always keeps at least one profile; changes that depend on the count lock the account row, so simultaneous requests can't pass the limit or delete the last profile; accounts confirmed earlier were given "Personal" by the migration. The proxy column arrives with proxies in 2.6.
 
 ### 2.6 Proxies
 
@@ -189,21 +190,21 @@ production-configuration tests, and `docs/reviews/phase-2.md`.
 
 ## API additions
 
-| Endpoint                                                                                              | Purpose                                                          |
-| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `POST /api/v1/auth/reauthenticate`                                                                    | Confirm it's you (password, plus code if two-factor; or passkey) |
-| `POST /api/v1/auth/passkeys/registration/options`, `…/verify`                                         | Add a passkey                                                    |
-| `POST /api/v1/auth/passkeys/authentication/options`, `…/verify`                                       | Sign in with a passkey                                           |
-| `GET`, `PATCH`, `DELETE /api/v1/auth/passkeys[/:id]`                                                  | Manage passkeys                                                  |
-| `POST /api/v1/auth/mfa/totp/setup`, `…/confirm`; `DELETE /api/v1/auth/mfa/totp`                       | Two-factor setup and removal                                     |
-| `POST /api/v1/auth/mfa/verify`                                                                        | Second sign-in step (code or recovery code)                      |
-| `POST /api/v1/auth/mfa/recovery-codes`                                                                | New recovery codes                                               |
-| `POST /api/v1/account/email`, `POST /api/v1/account/email/verify`                                     | Change email                                                     |
-| `DELETE /api/v1/account`, `GET /api/v1/account/export`                                                | Delete account, download data                                    |
-| `GET /api/v1/security/overview`                                                                       | Shield recommendations and alerts                                |
-| `GET`, `POST /api/v1/profiles`; `PATCH`, `DELETE /api/v1/profiles/:id`                                | Profiles                                                         |
-| `GET`, `POST /api/v1/proxies`; `PATCH`, `DELETE /api/v1/proxies/:id`; `POST /api/v1/proxies/:id/test` | Proxies                                                          |
-| `POST /api/v1/auth/phone-approval/*`                                                                  | QR approval (2.7, if approved)                                   |
+| Endpoint                                                                                              | Purpose                                                                         |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `POST /api/v1/auth/reauthenticate`                                                                    | Confirm it's you (password, plus code if two-factor; or passkey)                |
+| `POST /api/v1/auth/passkeys/registration/options`, `…/verify`                                         | Add a passkey                                                                   |
+| `POST /api/v1/auth/passkeys/authentication/options`, `…/verify`                                       | Sign in with a passkey                                                          |
+| `GET`, `PATCH`, `DELETE /api/v1/auth/passkeys[/:id]`                                                  | Manage passkeys                                                                 |
+| `POST /api/v1/auth/mfa/totp/setup`, `…/confirm`; `DELETE /api/v1/auth/mfa/totp`                       | Two-factor setup and removal                                                    |
+| `POST /api/v1/auth/mfa/verify`                                                                        | Second sign-in step (code or recovery code)                                     |
+| `POST /api/v1/auth/mfa/recovery-codes`                                                                | New recovery codes                                                              |
+| `POST /api/v1/account/email`, `POST /api/v1/account/email/confirm`                                    | Change email                                                                    |
+| `POST /api/v1/account/delete`, `GET /api/v1/account/export`                                           | Delete account (POST, because it carries the typed confirmation), download data |
+| `GET /api/v1/security/overview`                                                                       | Shield recommendations and alerts                                               |
+| `GET`, `POST /api/v1/profiles`; `PATCH`, `DELETE /api/v1/profiles/:id`; `PUT /api/v1/profiles/order`  | Profiles                                                                        |
+| `GET`, `POST /api/v1/proxies`; `PATCH`, `DELETE /api/v1/proxies/:id`; `POST /api/v1/proxies/:id/test` | Proxies                                                                         |
+| `POST /api/v1/auth/phone-approval/*`                                                                  | QR approval (2.7, if approved)                                                  |
 
 ## New dependencies
 

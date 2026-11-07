@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -8,17 +7,10 @@ import {
   pgEnum,
   pgTable,
   text,
-  timestamp,
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
-
-/** Time-ordered UUIDs (PostgreSQL 18's built-in uuidv7) keep indexes compact. */
-const id = () =>
-  uuid()
-    .primaryKey()
-    .default(sql`uuidv7()`);
-const timestamptz = () => timestamp({ withTimezone: true });
+import { id, timestamptz } from "./columns.ts";
 
 export const users = pgTable("users", {
   id: id(),

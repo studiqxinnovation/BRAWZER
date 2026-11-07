@@ -25,7 +25,7 @@ const unexpected: ApiFailure = {
 export async function apiRequest<T>(
   path: `/${string}`,
   options: {
-    method?: "GET" | "POST" | "PATCH" | "DELETE";
+    method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
     body?: unknown;
     schema?: z.ZodType<T>;
   } = {},

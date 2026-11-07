@@ -43,6 +43,13 @@
       "when": 1794049817324,
       "tag": "0005_account_controls",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794051951091,
+      "tag": "0006_profiles",
+      "breakpoints": true
     }
   ]
 }

@@ -21,6 +21,8 @@ import {
   UserRound,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { ProfileAvatar } from "@/components/profile-avatar";
+import { profileColorShades } from "@/lib/profiles";
 
 /* ── How isolation works ─────────────────────────────────────────────── */
 
@@ -107,44 +109,26 @@ export function IsolationDiagram() {
 /* ── Profiles ────────────────────────────────────────────────────────── */
 
 export const sampleProfiles = [
-  { initial: "P", name: "Personal", detail: "4 tabs · Chromium", color: "#4a5bd4" },
-  { initial: "W", name: "Work", detail: "Proxy · Frankfurt", color: "#237a6f" },
+  {
+    initial: "P",
+    name: "Personal",
+    detail: "4 tabs · Chromium",
+    color: profileColorShades.indigo.hex,
+  },
+  { initial: "W", name: "Work", detail: "Proxy · Frankfurt", color: profileColorShades.teal.hex },
   {
     initial: "R",
     name: "Research",
     detail: "Proxy · Tokyo · signed out of everything",
-    color: "#a2552a",
+    color: profileColorShades.copper.hex,
   },
   {
     initial: "S",
     name: "Shopping",
     detail: "2 tabs · third-party cookies blocked",
-    color: "#7b45b8",
+    color: profileColorShades.violet.hex,
   },
 ] as const;
-
-export function ProfileAvatar({
-  initial,
-  color,
-  size = "md",
-}: {
-  initial: string;
-  color: string;
-  size?: "sm" | "md";
-}) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-full font-semibold text-white",
-        size === "md" ? "size-9 text-callout" : "size-6 text-caption",
-      )}
-      style={{ backgroundColor: color }}
-    >
-      {initial}
-    </span>
-  );
-}
 
 /** Illustration of the profile switcher. */
 export function ProfileStack({ className }: { className?: string }) {

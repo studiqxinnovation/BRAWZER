@@ -15,6 +15,7 @@ export type {
   AuthSession,
   EmailToken,
   EmailTokenPurpose,
+  ProfileRow,
   SecurityEventType,
   TotpFactor,
   User,
@@ -22,4 +23,4 @@ export type {
 } from "./schema/index.ts";
 // Query operators, re-exported so every service builds queries with the same
 // drizzle-orm instance as the schema (two copies would not type-check together).
-export { and, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
+export { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";

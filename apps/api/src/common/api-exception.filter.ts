@@ -29,6 +29,7 @@ const defaultMessages: Record<ApiErrorCode, string> = {
   not_found: "We couldn't find what you were looking for.",
   method_not_allowed: "That action isn't supported here.",
   conflict: "That conflicts with the current state. Refresh and try again.",
+  limit_reached: "You’ve reached the limit for this.",
   payload_too_large: "The request is too large.",
   unsupported_media_type: "That content type isn't supported.",
   rate_limited: "Too many requests. Wait a moment and try again.",
