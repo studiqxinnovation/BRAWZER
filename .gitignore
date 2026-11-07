@@ -36,3 +36,6 @@ playwright/.cache/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Staging secrets (see infra/staging/staging.env.example)
+infra/staging/staging.env

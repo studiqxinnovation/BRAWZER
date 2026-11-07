@@ -1,0 +1,15 @@
+# Only source goes into image builds: never local secrets, dependencies or
+# build output from this machine.
+.git
+.env
+.env.*
+!.env.example
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/test-results
+**/playwright-report
+**/coverage
+**/*.log
+**/.DS_Store
