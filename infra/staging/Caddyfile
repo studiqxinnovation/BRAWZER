@@ -1,0 +1,21 @@
+# Staging front door: HTTPS for brawzer.localhost with certificates from
+# Caddy's own local authority. In production, use the real domain (Caddy then
+# gets publicly trusted certificates automatically) and remove `tls internal`.
+{
+	admin off
+}
+
+brawzer.localhost {
+	tls internal
+	encode zstd gzip
+
+	# API calls go straight to the API, so it sees the client address from
+	# this proxy only (TRUST_PROXY) and the web server never relays them.
+	handle /api/v1/* {
+		reverse_proxy api:4100
+	}
+
+	handle {
+		reverse_proxy web:3100
+	}
+}

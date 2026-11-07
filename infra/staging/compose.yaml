@@ -1,0 +1,160 @@
+# Production-like staging stack: the real images behind HTTPS, with production
+# configuration. Not for real users or data: OpenBao runs in dev mode as a
+# stand-in for a managed key service, so its keys live in memory and secrets
+# encrypted with them become unreadable when it restarts.
+#
+#   cp infra/staging/staging.env.example infra/staging/staging.env   # fill in
+#   docker compose -f infra/staging/compose.yaml --env-file infra/staging/staging.env up -d --build --wait
+#   open https://brawzer.localhost:8443   (trust Caddy's local CA, or accept the warning)
+name: brawzer-staging
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp"]
+
+x-api-image: &api-image
+  image: brawzer-api:staging
+  build:
+    context: ../..
+    dockerfile: apps/api/Dockerfile
+
+services:
+  postgres:
+    image: postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: brawzer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in staging.env}
+      POSTGRES_DB: brawzer
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brawzer -d brawzer"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [staging]
+
+  redis:
+    image: valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+    restart: unless-stopped
+    command: ["valkey-server", "--appendonly", "yes", "--save", ""]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [staging]
+
+  # Stand-in for a managed key service (see the note at the top).
+  openbao:
+    image: openbao/openbao:2.6.5@sha256:09f1eaaee351c329d75a5a89654d6e1ad4792998650c3cbf0c3513a76d9d9b6e
+    restart: unless-stopped
+    command:
+      - server
+      - -dev
+      - -dev-root-token-id=${VAULT_TOKEN:?set VAULT_TOKEN in staging.env}
+      - -dev-listen-address=0.0.0.0:8200
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+    healthcheck:
+      test: ["CMD", "bao", "status"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [staging]
+
+  # One-off: enables Transit and creates Brawzer's key-encryption key.
+  openbao-init:
+    <<: *api-image
+    command: ["node", "/scripts/init-openbao.mjs"]
+    environment:
+      VAULT_ADDR: http://openbao:8200
+      VAULT_TOKEN: ${VAULT_TOKEN}
+    volumes:
+      - ../scripts/init-openbao.mjs:/scripts/init-openbao.mjs:ro
+    depends_on:
+      openbao: { condition: service_healthy }
+    restart: "no"
+    networks: [staging]
+
+  # One-off per release: database migrations, from the API image.
+  migrate:
+    <<: [*api-image, *hardened]
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://brawzer:${POSTGRES_PASSWORD}@postgres:5432/brawzer
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+    networks: [staging]
+
+  api:
+    <<: [*api-image, *hardened]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      WEB_ORIGIN: https://brawzer.localhost:${STAGING_PORT:-8443}
+      DATABASE_URL: postgres://brawzer:${POSTGRES_PASSWORD}@postgres:5432/brawzer
+      REDIS_URL: redis://redis:6379
+      EMAIL_TRANSPORT: resend
+      RESEND_API_KEY: ${RESEND_API_KEY:?set RESEND_API_KEY in staging.env}
+      EMAIL_FROM: ${EMAIL_FROM}
+      KEY_PROVIDER: vault
+      VAULT_ADDR: http://openbao:8200
+      VAULT_TOKEN: ${VAULT_TOKEN}
+      PROXY_TEST_URL: ${PROXY_TEST_URL:?set PROXY_TEST_URL in staging.env}
+      # Only the front door may report client addresses.
+      TRUST_PROXY: 172.31.250.10
+    depends_on:
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+      openbao-init: { condition: service_completed_successfully }
+    networks: [staging]
+
+  web:
+    <<: *hardened
+    image: brawzer-web:staging
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_SITE_URL: https://brawzer.localhost:${STAGING_PORT:-8443}
+        API_INTERNAL_URL: http://api:4100
+    restart: unless-stopped
+    environment:
+      # Server-side rendering reads the API directly on the internal network.
+      API_INTERNAL_URL: http://api:4100
+    tmpfs: ["/tmp", "/app/apps/web/.next/cache"]
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [staging]
+
+  caddy:
+    image: caddy:2.11.9-alpine@sha256:0bbb055bda6793c999bde78b1b5ce3e89f829fb031af2cf50056ea1246559fee
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${STAGING_PORT:-8443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      web: { condition: service_healthy }
+    networks:
+      staging:
+        ipv4_address: 172.31.250.10
+
+networks:
+  staging:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:

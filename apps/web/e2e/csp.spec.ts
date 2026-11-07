@@ -20,6 +20,10 @@ async function watchViolations(page: Page): Promise<() => Promise<string[]>> {
     const seen: string[] = [];
     (window as unknown as { __violations: string[] }).__violations = seen;
     document.addEventListener("securitypolicyviolation", (event) => {
+      // Zod probes `Function("")` once (inside try/catch) to detect strict
+      // CSP and take its no-eval path. The browser still reports it, with
+      // an empty sample. Real evaluated code always carries a sample.
+      if (event.blockedURI === "eval" && event.sample === "") return;
       seen.push(`${event.violatedDirective} ${event.blockedURI}`);
     });
   });

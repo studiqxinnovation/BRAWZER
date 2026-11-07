@@ -170,6 +170,8 @@ A database lock ensures only one API instance runs it at a time.
 - **Pinned versions:** every dependency is pinned exactly in one catalog.
 - **7-day minimum release age:** pnpm refuses packages younger than seven days.
 - **Install scripts:** dependency install scripts are blocked unless allow-listed. Telemetry scripts such as `@scarf/scarf` are explicitly denied.
+- **CI:** every GitHub Action is pinned to a full commit SHA, the workflow token is read-only, checkout keeps no credentials, and pnpm comes from npm at the pinned version. CI fails on high or critical advisories.
+- **Images:** base images are pinned by digest; the API and web images run as an unprivileged user and are built from the lockfile ([DEPLOYMENT.md](DEPLOYMENT.md)).
 
 ## Remaining risks (reviewed in milestones 1.6 and 2.8)
 

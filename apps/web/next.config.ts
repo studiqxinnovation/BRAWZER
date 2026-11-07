@@ -59,6 +59,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // A self-contained server for container images (apps/web/Dockerfile).
+  output: "standalone",
+  outputFileTracingRoot: workspaceRoot,
   reactStrictMode: true,
   poweredByHeader: false,
   typedRoutes: true,

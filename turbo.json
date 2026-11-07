@@ -29,5 +29,6 @@
       "dependsOn": ["^build"],
       "cache": false
     }
-  }
+  },
+  "globalEnv": ["BRAWZER_DEV_PAGES"]
 }
