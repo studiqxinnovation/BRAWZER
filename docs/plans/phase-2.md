@@ -1,7 +1,7 @@
 # Phase 2 plan: identity, profiles and proxies
 
 - **Status:** Approved 2026-11-07, with every decision taken as recommended (table at the end).
-- **Progress:** 2.1 to 2.6 done.
+- **Progress:** 2.1 to 2.6 and 2.8 done; 2.7 not built ([review](../reviews/phase-2.md)).
 - **Date:** 2026-11-07
 - **Builds on:** Phase 1 ([review](../reviews/phase-1.md)).
 
@@ -156,7 +156,7 @@ Each milestone ships on its own, with tests, docs and a commit, like Phase 1.
 
 ### 2.7 Sign in with your phone (QR approval)
 
-_Build only if you approve it._
+_Approved, but not built in Phase 2. Not scheduled yet._
 
 - **For:** public computers without Bluetooth, which can't use the phone-passkey option. That's common on library and café PCs.
 - **Flow:**
@@ -168,7 +168,7 @@ _Build only if you approve it._
 - **Threat: QR-login phishing**, where an attacker shows you _their_ code. Defences: number matching, device details, 2-minute single-use requests, rate limits, a security event and an email.
 - **Tests:** integration and browser tests with two browser contexts.
 
-### 2.8 Phase 2 review
+### 2.8 Phase 2 review (done: [docs/reviews/phase-2.md](../reviews/phase-2.md))
 
 Security review of the new surfaces (passkeys, two-factor, account controls,
 proxy tests), threat-model update, dependency audit, extended

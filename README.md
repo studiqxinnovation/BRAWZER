@@ -6,13 +6,12 @@ Brawzer is a cloud browser platform. The browser runs in Brawzer's cloud; the
 computer in front of you (at a café, library or hotel) is only a window to it.
 Profiles, history and downloads stay with your account, not on the machine.
 
-> **Status: Phase 1 complete; Phase 2 in progress** (milestones 2.1–2.6 done:
-> encrypted secrets, passkeys, two-factor authentication, account controls and
-> alerts, profiles, proxies). Next: phone sign-in by QR code, then the Phase 2
-> review. There
-> is no cloud browser yet; it is built in Phase 3. See
-> [the Phase 2 plan](docs/plans/phase-2.md), [the Phase 1 review](docs/reviews/phase-1.md)
-> and [the architecture](docs/ARCHITECTURE.md).
+> **Status: Phases 1 and 2 complete** (Phase 2: encrypted secrets, passkeys,
+> two-factor authentication, account controls and alerts, profiles, proxies;
+> phone sign-in by QR code was not built). There is no cloud browser yet; it is
+> built in Phase 3. See [the Phase 2 review](docs/reviews/phase-2.md),
+> [the Phase 1 review](docs/reviews/phase-1.md) and
+> [the architecture](docs/ARCHITECTURE.md).
 
 ---
 

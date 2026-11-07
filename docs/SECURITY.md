@@ -25,7 +25,7 @@ exposure; it cannot remove these risks:
 Brawzer's marketing and interface must never claim to be "100% invisible",
 "zero footprint" or "immune to malware".
 
-## Controls in place today (Phase 1, and Phase 2 milestones 2.1–2.6)
+## Controls in place today (Phases 1 and 2)
 
 ### Web app
 
@@ -171,10 +171,11 @@ A database lock ensures only one API instance runs it at a time.
 - **7-day minimum release age:** pnpm refuses packages younger than seven days.
 - **Install scripts:** dependency install scripts are blocked unless allow-listed. Telemetry scripts such as `@scarf/scarf` are explicitly denied.
 
-## Remaining risks (reviewed in milestone 1.6)
+## Remaining risks (reviewed in milestones 1.6 and 2.8)
 
-The Phase 1 security review ([docs/reviews/phase-1.md](reviews/phase-1.md))
-closed most earlier gaps. These remain, deliberately:
+The Phase 1 and Phase 2 security reviews ([phase 1](reviews/phase-1.md),
+[phase 2](reviews/phase-2.md)) closed most earlier gaps. These remain,
+deliberately:
 
 - **Public pages still allow inline scripts.** The prerendered public pages (home, product, pricing and so on) keep `script-src 'self' 'unsafe-inline'`, because per-request nonces can't be combined with prerendering. They render no user data or input. Account pages and the signed-in app use the strict policy ([ADR 0007](adr/0007-content-security-policy.md)).
 - **Lockout can be triggered by others.** Someone who knows your address can lock password sign-in for 15 minutes by guessing wrong. Password reset still works. Passkeys (Phase 2) remove the problem.
@@ -193,7 +194,7 @@ closed most earlier gaps. These remain, deliberately:
 
 | When | Control                                                                                                                                                                                                        |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2    | Phone sign-in by QR code (2.7)                                                                                                                                                                                 |
+| 2    | Phone sign-in by QR code for computers without Bluetooth (approved, not scheduled)                                                                                                                             |
 | 3    | One isolated container per session, Chromium sandbox on, 60-second single-use stream tickets, gateway-enforced revocation and idle lock                                                                        |
 | 4    | Encryption at rest per profile, download scanning, signed short-lived export links                                                                                                                             |
 | 5    | Isolated egress service for proxy tests and browsing traffic, private and metadata address blocking at the network level, WebRTC and DNS leak prevention, "confirm it's you" before changing a profile's proxy |

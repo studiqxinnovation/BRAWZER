@@ -208,6 +208,28 @@ describe("parseConfig", () => {
     ]);
   });
 
+  it("keeps every protection on in a complete production configuration", () => {
+    const config = parseConfig(production, "1");
+    expect(config).toMatchObject({
+      isProduction: true,
+      secureCookies: true,
+      apiDocsEnabled: false,
+      rateLimitScale: 1,
+      breachedPasswordCheck: true,
+      trustProxy: false,
+      allowedOrigins: ["https://brawzer.example"],
+      proxyTests: { url: "https://echo.brawzer.example/ip", allowPrivate: false },
+      webauthn: { rpId: "brawzer.example", origins: ["https://brawzer.example"] },
+      email: { transport: "resend" },
+    });
+    expect(config.encryption.provider).toBe("vault");
+    // Development conveniences can't be switched back on.
+    expect(parseConfig({ ...production, RATE_LIMIT_SCALE: "50" }, "1").rateLimitScale).toBe(1);
+    expect(issuesOf({ ...production, KEY_PROVIDER: "local" })).toContain(
+      "KEY_PROVIDER: must be a key management service (vault) in production",
+    );
+  });
+
   it("delivers email to Mailpit by default in development", () => {
     expect(parseConfig(minimal, "1").email).toEqual({
       transport: "mailpit",
