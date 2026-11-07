@@ -6,7 +6,9 @@ import {
   type CurrentSessionResponse,
   currentSessionResponseSchema,
   emailRequestSchema,
+  type LoginResponse,
   loginRequestSchema,
+  loginResponseSchema,
   type MessageResponse,
   messageResponseSchema,
   registerRequestSchema,
@@ -115,13 +117,16 @@ export class AuthController {
 
   @Post("login")
   @HttpCode(HttpStatus.OK)
-  @SerializeOptions({ schema: currentSessionResponseSchema })
+  @SerializeOptions({ schema: loginResponseSchema })
   @ApiOperation({
     summary: "Sign in",
     description:
-      "Sets the session cookie. Without keepSignedIn the cookie ends with the browser and the session ends after 30 idle minutes.",
+      "Sets the session cookie, or, for accounts with two-factor authentication, returns a ticket for POST /auth/mfa/verify. Without keepSignedIn the cookie ends with the browser and the session ends after 30 idle minutes.",
   })
-  @ApiOkResponse({ description: "Signed in.", standardSchema: currentSessionResponseSchema })
+  @ApiOkResponse({
+    description: "Signed in, or a two-factor challenge.",
+    standardSchema: loginResponseSchema,
+  })
   @ApiUnauthorizedResponse({ description: "Email or password is incorrect." })
   @ApiForbiddenResponse({
     description: "The email address isn't confirmed yet; a new link was sent.",
@@ -131,14 +136,24 @@ export class AuthController {
     @Body({ schema: loginRequestSchema }) body: z.output<typeof loginRequestSchema>,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
-  ): Promise<CurrentSessionResponse> {
-    const { user, issued } = await this.auth.login(
+  ): Promise<LoginResponse> {
+    const result = await this.auth.login(
       body,
       requestMeta(request),
       this.sessions.readToken(request),
     );
-    this.sessions.setCookie(reply, issued);
-    return { account: accountOf(user), session: this.sessions.describe(issued.session) };
+    if ("mfa" in result) {
+      return {
+        mfaRequired: true,
+        ticket: result.mfa.ticket,
+        expiresAt: result.mfa.expiresAt.toISOString(),
+      };
+    }
+    this.sessions.setCookie(reply, result.issued);
+    return {
+      account: accountOf(result.user),
+      session: this.sessions.describe(result.issued.session),
+    };
   }
 
   @Post("logout")
@@ -253,7 +268,7 @@ export class AuthController {
     @CurrentAuth() auth: AuthContext,
     @Req() request: FastifyRequest,
   ): Promise<ReauthenticateResponse> {
-    const at = await this.auth.reauthenticate(auth, body.password, requestMeta(request));
+    const at = await this.auth.reauthenticate(auth, body.password, body.code, requestMeta(request));
     return { confirmedUntil: new Date(at.getTime() + RECENT_AUTH_SECONDS * 1000).toISOString() };
   }
 

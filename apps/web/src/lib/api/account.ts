@@ -39,9 +39,9 @@ export const rotateSession = () =>
   apiRequest("/auth/refresh", { method: "POST", schema: currentSessionResponseSchema });
 
 /** Proves who you are again before a sensitive change. */
-export const reauthenticate = (password: string) =>
+export const reauthenticate = (password: string, code?: string) =>
   apiRequest("/auth/reauthenticate", {
     method: "POST",
-    body: { password },
+    body: { password, ...(code ? { code } : {}) },
     schema: reauthenticateResponseSchema,
   });

@@ -13,6 +13,7 @@ import { requestPasskey, usePasskeysSupported } from "@/lib/passkeys";
 import { fieldErrorsFromDetails, fieldErrorsFromIssues } from "@/lib/api/client";
 import { safeNextPath } from "@/lib/redirect";
 import { focusFirstInvalid, KeepSignedIn, TextLink } from "./auth-ui";
+import { SecondStep } from "./second-step";
 
 interface Notice {
   tone: "danger" | "info";
@@ -27,6 +28,7 @@ export function SignInForm() {
   const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [pending, setPending] = useState(false);
   const [passkeyPending, setPasskeyPending] = useState(false);
+  const [ticket, setTicket] = useState<string | null>(null);
   const passkeysSupported = usePasskeysSupported();
 
   function goToNext() {
@@ -81,6 +83,11 @@ export function SignInForm() {
     setPending(true);
     const result = await login(parsed.data);
     if (result.ok) {
+      if ("mfaRequired" in result.data) {
+        setPending(false);
+        setTicket(result.data.ticket);
+        return;
+      }
       goToNext();
       return;
     }
@@ -95,6 +102,19 @@ export function SignInForm() {
     } else {
       setNotice({ tone: "danger", message });
     }
+  }
+
+  if (ticket) {
+    return (
+      <SecondStep
+        ticket={ticket}
+        onSignedIn={goToNext}
+        onRestart={(message) => {
+          setTicket(null);
+          setNotice({ tone: "danger", message });
+        }}
+      />
+    );
   }
 
   return (

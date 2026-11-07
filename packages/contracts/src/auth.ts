@@ -109,6 +109,8 @@ export const reauthenticateRequestSchema = z.object({
     .string({ error: "Enter your password." })
     .min(1, "Enter your password.")
     .max(PASSWORD_MAX_LENGTH, "Enter your password."),
+  /** Required when two-factor authentication is on. */
+  code: z.string().trim().max(40).optional(),
 });
 
 export const reauthenticateResponseSchema = z.object({

@@ -1,4 +1,4 @@
-import { passkeyListSchema } from "@brawzer/contracts";
+import { mfaStatusSchema, passkeyListSchema } from "@brawzer/contracts";
 import { Badge } from "@brawzer/ui/components/badge";
 import { DevState } from "@brawzer/ui/components/dev-state";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { ChangePasswordForm } from "@/components/account/change-password-form";
 import { PasskeysSection } from "@/components/account/passkeys-section";
+import { TwoFactorSection } from "@/components/account/two-factor-section";
 import {
   PageContainer,
   PageHeader,
@@ -69,6 +70,16 @@ async function Passkeys() {
   );
 }
 
+async function TwoFactor() {
+  const [state, status] = await Promise.all([
+    getSession(),
+    serverGet("/auth/mfa", mfaStatusSchema),
+  ]);
+  if (state.kind === "signed-out" || status.kind === "signed-out") signInAgain("/app/account");
+  if (state.kind === "unavailable" || status.kind === "unavailable") return <Unavailable />;
+  return <TwoFactorSection status={status.data} sharedComputer={!state.data.session.persistent} />;
+}
+
 export default function AccountPage() {
   return (
     <PageContainer>
@@ -88,6 +99,15 @@ export default function AccountPage() {
           <Panel className="p-5 sm:p-6">
             <Suspense fallback={<Skeleton className="h-24 w-full rounded-lg" />}>
               <Passkeys />
+            </Suspense>
+          </Panel>
+        </section>
+
+        <section aria-labelledby="two-factor-heading" className="flex flex-col gap-4">
+          <SectionHeading id="two-factor-heading">Two-factor authentication</SectionHeading>
+          <Panel className="p-5 sm:p-6">
+            <Suspense fallback={<Skeleton className="h-20 w-full rounded-lg" />}>
+              <TwoFactor />
             </Suspense>
           </Panel>
         </section>
@@ -121,7 +141,6 @@ export default function AccountPage() {
           title="More account controls aren’t available yet"
           milestone="Phase 2"
           requires={[
-            "Two-factor authentication codes",
             "Changing your email address",
             "Deleting your account",
             "Plans and storage (Phase 6)",

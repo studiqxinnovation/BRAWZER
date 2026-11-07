@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { expireIdentityConfirmation } from "./database";
-import { createConfirmedAccount, uniqueEmail } from "./mailbox";
+import { createConfirmedAccount, signOut, uniqueEmail } from "./mailbox";
 
 // Passkeys need a domain name: they never work on an IP address such as the
 // 127.0.0.1 the other tests use, so these tests browse localhost.
@@ -51,8 +51,7 @@ test.describe("passkeys", () => {
     await signInWithPassword(page, email, true);
     await addPasskey(page);
 
-    await page.getByRole("button", { name: "Sign out", exact: true }).click();
-    await expect(page).toHaveURL(/\/sign-in\?signed_out=1$/);
+    await signOut(page);
 
     await page.getByRole("button", { name: "Sign in with a passkey" }).click();
     await expect(page).toHaveURL(/\/app$/);

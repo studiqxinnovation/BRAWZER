@@ -16,6 +16,7 @@ import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { BreachedPasswordCheck } from "./breached-passwords.js";
 import { EmailTokenService } from "./email-token.service.js";
+import { MfaService } from "./mfa/mfa.service.js";
 import {
   assertAcceptablePassword,
   burnPasswordCheck,
@@ -35,6 +36,11 @@ type ChangePasswordInput = z.output<typeof changePasswordRequestSchema>;
 export interface SignedIn {
   issued: IssuedSession;
   user: User;
+}
+
+/** Password sign-in on a two-factor account: no session yet, a second step instead. */
+export interface SecondStepRequired {
+  mfa: { ticket: string; expiresAt: Date };
 }
 
 const linkInvalid = () =>
@@ -63,6 +69,7 @@ export class AuthService {
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
     @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
+    @Inject(MfaService) private readonly mfa: MfaService,
   ) {}
 
   private async findUserByEmail(email: string): Promise<User | undefined> {
@@ -173,7 +180,11 @@ export class AuthService {
     return result;
   }
 
-  async login(input: LoginInput, meta: RequestMeta, presentedToken?: string): Promise<SignedIn> {
+  async login(
+    input: LoginInput,
+    meta: RequestMeta,
+    presentedToken?: string,
+  ): Promise<SignedIn | SecondStepRequired> {
     await this.limiter.enforce(RATE_LIMITS.signInPerIp, ipOf(meta));
     // Keyed by the submitted address whether or not it has an account, so lockouts reveal nothing.
     const lockout = await this.limiter.isBlocked(RATE_LIMITS.signInFailuresPerAccount, input.email);
@@ -206,6 +217,9 @@ export class AuthService {
         .update(schema.users)
         .set({ passwordHash: await hashPassword(input.password), updatedAt: new Date() })
         .where(eq(schema.users.id, user.id));
+    }
+    if (await this.mfa.isEnabled(user.id)) {
+      return { mfa: await this.mfa.createTicket(user, input.keepSignedIn) };
     }
     // A browser that was already signed in (perhaps as someone else) leaves that session behind.
     await this.sessions.revokeByToken(presentedToken, "replaced");
@@ -401,7 +415,12 @@ export class AuthService {
    * towards a lockout like sign-in does; success refreshes the session's
    * "recently confirmed" time for RecentAuthGuard.
    */
-  async reauthenticate(auth: AuthContext, password: string, meta: RequestMeta): Promise<Date> {
+  async reauthenticate(
+    auth: AuthContext,
+    password: string,
+    code: string | undefined,
+    meta: RequestMeta,
+  ): Promise<Date> {
     const { user, session } = auth;
     const lockout = await this.limiter.isBlocked(RATE_LIMITS.reauthFailures, user.id);
     if (!lockout.allowed) throw rateLimited(lockout.retryAfterSeconds);
@@ -415,6 +434,7 @@ export class AuthService {
         details: ["password: That isn’t your password."],
       });
     }
+    await this.mfa.checkCodeForConfirmation(user.id, code);
     await this.limiter.reset(RATE_LIMITS.reauthFailures, user.id);
     const at = await this.sessions.confirmIdentity(session.id);
     await this.events.record({

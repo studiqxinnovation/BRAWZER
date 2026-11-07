@@ -4,9 +4,12 @@ import type { AppConfig } from "../config/env.js";
 import {
   accountExistsMessage,
   type EmailContent,
+  mfaDisabledMessage,
+  mfaEnabledMessage,
   passkeyAddedMessage,
   passkeyRemovedMessage,
   passwordChangedMessage,
+  recoveryCodeUsedMessage,
   resetPasswordMessage,
   type SignedOutScope,
   verifyEmailMessage,
@@ -65,6 +68,18 @@ export class EmailService {
 
   sendPasskeyAdded(to: string, name: string, device: string | null): void {
     this.dispatch(to, passkeyAddedMessage(name, this.now(), device));
+  }
+
+  sendMfaEnabled(to: string): void {
+    this.dispatch(to, mfaEnabledMessage(this.now()));
+  }
+
+  sendMfaDisabled(to: string): void {
+    this.dispatch(to, mfaDisabledMessage(this.now()));
+  }
+
+  sendRecoveryCodeUsed(to: string, remaining: number): void {
+    this.dispatch(to, recoveryCodeUsedMessage(this.now(), remaining));
   }
 
   sendPasskeyRemoved(to: string, name: string): void {

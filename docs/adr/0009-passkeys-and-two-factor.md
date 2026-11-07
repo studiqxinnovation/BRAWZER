@@ -1,6 +1,6 @@
 # 0009 Passkeys and two-factor authentication
 
-- **Status:** Accepted. Passkeys implemented in milestone 2.2; two-factor in 2.3.
+- **Status:** Accepted. Passkeys implemented in milestone 2.2, two-factor authentication in 2.3.
 - **Date:** 2026-11-07
 
 ## Context
@@ -26,6 +26,22 @@ can be used from a phone held near the computer (the "hybrid" transport).
 - **Adding and removing passkeys** needs a recent sign-in (ADR 0008), and sends an email.
 - **Passkey sign-in counts as two factors.** The device proves possession and its user verification proves the person, so no second step follows.
 - **Confirming it's you** works with a passkey as well as the password.
+
+## Decision: two-factor authentication
+
+For accounts that still sign in with a password:
+
+- **Authenticator-app codes** (TOTP, RFC 6238: 30-second steps, 6 digits, SHA-1) via otplib.
+- **Encrypted secrets.** Secrets are sealed with envelope encryption (ADR 0008). The setup QR code is drawn on the server as an SVG and shown in an image element, never inlined as HTML.
+- **Setup:** setup is finished by entering a first code. Turning on, turning off and creating new recovery codes all need a recent sign-in and send an email.
+- **No replays.** One step either side is accepted for clock drift, and the last accepted step is stored, so a code can't be used twice (an atomic update guards concurrent requests).
+- **Recovery codes.** Ten single-use codes of about 50 bits each are stored as SHA-256 hashes and shown once, with no download, since downloads stay on shared computers. Using one sends an email that says how many are left.
+- **Sign-in.** A correct password on a two-factor account returns a ticket instead of a session.
+  - The ticket is single use, valid for 5 minutes, and stored as a hash.
+  - `POST /api/v1/auth/mfa/verify` exchanges it and a code for a session.
+  - Five wrong codes burn the ticket. Per-address and per-account limits also apply.
+- **Confirming it's you** with the password also needs a current code. Recovery codes aren't spent on that.
+- **No self-service bypass.** Someone who loses both their authenticator and their recovery codes can't remove two-factor themselves, since that would undo it. A support-verified recovery process is a pre-launch task.
 
 ## Consequences
 

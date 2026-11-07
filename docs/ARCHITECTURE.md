@@ -81,16 +81,16 @@ In production the edge should route `/api/v1` straight to the API, so that
 
 ### API modules (milestones 1.4–1.5)
 
-| Module            | Responsibility                                                                                                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `auth`            | Sign-up, email confirmation, sign-in/out (password or passkey), refresh, password reset and change, passkeys, confirm-it's-you, signed-in devices; `SessionGuard`, `RecentAuthGuard` |
-| `crypto`          | Envelope encryption for secrets at rest; key providers: local (development) and Vault/OpenBao Transit                                                                                |
-| `security`        | Shield: reads the account's security history (`/security/events`)                                                                                                                    |
-| `maintenance`     | Retention job: deletes expired security history, ended sessions, used links and abandoned sign-ups                                                                                   |
-| `rate-limit`      | Fixed-window counters in Redis, keyed by hashed subjects                                                                                                                             |
-| `email`           | Templates (HTML + text, escaped) and transports: Mailpit, Resend, log                                                                                                                |
-| `security-events` | The account's security history; recording never fails a request                                                                                                                      |
-| `health`          | Database and Redis reachability                                                                                                                                                      |
+| Module            | Responsibility                                                                                                                                                                                                                         |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`            | Sign-up, email confirmation, sign-in/out (password, passkey, two-factor), refresh, password reset and change, passkeys, authenticator codes and recovery codes, confirm-it's-you, signed-in devices; `SessionGuard`, `RecentAuthGuard` |
+| `crypto`          | Envelope encryption for secrets at rest; key providers: local (development) and Vault/OpenBao Transit                                                                                                                                  |
+| `security`        | Shield: reads the account's security history (`/security/events`)                                                                                                                                                                      |
+| `maintenance`     | Retention job: deletes expired security history, ended sessions, used links and abandoned sign-ups                                                                                                                                     |
+| `rate-limit`      | Fixed-window counters in Redis, keyed by hashed subjects                                                                                                                                                                               |
+| `email`           | Templates (HTML + text, escaped) and transports: Mailpit, Resend, log                                                                                                                                                                  |
+| `security-events` | The account's security history; recording never fails a request                                                                                                                                                                        |
+| `health`          | Database and Redis reachability                                                                                                                                                                                                        |
 
 ## Key decisions
 

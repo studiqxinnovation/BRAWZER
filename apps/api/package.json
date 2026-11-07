@@ -26,7 +26,9 @@
     "@simplewebauthn/server": "catalog:",
     "fastify": "catalog:",
     "ioredis": "catalog:",
+    "otplib": "catalog:",
     "pino": "catalog:",
+    "qrcode": "catalog:",
     "reflect-metadata": "catalog:",
     "rxjs": "catalog:",
     "zod": "catalog:"
@@ -35,6 +37,7 @@
     "@nestjs/cli": "catalog:",
     "@nestjs/testing": "catalog:",
     "@types/node": "catalog:",
+    "@types/qrcode": "catalog:",
     "pino-pretty": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",

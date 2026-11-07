@@ -16,6 +16,7 @@ export type {
   EmailToken,
   EmailTokenPurpose,
   SecurityEventType,
+  TotpFactor,
   User,
   WebauthnCredential,
 } from "./schema/index.ts";

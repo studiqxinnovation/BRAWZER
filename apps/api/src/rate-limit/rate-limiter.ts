@@ -24,6 +24,8 @@ export const RATE_LIMITS = {
   passwordChangeFailures: { name: "password-change-fail", limit: 5, windowSeconds: 15 * 60 },
   reauthFailures: { name: "reauth-fail", limit: 5, windowSeconds: 15 * 60 },
   passkeyAttemptsPerIp: { name: "passkey-ip", limit: 60, windowSeconds: 15 * 60 },
+  mfaAttemptsPerIp: { name: "mfa-ip", limit: 30, windowSeconds: 15 * 60 },
+  mfaFailuresPerAccount: { name: "mfa-fail", limit: 10, windowSeconds: 15 * 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {

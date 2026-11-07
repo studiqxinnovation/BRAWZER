@@ -8,6 +8,8 @@ import { AuthService } from "./auth.service.js";
 import { BreachedPasswordCheck } from "./breached-passwords.js";
 import { ChallengeService } from "./challenges.js";
 import { EmailTokenService } from "./email-token.service.js";
+import { MfaController } from "./mfa/mfa.controller.js";
+import { MfaService } from "./mfa/mfa.service.js";
 import { PasskeyService } from "./passkeys/passkey.service.js";
 import { PasskeysController } from "./passkeys/passkeys.controller.js";
 import { RecentAuthGuard } from "./recent-auth.guard.js";
@@ -17,7 +19,7 @@ import { SessionsController } from "./sessions.controller.js";
 
 @Module({
   imports: [DatabaseModule, RateLimitModule, EmailModule, SecurityEventsModule],
-  controllers: [AuthController, SessionsController, PasskeysController],
+  controllers: [AuthController, SessionsController, PasskeysController, MfaController],
   providers: [
     AuthService,
     SessionService,
@@ -27,6 +29,7 @@ import { SessionsController } from "./sessions.controller.js";
     BreachedPasswordCheck,
     ChallengeService,
     PasskeyService,
+    MfaService,
   ],
   // Later modules (profiles, sessions, Drive) protect their routes with SessionGuard.
   exports: [SessionService, SessionGuard, RecentAuthGuard, ChallengeService],

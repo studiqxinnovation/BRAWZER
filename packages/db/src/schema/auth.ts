@@ -177,6 +177,35 @@ export const webauthnCredentials = pgTable(
   (table) => [index("webauthn_credentials_user_id_idx").on(table.userId)],
 );
 
+/** Authenticator-app two-factor authentication. One factor per account. */
+export const totpFactors = pgTable("totp_factors", {
+  userId: uuid()
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** The TOTP secret, sealed with envelope encryption (context `totp:<user id>`). */
+  secret: text().notNull(),
+  /** Null while setup isn't finished; two-factor is on once confirmed with a first code. */
+  confirmedAt: timestamptz(),
+  /** Last accepted 30-second time step: codes at or before it are refused (no replays). */
+  lastTimeStep: bigint({ mode: "number" }).notNull().default(0),
+  createdAt: timestamptz().notNull().defaultNow(),
+});
+
+/** Single-use recovery codes, stored as SHA-256 hashes. */
+export const recoveryCodes = pgTable(
+  "recovery_codes",
+  {
+    id: id(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeHash: text().notNull(),
+    usedAt: timestamptz(),
+    createdAt: timestamptz().notNull().defaultNow(),
+  },
+  (table) => [index("recovery_codes_user_id_idx").on(table.userId)],
+);
+
 export const authChallengePurpose = pgEnum("auth_challenge_purpose", [
   "passkey_registration",
   "passkey_authentication",
@@ -215,4 +244,5 @@ export type SecurityEventType = (typeof securityEventType.enumValues)[number];
 export type EmailTokenPurpose = (typeof emailTokenPurpose.enumValues)[number];
 export type AuthChallenge = typeof authChallenges.$inferSelect;
 export type WebauthnCredential = typeof webauthnCredentials.$inferSelect;
+export type TotpFactor = typeof totpFactors.$inferSelect;
 export type AuthChallengePurpose = (typeof authChallengePurpose.enumValues)[number];

@@ -8,7 +8,7 @@ import {
   DialogFooter,
   DialogTitle,
 } from "@brawzer/ui/components/dialog";
-import { Field, FieldError, FieldLabel } from "@brawzer/ui/components/field";
+import { Field, FieldError, FieldLabel, Input } from "@brawzer/ui/components/field";
 import { FormMessage } from "@brawzer/ui/components/form-message";
 import { PasswordInput } from "@brawzer/ui/components/password-input";
 import {
@@ -39,6 +39,8 @@ function ConfirmIdentityDialog({
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [needsCode, setNeedsCode] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [passkeyPending, setPasskeyPending] = useState(false);
@@ -72,6 +74,8 @@ function ConfirmIdentityDialog({
 
   function finish(confirmed: boolean) {
     setError(null);
+    setCodeError(null);
+    setNeedsCode(false);
     setFailure(null);
     setPending(false);
     setPasskeyPending(false);
@@ -80,23 +84,34 @@ function ConfirmIdentityDialog({
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    const password = new FormData(event.currentTarget).get("password");
+    const form = new FormData(event.currentTarget);
+    const password = form.get("password");
+    const code = form.get("code");
     if (typeof password !== "string" || password.length === 0) {
       setError("Enter your password.");
       return;
     }
     setPending(true);
     setError(null);
+    setCodeError(null);
     setFailure(null);
-    const result = await reauthenticate(password);
+    const result = await reauthenticate(
+      password,
+      typeof code === "string" && code ? code : undefined,
+    );
     if (result.ok) {
       finish(true);
       return;
     }
     setPending(false);
     if (result.status === 401) leaveSignedInArea("expired");
-    else if (result.error.code === "validation_failed") setError("That isn’t your password.");
-    else setFailure(result.error.message);
+    else if (result.error.code === "validation_failed") {
+      const codeDetail = result.error.details?.find((detail) => detail.startsWith("code: "));
+      if (codeDetail) {
+        setNeedsCode(true);
+        setCodeError(codeDetail.slice("code: ".length));
+      } else setError("That isn’t your password.");
+    } else setFailure(result.error.message);
   }
 
   return (
@@ -126,6 +141,19 @@ function ConfirmIdentityDialog({
             >
               Use a passkey instead
             </Button>
+          )}
+          {needsCode && (
+            <Field name="code" invalid={codeError !== null}>
+              <FieldLabel>Authentication code</FieldLabel>
+              <Input
+                name="code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                required
+              />
+              {codeError && <FieldError match>{codeError}</FieldError>}
+            </Field>
           )}
           <DialogFooter className="mt-2">
             <Button

@@ -171,3 +171,39 @@ export function passkeyRemovedMessage(name: string, when: string): EmailContent 
     footnote: "If you didn’t remove it, change your password and review Sessions.",
   });
 }
+
+export function mfaEnabledMessage(when: string): EmailContent {
+  return compose("Two-factor authentication is on for your Brawzer account", {
+    preheader: "Signing in with your password now also needs a code.",
+    heading: "Two-factor authentication is on",
+    paragraphs: [
+      `Two-factor authentication was turned on for your Brawzer account on ${when}. Signing in with your password now also needs a code from your authenticator app, or one of your recovery codes.`,
+    ],
+    footnote: "If you didn’t turn it on, change your password and review Sessions straight away.",
+  });
+}
+
+export function mfaDisabledMessage(when: string): EmailContent {
+  return compose("Two-factor authentication was turned off", {
+    preheader: "Your Brawzer account no longer asks for a code when you sign in with a password.",
+    heading: "Two-factor authentication was turned off",
+    paragraphs: [
+      `Two-factor authentication was turned off for your Brawzer account on ${when}. Signing in with your password no longer asks for a code.`,
+    ],
+    footnote:
+      "If you didn’t turn it off, change your password, turn it back on and review Sessions.",
+  });
+}
+
+export function recoveryCodeUsedMessage(when: string, remaining: number): EmailContent {
+  const left = remaining === 1 ? "1 recovery code is" : `${String(remaining)} recovery codes are`;
+  return compose("A recovery code was used to sign in to Brawzer", {
+    preheader: `${left} left.`,
+    heading: "A recovery code was used",
+    paragraphs: [
+      `Someone signed in to your Brawzer account with a recovery code on ${when}. ${left} left.`,
+      "If you’ve lost your authenticator, create new recovery codes under Account after signing in.",
+    ],
+    footnote: "If it wasn’t you, change your password and review Sessions straight away.",
+  });
+}

@@ -103,3 +103,11 @@ export async function otherDevice(
   await signIn(context, baseURL, email, password);
   return context;
 }
+
+/** Signs out from a signed-in page, once it is interactive, and waits for the sign-in page. */
+export async function signOut(page: import("@playwright/test").Page): Promise<void> {
+  // The session keeper marks <html> after hydration; clicking earlier does nothing.
+  await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/sign-in\?signed_out=1$/);
+}
