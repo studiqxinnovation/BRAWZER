@@ -10,7 +10,8 @@
     "start": "next start --hostname 127.0.0.1 --port 3100",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "start:standalone": "([ -d public ] && cp -r public .next/standalone/apps/web/ || true) && cp -r .next/static .next/standalone/apps/web/.next/ && HOSTNAME=127.0.0.1 PORT=3100 node .next/standalone/apps/web/server.js"
   },
   "dependencies": {
     "@brawzer/contracts": "workspace:*",
