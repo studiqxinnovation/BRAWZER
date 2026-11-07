@@ -47,7 +47,7 @@ export function SiteHeader() {
           <NavLinks />
         </nav>
         <div className="ml-auto flex items-center gap-1.5">
-          <Link
+          <a
             href={accountLinks.signIn}
             className={cn(
               buttonVariants({ variant: "ghost", size: "sm" }),
@@ -55,13 +55,13 @@ export function SiteHeader() {
             )}
           >
             Sign in
-          </Link>
-          <Link
+          </a>
+          <a
             href={accountLinks.createAccount}
             className={buttonVariants({ variant: "primary", size: "sm" })}
           >
             Get started
-          </Link>
+          </a>
           <MobileNav />
         </div>
       </Container>

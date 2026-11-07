@@ -1,6 +1,5 @@
 import { buttonVariants } from "@brawzer/ui/lib/button-variants";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { CtaBand, FeatureSplit, Steps } from "@/components/site/blocks";
 import { BrowserPreview } from "@/components/site/browser-preview";
 import {
@@ -36,12 +35,12 @@ export default function HomePage() {
               and downloads stay with you.
             </p>
             <div className="mt-9 flex flex-wrap justify-center gap-3">
-              <Link
+              <a
                 href={accountLinks.createAccount}
                 className={buttonVariants({ variant: "primary", size: "lg" })}
               >
                 Get started
-              </Link>
+              </a>
               <a href="#how-it-works" className={buttonVariants({ size: "lg" })}>
                 See how it works
               </a>

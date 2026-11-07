@@ -67,12 +67,12 @@ export function CtaBand({ title, body, secondary }: CtaBandProps) {
           <p className="mt-4 text-body-lg text-pretty text-ink-secondary">{body}</p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-3">
-          <Link
+          <a
             href={accountLinks.createAccount}
             className={buttonVariants({ variant: "primary", size: "lg" })}
           >
             Get started
-          </Link>
+          </a>
           {secondary && (
             <Link href={secondary.href} className={buttonVariants({ size: "lg" })}>
               {secondary.label}

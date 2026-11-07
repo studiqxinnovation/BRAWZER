@@ -14,6 +14,7 @@ import { DATABASE } from "../database/database.module.js";
 import { EmailService } from "../email/email.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
+import { BreachedPasswordCheck } from "./breached-passwords.js";
 import { EmailTokenService } from "./email-token.service.js";
 import {
   assertAcceptablePassword,
@@ -61,6 +62,7 @@ export class AuthService {
     @Inject(EmailService) private readonly email: EmailService,
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
+    @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
   ) {}
 
   private async findUserByEmail(email: string): Promise<User | undefined> {
@@ -86,6 +88,7 @@ export class AuthService {
   async register(input: RegisterInput, meta: RequestMeta): Promise<void> {
     await this.limiter.enforce(RATE_LIMITS.registerPerIp, ipOf(meta));
     assertAcceptablePassword(input.password, input.email);
+    await this.breached.assertNotBreached(input.password);
     const pendingPasswordHash = await hashPassword(input.password);
 
     const [created] = await this.database.db
@@ -276,6 +279,7 @@ export class AuthService {
     const found = await this.emailTokens.find(input.token, "reset_password");
     if (!found) throw linkInvalid();
     assertAcceptablePassword(input.password, found.user.email);
+    await this.breached.assertNotBreached(input.password);
     const passwordHash = await hashPassword(input.password);
 
     const revoked = await this.database.db.transaction(async (tx) => {
@@ -346,6 +350,7 @@ export class AuthService {
       });
     }
     assertAcceptablePassword(input.newPassword, user.email, "newPassword");
+    await this.breached.assertNotBreached(input.newPassword, "newPassword");
     const passwordHash = await hashPassword(input.newPassword);
 
     const signedOut = await this.database.db.transaction(async (tx) => {
@@ -353,6 +358,8 @@ export class AuthService {
         .update(schema.users)
         .set({ passwordHash, updatedAt: new Date() })
         .where(eq(schema.users.id, user.id));
+      // A reset link requested earlier must not undo this change.
+      await this.emailTokens.invalidateAll(user.id, ["reset_password"], tx);
       return this.sessions.revokeAll(user.id, "password_changed", {
         except: session.id,
         executor: tx,

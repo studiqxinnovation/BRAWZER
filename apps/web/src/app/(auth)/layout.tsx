@@ -1,8 +1,16 @@
+import { connection } from "next/server";
 import { Logo } from "@brawzer/ui/brand";
 import Link from "next/link";
 
+/**
+ * Rendered for every request, not prerendered, so each response carries its
+ * own CSP nonce (see src/proxy.ts and src/lib/csp.ts).
+ */
+export const instant = false;
+
 /** Sign-in and account pages: quiet, centred, no marketing navigation. */
-export default function AuthLayout({ children }: LayoutProps<"/">) {
+export default async function AuthLayout({ children }: LayoutProps<"/">) {
+  await connection();
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="px-6 py-6 sm:px-8">

@@ -89,9 +89,15 @@ export function DevMailboxHint() {
   );
 }
 
-/** Moves focus to the first field marked invalid, after React has rendered the errors. */
-export function focusFirstInvalid(form: HTMLFormElement | null): void {
+/**
+ * Moves focus to the first field marked invalid. React may commit the error
+ * state a frame or two later (updates after an await are scheduled), so this
+ * waits for the field to appear, for at most about ten frames.
+ */
+export function focusFirstInvalid(form: HTMLFormElement | null, framesLeft = 10): void {
   requestAnimationFrame(() => {
-    form?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+    const field = form?.querySelector<HTMLElement>('[aria-invalid="true"]');
+    if (field) field.focus();
+    else if (framesLeft > 1) focusFirstInvalid(form, framesLeft - 1);
   });
 }

@@ -39,6 +39,13 @@ export const envSchema = z.object({
   EMAIL_FROM: z.string().min(3).default("Brawzer <no-reply@brawzer.localhost>"),
   MAILPIT_API_URL: z.url({ protocol: /^https?$/ }).default("http://127.0.0.1:8125"),
   RESEND_API_KEY: z.string().min(1).optional(),
+  /**
+   * Refuse new passwords found in known data breaches (Pwned Passwords range
+   * API; only a 5-character hash prefix is sent). Default: on in production.
+   */
+  BREACHED_PASSWORD_CHECK: z.stringbool().optional(),
+  /** How long the security history is kept, in days. */
+  SECURITY_HISTORY_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(365),
   BUILD_SHA: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/, "must be a git commit SHA")
@@ -72,6 +79,8 @@ export interface AppConfig {
   readonly trustProxy: boolean | readonly string[];
   readonly rateLimitScale: number;
   readonly email: EmailConfig;
+  readonly breachedPasswordCheck: boolean;
+  readonly securityHistoryRetentionDays: number;
 }
 
 /** Raised at startup when the environment is incomplete or invalid. */
@@ -179,6 +188,9 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
     trustProxy: trustProxy ?? false,
     // Development and tests run many sign-ups from one address; production never relaxes.
     rateLimitScale: isProduction ? 1 : (values.RATE_LIMIT_SCALE ?? 20),
+    // Off by default locally, so development and tests never depend on the internet.
+    breachedPasswordCheck: values.BREACHED_PASSWORD_CHECK ?? isProduction,
+    securityHistoryRetentionDays: values.SECURITY_HISTORY_RETENTION_DAYS,
     email: Object.freeze({
       transport: values.EMAIL_TRANSPORT,
       from: values.EMAIL_FROM,

@@ -53,3 +53,10 @@ describe("requestMeta", () => {
     expect(meta).toEqual({ ip: "203.0.113.7", userAgent: "x".repeat(512) });
   });
 });
+
+describe("requestMeta address validation", () => {
+  it("drops anything that isn't an IP address", () => {
+    expect(requestMeta({ ip: "<script>alert(1)</script>", headers: {} }).ip).toBeNull();
+    expect(requestMeta({ ip: "2001:db8::7", headers: {} }).ip).toBe("2001:db8::7");
+  });
+});

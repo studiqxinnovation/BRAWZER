@@ -126,6 +126,28 @@ describe("parseConfig", () => {
     ]);
   });
 
+  it("checks breached passwords in production by default, never silently elsewhere", () => {
+    expect(parseConfig(minimal, "1").breachedPasswordCheck).toBe(false);
+    expect(parseConfig(production, "1").breachedPasswordCheck).toBe(true);
+    expect(
+      parseConfig({ ...production, BREACHED_PASSWORD_CHECK: "false" }, "1").breachedPasswordCheck,
+    ).toBe(false);
+    expect(
+      parseConfig({ ...minimal, BREACHED_PASSWORD_CHECK: "true" }, "1").breachedPasswordCheck,
+    ).toBe(true);
+  });
+
+  it("keeps the security history for a year unless configured, and never less than 30 days", () => {
+    expect(parseConfig(minimal, "1").securityHistoryRetentionDays).toBe(365);
+    expect(
+      parseConfig({ ...minimal, SECURITY_HISTORY_RETENTION_DAYS: "90" }, "1")
+        .securityHistoryRetentionDays,
+    ).toBe(90);
+    expect(issuesOf({ ...minimal, SECURITY_HISTORY_RETENTION_DAYS: "7" })[0]).toMatch(
+      /^SECURITY_HISTORY_RETENTION_DAYS:/,
+    );
+  });
+
   it("delivers email to Mailpit by default in development", () => {
     expect(parseConfig(minimal, "1").email).toEqual({
       transport: "mailpit",

@@ -25,11 +25,13 @@ exposure; it cannot remove these risks:
 Brawzer's marketing and interface must never claim to be "100% invisible",
 "zero footprint" or "immune to malware".
 
-## Controls in place today (milestones 1.1–1.5)
+## Controls in place today (Phase 1: milestones 1.1–1.6)
 
 ### Web app
 
-- **Content Security Policy:** only Brawzer's own origin; no third-party scripts, fonts or connections; framing forbidden.
+- **Content Security Policy:** only Brawzer's own origin; no third-party scripts, fonts or connections; framing forbidden; no `eval` in production.
+  - **Account pages and the signed-in app** are rendered per request with a strict policy: a fresh nonce on every response, `'strict-dynamic'`, the theme script allowed by its hash, and no `'unsafe-inline'`. Injected markup such as `<img onerror=…>` can't run there. Links from the public site enter these pages with a full page load, because a browser keeps the first page's policy during client-side navigation ([ADR 0007](adr/0007-content-security-policy.md)).
+  - **Public pages** are prerendered and still allow inline scripts (see Remaining risks).
 - **Other headers:**
   - `Referrer-Policy: no-referrer`
   - `X-Content-Type-Options: nosniff`
@@ -70,6 +72,7 @@ Brawzer's marketing and interface must never claim to be "100% invisible",
 
 - Hashed with argon2id (19 MiB memory, 2 passes, 1 lane: OWASP's recommended minimum). Hashes made with weaker parameters are upgraded at the next sign-in.
 - 10 to 128 characters. Very common passwords, simple sequences, a single repeated character and passwords containing the email address are refused, with a message that says why.
+- **Breached passwords are refused** (production default; `BREACHED_PASSWORD_CHECK`). New passwords are checked against the Pwned Passwords range API with k-anonymity: only the first 5 characters of the password's SHA-1 hash leave Brawzer, responses are padded, and nothing is stored. If the service can't be reached, the check is skipped and logged rather than blocking sign-up.
 
 **Sessions** ([ADR 0005](adr/0005-session-model.md))
 
@@ -81,7 +84,7 @@ Brawzer's marketing and interface must never claim to be "100% invisible",
 - Sign-out revokes the session, clears the cookie and sends `Clear-Site-Data`. Signing in again from a browser that still holds a session revokes the old one.
 - A password reset signs out every device.
 - **Signed-in devices** (Sessions): every active session with its device, IP address and last activity. Any other device can be signed out individually, or all of them at once; the session ends immediately on the server.
-- **Changing the password** needs the current one (5 wrong tries per 15 minutes, then a lockout), signs out every other device, gives this one a new token and emails a notice.
+- **Changing the password** needs the current one (5 wrong tries per 15 minutes, then a lockout), signs out every other device, cancels outstanding reset links, gives this one a new token and emails a notice.
 
 **Sign-up and email links**
 
@@ -109,8 +112,10 @@ Brawzer's marketing and interface must never claim to be "100% invisible",
 | Wrong current passwords (change)    | 5 per 15 minutes                         |
 
 Counters live in Redis and keys contain only hashes, never addresses or tokens.
-The client address comes from the connection unless `TRUST_PROXY` lists the
-reverse proxies allowed to report it.
+If Redis is unreachable, each API instance keeps enforcing the limits with
+bounded in-memory counters until Redis returns. The client address comes from
+the connection unless `TRUST_PROXY` lists the reverse proxies allowed to
+report it, and anything that isn't a valid IP address is discarded.
 
 **Security history** (Shield). Sign-ups, confirmations, sign-ins (successful
 and failed), sign-outs, reset requests, resets, password changes and
@@ -121,6 +126,12 @@ they help recognition and are never used for security decisions.
 
 **Email delivery.** Mailpit locally; Resend in production (enforced at
 startup). Message bodies, which contain links, are never logged.
+
+**Data retention.** A job in the API deletes, every 6 hours: security history
+older than `SECURITY_HISTORY_RETENTION_DAYS` (default 365); sessions that
+ended more than 30 days ago; email links used or expired more than 7 days ago;
+and sign-ups never confirmed within 30 days (often someone else's address).
+A database lock ensures only one API instance runs it at a time.
 
 ### Local infrastructure
 
@@ -133,23 +144,24 @@ startup). Message bodies, which contain links, are never logged.
 - **7-day minimum release age:** pnpm refuses packages younger than seven days.
 - **Install scripts:** dependency install scripts are blocked unless allow-listed. Telemetry scripts such as `@scarf/scarf` are explicitly denied.
 
-## Known gaps, to be decided in the milestone 1.6 security review
+## Remaining risks (reviewed in milestone 1.6)
 
-- **Script CSP still allows `'unsafe-inline'`.** Per-request nonces would remove it, but nonces require rendering every page per request, which is incompatible with the partial prerendering the web app uses. Options: render signed-in pages fully dynamically with nonces, or adopt hash-based CSP (experimental in Next.js). Until then, the defence against injected scripts is React's escaping and the absence of any raw-HTML rendering.
-- **Rate limiting fails open.** If Redis is unreachable, limits are skipped (logged loudly; health reports `degraded`) rather than blocking all sign-ins. Failing closed for sign-in in production is the alternative.
+The Phase 1 security review ([docs/reviews/phase-1.md](reviews/phase-1.md))
+closed most earlier gaps. These remain, deliberately:
+
+- **Public pages still allow inline scripts.** The prerendered public pages (home, product, pricing and so on) keep `script-src 'self' 'unsafe-inline'`, because per-request nonces can't be combined with prerendering. They render no user data or input. Account pages and the signed-in app use the strict policy ([ADR 0007](adr/0007-content-security-policy.md)).
 - **Lockout can be triggered by others.** Someone who knows your address can lock password sign-in for 15 minutes by guessing wrong. Password reset still works. Passkeys (Phase 2) remove the problem.
-- **Small common-password list.** A breached-password check (for example the k-anonymity Pwned Passwords API, which receives only a 5-character hash prefix) needs a product decision because it contacts a third party.
 - **Timing.** Responses for existing and unknown addresses differ by a few database queries (milliseconds). Password hashing dominates, but this is not constant-time.
-- **Security-history retention** is not defined yet. IP addresses are personal data; a retention period must be set before launch.
 - **Email delivery has no retry queue.** A failed send is logged; the person can request another email.
-- **Client addresses in production.** The web server's rewrite keeps a client-supplied `X-Forwarded-For`, so it must not be listed in `TRUST_PROXY`. Production should route `/api/v1` to the API at the edge and trust only the edge.
+- **Rate limits during a Redis outage are per API instance.** Each instance falls back to its own counters, so with several instances the effective limit multiplies until Redis returns.
+- **Client addresses in production.** The web server's rewrite keeps a client-supplied `X-Forwarded-For`, so it must not be listed in `TRUST_PROXY`. Production should route `/api/v1` to the API at the edge and trust only the edge (Phase 7).
+- **Dependency advisories.** Three moderate advisories in transitive dependencies, none reachable: `esbuild` inside the development-only `drizzle-kit` (affects esbuild's own dev server, never started), and `glob`/`minimatch` inside `@fastify/static` (need attacker-controlled glob patterns; it only serves the API docs' assets, which are off in production). Patched versions are too new for the 7-day policy; re-check on 2026-11-13.
 - **Development differences.** On localhost, `Clear-Site-Data` omits `"cookies"` (all localhost apps share cookies), and cookies are not `Secure`.
 
 ## Planned controls
 
 | When | Control                                                                                                                                     |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.6  | Security review of authentication; decisions on the known gaps above (CSP for signed-in pages, rate-limit failure mode, history retention)  |
 | 2    | Passkeys (including phone sign-in by QR code), TOTP, step-up authentication, alerts for new-device sign-ins                                 |
 | 3    | One isolated container per session, Chromium sandbox on, 60-second single-use stream tickets, gateway-enforced revocation and idle lock     |
 | 4    | Encryption at rest per profile, download scanning, signed short-lived export links                                                          |

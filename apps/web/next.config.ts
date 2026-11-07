@@ -22,11 +22,11 @@ const servedOverHttps = (process.env.NEXT_PUBLIC_SITE_URL ?? "").startsWith("htt
  * computer in front of the user never contacts third parties: no external
  * fonts, analytics or scripts.
  *
- * Known gap: script-src still allows 'unsafe-inline'. Per-request nonces
- * would remove it, but they require rendering every page per request, which
- * is incompatible with the partial prerendering this app uses. The options
- * (dynamic rendering for signed-in pages, or hash-based CSP) are evaluated
- * in the milestone 1.6 security review; see docs/SECURITY.md.
+ * This is the site-wide policy for prerendered public pages, which render no
+ * user data. It still allows inline scripts, because per-request nonces can't
+ * be combined with prerendering. Account pages and the signed-in app replace
+ * it with a strict nonce-based policy set per request in src/proxy.ts (see
+ * src/lib/csp.ts and docs/adr/0007-content-security-policy.md).
  */
 const contentSecurityPolicy = [
   "default-src 'self'",

@@ -6,11 +6,11 @@ Brawzer is a cloud browser platform. The browser runs in Brawzer's cloud; the
 computer in front of you (at a café, library or hotel) is only a window to it.
 Profiles, history and downloads stay with your account, not on the machine.
 
-> **Status: Phase 1 in progress.** Milestones 1.1 (foundation), 1.2 (brand and
-> design system), 1.3 (public website), 1.4 (accounts and sign-in) and 1.5
-> (signed-in app shell) are complete. Next: 1.6, the phase and security review.
-> There is no cloud browser yet; it is built in Phase 3. See
-> [the architecture](docs/ARCHITECTURE.md).
+> **Status: Phase 1 complete** (foundation, design system, public website,
+> accounts, signed-in app shell, security review). Next: Phase 2, passkeys and
+> two-factor authentication, profiles and proxy settings. There is no cloud
+> browser yet; it is built in Phase 3. See [the Phase 1 review](docs/reviews/phase-1.md)
+> and [the architecture](docs/ARCHITECTURE.md).
 
 ---
 
@@ -132,11 +132,11 @@ All settings live in `.env` at the repository root, created from
 
 ## Testing
 
-| Suite                                 | Needs           | Covers                                                                                                                                                                                                                                          |
-| ------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit (`pnpm test`)                    | Nothing         | Config parsing, log redaction, error handling, health logic, schemas, tokens, password rules, email templates, origin checks, colour maths, theme handling, every component's behaviour and accessibility                                       |
-| Integration (`pnpm test:integration`) | `pnpm infra:up` | The real API against PostgreSQL, Valkey and Mailpit: health, headers, error format, OpenAPI, every account flow, pre-hijacking, lockout, idle timeout, CSRF, device sessions, password change, security history                                 |
-| End-to-end (`pnpm test:e2e`)          | `pnpm infra:up` | Real Chromium at desktop and phone sizes: pages, the account journey with real emails, the signed-in app (navigation, remote and cross-tab sign-out, the idle warning with a controlled clock), WCAG 2.2 AA (axe), keyboard and focus behaviour |
+| Suite                                 | Needs           | Covers                                                                                                                                                                                                                                                                    |
+| ------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit (`pnpm test`)                    | Nothing         | Config parsing, log redaction, error handling, health logic, schemas, tokens, password rules, email templates, origin checks, colour maths, theme handling, every component's behaviour and accessibility                                                                 |
+| Integration (`pnpm test:integration`) | `pnpm infra:up` | The real API against PostgreSQL, Valkey and Mailpit: every account flow, pre-hijacking, lockout, idle timeout, CSRF, device sessions, password change, security history, data retention, and the API in its production configuration                                      |
+| End-to-end (`pnpm test:e2e`)          | `pnpm infra:up` | Real Chromium at desktop and phone sizes: pages, the account journey with real emails, the signed-in app (navigation, remote and cross-tab sign-out, the idle warning with a controlled clock), the strict script policy, WCAG 2.2 AA (axe), keyboard and focus behaviour |
 
 ## Dependencies and supply chain
 
@@ -150,7 +150,9 @@ All settings live in `.env` at the repository root, created from
 
 Brawzer's promise depends on being honest about what it can and cannot
 protect. Read [docs/SECURITY.md](docs/SECURITY.md) for the threat model, the
-controls in place today and the remaining risks of using a computer you don't own.
+controls in place today and the remaining risks of using a computer you don't
+own, and [docs/reviews/phase-1.md](docs/reviews/phase-1.md) for the Phase 1
+security review and its findings.
 
 ## Troubleshooting
 

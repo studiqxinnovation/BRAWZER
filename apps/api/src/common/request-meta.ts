@@ -1,4 +1,5 @@
 import type { IncomingHttpHeaders } from "node:http";
+import { isIP } from "node:net";
 import type { FastifyRequest } from "fastify";
 
 /** What Brawzer records about a request for security purposes, and nothing more. */
@@ -10,7 +11,8 @@ export interface RequestMeta {
 export function requestMeta(request: Pick<FastifyRequest, "ip" | "headers">): RequestMeta {
   const userAgent = request.headers["user-agent"];
   return {
-    ip: request.ip || null,
+    // Only a real address is kept: with a trusted proxy the value comes from a header.
+    ip: isIP(request.ip) === 0 ? null : request.ip,
     userAgent: typeof userAgent === "string" ? userAgent.slice(0, 512) : null,
   };
 }

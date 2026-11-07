@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { Logo } from "@brawzer/ui/brand";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -8,8 +9,15 @@ import { SessionKeeperLoader } from "@/components/app-shell/session-keeper-loade
 import { SignOutButton } from "@/components/app-shell/sign-out-button";
 import { SkipLink } from "@/components/site/site-chrome";
 
+/**
+ * Rendered for every request, not prerendered, so each response carries its
+ * own CSP nonce (see src/proxy.ts and src/lib/csp.ts).
+ */
+export const instant = false;
+
 /** The signed-in app: sidebar on wide screens, a top bar with a drawer on small ones. */
-export default function AppLayout({ children }: LayoutProps<"/">) {
+export default async function AppLayout({ children }: LayoutProps<"/">) {
+  await connection();
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
       <SkipLink />

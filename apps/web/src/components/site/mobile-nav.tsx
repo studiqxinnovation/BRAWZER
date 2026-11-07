@@ -51,20 +51,16 @@ export function MobileNav() {
           </ul>
         </nav>
         <div className="mt-auto flex flex-col gap-2 pt-10">
-          <Link
+          <a
             href={accountLinks.createAccount}
             onClick={close}
             className={buttonVariants({ variant: "primary", size: "lg" })}
           >
             Get started
-          </Link>
-          <Link
-            href={accountLinks.signIn}
-            onClick={close}
-            className={buttonVariants({ size: "lg" })}
-          >
+          </a>
+          <a href={accountLinks.signIn} onClick={close} className={buttonVariants({ size: "lg" })}>
             Sign in
-          </Link>
+          </a>
         </div>
       </SheetContent>
     </Sheet>

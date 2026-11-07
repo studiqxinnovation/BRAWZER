@@ -22,6 +22,12 @@ export const primaryNav: readonly NavItem[] = [
   { href: "/about", label: "About" },
 ];
 
+/**
+ * Link to these with a plain <a>, not next/link. Account pages run under a
+ * stricter script policy (src/lib/csp.ts), and a browser keeps the policy of
+ * the page it loaded first during client-side navigation, so entering them
+ * must be a full page load.
+ */
 export const accountLinks = {
   signIn: "/sign-in",
   createAccount: "/create-account",

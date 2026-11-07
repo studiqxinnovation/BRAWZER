@@ -63,6 +63,10 @@ whether the session is valid. The API is the only judge of a session.
                                                          └── emails (background) ──> Mailpit / Resend
 ```
 
+Account pages and the signed-in app render per request with a strict,
+nonce-based script policy set by `src/proxy.ts`; public pages are prerendered
+([ADR 0007](adr/0007-content-security-policy.md)).
+
 Open signed-in pages keep their session honest from the browser
 (`SessionKeeper`): they report activity at most once a minute, rotate the
 token every 15 minutes of use, and check every 30 seconds, without counting
@@ -81,6 +85,7 @@ In production the edge should route `/api/v1` straight to the API, so that
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `auth`            | Sign-up, email confirmation, sign-in/out, refresh, password reset and change, signed-in devices (`/auth/sessions`); `SessionGuard` |
 | `security`        | Shield: reads the account's security history (`/security/events`)                                                                  |
+| `maintenance`     | Retention job: deletes expired security history, ended sessions, used links and abandoned sign-ups                                 |
 | `rate-limit`      | Fixed-window counters in Redis, keyed by hashed subjects                                                                           |
 | `email`           | Templates (HTML + text, escaped) and transports: Mailpit, Resend, log                                                              |
 | `security-events` | The account's security history; recording never fails a request                                                                    |
@@ -132,8 +137,8 @@ common in public places.
 | 1.3   | Public website: Home, Product, Security, Profiles, Drive, Pricing, About           | **Done**                           |
 | 1.4   | Authentication end to end (register, verify, sign in/out, reset)                   | **Done**                           |
 | 1.5   | Signed-in app shell and navigation                                                 | **Done**                           |
-| 1.6   | Phase review and security review                                                   | Next                               |
-| 2     | Passkeys and MFA, profiles, proxies, sessions, security centre, account            | Planned                            |
+| 1.6   | Phase review and security review ([review](reviews/phase-1.md))                    | **Done**                           |
+| 2     | Passkeys and MFA, profiles, proxies, sessions, security centre, account            | Next                               |
 | 3     | Cloud browser: gateway, orchestrator, runtime, Chromium (3a), WebRTC (3b), Firefox | Planned                            |
 | 4     | Persistent profiles, Brawzer Drive, downloads, previews, extensions                | Planned                            |
 | 5     | Proxy engine, encryption, egress controls, device security                         | Planned                            |
@@ -148,3 +153,4 @@ common in public places.
 - [0004 Design system](adr/0004-design-system.md)
 - [0005 Session model](adr/0005-session-model.md)
 - [0006 Browser streaming](adr/0006-browser-streaming.md)
+- [0007 Content Security Policy](adr/0007-content-security-policy.md)
