@@ -26,6 +26,10 @@ export const healthResponseSchema = z.object({
     .object({
       database: dependencyCheckSchema,
       redis: dependencyCheckSchema,
+      /** Drive's object store. */
+      storage: dependencyCheckSchema,
+      /** The malware scanner that every Drive upload goes through. */
+      scanner: dependencyCheckSchema,
     })
     .optional(),
 });

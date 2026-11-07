@@ -74,6 +74,24 @@ export const envSchema = z.object({
   PROXY_TEST_URL: z.url({ protocol: /^https?$/, error: "must be an http(s) URL" }).optional(),
   /** Lets proxy tests reach private and local addresses. Development and tests only. */
   PROXY_TEST_ALLOW_PRIVATE: z.stringbool().default(false),
+  /**
+   * Drive's object store. No endpoint means AWS S3 itself; a custom endpoint
+   * must be https in production. Keys are optional where the host provides
+   * credentials (such as an IAM role).
+   */
+  STORAGE_ENDPOINT: z.url({ protocol: /^https?$/, error: "must be an http(s) URL" }).optional(),
+  STORAGE_REGION: z.string().min(1).default("us-east-1"),
+  STORAGE_BUCKET: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, "must be a valid bucket name")
+    .default("brawzer-drive"),
+  STORAGE_ACCESS_KEY_ID: z.string().min(1).optional(),
+  STORAGE_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  /** Bucket in the path rather than the host name; most self-hosted stores need it. */
+  STORAGE_FORCE_PATH_STYLE: z.stringbool().optional(),
+  /** ClamAV's clamd, which scans every Drive upload. */
+  CLAMAV_HOST: z.string().min(1).default("127.0.0.1"),
+  CLAMAV_PORT: z.coerce.number().int().min(1).max(65_535).default(3310),
   BUILD_SHA: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/, "must be a git commit SHA")
@@ -121,6 +139,18 @@ function parseLocalKeys(
   return keys;
 }
 
+export interface StorageConfig {
+  /** Undefined means AWS S3's own endpoints. */
+  readonly endpoint: string | undefined;
+  readonly region: string;
+  readonly bucket: string;
+  readonly credentials:
+    { readonly accessKeyId: string; readonly secretAccessKey: string } | undefined;
+  readonly forcePathStyle: boolean;
+  /** Development and tests create the bucket if it's missing; production expects it. */
+  readonly createBucket: boolean;
+}
+
 export interface AppConfig {
   readonly env: "development" | "test" | "production";
   readonly isProduction: boolean;
@@ -144,6 +174,8 @@ export interface AppConfig {
   readonly breachedPasswordCheck: boolean;
   readonly securityHistoryRetentionDays: number;
   readonly encryption: EncryptionConfig;
+  readonly storage: StorageConfig;
+  readonly scanner: { readonly host: string; readonly port: number };
   readonly proxyTests: {
     /** The fixed destination of every proxy test. */
     readonly url: string;
@@ -277,6 +309,15 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
   if (isProduction && values.PROXY_TEST_ALLOW_PRIVATE) {
     issues.push("PROXY_TEST_ALLOW_PRIVATE: must not be enabled in production");
   }
+  if (isProduction && values.STORAGE_ENDPOINT && !values.STORAGE_ENDPOINT.startsWith("https://")) {
+    issues.push("STORAGE_ENDPOINT: must use https in production");
+  }
+  if (
+    (values.STORAGE_ACCESS_KEY_ID === undefined) !==
+    (values.STORAGE_SECRET_ACCESS_KEY === undefined)
+  ) {
+    issues.push("STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY: set both or neither");
+  }
   if (issues.length > 0) throw new ConfigError(issues);
 
   return Object.freeze({
@@ -303,6 +344,22 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
     securityHistoryRetentionDays: values.SECURITY_HISTORY_RETENTION_DAYS,
     encryption: Object.freeze(encryption),
     proxyTests: Object.freeze({ url: proxyTestUrl, allowPrivate: values.PROXY_TEST_ALLOW_PRIVATE }),
+    storage: Object.freeze({
+      endpoint: values.STORAGE_ENDPOINT,
+      region: values.STORAGE_REGION,
+      bucket: values.STORAGE_BUCKET,
+      credentials:
+        values.STORAGE_ACCESS_KEY_ID && values.STORAGE_SECRET_ACCESS_KEY
+          ? Object.freeze({
+              accessKeyId: values.STORAGE_ACCESS_KEY_ID,
+              secretAccessKey: values.STORAGE_SECRET_ACCESS_KEY,
+            })
+          : undefined,
+      // Custom endpoints are self-hosted stores, which usually need path style.
+      forcePathStyle: values.STORAGE_FORCE_PATH_STYLE ?? values.STORAGE_ENDPOINT !== undefined,
+      createBucket: !isProduction,
+    }),
+    scanner: Object.freeze({ host: values.CLAMAV_HOST, port: values.CLAMAV_PORT }),
     webauthn: Object.freeze({
       rpId,
       rpName: values.WEBAUTHN_RP_NAME,

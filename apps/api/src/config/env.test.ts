@@ -230,6 +230,41 @@ describe("parseConfig", () => {
     );
   });
 
+  it("configures Drive's store and scanner, with production rules", () => {
+    const local = parseConfig(minimal, "1");
+    expect(local.storage).toEqual({
+      endpoint: undefined,
+      region: "us-east-1",
+      bucket: "brawzer-drive",
+      credentials: undefined,
+      forcePathStyle: false,
+      createBucket: true,
+    });
+    expect(local.scanner).toEqual({ host: "127.0.0.1", port: 3310 });
+    const selfHosted = parseConfig(
+      {
+        ...minimal,
+        STORAGE_ENDPOINT: "http://127.0.0.1:9100",
+        STORAGE_ACCESS_KEY_ID: "key",
+        STORAGE_SECRET_ACCESS_KEY: "secret",
+      },
+      "1",
+    );
+    expect(selfHosted.storage.forcePathStyle).toBe(true);
+    expect(selfHosted.storage.credentials).toEqual({
+      accessKeyId: "key",
+      secretAccessKey: "secret",
+    });
+    expect(parseConfig(production, "1").storage.createBucket).toBe(false);
+    expect(issuesOf({ ...production, STORAGE_ENDPOINT: "http://store.internal:9000" })).toEqual([
+      "STORAGE_ENDPOINT: must use https in production",
+    ]);
+    expect(issuesOf({ ...minimal, STORAGE_ACCESS_KEY_ID: "key" })).toEqual([
+      "STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY: set both or neither",
+    ]);
+    expect(issuesOf({ ...minimal, STORAGE_BUCKET: "Bad_Bucket" })[0]).toMatch(/^STORAGE_BUCKET:/);
+  });
+
   it("delivers email to Mailpit by default in development", () => {
     expect(parseConfig(minimal, "1").email).toEqual({
       transport: "mailpit",

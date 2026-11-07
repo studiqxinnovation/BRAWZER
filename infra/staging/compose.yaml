@@ -68,6 +68,37 @@ services:
       retries: 30
     networks: [staging]
 
+  # Drive's object store. Staging only: production uses a managed S3-compatible store.
+  rustfs:
+    image: rustfs/rustfs:1.0.4@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: brawzer
+      RUSTFS_SECRET_KEY: ${STORAGE_SECRET_ACCESS_KEY:?set STORAGE_SECRET_ACCESS_KEY in staging.env}
+      RUSTFS_VOLUMES: /data
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-o", "/dev/null", "http://127.0.0.1:9000/"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [staging]
+
+  # Scans every Drive upload. Bundled signatures; a real deployment keeps them updated.
+  clamav:
+    image: clamav/clamav-debian:1.5.4@sha256:c21aa18cc0a358678255a3dfb343a4555b58f71b97d7b869df8fdf7ea0a5b4b1
+    restart: unless-stopped
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "true"
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      start_period: 180s
+      retries: 40
+    networks: [staging]
+
   # One-off: enables Transit and creates Brawzer's key-encryption key.
   openbao-init:
     <<: *api-image
@@ -108,10 +139,21 @@ services:
       VAULT_ADDR: http://openbao:8200
       VAULT_TOKEN: ${VAULT_TOKEN}
       PROXY_TEST_URL: ${PROXY_TEST_URL:?set PROXY_TEST_URL in staging.env}
+      # The store sits on the internal network, so http is acceptable here only
+      # because it never crosses a host boundary; production must use https.
+      STORAGE_ENDPOINT: http://rustfs:9000
+      STORAGE_BUCKET: brawzer-drive
+      STORAGE_ACCESS_KEY_ID: brawzer
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY}
+      STORAGE_FORCE_PATH_STYLE: "true"
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
       # Only the front door may report client addresses.
       TRUST_PROXY: 172.31.250.10
     depends_on:
       redis: { condition: service_healthy }
+      rustfs: { condition: service_healthy }
+      clamav: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
       openbao-init: { condition: service_completed_successfully }
     networks: [staging]
@@ -157,4 +199,5 @@ networks:
 volumes:
   postgres-data:
   redis-data:
+  rustfs-data:
   caddy-data:

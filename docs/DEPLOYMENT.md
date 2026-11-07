@@ -54,7 +54,7 @@ Put a TLS-terminating proxy in front:
 
 `infra/staging/compose.yaml` runs the real images with production settings
 behind Caddy on `https://brawzer.localhost:8443`. It also runs PostgreSQL,
-Valkey, OpenBao, and a one-off migration step.
+Valkey, OpenBao, RustFS (Drive's object store), ClamAV, and a one-off migration step.
 
 ```sh
 cp infra/staging/staging.env.example infra/staging/staging.env   # fill in
