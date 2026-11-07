@@ -29,3 +29,9 @@ runs:
     - name: Install dependencies
       shell: bash
       run: pnpm install --frozen-lockfile
+
+    # Workspace packages export types from dist/, so they must be built
+    # before anything that type-checks or lints the apps.
+    - name: Build workspace packages
+      shell: bash
+      run: pnpm --filter "./packages/*" run --if-present build
