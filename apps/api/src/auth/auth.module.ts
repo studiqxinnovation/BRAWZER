@@ -10,6 +10,7 @@ import { ChallengeService } from "./challenges.js";
 import { EmailTokenService } from "./email-token.service.js";
 import { MfaController } from "./mfa/mfa.controller.js";
 import { MfaService } from "./mfa/mfa.service.js";
+import { NewDeviceService } from "./new-device.service.js";
 import { PasskeyService } from "./passkeys/passkey.service.js";
 import { PasskeysController } from "./passkeys/passkeys.controller.js";
 import { RecentAuthGuard } from "./recent-auth.guard.js";
@@ -30,8 +31,17 @@ import { SessionsController } from "./sessions.controller.js";
     ChallengeService,
     PasskeyService,
     MfaService,
+    NewDeviceService,
   ],
   // Later modules (profiles, sessions, Drive) protect their routes with SessionGuard.
-  exports: [SessionService, SessionGuard, RecentAuthGuard, ChallengeService],
+  exports: [
+    SessionService,
+    SessionGuard,
+    RecentAuthGuard,
+    ChallengeService,
+    MfaService,
+    PasskeyService,
+    EmailTokenService,
+  ],
 })
 export class AuthModule {}

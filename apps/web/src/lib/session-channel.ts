@@ -3,7 +3,14 @@
 import { logout } from "./api/auth";
 import type { ApiResult } from "./api/client";
 
-export type SignOutReason = "user" | "idle" | "expired";
+export type SignOutReason = "user" | "idle" | "expired" | "deleted";
+
+const REASONS: readonly unknown[] = [
+  "user",
+  "idle",
+  "expired",
+  "deleted",
+] satisfies SignOutReason[];
 
 type SessionMessage =
   | { type: "activity"; at: number }
@@ -25,10 +32,7 @@ function isSessionMessage(value: unknown): value is SessionMessage {
   if (message.type === "activity" || message.type === "reported") {
     return typeof message.at === "number";
   }
-  return (
-    message.type === "signed-out" &&
-    (message.reason === "user" || message.reason === "idle" || message.reason === "expired")
-  );
+  return message.type === "signed-out" && REASONS.includes(message.reason);
 }
 
 export function broadcast(message: SessionMessage): void {
@@ -50,6 +54,7 @@ export function onSessionMessage(listener: (message: SessionMessage) => void): (
 export function signInPathFor(reason: SignOutReason, from?: string): string {
   if (reason === "user") return "/sign-in?signed_out=1";
   if (reason === "idle") return "/sign-in?signed_out=idle";
+  if (reason === "deleted") return "/sign-in?signed_out=deleted";
   const params = new URLSearchParams({ expired: "1", ...(from ? { next: from } : {}) });
   return `/sign-in?${params.toString()}`;
 }

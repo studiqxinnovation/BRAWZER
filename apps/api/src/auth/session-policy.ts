@@ -41,4 +41,5 @@ export const ROTATION_GRACE_SECONDS = MINUTE;
 export const EMAIL_LINK_LIFETIME_SECONDS = {
   verify_email: DAY,
   reset_password: 30 * MINUTE,
+  change_email: DAY,
 } as const;

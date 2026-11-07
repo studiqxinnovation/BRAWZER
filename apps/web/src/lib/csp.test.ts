@@ -8,7 +8,14 @@ const scriptSrc = (policy: string) =>
 
 describe("strict content security policy", () => {
   it("applies to account pages and the signed-in app only", () => {
-    for (const path of ["/app", "/app/sessions", "/sign-in", "/verify-email", "/reset-password"]) {
+    for (const path of [
+      "/app",
+      "/app/sessions",
+      "/sign-in",
+      "/verify-email",
+      "/reset-password",
+      "/confirm-email-change",
+    ]) {
       expect(needsStrictCsp(path), path).toBe(true);
     }
     for (const path of ["/", "/apple-icon", "/application", "/security", "/sign-input"]) {

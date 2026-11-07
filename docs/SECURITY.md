@@ -25,7 +25,7 @@ exposure; it cannot remove these risks:
 Brawzer's marketing and interface must never claim to be "100% invisible",
 "zero footprint" or "immune to malware".
 
-## Controls in place today (Phase 1: milestones 1.1–1.6)
+## Controls in place today (Phase 1, and Phase 2 milestones 2.1–2.4)
 
 ### Web app
 
@@ -46,7 +46,9 @@ Brawzer's marketing and interface must never claim to be "100% invisible",
 - **Account forms:** password fields are hidden by default (show/hide is opt-in) and warn when Caps Lock is on. "Keep me signed in" is off by default. After sign-in and sign-out the page fully reloads, because Next.js keeps recently visited pages mounted in memory; sign-out also replaces the history entry so Back doesn't return to the signed-in page.
 - **Idle sign-out on shared computers:** after 26 minutes without activity the page warns ("Are you still there?") and at 28 minutes it signs out and reloads into the sign-in page, so the next person at the computer sees nothing. Focus starts on **Sign out**, so a passer-by pressing Enter ends the session rather than extending it. "Keep me signed in" sessions are exempt.
 - **Ended elsewhere, cleared here:** an open signed-in page checks every 30 seconds (without counting as activity) whether its session still exists. If it was signed out from another device, the page clears itself. Signing out in one tab signs out every Brawzer tab in that browser.
-- **Email-link tokens** travel in the URL fragment (`/verify-email#token=…`), which browsers never send to servers or put in logs. The page removes the token from the address bar as soon as it has read it and keeps it only in memory.
+- **Email-link tokens** travel in the URL fragment (`/verify-email#token=…`), which browsers never send to servers or put in logs. The page removes the token from the address bar as soon as it has read it and keeps it only in memory. Confirming a new email address takes a click, so a mail scanner that opens links can't confirm a change.
+- **Forms are sent with POST.** Someone who presses Enter before a page has finished loading submits the form through the browser itself. With the default GET, what they typed, passwords included, would land in the address bar, the history of a shared computer and server logs. With POST the page just reloads. A unit test fails if a form without `method="post"` is added, and a browser test with scripts turned off checks the sign-in and sign-up forms.
+- **Downloads on shared computers.** "Download your data" is built in the browser's memory and saved as a file. On a shared-computer session the page warns that the file stays in the computer's downloads.
 - **Development-only pages:** `/design` and `/dev` are excluded from production builds (`BRAWZER_DEV_PAGES=enabled` overrides this for private staging).
 
 ### API
@@ -123,12 +125,23 @@ report it, and anything that isn't a valid IP address is discarded.
 
 **Secrets at rest** ([ADR 0008](adr/0008-secrets-and-step-up.md)). Secrets Brawzer must read back (authenticator-app secrets, proxy credentials) use envelope encryption: a fresh AES-256-GCM data key per secret, wrapped by a key-encryption key held in Vault/OpenBao Transit in production (a local key in development, refused in production). Each ciphertext is bound to its record, so values can't be swapped between rows.
 
-**Confirm it's you.** Sensitive changes need a sign-in or confirmation from the last 10 minutes on that session; otherwise Brawzer asks for the password (or a passkey) first. Wrong passwords count towards a lockout (5 per 15 minutes). Today this protects signing other devices out; Phase 2 adds passkeys, two-factor, email changes and account deletion.
+**Confirm it's you.** Sensitive changes need a sign-in or confirmation from the last 10 minutes on that session; otherwise Brawzer asks for the password (or a passkey) first. Wrong passwords count towards a lockout (5 per 15 minutes). It protects signing other devices out, adding and removing passkeys, two-factor changes, changing the email address, downloading your data and deleting the account.
+
+**Changing the email address.** Needs a recent sign-in. The new address gets a single-use link (24 hours) and the current one gets a notice; nothing changes until the link is opened, and the old address is told again when it does. Only the newest request's link works, and changing or resetting the password cancels it. If another confirmed account already uses the new address, the reply is the same and that inbox gets an explanation instead of a link, so the form can't be used to find out who has an account. A never-confirmed sign-up holding the address is removed when its real owner confirms.
+
+**Deleting the account.** Needs a recent sign-in and the email address typed. Deletion is immediate and complete: the account row goes, and the database removes its sessions, passkeys, two-factor secrets, recovery codes, email links, known devices and security history with it. Every device is signed out, the browser is asked to clear Brawzer's site data, and a confirmation goes to the address. Server logs keep request metadata (account ID, IP address) only for their own retention period.
+
+**Downloading your data.** Needs a recent sign-in. A JSON file with the account, two-factor status, passkey names, signed-in devices and full security history. It never contains password hashes, session tokens, two-factor secrets or recovery codes (a test checks the raw response). The download itself is recorded in the history.
+
+**New-device alerts.** Each sign-in's browser and OS family plus network (IPv4 /24, IPv6 /48) is hashed into a known-device key, kept for 90 days after it was last seen. A sign-in from a key the account hasn't used sends an email and appears in Shield with a "This wasn't me" path to Sessions. An account's first sign-in never alerts. It's a notice, not a barrier: see Remaining risks.
+
+**Shield overview.** Shows how the account is protected (passkeys, two-factor, signed-in devices, failed attempts in the last 7 days), recommends what's missing, and lists sign-ins from new devices in the last 30 days.
 
 **Security history** (Shield). Sign-ups, confirmations, sign-ins (successful
 and failed), sign-outs, reset requests, resets, password changes and
 revocations are recorded with time, IP address and user agent, and shown to
-the account owner. Never passwords, tokens or anything about browsing. Device
+the account owner, as are passkey and two-factor changes, email changes, data
+downloads and new-device sign-ins. Never passwords, tokens or anything about browsing. Device
 names come from the browser's self-reported user agent, so they can be faked;
 they help recognition and are never used for security decisions.
 
@@ -138,7 +151,9 @@ startup). Message bodies, which contain links, are never logged.
 **Data retention.** A job in the API deletes, every 6 hours: security history
 older than `SECURITY_HISTORY_RETENTION_DAYS` (default 365); sessions that
 ended more than 30 days ago; email links used or expired more than 7 days ago;
-and sign-ups never confirmed within 30 days (often someone else's address).
+sign-ups never confirmed within 30 days (often someone else's address);
+passkey and sign-in challenges a day after they expire; and known devices not
+seen for 90 days.
 A database lock ensures only one API instance runs it at a time.
 
 ### Local infrastructure
@@ -164,13 +179,16 @@ closed most earlier gaps. These remain, deliberately:
 - **Rate limits during a Redis outage are per API instance.** Each instance falls back to its own counters, so with several instances the effective limit multiplies until Redis returns.
 - **Client addresses in production.** The web server's rewrite keeps a client-supplied `X-Forwarded-For`, so it must not be listed in `TRUST_PROXY`. Production should route `/api/v1` to the API at the edge and trust only the edge (Phase 7).
 - **Dependency advisories.** Three moderate advisories in transitive dependencies, none reachable: `esbuild` inside the development-only `drizzle-kit` (affects esbuild's own dev server, never started), and `glob`/`minimatch` inside `@fastify/static` (need attacker-controlled glob patterns; it only serves the API docs' assets, which are off in production). Patched versions are too new for the 7-day policy; re-check on 2026-11-13.
+- **New-device detection can be imitated.** The key comes from the self-reported user agent and the network prefix, so someone who copies both looks like a known device. It informs; it never blocks a sign-in.
+- **No undo for an email change.** Someone who has your password (and second factor, if on) can change the address. The old address is told twice, but has no one-click way to reverse it; the owner can still sign in with the password and change it back. An undo link is considered in the Phase 2 review.
+- **Deletion is immediate.** By decision there's no grace period, so a stolen session that can pass "confirm it's you" could delete the account.
 - **Development differences.** On localhost, `Clear-Site-Data` omits `"cookies"` (all localhost apps share cookies), and cookies are not `Secure`.
 
 ## Planned controls
 
 | When | Control                                                                                                                                     |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2    | Passkeys (including phone sign-in by QR code), TOTP, step-up authentication, alerts for new-device sign-ins                                 |
+| 2    | Phone sign-in by QR code (2.7); encrypted proxy credentials and an SSRF-safe proxy tester (2.6)                                             |
 | 3    | One isolated container per session, Chromium sandbox on, 60-second single-use stream tickets, gateway-enforced revocation and idle lock     |
 | 4    | Encryption at rest per profile, download scanning, signed short-lived export links                                                          |
 | 5    | Egress-proxy sidecar, private and metadata address blocking, envelope encryption of proxy credentials (KMS), WebRTC and DNS leak prevention |

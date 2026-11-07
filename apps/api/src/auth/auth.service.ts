@@ -17,6 +17,7 @@ import { SecurityEventsService } from "../security-events/security-events.js";
 import { BreachedPasswordCheck } from "./breached-passwords.js";
 import { EmailTokenService } from "./email-token.service.js";
 import { MfaService } from "./mfa/mfa.service.js";
+import { NewDeviceService } from "./new-device.service.js";
 import {
   assertAcceptablePassword,
   burnPasswordCheck,
@@ -70,6 +71,7 @@ export class AuthService {
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
     @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
     @Inject(MfaService) private readonly mfa: MfaService,
+    @Inject(NewDeviceService) private readonly newDevices: NewDeviceService,
   ) {}
 
   private async findUserByEmail(email: string): Promise<User | undefined> {
@@ -177,6 +179,7 @@ export class AuthService {
       meta,
       metadata: { method: "sign_up_link", persistent: input.keepSignedIn },
     });
+    await this.newDevices.recordSignIn(result.user, meta, result.issued.session.id);
     return result;
   }
 
@@ -235,6 +238,7 @@ export class AuthService {
       meta,
       metadata: { method: "password", persistent: input.keepSignedIn },
     });
+    await this.newDevices.recordSignIn(user, meta, issued.session.id);
     return { user, issued };
   }
 
@@ -312,7 +316,11 @@ export class AuthService {
         .update(schema.users)
         .set({ passwordHash, emailVerifiedAt: found.user.emailVerifiedAt ?? now, updatedAt: now })
         .where(eq(schema.users.id, found.user.id));
-      await this.emailTokens.invalidateAll(found.user.id, ["verify_email", "reset_password"], tx);
+      await this.emailTokens.invalidateAll(
+        found.user.id,
+        ["verify_email", "reset_password", "change_email"],
+        tx,
+      );
       return this.sessions.revokeAll(found.user.id, "password_reset", { executor: tx });
     });
     if (revoked === null) throw linkInvalid();
@@ -381,8 +389,9 @@ export class AuthService {
         .update(schema.users)
         .set({ passwordHash, updatedAt: new Date() })
         .where(eq(schema.users.id, user.id));
-      // A reset link requested earlier must not undo this change.
-      await this.emailTokens.invalidateAll(user.id, ["reset_password"], tx);
+      // A reset link requested earlier must not undo this change, and a pending
+      // email change is cancelled along with everything else an intruder set up.
+      await this.emailTokens.invalidateAll(user.id, ["reset_password", "change_email"], tx);
       return this.sessions.revokeAll(user.id, "password_changed", {
         except: session.id,
         executor: tx,

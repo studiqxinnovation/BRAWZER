@@ -5,7 +5,10 @@ import { Skeleton } from "@brawzer/ui/components/skeleton";
 import { BadgeCheck } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { ChangeEmail } from "@/components/account/change-email";
 import { ChangePasswordForm } from "@/components/account/change-password-form";
+import { DeleteAccount } from "@/components/account/delete-account";
+import { DownloadData } from "@/components/account/download-data";
 import { PasskeysSection } from "@/components/account/passkeys-section";
 import { TwoFactorSection } from "@/components/account/two-factor-section";
 import {
@@ -33,7 +36,7 @@ async function AccountDetails() {
       <dl className="divide-y divide-line">
         <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:gap-6">
           <dt className="w-40 shrink-0 text-callout text-ink-secondary">Email</dt>
-          <dd className="flex min-w-0 flex-wrap items-center gap-2 text-callout text-ink">
+          <dd className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-callout text-ink">
             <span className="break-all">{account.email}</span>
             {account.emailVerified && (
               <Badge tone="success">
@@ -41,6 +44,9 @@ async function AccountDetails() {
                 Confirmed
               </Badge>
             )}
+            <span className="sm:ml-auto">
+              <ChangeEmail currentEmail={account.email} />
+            </span>
           </dd>
         </div>
         <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:gap-6">
@@ -80,11 +86,25 @@ async function TwoFactor() {
   return <TwoFactorSection status={status.data} sharedComputer={!state.data.session.persistent} />;
 }
 
+async function YourData() {
+  const state = await getSession();
+  if (state.kind === "signed-out") signInAgain("/app/account");
+  if (state.kind === "unavailable") return <Unavailable />;
+  return <DownloadData sharedComputer={!state.data.session.persistent} />;
+}
+
+async function DeleteSection() {
+  const state = await getSession();
+  if (state.kind === "signed-out") signInAgain("/app/account");
+  if (state.kind === "unavailable") return <Unavailable />;
+  return <DeleteAccount email={state.data.account.email} />;
+}
+
 export default function AccountPage() {
   return (
     <PageContainer>
       <PageHeader title="Account">
-        <p>Your sign-in details and how Brawzer looks on this computer.</p>
+        <p>Your sign-in details, your data and how Brawzer looks on this computer.</p>
       </PageHeader>
       <div className="flex flex-col gap-10">
         <section aria-labelledby="details-heading" className="flex flex-col gap-4">
@@ -137,14 +157,28 @@ export default function AccountPage() {
           </Panel>
         </section>
 
+        <section aria-labelledby="data-heading" className="flex flex-col gap-4">
+          <SectionHeading id="data-heading">Your data</SectionHeading>
+          <Panel className="p-5 sm:p-6">
+            <Suspense fallback={<Skeleton className="h-20 w-full rounded-lg" />}>
+              <YourData />
+            </Suspense>
+          </Panel>
+        </section>
+
+        <section aria-labelledby="delete-heading" className="flex flex-col gap-4">
+          <SectionHeading id="delete-heading">Delete account</SectionHeading>
+          <Panel className="p-5 sm:p-6">
+            <Suspense fallback={<Skeleton className="h-20 w-full rounded-lg" />}>
+              <DeleteSection />
+            </Suspense>
+          </Panel>
+        </section>
+
         <DevState
-          title="More account controls aren’t available yet"
-          milestone="Phase 2"
-          requires={[
-            "Changing your email address",
-            "Deleting your account",
-            "Plans and storage (Phase 6)",
-          ]}
+          title="Plans and storage aren’t available yet"
+          milestone="Phase 6"
+          requires={["Choosing a plan and paying for it", "Seeing how much Drive storage you use"]}
         />
       </div>
     </PageContainer>

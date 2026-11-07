@@ -128,7 +128,12 @@ function SetupPanel({
         </li>
         <li>
           Enter the 6-digit code the app shows.
-          <form noValidate onSubmit={handleSubmit} className="mt-3 flex max-w-sm flex-col gap-4">
+          <form
+            method="post"
+            noValidate
+            onSubmit={handleSubmit}
+            className="mt-3 flex max-w-sm flex-col gap-4"
+          >
             <Field name="code" invalid={error !== null}>
               <FieldLabel>Authentication code</FieldLabel>
               <Input

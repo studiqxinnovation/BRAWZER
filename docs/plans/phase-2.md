@@ -1,6 +1,7 @@
 # Phase 2 plan: identity, profiles and proxies
 
 - **Status:** Approved 2026-11-07, with every decision taken as recommended (table at the end).
+- **Progress:** 2.1, 2.2, 2.3 and 2.4 done.
 - **Date:** 2026-11-07
 - **Builds on:** Phase 1 ([review](../reviews/phase-1.md)).
 
@@ -119,6 +120,7 @@ Each milestone ships on its own, with tests, docs and a commit, like Phase 1.
 - **Shield overview:** recommendations and recent alerts above the activity history.
 - **Sessions:** each device shows how it signed in (password, passkey, phone).
 - **Tests:** integration and browser tests for each flow, including the emails.
+- **Built as planned, plus:** the new address can't be used to find out whether it has an account (same reply; that inbox gets an explanation instead of a link); a never-confirmed sign-up holding the address is replaced when its owner confirms; changing or resetting the password cancels a pending change; and every form now uses POST, so a form submitted before the page is interactive can't put a password in the address bar (found while testing this milestone).
 
 ### 2.5 Profiles
 

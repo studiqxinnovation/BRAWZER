@@ -2,10 +2,16 @@ import { Inject, Injectable, Logger, Module } from "@nestjs/common";
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 import {
+  accountDeletedMessage,
   accountExistsMessage,
+  confirmEmailChangeMessage,
   type EmailContent,
+  emailChangedMessage,
+  emailChangeRequestedMessage,
+  emailInUseMessage,
   mfaDisabledMessage,
   mfaEnabledMessage,
+  newDeviceSignInMessage,
   passkeyAddedMessage,
   passkeyRemovedMessage,
   passwordChangedMessage,
@@ -68,6 +74,31 @@ export class EmailService {
 
   sendPasskeyAdded(to: string, name: string, device: string | null): void {
     this.dispatch(to, passkeyAddedMessage(name, this.now(), device));
+  }
+
+  sendEmailChangeLink(to: string, token: string): void {
+    this.dispatch(to, confirmEmailChangeMessage(this.link("/confirm-email-change", token)));
+  }
+
+  /** Sent to the new address instead of a link when another account already uses it. */
+  sendEmailInUse(to: string): void {
+    this.dispatch(to, emailInUseMessage(this.link("/sign-in")));
+  }
+
+  sendEmailChangeRequested(to: string, newEmail: string): void {
+    this.dispatch(to, emailChangeRequestedMessage(maskEmail(newEmail), this.now()));
+  }
+
+  sendEmailChanged(to: string, newEmail: string): void {
+    this.dispatch(to, emailChangedMessage(maskEmail(newEmail), this.now()));
+  }
+
+  sendAccountDeleted(to: string): void {
+    this.dispatch(to, accountDeletedMessage(this.now()));
+  }
+
+  sendNewDeviceSignIn(to: string, device: string, ip: string | null): void {
+    this.dispatch(to, newDeviceSignInMessage(device, ip, this.now(), this.link("/app/sessions")));
   }
 
   sendMfaEnabled(to: string): void {

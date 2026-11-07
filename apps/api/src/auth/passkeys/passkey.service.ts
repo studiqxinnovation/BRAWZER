@@ -28,6 +28,7 @@ import { RATE_LIMITS, RateLimiter } from "../../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../../security-events/security-events.js";
 import type { SignedIn } from "../auth.service.js";
 import { ChallengeService } from "../challenges.js";
+import { NewDeviceService } from "../new-device.service.js";
 import { type AuthContext, SessionService } from "../session.service.js";
 import { describeUserAgent } from "../user-agent.js";
 
@@ -75,6 +76,7 @@ export class PasskeyService {
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
     @Inject(EmailService) private readonly email: EmailService,
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
+    @Inject(NewDeviceService) private readonly newDevices: NewDeviceService,
   ) {}
 
   private get expected() {
@@ -238,6 +240,7 @@ export class PasskeyService {
       meta,
       metadata: { method: "passkey", persistent: input.keepSignedIn },
     });
+    await this.newDevices.recordSignIn(user, meta, issued.session.id);
     return { user, issued };
   }
 

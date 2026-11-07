@@ -31,5 +31,6 @@ describe("safeNextPath", () => {
   it("never sends someone back into the sign-in flow", () => {
     expect(safeNextPath("/sign-in?next=/app")).toBe("/app");
     expect(safeNextPath("/reset-password")).toBe("/app");
+    expect(safeNextPath("/confirm-email-change")).toBe("/app");
   });
 });

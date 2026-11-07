@@ -62,9 +62,10 @@ export async function createHarness(options: { ipPrefix: string; env?: NodeJS.Pr
 
   let clients = 0;
 
-  function browser(userAgent = WINDOWS_CHROME): TestBrowser {
+  /** `ip` puts the browser on another network than the file's usual one. */
+  function browser(userAgent = WINDOWS_CHROME, ip?: string): TestBrowser {
     clients += 1;
-    const ip = `${options.ipPrefix}.${String(clients)}`;
+    const address = ip ?? `${options.ipPrefix}.${String(clients)}`;
     let session: string | undefined;
 
     async function send(
@@ -76,7 +77,7 @@ export async function createHarness(options: { ipPrefix: string; env?: NodeJS.Pr
       const response = await app.inject({
         method,
         url: `/api/v1${path}`,
-        remoteAddress: ip,
+        remoteAddress: address,
         headers: {
           ...(method === "GET" ? {} : { origin }),
           ...(session ? { cookie: `${cookieName}=${session}` } : {}),

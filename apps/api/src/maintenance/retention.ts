@@ -18,6 +18,7 @@ export const RETENTION = {
   endedSessionDays: 30,
   usedLinkDays: 7,
   unconfirmedAccountDays: 30,
+  knownDeviceDays: 90,
 } as const;
 
 /** Session-level advisory lock, so only one API instance runs the job at a time. */
@@ -28,6 +29,7 @@ export interface RetentionResult {
   sessions: number;
   emailTokens: number;
   challenges: number;
+  knownDevices: number;
   unconfirmedAccounts: number;
 }
 
@@ -93,6 +95,9 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
            where expires_at < $1 or (used_at is not null and used_at < $1)`,
           [before(RETENTION.usedLinkDays)],
         );
+        const devices = await client.query("delete from known_devices where last_seen_at < $1", [
+          before(RETENTION.knownDeviceDays),
+        ]);
         const challenges = await client.query("delete from auth_challenges where expires_at < $1", [
           before(1),
         ]);
@@ -110,6 +115,7 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
           sessions: sessions.rowCount ?? 0,
           emailTokens: tokens.rowCount ?? 0,
           challenges: challenges.rowCount ?? 0,
+          knownDevices: devices.rowCount ?? 0,
           unconfirmedAccounts: accounts.rowCount ?? 0,
         };
       } finally {

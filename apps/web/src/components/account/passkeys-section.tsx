@@ -67,7 +67,7 @@ function RenamePasskey({ passkey }: { passkey: Passkey }) {
       </DialogTrigger>
       <DialogContent>
         <DialogTitle>Rename passkey</DialogTitle>
-        <form noValidate onSubmit={handleSubmit} className="mt-5 flex flex-col gap-4">
+        <form method="post" noValidate onSubmit={handleSubmit} className="mt-5 flex flex-col gap-4">
           <Field name="name" invalid={error !== null}>
             <FieldLabel>Name</FieldLabel>
             <Input name="name" defaultValue={passkey.name} maxLength={60} required />

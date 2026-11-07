@@ -9,6 +9,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -74,7 +75,11 @@ export const authSessions = pgTable(
   ],
 );
 
-export const emailTokenPurpose = pgEnum("email_token_purpose", ["verify_email", "reset_password"]);
+export const emailTokenPurpose = pgEnum("email_token_purpose", [
+  "verify_email",
+  "reset_password",
+  "change_email",
+]);
 
 /** Single-use links sent by email. Only the token's hash is stored. */
 export const emailTokens = pgTable(
@@ -92,6 +97,8 @@ export const emailTokens = pgTable(
      * link enters that same password, which defeats account pre-hijacking.
      */
     pendingPasswordHash: text(),
+    /** Email change only: the new address this link confirms. */
+    newEmail: text(),
     expiresAt: timestamptz().notNull(),
     usedAt: timestamptz(),
     createdAt: timestamptz().notNull().defaultNow(),
@@ -175,6 +182,25 @@ export const webauthnCredentials = pgTable(
     lastUsedAt: timestamptz(),
   },
   (table) => [index("webauthn_credentials_user_id_idx").on(table.userId)],
+);
+
+/**
+ * Browser-and-network combinations an account has signed in from, to notice
+ * sign-ins from somewhere new. Only a hash is kept; rows expire after 90 days.
+ */
+export const knownDevices = pgTable(
+  "known_devices",
+  {
+    id: id(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** SHA-256 of browser family, operating system and network prefix. */
+    deviceKey: text().notNull(),
+    firstSeenAt: timestamptz().notNull().defaultNow(),
+    lastSeenAt: timestamptz().notNull().defaultNow(),
+  },
+  (table) => [unique("known_devices_user_device_unique").on(table.userId, table.deviceKey)],
 );
 
 /** Authenticator-app two-factor authentication. One factor per account. */

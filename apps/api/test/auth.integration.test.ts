@@ -763,11 +763,13 @@ describe("security history", () => {
     const first = securityEventPageSchema.parse(
       (await client.get("/security/events?limit=2")).json(),
     );
+    // The phone is new to the account, so its sign-in is also flagged.
     expect(first.events.map((event) => event.type)).toEqual([
+      "sign_in.new_device",
       "sign_in.succeeded",
-      "sign_in.failed",
     ]);
-    expect(first.events[0]).toMatchObject({
+    expect(first.events[0]).toMatchObject({ device: "Safari on iOS" });
+    expect(first.events[1]).toMatchObject({
       device: "Safari on iOS",
       details: { method: "password" },
     });
@@ -777,6 +779,7 @@ describe("security history", () => {
       (await client.get(`/security/events?limit=10&before=${first.nextCursor ?? ""}`)).json(),
     );
     expect(second.events.map((event) => event.type)).toEqual([
+      "sign_in.failed",
       "sign_in.succeeded",
       "email.verified",
       "account.created",

@@ -24,6 +24,7 @@ import { RATE_LIMITS, RateLimiter } from "../../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../../security-events/security-events.js";
 import type { SignedIn } from "../auth.service.js";
 import { ChallengeService } from "../challenges.js";
+import { NewDeviceService } from "../new-device.service.js";
 import { type AuthContext, SessionService } from "../session.service.js";
 import { generateToken, hashToken } from "../tokens.js";
 
@@ -73,6 +74,7 @@ export class MfaService {
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
     @Inject(EmailService) private readonly email: EmailService,
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
+    @Inject(NewDeviceService) private readonly newDevices: NewDeviceService,
   ) {}
 
   private async factorOf(
@@ -339,6 +341,7 @@ export class MfaService {
       });
       this.email.sendRecoveryCodeUsed(user.email, remaining);
     }
+    await this.newDevices.recordSignIn(user, meta, issued.session.id);
     return { user, issued };
   }
 

@@ -13,5 +13,6 @@ import { SecurityHistoryService } from "./security.service.js";
   imports: [AuthModule, DatabaseModule],
   controllers: [SecurityController],
   providers: [SecurityHistoryService],
+  exports: [SecurityHistoryService],
 })
 export class SecurityModule {}

@@ -1,4 +1,5 @@
 import { type DynamicModule, Module } from "@nestjs/common";
+import { AccountModule } from "./account/account.module.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { ConfigModule } from "./config/config.module.js";
 import { CryptoModule } from "./crypto/crypto.module.js";
@@ -19,6 +20,7 @@ export class AppModule {
         HealthModule,
         AuthModule,
         SecurityModule,
+        AccountModule,
         MaintenanceModule,
       ],
     };

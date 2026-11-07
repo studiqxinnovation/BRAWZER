@@ -62,7 +62,13 @@ export function SecondStep({
   }
 
   return (
-    <form ref={formRef} noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form
+      method="post"
+      ref={formRef}
+      noValidate
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-5"
+    >
       <FormMessage tone="info" title="One more step">
         Your account uses two-factor authentication.
       </FormMessage>

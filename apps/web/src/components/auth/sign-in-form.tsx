@@ -118,7 +118,13 @@ export function SignInForm() {
   }
 
   return (
-    <form ref={formRef} noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form
+      method="post"
+      ref={formRef}
+      noValidate
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-5"
+    >
       {notice && (
         <FormMessage tone={notice.tone} title={notice.title}>
           {notice.message}

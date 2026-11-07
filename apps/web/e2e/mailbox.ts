@@ -4,6 +4,7 @@ import {
   type Browser,
   type BrowserContext,
   expect,
+  type Page,
 } from "@playwright/test";
 
 /** Mailpit catches every email the local API sends (`pnpm infra:up`). */
@@ -52,6 +53,32 @@ export async function linkFromEmail(
   if (!link) throw new Error(`No link in "${subject}"`);
   const url = new URL(link);
   return `${new URL(baseURL).origin}${url.pathname}${url.hash}`;
+}
+
+/** Waits for the newest email to `to` whose subject contains `subject`, and returns its text. */
+export async function emailText(
+  request: APIRequestContext,
+  to: string,
+  subject: string,
+): Promise<string> {
+  let found: Summary | undefined;
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(`${MAILPIT}/api/v1/search`, {
+          params: { query: `to:"${to}"` },
+        });
+        const { messages } = (await response.json()) as { messages: Summary[] };
+        found = messages.find((message) => message.Subject.includes(subject));
+        return found !== undefined;
+      },
+      { message: `waiting for "${subject}" to ${to}`, timeout: 10_000 },
+    )
+    .toBe(true);
+  const message = (await (
+    await request.get(`${MAILPIT}/api/v1/message/${found?.ID ?? ""}`)
+  ).json()) as { Text: string };
+  return message.Text;
 }
 
 /** Creates and confirms an account through the API, as a person would through the pages. */
@@ -105,7 +132,7 @@ export async function otherDevice(
 }
 
 /** Signs out from a signed-in page, once it is interactive, and waits for the sign-in page. */
-export async function signOut(page: import("@playwright/test").Page): Promise<void> {
+export async function signOut(page: Page): Promise<void> {
   // The session keeper marks <html> after hydration; clicking earlier does nothing.
   await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();

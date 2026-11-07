@@ -126,7 +126,13 @@ function ConfirmIdentityDialog({
         <DialogDescription>
           This change protects your account, so Brawzer checks it’s really you first.
         </DialogDescription>
-        <form ref={formRef} noValidate onSubmit={handleSubmit} className="mt-5 flex flex-col gap-4">
+        <form
+          method="post"
+          ref={formRef}
+          noValidate
+          onSubmit={handleSubmit}
+          className="mt-5 flex flex-col gap-4"
+        >
           {failure && <FormMessage tone="danger">{failure}</FormMessage>}
           <Field name="password" invalid={error !== null}>
             <FieldLabel>Password</FieldLabel>

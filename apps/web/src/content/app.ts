@@ -1,4 +1,4 @@
-import type { SecurityEvent } from "@brawzer/contracts";
+import type { Recommendation, SecurityEvent } from "@brawzer/contracts";
 import {
   AppWindow,
   CircleUserRound,
@@ -229,3 +229,34 @@ export const authMethodLabels = {
   phone: "Signed in with your phone",
   sign_up_link: "Signed in after confirming the email address",
 } as const;
+
+/** What Shield suggests, and where to do it. */
+export const recommendationContent: Record<
+  Recommendation["id"],
+  { title: string; body: string; href: Route; action: string }
+> = {
+  add_passkey: {
+    title: "Add a passkey",
+    body: "Sign in with your phone, face, fingerprint or a security key. A passkey works only on Brawzer’s real site, so a fake sign-in page can’t use it.",
+    href: "/app/account#passkeys-heading",
+    action: "Add a passkey",
+  },
+  enable_two_factor: {
+    title: "Turn on two-factor authentication",
+    body: "Ask for a code from an authenticator app after your password, so a stolen password isn’t enough on its own.",
+    href: "/app/account#two-factor-heading",
+    action: "Set up two-factor",
+  },
+  recovery_codes_low: {
+    title: "You’re running out of recovery codes",
+    body: "Create a new set, so you can still sign in if you lose your authenticator.",
+    href: "/app/account#two-factor-heading",
+    action: "Create new codes",
+  },
+  review_devices: {
+    title: "Review your signed-in devices",
+    body: "Your account is signed in on several devices. Sign out any you don’t recognise or no longer use.",
+    href: "/app/sessions",
+    action: "Review sessions",
+  },
+};

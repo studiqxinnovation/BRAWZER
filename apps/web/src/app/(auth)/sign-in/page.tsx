@@ -28,6 +28,14 @@ async function SignInNotice({ searchParams }: Pick<PageProps<"/sign-in">, "searc
       </FormMessage>
     );
   }
+  if (params.signed_out === "deleted") {
+    return (
+      <FormMessage tone="success" title="Your account was deleted">
+        Your account and the data stored with it were deleted, and every device was signed out. On a
+        shared computer, close the browser window as well.
+      </FormMessage>
+    );
+  }
   if (params.expired === "1") {
     return (
       <FormMessage tone="info" title="Your session has ended">

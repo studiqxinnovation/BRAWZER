@@ -113,7 +113,13 @@ export function ResetPasswordForm() {
         <p>Changing your password signs you out on every device.</p>
       </AuthHeading>
 
-      <form ref={formRef} noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
+      <form
+        method="post"
+        ref={formRef}
+        noValidate
+        onSubmit={handleSubmit}
+        className="flex flex-col gap-5"
+      >
         {failure && <FormMessage tone="danger">{failure}</FormMessage>}
 
         <Field name="password" invalid={Boolean(errors.password)}>
