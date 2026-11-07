@@ -3,6 +3,7 @@ import { AuthModule } from "./auth/auth.module.js";
 import { ConfigModule } from "./config/config.module.js";
 import type { AppConfig } from "./config/env.js";
 import { HealthModule } from "./health/health.module.js";
+import { SecurityModule } from "./security/security.module.js";
 
 @Module({})
 export class AppModule {
@@ -10,7 +11,7 @@ export class AppModule {
   static register(config: AppConfig): DynamicModule {
     return {
       module: AppModule,
-      imports: [ConfigModule.forRoot(config), HealthModule, AuthModule],
+      imports: [ConfigModule.forRoot(config), HealthModule, AuthModule, SecurityModule],
     };
   }
 }

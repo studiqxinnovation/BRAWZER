@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { type APIRequestContext, expect } from "@playwright/test";
+import {
+  type APIRequestContext,
+  type Browser,
+  type BrowserContext,
+  expect,
+} from "@playwright/test";
 
 /** Mailpit catches every email the local API sends (`pnpm infra:up`). */
 const MAILPIT = process.env.MAILPIT_API_URL ?? "http://127.0.0.1:8125";
@@ -71,4 +76,30 @@ export async function createConfirmedAccount(
   expect(verified.status()).toBe(200);
   // Verification signs in; start the browser tests signed out.
   await request.post("/api/v1/auth/logout", { headers: { origin } });
+}
+
+/** Signs a browser context in through the API; its pages then share the session cookie. */
+export async function signIn(
+  context: BrowserContext,
+  baseURL: string,
+  email: string,
+  password: string,
+): Promise<void> {
+  const response = await context.request.post(`${new URL(baseURL).origin}/api/v1/auth/login`, {
+    data: { email, password },
+    headers: { origin: new URL(baseURL).origin },
+  });
+  expect(response.status()).toBe(200);
+}
+
+/** Another device: a separate browser context with its own cookies, signed in. */
+export async function otherDevice(
+  browser: Browser,
+  baseURL: string,
+  email: string,
+  password: string,
+): Promise<BrowserContext> {
+  const context = await browser.newContext({ baseURL });
+  await signIn(context, baseURL, email, password);
+  return context;
 }

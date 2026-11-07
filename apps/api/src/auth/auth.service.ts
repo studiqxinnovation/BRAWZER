@@ -1,4 +1,5 @@
 import type {
+  changePasswordRequestSchema,
   loginRequestSchema,
   registerRequestSchema,
   resetPasswordRequestSchema,
@@ -28,6 +29,7 @@ type RegisterInput = z.output<typeof registerRequestSchema>;
 type LoginInput = z.output<typeof loginRequestSchema>;
 type VerifyEmailInput = z.output<typeof verifyEmailRequestSchema>;
 type ResetPasswordInput = z.output<typeof resetPasswordRequestSchema>;
+type ChangePasswordInput = z.output<typeof changePasswordRequestSchema>;
 
 export interface SignedIn {
   issued: IssuedSession;
@@ -284,7 +286,7 @@ export class AuthService {
         .set({ passwordHash, emailVerifiedAt: found.user.emailVerifiedAt ?? now, updatedAt: now })
         .where(eq(schema.users.id, found.user.id));
       await this.emailTokens.invalidateAll(found.user.id, ["verify_email", "reset_password"], tx);
-      return this.sessions.revokeAll(found.user.id, "password_reset", tx);
+      return this.sessions.revokeAll(found.user.id, "password_reset", { executor: tx });
     });
     if (revoked === null) throw linkInvalid();
 
@@ -307,6 +309,108 @@ export class AuthService {
         metadata: { reason: "password_reset", count: revoked },
       });
     }
-    this.email.sendPasswordChanged(found.user.email, describeUserAgent(meta.userAgent));
+    this.email.sendPasswordChanged(
+      found.user.email,
+      describeUserAgent(meta.userAgent),
+      "every-device",
+    );
+  }
+
+  /**
+   * Changes the password of a signed-in person after checking the current
+   * one. Every other device is signed out and this session gets a new token,
+   * so anyone who had the old password or an old cookie loses access.
+   */
+  async changePassword(
+    auth: AuthContext,
+    input: ChangePasswordInput,
+    meta: RequestMeta,
+  ): Promise<{ issued: IssuedSession | null; signedOut: number }> {
+    const { user, session } = auth;
+    const lockout = await this.limiter.isBlocked(RATE_LIMITS.passwordChangeFailures, user.id);
+    if (!lockout.allowed) throw rateLimited(lockout.retryAfterSeconds);
+
+    const correct = user.passwordHash
+      ? await verifyPassword(user.passwordHash, input.currentPassword)
+      : await burnPasswordCheck(input.currentPassword);
+    if (!correct) {
+      await this.limiter.hit(RATE_LIMITS.passwordChangeFailures, user.id);
+      // 400, not 401: the session is fine, only the form value is wrong.
+      throw new ApiException("validation_failed", 400, "Check your current password.", {
+        details: ["currentPassword: That isn’t your current password."],
+      });
+    }
+    if (input.newPassword === input.currentPassword) {
+      throw new ApiException("validation_failed", 400, "Choose a new password.", {
+        details: ["newPassword: Choose a password you haven’t been using."],
+      });
+    }
+    assertAcceptablePassword(input.newPassword, user.email, "newPassword");
+    const passwordHash = await hashPassword(input.newPassword);
+
+    const signedOut = await this.database.db.transaction(async (tx) => {
+      await tx
+        .update(schema.users)
+        .set({ passwordHash, updatedAt: new Date() })
+        .where(eq(schema.users.id, user.id));
+      return this.sessions.revokeAll(user.id, "password_changed", {
+        except: session.id,
+        executor: tx,
+      });
+    });
+
+    await this.limiter.reset(RATE_LIMITS.passwordChangeFailures, user.id);
+    await this.limiter.reset(RATE_LIMITS.signInFailuresPerAccount, user.email);
+    await this.events.record({
+      type: "password.changed",
+      userId: user.id,
+      sessionId: session.id,
+      meta,
+    });
+    if (signedOut > 0) {
+      await this.events.record({
+        type: "sessions.revoked",
+        userId: user.id,
+        sessionId: session.id,
+        meta,
+        metadata: { reason: "password_changed", count: signedOut },
+      });
+    }
+    this.email.sendPasswordChanged(user.email, describeUserAgent(meta.userAgent), "other-devices");
+    return { issued: await this.sessions.rotate(auth), signedOut };
+  }
+
+  /** Signs out one of the account's other devices. */
+  async endSession(auth: AuthContext, sessionId: string, meta: RequestMeta): Promise<void> {
+    if (sessionId === auth.session.id) {
+      throw new ApiException("bad_request", 400, "To end the session on this device, sign out.");
+    }
+    if (!(await this.sessions.revokeOwned(auth.user.id, sessionId, "signed_out_remotely"))) {
+      throw new ApiException("not_found", 404, "That session has already ended.");
+    }
+    await this.events.record({
+      type: "sessions.revoked",
+      userId: auth.user.id,
+      sessionId: auth.session.id,
+      meta,
+      metadata: { reason: "signed_out_remotely", count: 1 },
+    });
+  }
+
+  /** Signs out every device except the one making the request. */
+  async endOtherSessions(auth: AuthContext, meta: RequestMeta): Promise<number> {
+    const count = await this.sessions.revokeAll(auth.user.id, "signed_out_everywhere_else", {
+      except: auth.session.id,
+    });
+    if (count > 0) {
+      await this.events.record({
+        type: "sessions.revoked",
+        userId: auth.user.id,
+        sessionId: auth.session.id,
+        meta,
+        metadata: { reason: "signed_out_everywhere_else", count },
+      });
+    }
+    return count;
   }
 }

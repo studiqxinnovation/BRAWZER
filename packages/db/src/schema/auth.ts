@@ -89,6 +89,7 @@ export const securityEventType = pgEnum("security_event_type", [
   "sessions.revoked",
   "password.reset_requested",
   "password.reset",
+  "password.changed",
 ]);
 
 /**

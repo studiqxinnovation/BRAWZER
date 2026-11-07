@@ -8,10 +8,11 @@ import { AuthService } from "./auth.service.js";
 import { EmailTokenService } from "./email-token.service.js";
 import { SessionGuard } from "./session.guard.js";
 import { SessionService } from "./session.service.js";
+import { SessionsController } from "./sessions.controller.js";
 
 @Module({
   imports: [DatabaseModule, RateLimitModule, EmailModule, SecurityEventsModule],
-  controllers: [AuthController],
+  controllers: [AuthController, SessionsController],
   providers: [AuthService, SessionService, EmailTokenService, SessionGuard],
   // Later modules (profiles, sessions, Drive) protect their routes with SessionGuard.
   exports: [SessionService, SessionGuard],

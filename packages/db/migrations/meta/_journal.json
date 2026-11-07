@@ -8,6 +8,13 @@
       "when": 1794011933042,
       "tag": "0000_init_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794013992573,
+      "tag": "0001_password_changed_event",
+      "breakpoints": true
     }
   ]
 }

@@ -34,16 +34,16 @@ feel like remote desktop software. The user's computer is only an access point.
                                 └───────────────┘     └───────────────────────┘
 ```
 
-| Component            | Responsibility                                                                                                    | Must never hold                                        | Status                       |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------- |
-| `apps/web`           | Public site, sign-in, app shell, browser chrome, viewport, input capture                                          | Secrets, cookies of visited sites, profile data, files | Site and account pages (1.4) |
-| `apps/api`           | REST `/api/v1`: accounts and devices, profiles, encrypted proxy settings, Drive records, security events, billing | Credentials that control containers                    | Accounts and sessions (1.4)  |
-| `apps/gateway`       | Short-lived stream tickets, relay between user and cloud browser, real-time revocation and idle lock              | Stored user data                                       | Phase 3                      |
-| `apps/orchestrator`  | Starts and stops browser containers (Docker locally, Kubernetes later), warm pool, quotas                         | Any public endpoint                                    | Phase 3                      |
-| `apps/runtime-agent` | Inside each container: engine control, frame capture, input, download/upload/print interception                   | Other users' data, platform credentials                | Phase 3                      |
-| `packages/contracts` | Zod schemas shared by every service                                                                               | —                                                      | Started                      |
-| `packages/db`        | Drizzle schema, migrations, client                                                                                | —                                                      | Account tables (1.4)         |
-| `packages/ui`        | Design tokens, components, brand                                                                                  | —                                                      | Built (1.2)                  |
+| Component            | Responsibility                                                                                                    | Must never hold                                        | Status                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------- |
+| `apps/web`           | Public site, sign-in, app shell, browser chrome, viewport, input capture                                          | Secrets, cookies of visited sites, profile data, files | Site, accounts, app shell (1.5) |
+| `apps/api`           | REST `/api/v1`: accounts and devices, profiles, encrypted proxy settings, Drive records, security events, billing | Credentials that control containers                    | Accounts and sessions (1.4)     |
+| `apps/gateway`       | Short-lived stream tickets, relay between user and cloud browser, real-time revocation and idle lock              | Stored user data                                       | Phase 3                         |
+| `apps/orchestrator`  | Starts and stops browser containers (Docker locally, Kubernetes later), warm pool, quotas                         | Any public endpoint                                    | Phase 3                         |
+| `apps/runtime-agent` | Inside each container: engine control, frame capture, input, download/upload/print interception                   | Other users' data, platform credentials                | Phase 3                         |
+| `packages/contracts` | Zod schemas shared by every service                                                                               | —                                                      | Started                         |
+| `packages/db`        | Drizzle schema, migrations, client                                                                                | —                                                      | Account tables (1.4)            |
+| `packages/ui`        | Design tokens, components, brand                                                                                  | —                                                      | Built (1.2)                     |
 
 ### Request path today
 
@@ -63,19 +63,28 @@ whether the session is valid. The API is the only judge of a session.
                                                          └── emails (background) ──> Mailpit / Resend
 ```
 
+Open signed-in pages keep their session honest from the browser
+(`SessionKeeper`): they report activity at most once a minute, rotate the
+token every 15 minutes of use, and check every 30 seconds, without counting
+as activity (`GET /auth/session/status`), whether the session was ended
+elsewhere. On a shared computer they warn after 26 idle minutes and sign out at
+28, two minutes before the server would. Tabs share activity and sign-outs
+through a `BroadcastChannel`.
+
 In production the edge should route `/api/v1` straight to the API, so that
 `TRUST_PROXY` can name the edge as the only source of client addresses (see
 [SECURITY.md](SECURITY.md)).
 
-### API modules (milestone 1.4)
+### API modules (milestones 1.4–1.5)
 
-| Module            | Responsibility                                                                    |
-| ----------------- | --------------------------------------------------------------------------------- |
-| `auth`            | Sign-up, email confirmation, sign-in/out, refresh, password reset; `SessionGuard` |
-| `rate-limit`      | Fixed-window counters in Redis, keyed by hashed subjects                          |
-| `email`           | Templates (HTML + text, escaped) and transports: Mailpit, Resend, log             |
-| `security-events` | The account's security history; recording never fails a request                   |
-| `health`          | Database and Redis reachability                                                   |
+| Module            | Responsibility                                                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`            | Sign-up, email confirmation, sign-in/out, refresh, password reset and change, signed-in devices (`/auth/sessions`); `SessionGuard` |
+| `security`        | Shield: reads the account's security history (`/security/events`)                                                                  |
+| `rate-limit`      | Fixed-window counters in Redis, keyed by hashed subjects                                                                           |
+| `email`           | Templates (HTML + text, escaped) and transports: Mailpit, Resend, log                                                              |
+| `security-events` | The account's security history; recording never fails a request                                                                    |
+| `health`          | Database and Redis reachability                                                                                                    |
 
 ## Key decisions
 
@@ -122,11 +131,11 @@ common in public places.
 | 1.2   | Brand concepts, design tokens, components, `/design` review page                   | **Done**, awaiting brand decisions |
 | 1.3   | Public website: Home, Product, Security, Profiles, Drive, Pricing, About           | **Done**                           |
 | 1.4   | Authentication end to end (register, verify, sign in/out, reset)                   | **Done**                           |
-| 1.5   | Signed-in app shell and navigation                                                 | Next                               |
-| 1.6   | Phase review and security review                                                   | Planned                            |
+| 1.5   | Signed-in app shell and navigation                                                 | **Done**                           |
+| 1.6   | Phase review and security review                                                   | Next                               |
 | 2     | Passkeys and MFA, profiles, proxies, sessions, security centre, account            | Planned                            |
 | 3     | Cloud browser: gateway, orchestrator, runtime, Chromium (3a), WebRTC (3b), Firefox | Planned                            |
-| 4     | Persistent profiles, Brawzer Drive, downloads, previews                            | Planned                            |
+| 4     | Persistent profiles, Brawzer Drive, downloads, previews, extensions                | Planned                            |
 | 5     | Proxy engine, encryption, egress controls, device security                         | Planned                            |
 | 6     | Subscriptions (Stripe), limits, administration                                     | Planned                            |
 | 7     | Load, isolation and security testing; deployment                                   | Planned                            |

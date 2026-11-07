@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  changePasswordRequestSchema,
   emailLinkTokenSchema,
   emailSchema,
   loginRequestSchema,
@@ -67,5 +68,19 @@ describe("sessionCookieName", () => {
   it("uses the __Host- prefix only over HTTPS", () => {
     expect(sessionCookieName(true)).toBe("__Host-brawzer_session");
     expect(sessionCookieName(false)).toBe("brawzer_session");
+  });
+});
+
+describe("changePasswordRequestSchema", () => {
+  it("requires the current password and a valid new one", () => {
+    const result = changePasswordRequestSchema.safeParse({
+      currentPassword: "",
+      newPassword: "short",
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.message)).toEqual([
+      "Enter your current password.",
+      "Use at least 10 characters.",
+    ]);
   });
 });

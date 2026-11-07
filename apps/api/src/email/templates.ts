@@ -123,13 +123,25 @@ export function accountExistsMessage(signInUrl: string): EmailContent {
   });
 }
 
-export function passwordChangedMessage(when: string, device: string | null): EmailContent {
+/** Who was signed out: after a reset every device; after a change, every device but the one used. */
+export type SignedOutScope = "every-device" | "other-devices";
+
+export function passwordChangedMessage(
+  when: string,
+  device: string | null,
+  scope: SignedOutScope,
+): EmailContent {
   return compose("Your Brawzer password was changed", {
-    preheader: "Your password was changed and every device was signed out.",
+    preheader:
+      scope === "every-device"
+        ? "Your password was changed and every device was signed out."
+        : "Your password was changed and your other devices were signed out.",
     heading: "Your password was changed",
     paragraphs: [
       `Your Brawzer password was changed on ${when}${device ? ` from ${device}` : ""}.`,
-      "For your security, every device that was signed in has been signed out.",
+      scope === "every-device"
+        ? "For your security, every device that was signed in has been signed out."
+        : "For your security, every other device that was signed in has been signed out.",
     ],
     footnote: "If you didn’t do this, reset your password straight away from the sign-in page.",
   });

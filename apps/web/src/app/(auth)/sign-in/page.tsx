@@ -20,6 +20,14 @@ async function SignInNotice({ searchParams }: Pick<PageProps<"/sign-in">, "searc
       </FormMessage>
     );
   }
+  if (params.signed_out === "idle") {
+    return (
+      <FormMessage tone="info" title="You were signed out">
+        There was no activity for a while, so Brawzer signed you out to protect your account on this
+        computer.
+      </FormMessage>
+    );
+  }
   if (params.expired === "1") {
     return (
       <FormMessage tone="info" title="Your session has ended">

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { appNav, plannedModules } from "./app";
 import { pricing } from "./pricing";
 import { accountLinks, footerNav, primaryNav, publicRoutes } from "./site";
 
@@ -29,6 +30,26 @@ describe("site navigation", () => {
 
   it("lists every primary page in the sitemap routes", () => {
     for (const item of primaryNav) expect(publicRoutes).toContain(item.href);
+  });
+});
+
+describe("signed-in navigation", () => {
+  const items = appNav.flatMap((group) => group.items);
+
+  it.each(items.map((item) => item.href))("%s points to a real page", (href) => {
+    expect(pageExists(href)).toBe(true);
+  });
+
+  it("marks exactly the modules that aren't built as planned", () => {
+    const planned = items.filter((item) => item.status === "planned").map((item) => item.label);
+    expect(planned).toEqual(Object.values(plannedModules).map((planned) => planned.title));
+  });
+
+  it("states what each planned module still needs", () => {
+    for (const planned of Object.values(plannedModules)) {
+      expect(planned.requires.length).toBeGreaterThan(0);
+      expect(planned.milestone).toMatch(/^Phases? \d/);
+    }
   });
 });
 

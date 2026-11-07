@@ -25,7 +25,7 @@ exposure; it cannot remove these risks:
 Brawzer's marketing and interface must never claim to be "100% invisible",
 "zero footprint" or "immune to malware".
 
-## Controls in place today (milestones 1.1–1.4)
+## Controls in place today (milestones 1.1–1.5)
 
 ### Web app
 
@@ -42,6 +42,8 @@ Brawzer's marketing and interface must never claim to be "100% invisible",
 - **Search engines:** every page is `noindex` and `robots.txt` disallows everything until launch (`SITE_INDEXING=enabled` turns indexing on). Account pages and signed-in pages are always `noindex`.
 - **Signed-in pages** (`/app`) are sent with `Cache-Control: no-store` and `X-Robots-Tag: noindex`. Visitors without a session cookie are redirected to sign in before anything renders; the page itself asks the API whether the session is valid.
 - **Account forms:** password fields are hidden by default (show/hide is opt-in) and warn when Caps Lock is on. "Keep me signed in" is off by default. After sign-in and sign-out the page fully reloads, because Next.js keeps recently visited pages mounted in memory; sign-out also replaces the history entry so Back doesn't return to the signed-in page.
+- **Idle sign-out on shared computers:** after 26 minutes without activity the page warns ("Are you still there?") and at 28 minutes it signs out and reloads into the sign-in page, so the next person at the computer sees nothing. Focus starts on **Sign out**, so a passer-by pressing Enter ends the session rather than extending it. "Keep me signed in" sessions are exempt.
+- **Ended elsewhere, cleared here:** an open signed-in page checks every 30 seconds (without counting as activity) whether its session still exists. If it was signed out from another device, the page clears itself. Signing out in one tab signs out every Brawzer tab in that browser.
 - **Email-link tokens** travel in the URL fragment (`/verify-email#token=…`), which browsers never send to servers or put in logs. The page removes the token from the address bar as soon as it has read it and keeps it only in memory.
 - **Development-only pages:** `/design` and `/dev` are excluded from production builds (`BRAWZER_DEV_PAGES=enabled` overrides this for private staging).
 
@@ -78,6 +80,8 @@ Brawzer's marketing and interface must never claim to be "100% invisible",
 - `POST /auth/refresh` rotates the token. The previous token works for 60 more seconds so requests already in flight don't sign the person out.
 - Sign-out revokes the session, clears the cookie and sends `Clear-Site-Data`. Signing in again from a browser that still holds a session revokes the old one.
 - A password reset signs out every device.
+- **Signed-in devices** (Sessions): every active session with its device, IP address and last activity. Any other device can be signed out individually, or all of them at once; the session ends immediately on the server.
+- **Changing the password** needs the current one (5 wrong tries per 15 minutes, then a lockout), signs out every other device, gives this one a new token and emails a notice.
 
 **Sign-up and email links**
 
@@ -102,14 +106,18 @@ Brawzer's marketing and interface must never claim to be "100% invisible",
 | Emails sent to one account          | 3 per hour (extra ones are skipped)      |
 | Email-link submissions per address  | 30 per 15 minutes                        |
 | Wrong passwords on one sign-up link | 5 per hour                               |
+| Wrong current passwords (change)    | 5 per 15 minutes                         |
 
 Counters live in Redis and keys contain only hashes, never addresses or tokens.
 The client address comes from the connection unless `TRUST_PROXY` lists the
 reverse proxies allowed to report it.
 
-**Security history.** Sign-ups, confirmations, sign-ins (successful and failed),
-sign-outs, reset requests, resets and revocations are recorded with time, IP
-address and user agent. Never passwords, tokens or anything about browsing.
+**Security history** (Shield). Sign-ups, confirmations, sign-ins (successful
+and failed), sign-outs, reset requests, resets, password changes and
+revocations are recorded with time, IP address and user agent, and shown to
+the account owner. Never passwords, tokens or anything about browsing. Device
+names come from the browser's self-reported user agent, so they can be faked;
+they help recognition and are never used for security decisions.
 
 **Email delivery.** Mailpit locally; Resend in production (enforced at
 startup). Message bodies, which contain links, are never logged.
@@ -139,14 +147,14 @@ startup). Message bodies, which contain links, are never logged.
 
 ## Planned controls
 
-| When | Control                                                                                                                                               |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.6  | Security review of authentication; decisions on the known gaps above (CSP for signed-in pages, rate-limit failure mode, history retention)            |
-| 2    | Passkeys (including phone sign-in by QR code), TOTP, signed-in devices list with remote sign-out, step-up authentication, security history in the app |
-| 3    | One isolated container per session, Chromium sandbox on, 60-second single-use stream tickets, gateway-enforced revocation and idle lock               |
-| 4    | Encryption at rest per profile, download scanning, signed short-lived export links                                                                    |
-| 5    | Egress-proxy sidecar, private and metadata address blocking, envelope encryption of proxy credentials (KMS), WebRTC and DNS leak prevention           |
-| 7    | Independent penetration test, isolation testing, incident response runbook                                                                            |
+| When | Control                                                                                                                                     |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.6  | Security review of authentication; decisions on the known gaps above (CSP for signed-in pages, rate-limit failure mode, history retention)  |
+| 2    | Passkeys (including phone sign-in by QR code), TOTP, step-up authentication, alerts for new-device sign-ins                                 |
+| 3    | One isolated container per session, Chromium sandbox on, 60-second single-use stream tickets, gateway-enforced revocation and idle lock     |
+| 4    | Encryption at rest per profile, download scanning, signed short-lived export links                                                          |
+| 5    | Egress-proxy sidecar, private and metadata address blocking, envelope encryption of proxy credentials (KMS), WebRTC and DNS leak prevention |
+| 7    | Independent penetration test, isolation testing, incident response runbook                                                                  |
 
 ## Reporting a vulnerability
 

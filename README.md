@@ -7,23 +7,24 @@ computer in front of you (at a café, library or hotel) is only a window to it.
 Profiles, history and downloads stay with your account, not on the machine.
 
 > **Status: Phase 1 in progress.** Milestones 1.1 (foundation), 1.2 (brand and
-> design system), 1.3 (public website) and 1.4 (accounts and sign-in) are
-> complete. Next: 1.5, the signed-in app shell. There is no cloud browser yet;
-> it is built in Phase 3. See [the architecture](docs/ARCHITECTURE.md).
+> design system), 1.3 (public website), 1.4 (accounts and sign-in) and 1.5
+> (signed-in app shell) are complete. Next: 1.6, the phase and security review.
+> There is no cloud browser yet; it is built in Phase 3. See
+> [the architecture](docs/ARCHITECTURE.md).
 
 ---
 
 ## What works today
 
-| Area           | What is real                                                                                                                                                                                                                   |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| API            | NestJS 12 on Fastify. `GET /api/v1/health` checks PostgreSQL and Redis live. Validated config, structured logs with secret redaction, one error format, security headers, OpenAPI docs.                                        |
-| Accounts       | Create an account, confirm the email (the link asks for the password you chose), sign in, sign out, reset a forgotten password. Shared-computer sessions by default, argon2id, rate limits, security history.                  |
-| Website        | Home, Product, Security, Profiles, Drive, Pricing and About, plus draft Privacy and Terms. Honest pre-launch notice, no invented prices or facts, sitemap, search engines blocked until launch.                                |
-| Web app        | Next.js 16. Account pages (`/sign-in`, `/create-account`, password reset) and a signed-in `/app` page showing your account. `/dev` (live stack status) and `/design` (design review) are development-only.                     |
-| Design system  | Tokens for light and dark themes, three accent options, three logo concepts, and 20 accessible components built on Base UI.                                                                                                    |
-| Local services | PostgreSQL 18, Valkey (Redis-compatible) and Mailpit in Docker, bound to `127.0.0.1` only.                                                                                                                                     |
-| Quality        | Strict TypeScript, type-aware ESLint with accessibility rules, unit, integration and end-to-end tests including automated WCAG 2.2 AA checks on every page. Lighthouse: 100 for performance, accessibility and best practices. |
+| Area           | What is real                                                                                                                                                                                                                                                                                                                                                          |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API            | NestJS 12 on Fastify. `GET /api/v1/health` checks PostgreSQL and Redis live. Validated config, structured logs with secret redaction, one error format, security headers, OpenAPI docs.                                                                                                                                                                               |
+| Accounts       | Create an account, confirm the email (the link asks for the password you chose), sign in, sign out, reset or change your password. Shared-computer sessions by default, argon2id, rate limits.                                                                                                                                                                        |
+| Website        | Home, Product, Security, Profiles, Drive, Pricing and About, plus draft Privacy and Terms. Honest pre-launch notice, no invented prices or facts, sitemap, search engines blocked until launch.                                                                                                                                                                       |
+| Web app        | Next.js 16. Account pages and the signed-in app: Home, **Sessions** (every signed-in device, sign any out remotely), **Shield** (security history), **Account** (password, appearance). Idle warning and sign-out on shared computers. Unbuilt modules (Browser, Profiles, Drive, Proxy, Extensions) are clearly labelled. `/dev` and `/design` are development-only. |
+| Design system  | Tokens for light and dark themes, three accent options, three logo concepts, and 20 accessible components built on Base UI.                                                                                                                                                                                                                                           |
+| Local services | PostgreSQL 18, Valkey (Redis-compatible) and Mailpit in Docker, bound to `127.0.0.1` only.                                                                                                                                                                                                                                                                            |
+| Quality        | Strict TypeScript, type-aware ESLint with accessibility rules, unit, integration and end-to-end tests including automated WCAG 2.2 AA checks on every page. Lighthouse: 100 for performance, accessibility and best practices.                                                                                                                                        |
 
 Anything not built yet is either absent or clearly marked with a
 **Development state** notice. There are no buttons that do nothing.
@@ -54,6 +55,7 @@ Then open:
 | --------------------------- | -------------------------------------- |
 | Website                     | <http://localhost:3100>                |
 | Create an account / sign in | <http://localhost:3100/create-account> |
+| Signed-in app               | <http://localhost:3100/app>            |
 | Development console         | <http://localhost:3100/dev>            |
 | Design system review        | <http://localhost:3100/design>         |
 | API health                  | <http://localhost:4100/api/v1/health>  |
@@ -68,7 +70,9 @@ beside other projects that use the common defaults.
 1. Open <http://localhost:3100/create-account> and choose an email and password. Any address works: nothing leaves your machine.
 2. Open the Mailpit inbox at <http://localhost:8125> and click the link in "Confirm your email for Brawzer".
 3. Enter the same password. You're signed in at <http://localhost:3100/app>.
-4. Sign out from the header, or try "Forgot password?" on the sign-in page.
+4. Sign in from a second browser (or a private window) and open **Sessions**: both devices are listed, and you can sign either out from the other.
+5. **Shield** shows the account's security history; **Account** changes your password.
+6. Leave a shared-computer session alone for 26 minutes to see the idle warning (the page signs out 2 minutes later).
 
 ## Everyday commands
 
@@ -128,11 +132,11 @@ All settings live in `.env` at the repository root, created from
 
 ## Testing
 
-| Suite                                 | Needs           | Covers                                                                                                                                                                                                    |
-| ------------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit (`pnpm test`)                    | Nothing         | Config parsing, log redaction, error handling, health logic, schemas, tokens, password rules, email templates, origin checks, colour maths, theme handling, every component's behaviour and accessibility |
-| Integration (`pnpm test:integration`) | `pnpm infra:up` | The real API against PostgreSQL, Valkey and Mailpit: health, headers, error format, OpenAPI, every account flow, pre-hijacking, lockout, idle timeout, CSRF                                               |
-| End-to-end (`pnpm test:e2e`)          | `pnpm infra:up` | Real Chromium at desktop and phone sizes: pages, the full account journey with real emails, theming, WCAG 2.2 AA (axe), contrast, keyboard and focus behaviour, security headers                          |
+| Suite                                 | Needs           | Covers                                                                                                                                                                                                                                          |
+| ------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit (`pnpm test`)                    | Nothing         | Config parsing, log redaction, error handling, health logic, schemas, tokens, password rules, email templates, origin checks, colour maths, theme handling, every component's behaviour and accessibility                                       |
+| Integration (`pnpm test:integration`) | `pnpm infra:up` | The real API against PostgreSQL, Valkey and Mailpit: health, headers, error format, OpenAPI, every account flow, pre-hijacking, lockout, idle timeout, CSRF, device sessions, password change, security history                                 |
+| End-to-end (`pnpm test:e2e`)          | `pnpm infra:up` | Real Chromium at desktop and phone sizes: pages, the account journey with real emails, the signed-in app (navigation, remote and cross-tab sign-out, the idle warning with a controlled clock), WCAG 2.2 AA (axe), keyboard and focus behaviour |
 
 ## Dependencies and supply chain
 

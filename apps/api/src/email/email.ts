@@ -6,6 +6,7 @@ import {
   type EmailContent,
   passwordChangedMessage,
   resetPasswordMessage,
+  type SignedOutScope,
   verifyEmailMessage,
 } from "./templates.js";
 import { createTransport, type EmailTransport, maskEmail } from "./transports.js";
@@ -51,13 +52,13 @@ export class EmailService {
     this.dispatch(to, accountExistsMessage(this.link("/sign-in")));
   }
 
-  sendPasswordChanged(to: string, device: string | null): void {
+  sendPasswordChanged(to: string, device: string | null, scope: SignedOutScope): void {
     const when = new Intl.DateTimeFormat("en-GB", {
       dateStyle: "long",
       timeStyle: "short",
       timeZone: "UTC",
     }).format(new Date());
-    this.dispatch(to, passwordChangedMessage(`${when} UTC`, device));
+    this.dispatch(to, passwordChangedMessage(`${when} UTC`, device, scope));
   }
 }
 

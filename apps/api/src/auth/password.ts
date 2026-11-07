@@ -137,11 +137,15 @@ export function passwordProblem(password: string, email: string): string | null 
 }
 
 /** Throws a validation error, in the same shape as schema failures, for a guessable password. */
-export function assertAcceptablePassword(password: string, email: string): void {
+export function assertAcceptablePassword(
+  password: string,
+  email: string,
+  field = "password",
+): void {
   const problem = passwordProblem(password, email);
   if (problem) {
     throw new ApiException("validation_failed", 400, "Choose a stronger password.", {
-      details: [`password: ${problem}`],
+      details: [`${field}: ${problem}`],
     });
   }
 }

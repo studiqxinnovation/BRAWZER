@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import {
   apiErrorSchema,
   currentSessionResponseSchema,
+  deviceSessionListSchema,
   messageResponseSchema,
+  securityEventPageSchema,
   sessionCookieName,
 } from "@brawzer/contracts";
 import { createDatabase, type DatabaseHandle } from "@brawzer/db";
@@ -49,14 +51,19 @@ afterAll(async () => {
 
 let clientCount = 0;
 
-/** A browser: its own address and cookie jar. */
-function browser() {
+const WINDOWS_CHROME =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
+const IPHONE_SAFARI =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1";
+
+/** A browser: its own address, device and cookie jar. */
+function browser(userAgent = WINDOWS_CHROME) {
   clientCount += 1;
   const ip = `198.51.100.${String(clientCount)}`;
   let session: string | undefined;
 
   async function send(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "DELETE",
     path: string,
     payload?: object,
     headers: Record<string, string> = {},
@@ -66,10 +73,9 @@ function browser() {
       url: `/api/v1${path}`,
       remoteAddress: ip,
       headers: {
-        ...(method === "POST" ? { origin: ORIGIN } : {}),
+        ...(method === "GET" ? {} : { origin: ORIGIN }),
         ...(session ? { cookie: `${COOKIE}=${session}` } : {}),
-        "user-agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "user-agent": userAgent,
         ...headers,
       },
       ...(payload ? { payload } : {}),
@@ -83,6 +89,8 @@ function browser() {
     get: (path: string, headers?: Record<string, string>) => send("GET", path, undefined, headers),
     post: (path: string, payload?: object, headers?: Record<string, string>) =>
       send("POST", path, payload, headers),
+    delete: (path: string, headers?: Record<string, string>) =>
+      send("DELETE", path, undefined, headers),
     get session() {
       return session;
     },
@@ -579,5 +587,243 @@ describe("cross-site request protection", () => {
       headers: { "sec-fetch-site": "same-origin" },
     });
     expect(sameOrigin.statusCode).toBe(204);
+  });
+});
+
+// ── Signed-in devices ────────────────────────────────────────────────────────
+
+async function signIn(client: Browser, email: string, password: string): Promise<void> {
+  const response = await client.post("/auth/login", { email, password });
+  expect(response.statusCode).toBe(200);
+}
+
+async function listSessions(client: Browser) {
+  const response = await client.get("/auth/sessions");
+  expect(response.statusCode).toBe(200);
+  return deviceSessionListSchema.parse(response.json()).sessions;
+}
+
+describe("signed-in devices", () => {
+  it("lists the account's devices, this one first, without internal fields", async () => {
+    const email = uniqueEmail("devices");
+    const laptop = browser();
+    const phone = browser(IPHONE_SAFARI);
+    await signUp(laptop, email, "violet-harbor-lantern");
+    await signIn(phone, email, "violet-harbor-lantern");
+
+    const sessions = await listSessions(laptop);
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0]).toMatchObject({ current: true, device: "Chrome on Windows" });
+    expect(sessions[1]).toMatchObject({ current: false, device: "Safari on iOS" });
+    const raw = (await laptop.get("/auth/sessions")).body;
+    for (const field of ["tokenHash", "previousTokenHash", "userId", "revokedReason"]) {
+      expect(raw).not.toContain(field);
+    }
+  });
+
+  it("signs out another device immediately", async () => {
+    const email = uniqueEmail("end-one");
+    const laptop = browser();
+    const phone = browser(IPHONE_SAFARI);
+    await signUp(laptop, email, "violet-harbor-lantern");
+    await signIn(phone, email, "violet-harbor-lantern");
+    const phoneSession = (await listSessions(laptop)).find((session) => !session.current);
+    if (!phoneSession) throw new Error("expected the phone's session");
+
+    expect((await laptop.delete(`/auth/sessions/${phoneSession.id}`)).statusCode).toBe(204);
+    expect((await phone.get("/auth/session")).statusCode).toBe(401);
+    expect(await listSessions(laptop)).toHaveLength(1);
+
+    const again = await laptop.delete(`/auth/sessions/${phoneSession.id}`);
+    expect(again.statusCode).toBe(404);
+    expect(errorOf(again).code).toBe("not_found");
+    expect(await eventTypes(email)).toContain("sessions.revoked");
+  });
+
+  it("refuses to end this device's own session or another account's", async () => {
+    const mine = browser();
+    const theirs = browser();
+    await signUp(mine, uniqueEmail("own"), "violet-harbor-lantern");
+    await signUp(theirs, uniqueEmail("other"), "violet-harbor-lantern");
+    const [own] = await listSessions(mine);
+    const [other] = await listSessions(theirs);
+    if (!own || !other) throw new Error("expected sessions");
+
+    expect(errorOf(await mine.delete(`/auth/sessions/${own.id}`)).code).toBe("bad_request");
+    expect((await mine.delete(`/auth/sessions/${other.id}`)).statusCode).toBe(404);
+    expect((await theirs.get("/auth/session")).statusCode).toBe(200);
+    expect(errorOf(await mine.delete("/auth/sessions/not-a-session")).code).toBe(
+      "validation_failed",
+    );
+  });
+
+  it("signs out every other device at once", async () => {
+    const email = uniqueEmail("end-others");
+    const laptop = browser();
+    const phone = browser(IPHONE_SAFARI);
+    const library = browser();
+    await signUp(laptop, email, "violet-harbor-lantern");
+    await signIn(phone, email, "violet-harbor-lantern");
+    await signIn(library, email, "violet-harbor-lantern");
+
+    const response = await laptop.post("/auth/sessions/revoke-others");
+    expect(response.json()).toEqual({ revoked: 2 });
+    expect((await phone.get("/auth/session")).statusCode).toBe(401);
+    expect((await library.get("/auth/session")).statusCode).toBe(401);
+    expect((await laptop.get("/auth/session")).statusCode).toBe(200);
+  });
+
+  it("requires a session and a Brawzer origin", async () => {
+    expect((await browser().get("/auth/sessions")).statusCode).toBe(401);
+    const client = browser();
+    await signUp(client, uniqueEmail("csrf-delete"), "violet-harbor-lantern");
+    const [own] = await listSessions(client);
+    const forged = await client.delete(`/auth/sessions/${own?.id ?? ""}`, {
+      origin: "https://evil.example",
+    });
+    expect(forged.statusCode).toBe(403);
+  });
+});
+
+// ── Changing the password ────────────────────────────────────────────────────
+
+describe("changing the password", () => {
+  it("needs the current password and refuses weak or unchanged new ones", async () => {
+    const client = browser();
+    await signUp(client, uniqueEmail("change-checks"), "violet-harbor-lantern");
+
+    const wrong = await client.post("/auth/password/change", {
+      currentPassword: "not-my-password",
+      newPassword: "amber-river-compass",
+    });
+    expect(wrong.statusCode).toBe(400);
+    expect(errorOf(wrong).details).toEqual(["currentPassword: That isn’t your current password."]);
+    expect(client.session).toBeDefined();
+
+    const same = await client.post("/auth/password/change", {
+      currentPassword: "violet-harbor-lantern",
+      newPassword: "violet-harbor-lantern",
+    });
+    expect(errorOf(same).details?.[0]).toMatch(/^newPassword: /);
+
+    const weak = await client.post("/auth/password/change", {
+      currentPassword: "violet-harbor-lantern",
+      newPassword: "password1234",
+    });
+    expect(errorOf(weak).details?.[0]).toMatch(/^newPassword: .*too common/);
+  });
+
+  it("signs out the other devices, keeps this one with a new token, and tells the owner", async () => {
+    const email = uniqueEmail("change");
+    const laptop = browser();
+    const phone = browser(IPHONE_SAFARI);
+    await signUp(laptop, email, "violet-harbor-lantern");
+    await signIn(phone, email, "violet-harbor-lantern");
+    const before = laptop.session;
+
+    const response = await laptop.post("/auth/password/change", {
+      currentPassword: "violet-harbor-lantern",
+      newPassword: "amber-river-compass",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(messageResponseSchema.parse(response.json()).message).toMatch(/1 other device/);
+    expect(laptop.session).toBeDefined();
+    expect(laptop.session).not.toBe(before);
+
+    expect((await laptop.get("/auth/session")).statusCode).toBe(200);
+    expect((await phone.get("/auth/session")).statusCode).toBe(401);
+    expect(
+      (await browser().post("/auth/login", { email, password: "violet-harbor-lantern" }))
+        .statusCode,
+    ).toBe(401);
+    expect(
+      (await browser().post("/auth/login", { email, password: "amber-river-compass" })).statusCode,
+    ).toBe(200);
+
+    const notice = await waitForEmail(email, "password was changed");
+    expect(notice).toContain("every other device");
+    expect(await eventTypes(email)).toEqual(
+      expect.arrayContaining(["password.changed", "sessions.revoked"]),
+    );
+  });
+});
+
+// ── Security history ─────────────────────────────────────────────────────────
+
+describe("security history", () => {
+  it("pages through the account's own events, newest first", async () => {
+    const email = uniqueEmail("history");
+    const client = browser();
+    await signUp(client, email, "violet-harbor-lantern");
+    await browser().post("/auth/login", { email, password: "wrong-password-1" });
+    await signIn(browser(IPHONE_SAFARI), email, "violet-harbor-lantern");
+    // Someone else's activity must never appear.
+    await signUp(browser(), uniqueEmail("history-other"), "violet-harbor-lantern");
+
+    const first = securityEventPageSchema.parse(
+      (await client.get("/security/events?limit=2")).json(),
+    );
+    expect(first.events.map((event) => event.type)).toEqual([
+      "sign_in.succeeded",
+      "sign_in.failed",
+    ]);
+    expect(first.events[0]).toMatchObject({
+      device: "Safari on iOS",
+      details: { method: "password" },
+    });
+    expect(first.nextCursor).toBe(first.events[1]?.id);
+
+    const second = securityEventPageSchema.parse(
+      (await client.get(`/security/events?limit=10&before=${first.nextCursor ?? ""}`)).json(),
+    );
+    expect(second.events.map((event) => event.type)).toEqual([
+      "sign_in.succeeded",
+      "email.verified",
+      "account.created",
+    ]);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it("validates the query and requires a session", async () => {
+    const client = browser();
+    await signUp(client, uniqueEmail("history-query"), "violet-harbor-lantern");
+    expect(errorOf(await client.get("/security/events?limit=500")).code).toBe("validation_failed");
+    expect(errorOf(await client.get("/security/events?before=nope")).code).toBe(
+      "validation_failed",
+    );
+    expect((await browser().get("/security/events")).statusCode).toBe(401);
+  });
+});
+
+describe("passive session checks", () => {
+  it("report whether the session is valid without counting as activity", async () => {
+    const email = uniqueEmail("passive");
+    const client = browser();
+    await signUp(client, email, "violet-harbor-lantern");
+    const lastSeen = async () =>
+      (
+        await database.pool.query<{ last_seen_at: Date }>(
+          `select last_seen_at from auth_sessions where user_id = (select id from users where email = $1)`,
+          [email],
+        )
+      ).rows[0]?.last_seen_at.getTime();
+    await database.pool.query(
+      `update auth_sessions set last_seen_at = now() - interval '10 minutes'
+       where user_id = (select id from users where email = $1)`,
+      [email],
+    );
+    const before = await lastSeen();
+
+    expect((await client.get("/auth/session/status")).statusCode).toBe(204);
+    expect(await lastSeen()).toBe(before);
+
+    expect((await client.get("/auth/session")).statusCode).toBe(200);
+    expect(await lastSeen()).toBeGreaterThan(before ?? 0);
+
+    const token = client.session;
+    await client.post("/auth/logout");
+    const replay = browser();
+    replay.session = token;
+    expect((await replay.get("/auth/session/status")).statusCode).toBe(401);
   });
 });

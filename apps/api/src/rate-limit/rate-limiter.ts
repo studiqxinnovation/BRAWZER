@@ -21,6 +21,7 @@ export const RATE_LIMITS = {
   emailsPerAccount: { name: "email-account", limit: 3, windowSeconds: 60 * 60 },
   linkAttemptsPerIp: { name: "link-ip", limit: 30, windowSeconds: 15 * 60 },
   linkPasswordFailures: { name: "link-fail", limit: 5, windowSeconds: 60 * 60 },
+  passwordChangeFailures: { name: "password-change-fail", limit: 5, windowSeconds: 15 * 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {

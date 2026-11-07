@@ -41,11 +41,20 @@ describe("templates", () => {
   });
 
   it("names the device in the password-changed notice when known", () => {
-    expect(
-      passwordChangedMessage("6 November 2026 at 16:00 UTC", "Chrome on Windows").text,
-    ).toContain("from Chrome on Windows");
-    expect(passwordChangedMessage("6 November 2026 at 16:00 UTC", null).text).not.toMatch(
-      /UTC from /,
+    const when = "6 November 2026 at 16:00 UTC";
+    expect(passwordChangedMessage(when, "Chrome on Windows", "every-device").text).toContain(
+      "from Chrome on Windows",
+    );
+    expect(passwordChangedMessage(when, null, "every-device").text).not.toMatch(/UTC from /);
+  });
+
+  it("says which devices were signed out", () => {
+    const when = "6 November 2026 at 16:00 UTC";
+    expect(passwordChangedMessage(when, null, "every-device").text).toContain(
+      "every device that was signed in",
+    );
+    expect(passwordChangedMessage(when, null, "other-devices").text).toContain(
+      "every other device",
     );
   });
 });

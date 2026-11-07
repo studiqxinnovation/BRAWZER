@@ -85,6 +85,34 @@ export const currentSessionResponseSchema = z.object({
 /** Responses that only confirm a request was accepted. */
 export const messageResponseSchema = z.object({ message: z.string().min(1) });
 
+export const changePasswordRequestSchema = z.object({
+  currentPassword: z
+    .string({ error: "Enter your current password." })
+    .min(1, "Enter your current password.")
+    .max(PASSWORD_MAX_LENGTH, "Enter your current password."),
+  newPassword: newPasswordSchema,
+});
+
+/** A device that is signed in to the account (one sign-in session). */
+export const deviceSessionSchema = z.object({
+  id: z.uuid(),
+  /** The session making this request. */
+  current: z.boolean(),
+  persistent: z.boolean(),
+  /** Such as "Chrome on Windows"; null when the browser didn't say. */
+  device: z.string().nullable(),
+  ipAddress: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  lastActiveAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime(),
+});
+
+export const deviceSessionListSchema = z.object({ sessions: z.array(deviceSessionSchema) });
+
+export const revokeOtherSessionsResponseSchema = z.object({
+  revoked: z.number().int().nonnegative(),
+});
+
 export type RegisterRequest = z.infer<typeof registerRequestSchema>;
 export type LoginRequest = z.input<typeof loginRequestSchema>;
 export type ResetPasswordRequest = z.infer<typeof resetPasswordRequestSchema>;
@@ -93,6 +121,10 @@ export type Account = z.infer<typeof accountSchema>;
 export type SessionInfo = z.infer<typeof sessionInfoSchema>;
 export type CurrentSessionResponse = z.infer<typeof currentSessionResponseSchema>;
 export type MessageResponse = z.infer<typeof messageResponseSchema>;
+export type ChangePasswordRequest = z.infer<typeof changePasswordRequestSchema>;
+export type DeviceSession = z.infer<typeof deviceSessionSchema>;
+export type DeviceSessionList = z.infer<typeof deviceSessionListSchema>;
+export type RevokeOtherSessionsResponse = z.infer<typeof revokeOtherSessionsResponseSchema>;
 
 /**
  * Session cookie name. The __Host- prefix makes browsers refuse the cookie

@@ -47,9 +47,9 @@ test.describe("account journey", () => {
     await passwordField(page).fill(PASSWORD);
     await page.getByRole("button", { name: "Confirm and sign in" }).click();
     await expect(page).toHaveURL(/\/app$/);
-    await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
     await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
-    await expect(page.getByText(/Shared-computer mode/)).toBeVisible();
+    await expect(page.getByRole("main").getByText(/Shared-computer mode/)).toBeVisible();
 
     // Shared-computer default: HttpOnly, SameSite=Lax, gone when the browser closes.
     expect(await sessionCookie(page)).toMatchObject({
@@ -215,7 +215,7 @@ test.describe("accessibility of account pages", () => {
     await emailField(page).fill(email);
     await passwordField(page).fill(PASSWORD);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
     for (const colorScheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme });
       expect(await wcagViolations(page), `/app ${colorScheme}`).toEqual([]);

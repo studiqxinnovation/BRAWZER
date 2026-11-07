@@ -1,4 +1,5 @@
 import {
+  changePasswordRequestSchema,
   type CurrentSessionResponse,
   currentSessionResponseSchema,
   emailRequestSchema,
@@ -42,7 +43,7 @@ import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 import { AuthService } from "./auth.service.js";
 import { type AuthContext, SessionService } from "./session.service.js";
-import { CurrentAuth, SessionGuard } from "./session.guard.js";
+import { CurrentAuth, PassiveSession, SessionGuard } from "./session.guard.js";
 
 /** Name of the cookie security scheme in the OpenAPI document. */
 export const SESSION_AUTH = "session";
@@ -193,6 +194,22 @@ export class AuthController {
     return { account: accountOf(auth.user), session: this.sessions.describe(auth.session) };
   }
 
+  @Get("session/status")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(SessionGuard)
+  @PassiveSession()
+  @ApiCookieAuth(SESSION_AUTH)
+  @ApiOperation({
+    summary: "Is this session still valid?",
+    description:
+      "For background checks by open pages. Unlike other requests it doesn't count as activity, so it never keeps an idle session alive.",
+  })
+  @ApiNoContentResponse({ description: "The session is valid." })
+  @ApiUnauthorizedResponse({ description: "The session has ended." })
+  sessionStatus(): void {
+    // The guard did the work.
+  }
+
   @Post("password/forgot")
   @HttpCode(HttpStatus.ACCEPTED)
   @SerializeOptions({ schema: messageResponseSchema })
@@ -210,6 +227,38 @@ export class AuthController {
     return {
       message:
         "If there’s an account for that address, we’ve emailed a link to reset the password.",
+    };
+  }
+
+  @Post("password/change")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: messageResponseSchema })
+  @ApiOperation({
+    summary: "Change the password",
+    description:
+      "Needs the current password. Signs out every other device and gives this one a new session cookie.",
+  })
+  @ApiOkResponse({ description: "Password changed.", standardSchema: messageResponseSchema })
+  @ApiBadRequestResponse({ description: "Wrong current password, or a weak new one." })
+  @ApiUnauthorizedResponse({ description: "No valid session." })
+  @ApiTooManyRequestsResponse({ description: "Too many wrong current passwords." })
+  async changePassword(
+    @Body({ schema: changePasswordRequestSchema })
+    body: z.output<typeof changePasswordRequestSchema>,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<MessageResponse> {
+    const { issued, signedOut } = await this.auth.changePassword(auth, body, requestMeta(request));
+    if (issued) this.sessions.setCookie(reply, issued);
+    if (signedOut === 0) return { message: "Your password has been changed." };
+    return {
+      message:
+        signedOut === 1
+          ? "Your password has been changed and 1 other device was signed out."
+          : `Your password has been changed and ${String(signedOut)} other devices were signed out.`,
     };
   }
 
