@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { axeViolations } from "../test/axe";
@@ -46,7 +46,7 @@ describe("AlertDialog", () => {
     const trigger = screen.getByRole("button", { name: "Sign out other devices" });
     await user.click(trigger);
     await user.click(await screen.findByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(trigger).toHaveFocus();
   });
 });
