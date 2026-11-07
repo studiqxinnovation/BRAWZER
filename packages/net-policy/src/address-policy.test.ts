@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isObviouslyLocal, isPublicAddress, parseHost } from "./address-policy.js";
+import { isObviouslyLocal, isPublicAddress, parseHost } from "./address-policy.ts";
 
 describe("isPublicAddress", () => {
   it("allows ordinary public addresses", () => {
