@@ -26,6 +26,7 @@ import {
   DialogTrigger,
 } from "@brawzer/ui/components/dialog";
 import { FormMessage } from "@brawzer/ui/components/form-message";
+import { Select } from "@brawzer/ui/components/select";
 import { useToast } from "@brawzer/ui/components/toast";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -145,7 +146,14 @@ function NewProfile({ suggestedColor }: { suggestedColor: ProfileColor }) {
   );
 }
 
-function EditProfile({ profile }: { profile: Profile }) {
+interface ProxyChoice {
+  id: string;
+  name: string;
+}
+
+const NO_PROXY = "none";
+
+function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly ProxyChoice[] }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [open, setOpen] = useState(false);
@@ -164,9 +172,11 @@ function EditProfile({ profile }: { profile: Profile }) {
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
+    const proxyChoice = data.get("proxyId");
     const parsed = updateProfileRequestSchema.safeParse({
       name: data.get("name"),
       color: data.get("color"),
+      ...(proxyChoice === null ? {} : { proxyId: proxyChoice === NO_PROXY ? null : proxyChoice }),
     });
     setFailure(null);
     if (!parsed.success) {
@@ -202,6 +212,27 @@ function EditProfile({ profile }: { profile: Profile }) {
         >
           {failure && <FormMessage tone="danger">{failure}</FormMessage>}
           <ProfileNameAndColor name={profile.name} color={profile.color} errors={errors} />
+          {proxies.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              <Select
+                label="Proxy"
+                name="proxyId"
+                defaultValue={profile.proxyId ?? NO_PROXY}
+                options={[
+                  { value: NO_PROXY, label: "No proxy" },
+                  ...proxies.map((proxy) => ({ value: proxy.id, label: proxy.name })),
+                ]}
+              />
+              <p className="text-footnote text-ink-secondary">
+                Browsing goes through it from Phase 5.
+              </p>
+              {errors.proxyId && <p className="text-footnote text-danger">{errors.proxyId}</p>}
+            </div>
+          ) : (
+            <p className="text-footnote text-ink-secondary">
+              To give this profile a proxy, add one on the Proxy page first.
+            </p>
+          )}
           <DialogFooter className="mt-1">
             <Button
               variant="secondary"
@@ -272,10 +303,13 @@ function DeleteProfile({ profile }: { profile: Profile }) {
 export function ProfilesManager({
   profiles,
   limit,
+  proxies,
 }: {
   profiles: readonly Profile[];
   limit: number;
+  proxies: readonly ProxyChoice[];
 }) {
+  const proxyNames = new Map(proxies.map((proxy) => [proxy.id, proxy.name]));
   const router = useRouter();
   const toast = useToast();
   const [moving, setMoving] = useState(false);
@@ -337,7 +371,11 @@ export function ProfilesManager({
                 <div className="min-w-0">
                   <p className="truncate text-callout font-medium text-ink">{profile.name}</p>
                   <p className="text-footnote text-ink-secondary">
-                    {engineLabels[profile.engine]} · Created <LocalDate iso={profile.createdAt} />
+                    {engineLabels[profile.engine]}
+                    {profile.proxyId && proxyNames.has(profile.proxyId)
+                      ? ` · Proxy: ${proxyNames.get(profile.proxyId) ?? ""}`
+                      : ""}{" "}
+                    · Created <LocalDate iso={profile.createdAt} />
                   </p>
                 </div>
               </div>
@@ -360,7 +398,7 @@ export function ProfilesManager({
                 >
                   <ArrowDown aria-hidden="true" />
                 </Button>
-                <EditProfile profile={profile} />
+                <EditProfile profile={profile} proxies={proxies} />
                 {profiles.length > 1 && <DeleteProfile profile={profile} />}
               </div>
             </li>

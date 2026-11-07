@@ -35,7 +35,7 @@ export const appNav: readonly AppNavGroup[] = [
       { href: "/app/browser", label: "Browser", icon: AppWindow, status: "planned" },
       { href: "/app/profiles", label: "Profiles", icon: Layers, status: "available" },
       { href: "/app/drive", label: "Drive", icon: HardDriveDownload, status: "planned" },
-      { href: "/app/proxy", label: "Proxy", icon: Globe, status: "planned" },
+      { href: "/app/proxy", label: "Proxy", icon: Globe, status: "available" },
       { href: "/app/extensions", label: "Extensions", icon: Puzzle, status: "planned" },
     ],
   },
@@ -90,21 +90,6 @@ export const plannedModules = {
       "S3-compatible object storage (bucket and credentials, server-side only)",
       "Download interception in the browser runtime (Phase 3)",
       "A malware-scanning service",
-    ],
-  },
-  proxy: {
-    title: "Proxy",
-    lede: "Route a profile’s traffic through a SOCKS5 or HTTP proxy of your choice, with live connection status.",
-    milestone: "Phases 2 and 5",
-    plans: [
-      "SOCKS4, SOCKS5, HTTP and HTTPS proxies, with or without authentication.",
-      "A different proxy for each profile, with a connection test before you use it.",
-      "Proxy passwords are encrypted on Brawzer’s servers and never sent to the computer you’re using.",
-    ],
-    requires: [
-      "Proxy settings API with envelope encryption through a key management service",
-      "An egress-proxy sidecar beside each browser container (Phase 5)",
-      "WebRTC and DNS leak prevention (Phase 5)",
     ],
   },
   extensions: {

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { index, integer, pgEnum, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { users } from "./auth.ts";
 import { id, timestamptz } from "./columns.ts";
+import { proxies } from "./proxies.ts";
 
 /** Must match `profileColors` in @brawzer/contracts (a test in the API enforces this). */
 export const profileColor = pgEnum("profile_color", [
@@ -36,12 +37,15 @@ export const profiles = pgTable(
     engine: browserEngine().notNull().default("chromium"),
     /** Order in the account's list, lowest first. Gaps are allowed. */
     position: integer().notNull(),
+    /** Cleared when the proxy is deleted. Traffic goes through it from Phase 5. */
+    proxyId: uuid().references(() => proxies.id, { onDelete: "set null" }),
     createdAt: timestamptz().notNull().defaultNow(),
     updatedAt: timestamptz().notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("profiles_user_name_unique").on(table.userId, sql`lower(${table.name})`),
     index("profiles_user_position_idx").on(table.userId, table.position),
+    index("profiles_proxy_idx").on(table.proxyId),
   ],
 );
 

@@ -51,6 +51,8 @@ export const profileSchema = z.object({
   color: profileColorSchema,
   engine: browserEngineSchema,
   position: z.number().int().nonnegative(),
+  /** The proxy this profile will browse through (Phase 5), or null. */
+  proxyId: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -68,10 +70,15 @@ export const createProfileRequestSchema = z.object({
 });
 
 export const updateProfileRequestSchema = z
-  .object({ name: profileNameSchema.optional(), color: profileColorSchema.optional() })
-  .refine((value) => value.name !== undefined || value.color !== undefined, {
-    error: "Change the name or the colour.",
-  });
+  .object({
+    name: profileNameSchema.optional(),
+    color: profileColorSchema.optional(),
+    proxyId: z.uuid({ error: "Choose one of your proxies." }).nullable().optional(),
+  })
+  .refine(
+    (value) => value.name !== undefined || value.color !== undefined || value.proxyId !== undefined,
+    { error: "Change the name, colour or proxy." },
+  );
 
 export const reorderProfilesRequestSchema = z.object({
   /** Every profile of the account, in the new order. */

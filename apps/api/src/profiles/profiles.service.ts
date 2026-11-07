@@ -11,13 +11,19 @@ import {
 } from "@brawzer/db";
 import { Inject, Injectable } from "@nestjs/common";
 import type { AuthContext } from "../auth/session.service.js";
+import { lockAccount } from "../common/account-lock.js";
 import { ApiException } from "../common/api-exception.js";
-import { isUniqueViolation } from "../common/database-errors.js";
+import { isForeignKeyViolation, isUniqueViolation } from "../common/database-errors.js";
 import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 
 const notFound = () => new ApiException("not_found", 404, "That profile doesn’t exist.");
+
+const proxyMissing = () =>
+  new ApiException("validation_failed", 400, "Choose one of your proxies.", {
+    details: ["proxyId: That proxy doesn’t exist any more. Choose another."],
+  });
 
 const nameTaken = () =>
   new ApiException("conflict", 409, "You already have a profile with that name.", {
@@ -31,6 +37,7 @@ export function toProfile(row: ProfileRow): Profile {
     color: row.color,
     engine: row.engine,
     position: row.position,
+    proxyId: row.proxyId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -47,14 +54,6 @@ export class ProfilesService {
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
   ) {}
-
-  private async lockAccount(tx: DatabaseExecutor, userId: string): Promise<void> {
-    await tx
-      .select({ id: schema.users.id })
-      .from(schema.users)
-      .where(eq(schema.users.id, userId))
-      .for("update");
-  }
 
   private rows(executor: DatabaseExecutor, userId: string): Promise<ProfileRow[]> {
     return executor
@@ -77,7 +76,7 @@ export class ProfilesService {
     let created: ProfileRow;
     try {
       created = await this.database.db.transaction(async (tx) => {
-        await this.lockAccount(tx, userId);
+        await lockAccount(tx, userId);
         const [stats] = await tx
           .select({
             count: sql<number>`count(*)::int`,
@@ -115,8 +114,21 @@ export class ProfilesService {
   async update(
     userId: string,
     id: string,
-    input: { name?: string | undefined; color?: ProfileColor | undefined },
+    input: {
+      name?: string | undefined;
+      color?: ProfileColor | undefined;
+      proxyId?: string | null | undefined;
+    },
   ): Promise<Profile> {
+    if (input.proxyId) {
+      // Only the account's own proxies can be assigned.
+      const [proxy] = await this.database.db
+        .select({ id: schema.proxies.id })
+        .from(schema.proxies)
+        .where(and(eq(schema.proxies.id, input.proxyId), eq(schema.proxies.userId, userId)))
+        .limit(1);
+      if (!proxy) throw proxyMissing();
+    }
     let row: ProfileRow | undefined;
     try {
       [row] = await this.database.db
@@ -124,12 +136,15 @@ export class ProfilesService {
         .set({
           ...(input.name === undefined ? {} : { name: input.name }),
           ...(input.color === undefined ? {} : { color: input.color }),
+          ...(input.proxyId === undefined ? {} : { proxyId: input.proxyId }),
           updatedAt: new Date(),
         })
         .where(and(eq(schema.profiles.id, id), eq(schema.profiles.userId, userId)))
         .returning();
     } catch (error) {
       if (isUniqueViolation(error)) throw nameTaken();
+      // The proxy was deleted in the meantime.
+      if (isForeignKeyViolation(error)) throw proxyMissing();
       throw error;
     }
     if (!row) throw notFound();
@@ -140,7 +155,7 @@ export class ProfilesService {
   async remove(auth: AuthContext, id: string, meta: RequestMeta): Promise<void> {
     const userId = auth.user.id;
     await this.database.db.transaction(async (tx) => {
-      await this.lockAccount(tx, userId);
+      await lockAccount(tx, userId);
       const rows = await this.rows(tx, userId);
       if (!rows.some((row) => row.id === id)) throw notFound();
       if (rows.length <= 1) {
@@ -161,7 +176,7 @@ export class ProfilesService {
   /** Puts the account's profiles in the given order; `ids` must list every one of them. */
   async reorder(userId: string, ids: readonly string[]): Promise<Profile[]> {
     return this.database.db.transaction(async (tx) => {
-      await this.lockAccount(tx, userId);
+      await lockAccount(tx, userId);
       const rows = await this.rows(tx, userId);
       const current = new Set(rows.map((row) => row.id));
       if (ids.length !== current.size || !ids.every((id) => current.has(id))) {

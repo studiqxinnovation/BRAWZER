@@ -25,7 +25,7 @@ exposure; it cannot remove these risks:
 Brawzer's marketing and interface must never claim to be "100% invisible",
 "zero footprint" or "immune to malware".
 
-## Controls in place today (Phase 1, and Phase 2 milestones 2.1–2.5)
+## Controls in place today (Phase 1, and Phase 2 milestones 2.1–2.6)
 
 ### Web app
 
@@ -137,6 +137,8 @@ report it, and anything that isn't a valid IP address is discarded.
 
 **Profiles.** Each account's profiles are only ever read or changed through queries scoped to that account (another account's profile is "not found"). Names are limited to 40 characters and can't contain control characters or text-direction overrides that could disguise them. Creating and deleting take a lock on the account, so simultaneous requests can't exceed the temporary limit of 10 or delete the last profile. Profiles hold no browsing data until Phases 3 and 4; creating and deleting them is recorded in the security history.
 
+**Proxies and proxy tests** ([ADR 0010](adr/0010-proxy-tests-and-ssrf.md)). A proxy's username and password are one encrypted value bound to its row; the API never returns them, only whether some are saved, and the edit form never pre-fills them. Testing a proxy means Brawzer's servers connect to an address someone typed, so the tester accepts only strictly formed hosts (no decimal, octal, hex or shortened IPv4), resolves a name once and refuses it if any answer is private, local, reserved or special-purpose (IPv4 and IPv6, including mapped, NAT64, 6to4 and Teredo forms), then connects to that exact address. Every test fetches one fixed echo URL through the proxy, with a 10-second limit, small response limits, at most 2 tests at once per account and 30 per 15 minutes. Private addresses are allowed only with a development flag that production refuses.
+
 **Shield overview.** Shows how the account is protected (passkeys, two-factor, signed-in devices, failed attempts in the last 7 days), recommends what's missing, and lists sign-ins from new devices in the last 30 days.
 
 **Security history** (Shield). Sign-ups, confirmations, sign-ins (successful
@@ -182,19 +184,20 @@ closed most earlier gaps. These remain, deliberately:
 - **Client addresses in production.** The web server's rewrite keeps a client-supplied `X-Forwarded-For`, so it must not be listed in `TRUST_PROXY`. Production should route `/api/v1` to the API at the edge and trust only the edge (Phase 7).
 - **Dependency advisories.** Three moderate advisories in transitive dependencies, none reachable: `esbuild` inside the development-only `drizzle-kit` (affects esbuild's own dev server, never started), and `glob`/`minimatch` inside `@fastify/static` (need attacker-controlled glob patterns; it only serves the API docs' assets, which are off in production). Patched versions are too new for the 7-day policy; re-check on 2026-11-13.
 - **New-device detection can be imitated.** The key comes from the self-reported user agent and the network prefix, so someone who copies both looks like a known device. It informs; it never blocks a sign-in.
+- **Proxy tests run inside the API.** The address rules are the only barrier between a test and Brawzer's own network until Phase 5 moves tests and browsing traffic into an isolated egress service, which is required before launch ([ADR 0010](adr/0010-proxy-tests-and-ssrf.md)).
 - **No undo for an email change.** Someone who has your password (and second factor, if on) can change the address. The old address is told twice, but has no one-click way to reverse it; the owner can still sign in with the password and change it back. An undo link is considered in the Phase 2 review.
 - **Deletion is immediate.** By decision there's no grace period, so a stolen session that can pass "confirm it's you" could delete the account.
 - **Development differences.** On localhost, `Clear-Site-Data` omits `"cookies"` (all localhost apps share cookies), and cookies are not `Secure`.
 
 ## Planned controls
 
-| When | Control                                                                                                                                     |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2    | Phone sign-in by QR code (2.7); encrypted proxy credentials and an SSRF-safe proxy tester (2.6)                                             |
-| 3    | One isolated container per session, Chromium sandbox on, 60-second single-use stream tickets, gateway-enforced revocation and idle lock     |
-| 4    | Encryption at rest per profile, download scanning, signed short-lived export links                                                          |
-| 5    | Egress-proxy sidecar, private and metadata address blocking, envelope encryption of proxy credentials (KMS), WebRTC and DNS leak prevention |
-| 7    | Independent penetration test, isolation testing, incident response runbook                                                                  |
+| When | Control                                                                                                                                                                                                        |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2    | Phone sign-in by QR code (2.7)                                                                                                                                                                                 |
+| 3    | One isolated container per session, Chromium sandbox on, 60-second single-use stream tickets, gateway-enforced revocation and idle lock                                                                        |
+| 4    | Encryption at rest per profile, download scanning, signed short-lived export links                                                                                                                             |
+| 5    | Isolated egress service for proxy tests and browsing traffic, private and metadata address blocking at the network level, WebRTC and DNS leak prevention, "confirm it's you" before changing a profile's proxy |
+| 7    | Independent penetration test, isolation testing, incident response runbook                                                                                                                                     |
 
 ## Reporting a vulnerability
 

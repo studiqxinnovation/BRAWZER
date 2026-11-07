@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
 import { DatabaseModule } from "../database/database.module.js";
 import { ProfilesModule } from "../profiles/profiles.module.js";
+import { ProxiesModule } from "../proxies/proxies.module.js";
 import { EmailModule } from "../email/email.js";
 import { RateLimitModule } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsModule } from "../security-events/security-events.js";
@@ -18,6 +19,7 @@ import { AccountService } from "./account.service.js";
     SecurityEventsModule,
     SecurityModule,
     ProfilesModule,
+    ProxiesModule,
   ],
   controllers: [AccountController],
   providers: [AccountService],

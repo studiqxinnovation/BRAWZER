@@ -29,6 +29,7 @@
     "otplib": "catalog:",
     "pino": "catalog:",
     "qrcode": "catalog:",
+    "socks": "catalog:",
     "reflect-metadata": "catalog:",
     "rxjs": "catalog:",
     "zod": "catalog:"

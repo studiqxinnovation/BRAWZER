@@ -19,6 +19,7 @@ const prodConfig = parseConfig(
     KEY_PROVIDER: "vault",
     VAULT_ADDR: "https://vault.internal:8200",
     VAULT_TOKEN: "not-a-real-token",
+    PROXY_TEST_URL: "https://echo.brawzer.example/ip",
   },
   "1.0.0",
 );

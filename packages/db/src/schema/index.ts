@@ -4,3 +4,4 @@
  */
 export * from "./auth.ts";
 export * from "./profiles.ts";
+export * from "./proxies.ts";

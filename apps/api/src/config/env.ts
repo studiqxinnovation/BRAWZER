@@ -66,6 +66,14 @@ export const envSchema = z.object({
     .string()
     .regex(/^[A-Za-z0-9_-]+$/, "may only contain letters, digits, _ and -")
     .default("brawzer"),
+  /**
+   * Proxy tests fetch this URL through the proxy; it must answer with the
+   * caller's IP address as plain text. Defaults to this API's own
+   * /api/v1/network/echo. Must be https in production.
+   */
+  PROXY_TEST_URL: z.url({ protocol: /^https?$/, error: "must be an http(s) URL" }).optional(),
+  /** Lets proxy tests reach private and local addresses. Development and tests only. */
+  PROXY_TEST_ALLOW_PRIVATE: z.stringbool().default(false),
   BUILD_SHA: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/, "must be a git commit SHA")
@@ -136,6 +144,12 @@ export interface AppConfig {
   readonly breachedPasswordCheck: boolean;
   readonly securityHistoryRetentionDays: number;
   readonly encryption: EncryptionConfig;
+  readonly proxyTests: {
+    /** The fixed destination of every proxy test. */
+    readonly url: string;
+    /** Never true in production. */
+    readonly allowPrivate: boolean;
+  };
   /** Passkeys are bound to `rpId`; `origins` are the pages allowed to use them. */
   readonly webauthn: {
     readonly rpId: string;
@@ -253,6 +267,16 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       },
     };
   }
+  const echoHost =
+    values.API_HOST === "0.0.0.0" || values.API_HOST === "::" ? "127.0.0.1" : values.API_HOST;
+  const proxyTestUrl =
+    values.PROXY_TEST_URL ?? `http://${echoHost}:${String(values.API_PORT)}/api/v1/network/echo`;
+  if (isProduction && !proxyTestUrl.startsWith("https://")) {
+    issues.push("PROXY_TEST_URL: must be set to an https URL in production");
+  }
+  if (isProduction && values.PROXY_TEST_ALLOW_PRIVATE) {
+    issues.push("PROXY_TEST_ALLOW_PRIVATE: must not be enabled in production");
+  }
   if (issues.length > 0) throw new ConfigError(issues);
 
   return Object.freeze({
@@ -278,6 +302,7 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
     breachedPasswordCheck: values.BREACHED_PASSWORD_CHECK ?? isProduction,
     securityHistoryRetentionDays: values.SECURITY_HISTORY_RETENTION_DAYS,
     encryption: Object.freeze(encryption),
+    proxyTests: Object.freeze({ url: proxyTestUrl, allowPrivate: values.PROXY_TEST_ALLOW_PRIVATE }),
     webauthn: Object.freeze({
       rpId,
       rpName: values.WEBAUTHN_RP_NAME,

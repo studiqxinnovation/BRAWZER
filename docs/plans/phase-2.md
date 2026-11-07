@@ -1,7 +1,7 @@
 # Phase 2 plan: identity, profiles and proxies
 
 - **Status:** Approved 2026-11-07, with every decision taken as recommended (table at the end).
-- **Progress:** 2.1, 2.2, 2.3, 2.4 and 2.5 done.
+- **Progress:** 2.1 to 2.6 done.
 - **Date:** 2026-11-07
 - **Builds on:** Phase 1 ([review](../reviews/phase-1.md)).
 
@@ -152,6 +152,7 @@ Each milestone ships on its own, with tests, docs and a commit, like Phase 1.
   - **Unit:** address blocking, including IPv6, mapped, decimal and zero-address tricks, and a DNS answer that changes between lookups.
   - **Integration:** small SOCKS5 and HTTP proxies started by the tests. Private addresses are allowed only with a test-only flag.
   - **Browser:** add, test and assign.
+- **Built as planned, plus:** the SSRF design is ADR 0010; protocol-specific credential rules (SOCKS4 has no password, HTTP usernames can't contain a colon, SOCKS5 fields are at most 255 bytes); HTTPS proxies' certificates are verified; a profile's proxy is chosen in its edit dialog, and each proxy lists the profiles using it. Production must set an `https` `PROXY_TEST_URL`; the API's own `GET /api/v1/network/echo` is the default destination.
 
 ### 2.7 Sign in with your phone (QR approval)
 

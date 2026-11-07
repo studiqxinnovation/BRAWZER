@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { emailLinkTokenSchema, emailSchema } from "./auth.ts";
 import { browserEngineSchema, profileColorSchema } from "./profiles.ts";
+import { proxyKindSchema, proxyProtocolSchema, proxyRotationSchema } from "./proxies.ts";
 import { securityEventSchema } from "./security.ts";
 
 export const changeEmailRequestSchema = z.object({ email: emailSchema });
@@ -53,7 +54,20 @@ export const accountExportSchema = z.object({
       updatedAt: z.iso.datetime(),
     }),
   ),
-  proxies: z.array(z.record(z.string(), z.unknown())),
+  /** Never credentials: only whether some are saved. */
+  proxies: z.array(
+    z.object({
+      name: z.string(),
+      protocol: proxyProtocolSchema,
+      host: z.string(),
+      port: z.number().int(),
+      kind: proxyKindSchema,
+      rotation: proxyRotationSchema,
+      hasCredentials: z.boolean(),
+      createdAt: z.iso.datetime(),
+      updatedAt: z.iso.datetime(),
+    }),
+  ),
 });
 
 export const recommendationSchema = z.object({

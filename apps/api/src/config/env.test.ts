@@ -19,6 +19,7 @@ const production = {
   KEY_PROVIDER: "vault",
   VAULT_ADDR: "https://vault.internal:8200",
   VAULT_TOKEN: "not-a-real-token",
+  PROXY_TEST_URL: "https://echo.brawzer.example/ip",
 };
 
 function issuesOf(env: NodeJS.ProcessEnv): readonly string[] {
@@ -162,6 +163,7 @@ describe("parseConfig", () => {
       "WEB_ORIGIN: must use https in production",
       "EMAIL_TRANSPORT: must be resend in production",
       "KEY_PROVIDER: must be a key management service (vault) in production",
+      "PROXY_TEST_URL: must be set to an https URL in production",
     ]);
     expect(issuesOf({ ...production, RESEND_API_KEY: undefined })).toEqual([
       "RESEND_API_KEY: is required when EMAIL_TRANSPORT is resend",
@@ -188,6 +190,22 @@ describe("parseConfig", () => {
     expect(issuesOf({ ...minimal, SECURITY_HISTORY_RETENTION_DAYS: "7" })[0]).toMatch(
       /^SECURITY_HISTORY_RETENTION_DAYS:/,
     );
+  });
+
+  it("points proxy tests at this API's echo by default, and never relaxes them in production", () => {
+    expect(parseConfig(minimal, "1").proxyTests).toEqual({
+      url: "http://127.0.0.1:4100/api/v1/network/echo",
+      allowPrivate: false,
+    });
+    expect(
+      parseConfig({ ...minimal, PROXY_TEST_ALLOW_PRIVATE: "true" }, "1").proxyTests.allowPrivate,
+    ).toBe(true);
+    expect(issuesOf({ ...production, PROXY_TEST_ALLOW_PRIVATE: "true" })).toEqual([
+      "PROXY_TEST_ALLOW_PRIVATE: must not be enabled in production",
+    ]);
+    expect(issuesOf({ ...production, PROXY_TEST_URL: "http://echo.brawzer.example/ip" })).toEqual([
+      "PROXY_TEST_URL: must be set to an https URL in production",
+    ]);
   });
 
   it("delivers email to Mailpit by default in development", () => {
