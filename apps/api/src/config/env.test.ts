@@ -220,6 +220,44 @@ describe("parseConfig", () => {
     ]);
   });
 
+  it("reaches the engine over a socket locally and over mutual TLS in production", () => {
+    const local = parseConfig(minimal, "1").browser;
+    expect(local.docker.kind).toBe("socket");
+    expect(local.agentBind).toBe("127.0.0.1");
+    expect(local.agentHost).toBe("127.0.0.1");
+    expect(local.containerRuntime).toBeNull();
+    expect(local.maxLiveSessions).toBe(200);
+
+    const remote = parseConfig(
+      {
+        ...minimal,
+        DOCKER_HOST: "tcp://runtime.internal:2376",
+        BROWSER_CONTAINER_RUNTIME: "runsc",
+      },
+      "1",
+    ).browser;
+    expect(remote.docker).toEqual({ kind: "tcp", host: "runtime.internal", port: 2376, tls: null });
+    expect(remote.agentBind).toBe("0.0.0.0");
+    expect(remote.agentHost).toBe("runtime.internal");
+    expect(remote.containerRuntime).toBe("runsc");
+
+    expect(issuesOf({ ...production, DOCKER_HOST: "tcp://runtime.internal:2376" })).toEqual([
+      "DOCKER_TLS_CA, DOCKER_TLS_CERT, DOCKER_TLS_KEY: a TCP engine needs mutual TLS in production",
+    ]);
+    expect(issuesOf({ ...minimal, DOCKER_HOST: "tcp://x", DOCKER_TLS_CA: "/nope" })).toEqual([
+      "DOCKER_TLS_CA, DOCKER_TLS_CERT and DOCKER_TLS_KEY must be set together",
+    ]);
+    expect(
+      issuesOf({
+        ...minimal,
+        DOCKER_HOST: "tcp://x",
+        DOCKER_TLS_CA: "/nope",
+        DOCKER_TLS_CERT: "/nope",
+        DOCKER_TLS_KEY: "/nope",
+      }),
+    ).toEqual(["DOCKER_TLS_CA: can't read /nope"]);
+  });
+
   it("lets tests lower Drive's per-file limit, but never production", () => {
     expect(parseConfig(minimal, "1").drive.maxFileBytes).toBe(100 * 1024 * 1024);
     expect(parseConfig({ ...minimal, DRIVE_MAX_FILE_BYTES: "4096" }, "1").drive.maxFileBytes).toBe(

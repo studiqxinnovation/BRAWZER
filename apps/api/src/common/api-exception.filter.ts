@@ -80,8 +80,13 @@ export function toApiError(exception: unknown, requestId?: string): ResolvedApiE
   if (exception instanceof ApiException) {
     const status = exception.getStatus();
     if (status >= 500) {
+      // The message stays generic; headers such as Retry-After are still useful.
       const code = status === 503 ? "service_unavailable" : "internal_error";
-      return { status, body: errorBody(code, defaultMessages[code], requestId) };
+      return {
+        status,
+        body: errorBody(code, defaultMessages[code], requestId),
+        headers: exception.headers,
+      };
     }
     return {
       status,

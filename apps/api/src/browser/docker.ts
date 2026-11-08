@@ -1,11 +1,23 @@
 import http from "node:http";
+import https from "node:https";
 
 /**
  * The few Docker Engine API calls the orchestrator needs, over the engine's
- * Unix socket. No client library: the surface is small, and nothing here
- * should ever be reachable from a request.
+ * Unix socket or, in production, a TLS-protected TCP endpoint on a separate
+ * runtime host (ADR 0016). No client library: the surface is small, and
+ * nothing here should ever be reachable from a request.
  */
 const API_VERSION = "v1.44";
+
+/** Where the engine is: a local socket, or a remote daemon over mutual TLS. */
+export type DockerEndpoint =
+  | { kind: "socket"; path: string }
+  | {
+      kind: "tcp";
+      host: string;
+      port: number;
+      tls: { ca: string; cert: string; key: string } | null;
+    };
 
 export class DockerError extends Error {
   constructor(
@@ -22,8 +34,10 @@ export interface ContainerSpec {
   image: string;
   env: readonly string[];
   labels: Readonly<Record<string, string>>;
-  /** Container ports → each bound to 127.0.0.1 on an ephemeral host port. */
+  /** Container ports → each bound on the engine host to an ephemeral port. */
   publishPorts: readonly number[];
+  /** The engine host's address to bind published ports on (loopback for a local engine). */
+  publishHostIp: string;
   /** A network to join, or `container:<id>` to share another container's network namespace. */
   network: string;
   /** Omitted for a container that shares another's namespace or needs none. */
@@ -37,6 +51,8 @@ export interface ContainerSpec {
   pidsLimit: number;
   shmBytes?: number | undefined;
   tmpfsBytes?: number | undefined;
+  /** An OCI runtime registered with the engine, such as `runsc` (gVisor); the default when omitted. */
+  runtime?: string | undefined;
 }
 
 export interface ContainerState {
@@ -58,10 +74,31 @@ interface InspectResponse {
 }
 
 export class DockerClient {
+  private readonly endpoint: DockerEndpoint;
+  private readonly agent: https.Agent | null;
+
   constructor(
-    private readonly socketPath: string,
+    endpoint: DockerEndpoint | string,
     private readonly timeoutMs = 15_000,
-  ) {}
+  ) {
+    this.endpoint = typeof endpoint === "string" ? { kind: "socket", path: endpoint } : endpoint;
+    this.agent =
+      this.endpoint.kind === "tcp" && this.endpoint.tls
+        ? new https.Agent({
+            ca: this.endpoint.tls.ca,
+            cert: this.endpoint.tls.cert,
+            key: this.endpoint.tls.key,
+            keepAlive: true,
+          })
+        : null;
+  }
+
+  /** For logs and health reports: never includes key material. */
+  describe(): string {
+    return this.endpoint.kind === "socket"
+      ? `unix://${this.endpoint.path}`
+      : `${this.endpoint.tls ? "tcps" : "tcp"}://${this.endpoint.host}:${String(this.endpoint.port)}`;
+  }
 
   /** Raw request; the body is JSON unless the response is empty. */
   private request<T>(
@@ -72,9 +109,15 @@ export class DockerClient {
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const payload = body === undefined ? undefined : JSON.stringify(body);
-      const request = http.request(
+      const where =
+        this.endpoint.kind === "socket"
+          ? { socketPath: this.endpoint.path }
+          : { host: this.endpoint.host, port: this.endpoint.port };
+      const transport = this.endpoint.kind === "tcp" && this.endpoint.tls ? https : http;
+      const request = transport.request(
         {
-          socketPath: this.socketPath,
+          ...where,
+          ...(this.agent ? { agent: this.agent } : {}),
           method,
           path: `/${API_VERSION}${path}`,
           headers: {
@@ -172,7 +215,7 @@ export class DockerClient {
             ? {}
             : {
                 PortBindings: Object.fromEntries(
-                  ports.map((port) => [port, [{ HostIp: "127.0.0.1", HostPort: "" }]]),
+                  ports.map((port) => [port, [{ HostIp: spec.publishHostIp, HostPort: "" }]]),
                 ),
               }),
           ...(spec.extraHosts?.length ? { ExtraHosts: spec.extraHosts } : {}),
@@ -193,6 +236,7 @@ export class DockerClient {
           PidsLimit: spec.pidsLimit,
           RestartPolicy: { Name: "no" },
           LogConfig: { Type: "json-file", Config: { "max-size": "5m", "max-file": "2" } },
+          ...(spec.runtime ? { Runtime: spec.runtime } : {}),
         },
       },
     );

@@ -1,0 +1,84 @@
+# Production app tier (ADR 0016): the edge proxy, the web app and the API,
+# from registry images pinned by digest. Managed services live elsewhere:
+# PostgreSQL, Valkey, the object store, the key service and ClamAV are
+# reached by address. Session containers run on a runtime host (see
+# runtime-host/README.md), reached over mutual TLS.
+#
+#   cp infra/production/production.env.example infra/production/production.env   # fill in
+#   docker compose -f infra/production/compose.yaml --env-file infra/production/production.env up -d --wait
+name: brawzer
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp"]
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  # One-off per release: database migrations, from the API image.
+  migrate:
+    <<: *hardened
+    image: ${API_IMAGE:?set API_IMAGE (ghcr.io/…/brawzer-api@sha256:…)}
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+    restart: "no"
+    networks: [app]
+
+  api:
+    <<: *hardened
+    image: ${API_IMAGE}
+    deploy:
+      replicas: ${API_REPLICAS:-2}
+    env_file: production.env
+    environment:
+      NODE_ENV: production
+      # Only the edge may report client addresses.
+      TRUST_PROXY: 172.30.0.10
+    volumes:
+      # The runtime host's engine certificates (see runtime-host/README.md).
+      - ${DOCKER_TLS_DIR:?set DOCKER_TLS_DIR}:/run/docker-tls:ro
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [app]
+
+  web:
+    <<: *hardened
+    image: ${WEB_IMAGE:?set WEB_IMAGE}
+    environment:
+      API_INTERNAL_URL: http://api:4100
+    tmpfs: ["/tmp", "/app/apps/web/.next/cache"]
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [app]
+
+  caddy:
+    image: caddy:2.11.9-alpine@sha256:0bbb055bda6793c999bde78b1b5ce3e89f829fb031af2cf50056ea1246559fee
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_HOST: ${SITE_HOST:?set SITE_HOST (the site's host name)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      web: { condition: service_healthy }
+    networks:
+      app:
+        ipv4_address: 172.30.0.10
+
+networks:
+  app:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  caddy-data:

@@ -26,6 +26,8 @@ export interface ObjectStore {
   delete(key: string): Promise<void>;
   deleteMany(keys: readonly string[]): Promise<void>;
   listKeys(prefix: string): AsyncIterable<string>;
+  /** Keys with when they were last written, for finding objects nothing refers to. */
+  listObjects(prefix: string): AsyncIterable<{ key: string; lastModified: Date | null }>;
   /** Fails when the bucket can't be reached. */
   ping(): Promise<void>;
   /** Development and tests: creates the bucket if it's missing. */
@@ -93,13 +95,17 @@ export class S3ObjectStore implements ObjectStore {
   }
 
   async *listKeys(prefix: string): AsyncIterable<string> {
+    for await (const object of this.listObjects(prefix)) yield object.key;
+  }
+
+  async *listObjects(prefix: string): AsyncIterable<{ key: string; lastModified: Date | null }> {
     let token: string | undefined;
     do {
       const page = await this.client.send(
         new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: token }),
       );
       for (const object of page.Contents ?? []) {
-        if (object.Key) yield object.Key;
+        if (object.Key) yield { key: object.Key, lastModified: object.LastModified ?? null };
       }
       token = page.IsTruncated ? page.NextContinuationToken : undefined;
     } while (token);

@@ -5,6 +5,7 @@ import { DRIVE_LIMITS } from "@brawzer/contracts";
 import { homedir } from "node:os";
 import { z } from "zod";
 import { parsePlanDefinitions, type PlanDefinition } from "../billing/plans.js";
+import type { DockerEndpoint } from "../browser/docker.js";
 
 const logLevels = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof logLevels)[number];
@@ -102,6 +103,28 @@ export const envSchema = z.object({
    * unix:// URL. Defaults to the usual socket locations.
    */
   DOCKER_HOST: z.string().min(1).optional(),
+  /**
+   * For a TCP engine (DOCKER_HOST=tcp://host:2376): PEM files for mutual
+   * TLS, as Docker's own client expects them. Required in production.
+   */
+  DOCKER_TLS_CA: z.string().min(1).optional(),
+  DOCKER_TLS_CERT: z.string().min(1).optional(),
+  DOCKER_TLS_KEY: z.string().min(1).optional(),
+  /**
+   * Where the engine binds the agent ports it publishes, and the address the
+   * API reaches them at. A local engine uses loopback; a remote one defaults
+   * to binding on every interface of the runtime host (firewall it to the
+   * API) and reaching it at the engine's host name.
+   */
+  BROWSER_AGENT_BIND: z.string().min(1).optional(),
+  BROWSER_AGENT_HOST: z.string().min(1).optional(),
+  /** An OCI runtime registered with the engine for session containers, such as `runsc` (gVisor). */
+  BROWSER_CONTAINER_RUNTIME: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_.-]{0,63}$/i, "must be a runtime name")
+    .optional(),
+  /** Live cloud browser sessions across the installation; starting more waits for one to end. */
+  BROWSER_MAX_LIVE_SESSIONS: z.coerce.number().int().min(1).max(100_000).default(200),
   /** The runtime image (apps/runtime-agent/Dockerfile). */
   BROWSER_RUNTIME_IMAGE: z.string().min(1).default("brawzer-runtime:dev"),
   /** The Docker network runtime containers join; created if missing. */
@@ -241,7 +264,15 @@ export interface AppConfig {
   };
   readonly browser: {
     /** Path of the Docker engine's Unix socket. */
+    /** The engine's Unix socket path, when it is one (development); empty for a TCP engine. */
     readonly dockerSocket: string;
+    readonly docker: DockerEndpoint;
+    readonly containerRuntime: string | null;
+    readonly maxLiveSessions: number;
+    /** Where published agent ports bind on the engine host. */
+    readonly agentBind: string;
+    /** Where the API reaches those ports. */
+    readonly agentHost: string;
     readonly image: string;
     readonly network: string;
     /** Base URL (ws:// or wss://) the Browser page opens the stream on. */
@@ -415,6 +446,21 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
   } catch (error) {
     issues.push(error instanceof Error ? error.message : "BILLING_PLANS: invalid");
   }
+  let docker: DockerEndpoint = { kind: "socket", path: "" };
+  try {
+    docker = dockerEndpoint(values.DOCKER_HOST, {
+      ca: values.DOCKER_TLS_CA,
+      cert: values.DOCKER_TLS_CERT,
+      key: values.DOCKER_TLS_KEY,
+    });
+  } catch (error) {
+    issues.push(error instanceof Error ? error.message : "DOCKER_HOST: invalid");
+  }
+  if (isProduction && docker.kind === "tcp" && !docker.tls) {
+    issues.push(
+      "DOCKER_TLS_CA, DOCKER_TLS_CERT, DOCKER_TLS_KEY: a TCP engine needs mutual TLS in production",
+    );
+  }
   const adminEmails = (values.ADMIN_EMAILS ?? "")
     .split(",")
     .map((email) => email.trim().toLowerCase())
@@ -499,7 +545,12 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       maxFileBytes: values.DRIVE_MAX_FILE_BYTES ?? DRIVE_LIMITS.maxFileBytes,
     }),
     browser: Object.freeze({
-      dockerSocket: dockerSocketPath(values.DOCKER_HOST),
+      dockerSocket: docker.kind === "socket" ? docker.path : "",
+      docker,
+      containerRuntime: values.BROWSER_CONTAINER_RUNTIME ?? null,
+      maxLiveSessions: values.BROWSER_MAX_LIVE_SESSIONS,
+      agentBind: values.BROWSER_AGENT_BIND ?? (docker.kind === "tcp" ? "0.0.0.0" : "127.0.0.1"),
+      agentHost: values.BROWSER_AGENT_HOST ?? (docker.kind === "tcp" ? docker.host : "127.0.0.1"),
       image: values.BROWSER_RUNTIME_IMAGE,
       network: values.BROWSER_RUNTIME_NETWORK,
       streamUrl: streamUrl.replace(/\/$/, ""),
@@ -534,6 +585,46 @@ export function dockerSocketPath(value: string | undefined): string {
     path.join(homedir(), ".colima", "default", "docker.sock"),
   ];
   return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0] ?? "";
+}
+
+/**
+ * DOCKER_HOST as an endpoint: a socket path (or `unix://`), or `tcp://host:port`
+ * with the PEM files for mutual TLS read at start (ADR 0016).
+ */
+export function dockerEndpoint(
+  value: string | undefined,
+  tls: { ca?: string | undefined; cert?: string | undefined; key?: string | undefined },
+): DockerEndpoint {
+  if (!value?.startsWith("tcp://")) return { kind: "socket", path: dockerSocketPath(value) };
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("DOCKER_HOST: must be a socket path or tcp://host:port");
+  }
+  const port = Number(url.port) || 2376;
+  const given = [tls.ca, tls.cert, tls.key].filter((entry) => entry !== undefined).length;
+  if (given === 0) return { kind: "tcp", host: url.hostname, port, tls: null };
+  if (given !== 3) {
+    throw new Error("DOCKER_TLS_CA, DOCKER_TLS_CERT and DOCKER_TLS_KEY must be set together");
+  }
+  const read = (name: string, file: string) => {
+    try {
+      return readFileSync(file, "utf8");
+    } catch {
+      throw new Error(`${name}: can't read ${file}`);
+    }
+  };
+  return {
+    kind: "tcp",
+    host: url.hostname,
+    port,
+    tls: {
+      ca: read("DOCKER_TLS_CA", tls.ca ?? ""),
+      cert: read("DOCKER_TLS_CERT", tls.cert ?? ""),
+      key: read("DOCKER_TLS_KEY", tls.key ?? ""),
+    },
+  };
 }
 
 /** Loads the local .env file (development only), then validates the environment. */
