@@ -92,7 +92,10 @@ Only the wrapping of each data key changes; ciphertexts stay as they are.
 
 `BROWSER_MAX_LIVE_SESSIONS` bounds the installation; a runtime host with
 8 GB and 4 cores runs about 3 sessions comfortably (2 GB and 2 CPUs each at
-most, less in practice). When the limit is reached, starting a session
+most, less in practice). `BROWSER_WARM_POOL=n` keeps `n` container pairs
+waiting per API instance so a plain Bee session starts at once; each waiting
+pair counts against the host like a session, so size the pool from the
+capacity left after the expected live sessions. When the limit is reached, starting a session
 answers 503 with `Retry-After: 60`, and the Browser page says so.
 
 ## Before launch

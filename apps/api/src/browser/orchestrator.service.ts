@@ -20,7 +20,18 @@ export { DOCKER } from "../egress/egress.service.js";
 export const SESSION_LABEL = "brawzer.session";
 const AGENT_PORT = 7000;
 export const EGRESS_LABEL = "brawzer.egress";
+/** On a warm pool's containers: when the pair was made, so a stale one can be told apart. */
+export const POOL_LABEL = "brawzer.pool";
 const MiB = 1024 * 1024;
+
+/** A started egress and runtime, ready for a session's data and engine start. */
+export interface RuntimePair {
+  sessionId: string;
+  egressId: string;
+  containerId: string;
+  agentAddress: string;
+  engine: "bee" | "firefox";
+}
 
 export interface StartedRuntime {
   containerId: string;
@@ -71,6 +82,23 @@ export class OrchestratorService {
       privateViaUpstream: false,
     },
   ): Promise<StartedRuntime> {
+    const pair = await this.createPair(sessionId, secret, upstream, engine, options);
+    return this.launch(pair, secret, profileData);
+  }
+
+  /**
+   * The egress sidecar and the runtime for a session, started and ready for
+   * the profile's data: the agent waits for `launch`. A warm pool keeps
+   * such pairs for sessions without a proxy (Phase 8, idea 14).
+   */
+  async createPair(
+    sessionId: string,
+    secret: string,
+    upstream: ProxyTarget | null,
+    engine: "bee" | "firefox",
+    options: { privateViaUpstream: boolean; siteRules?: SiteRulesForEgress | null },
+    extraLabels: Record<string, string> = {},
+  ): Promise<RuntimePair> {
     const { browser } = this.config;
     await this.docker.ensureNetwork(browser.network);
     // The egress sidecar owns the session's network namespace and its
@@ -87,7 +115,12 @@ export class OrchestratorService {
         ...(options.siteRules ? [`EGRESS_SITE_RULES=${JSON.stringify(options.siteRules)}`] : []),
         ...this.egress.commonEnv(),
       ],
-      labels: { "brawzer.managed": "true", [SESSION_LABEL]: sessionId, [EGRESS_LABEL]: "true" },
+      labels: {
+        "brawzer.managed": "true",
+        [SESSION_LABEL]: sessionId,
+        [EGRESS_LABEL]: "true",
+        ...extraLabels,
+      },
       publishPorts: [AGENT_PORT, EGRESS_HEALTH_PORT],
       publishHostIp: this.config.browser.agentBind,
       network: browser.network,
@@ -114,7 +147,7 @@ export class OrchestratorService {
           ...(options.privateViaUpstream ? ["BRAWZER_PRIVATE_VIA_EGRESS=true"] : []),
           ...(browser.testSite ? ["BRAWZER_TEST_SITE=true"] : []),
         ],
-        labels: { "brawzer.managed": "true", [SESSION_LABEL]: sessionId },
+        labels: { "brawzer.managed": "true", [SESSION_LABEL]: sessionId, ...extraLabels },
         publishPorts: [],
         publishHostIp: this.config.browser.agentBind,
         network: `container:${egressId}`,
@@ -129,6 +162,22 @@ export class OrchestratorService {
       });
       await this.docker.startContainer(containerId);
       const agentAddress = await this.waitUntilReady(containerId, egressId);
+      return { sessionId, egressId, containerId, agentAddress, engine };
+    } catch (error) {
+      if (containerId) await this.stop(containerId);
+      await this.stop(egressId);
+      throw error;
+    }
+  }
+
+  /** Restores the profile's data into a ready pair, then starts its engine. */
+  async launch(
+    pair: RuntimePair,
+    secret: string,
+    profileData: Readable | null = null,
+  ): Promise<StartedRuntime> {
+    const { containerId, agentAddress, egressId } = pair;
+    try {
       const headers = { authorization: `Bearer ${secret}` };
       if (profileData) {
         const restored = await fetch(`http://${agentAddress}/profile`, {
@@ -153,10 +202,30 @@ export class OrchestratorService {
       return { containerId, agentAddress };
     } catch (error) {
       if (profileData && !profileData.destroyed) profileData.destroy();
-      if (containerId) await this.stop(containerId);
+      await this.stop(containerId);
       await this.stop(egressId);
       throw error;
     }
+  }
+
+  /** Whether a pair's agent is still waiting, healthy, for its session. */
+  async isWaiting(pair: RuntimePair): Promise<boolean> {
+    try {
+      const response = await fetch(`http://${pair.agentAddress}/healthz`, {
+        signal: AbortSignal.timeout(1_000),
+      });
+      if (!response.ok) return false;
+      const body = (await response.json()) as { state?: string };
+      return body.state === "waiting";
+    } catch {
+      return false;
+    }
+  }
+
+  /** Removes a pair that was never given to a session. */
+  async discardPair(pair: RuntimePair): Promise<void> {
+    await this.stop(pair.containerId);
+    await this.stop(pair.egressId);
   }
 
   /**
@@ -235,19 +304,26 @@ export class OrchestratorService {
     }
   }
 
-  /** Every runtime container on the engine, by session id (egress sidecars included). */
-  async listRuntimes(): Promise<{ containerId: string; sessionId: string }[]> {
+  /** Every runtime container on the engine, by session id (egress sidecars excluded). */
+  async listRuntimes(): Promise<
+    { containerId: string; sessionId: string; pooledAt: Date | null }[]
+  > {
     return (await this.listSessionContainers()).filter((container) => !container.egress);
   }
 
   private async listSessionContainers(): Promise<
-    { containerId: string; sessionId: string; egress: boolean }[]
+    { containerId: string; sessionId: string; egress: boolean; pooledAt: Date | null }[]
   > {
     const containers = await this.docker.listByLabel(SESSION_LABEL);
-    return containers.map((container) => ({
-      containerId: container.id,
-      sessionId: container.labels[SESSION_LABEL] ?? "",
-      egress: container.labels[EGRESS_LABEL] === "true",
-    }));
+    return containers.map((container) => {
+      const pooled = container.labels[POOL_LABEL];
+      const pooledAt = pooled ? new Date(pooled) : null;
+      return {
+        containerId: container.id,
+        sessionId: container.labels[SESSION_LABEL] ?? "",
+        egress: container.labels[EGRESS_LABEL] === "true",
+        pooledAt: pooledAt && !Number.isNaN(pooledAt.getTime()) ? pooledAt : null,
+      };
+    });
   }
 }

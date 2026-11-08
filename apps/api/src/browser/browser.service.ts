@@ -45,6 +45,7 @@ import { ProfileDataService, ProfileDataTooLargeError } from "../profiles/profil
 import { ProfilesService } from "../profiles/profiles.service.js";
 import { ProxiesService } from "../proxies/proxies.service.js";
 import { SiteRulesService } from "../site-rules/site-rules.service.js";
+import { POOL_MAX_AGE_MS, WarmPoolService } from "./warm-pool.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 
@@ -98,6 +99,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
     @Inject(SiteRulesService) private readonly siteRules: SiteRulesService,
+    @Inject(WarmPoolService) private readonly pool: WarmPoolService,
     @Inject(BillingService) private readonly billing: BillingService,
     @Inject(REDIS) private readonly redis: Pick<Redis, "publish" | "set">,
   ) {}
@@ -209,66 +211,83 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       }
     }
 
-    const row = await this.database.db.transaction(async (tx) => {
-      await lockAccount(tx, userId);
-      // The installation's capacity, counted under one lock across every instance.
-      await tx.execute(sql`select pg_advisory_xact_lock(${CAPACITY_LOCK_KEY})`);
-      const [total] = await tx
-        .select({ count: count() })
-        .from(schema.browserSessions)
-        .where(inArray(schema.browserSessions.status, [...LIVE]));
-      if ((total?.count ?? 0) >= this.config.browser.maxLiveSessions) {
-        throw new ApiException(
-          "service_unavailable",
-          503,
-          "Brawzer’s cloud is at capacity right now. Try again in a few minutes.",
-          { headers: { "Retry-After": "60" } },
-        );
-      }
-      const live = await tx
-        .select({ id: schema.browserSessions.id })
-        .from(schema.browserSessions)
-        .where(
-          and(
-            eq(schema.browserSessions.userId, userId),
-            inArray(schema.browserSessions.status, [...LIVE]),
-          ),
-        );
-      if (live.length >= limits.liveSessions) {
-        throw new ApiException("conflict", 409, "A browser session is already running.");
-      }
-      const [created] = await tx
-        .insert(schema.browserSessions)
-        .values({
-          userId,
-          authSessionId: auth.session.id,
-          profileId,
-          proxyId: profile?.proxyId ?? null,
-          engine: profile?.engine ?? "bee",
-          status: "starting",
-          // Sealed once the row id exists; a placeholder keeps the column non-null meanwhile.
-          agentSecret: "",
-        })
-        .returning();
-      if (!created) throw new Error("Creating a browser session returned no row");
-      return created;
-    });
+    // What the session needs decides whether a waiting pair can serve it.
+    const upstream = await this.proxies.forEgress(userId, profile?.proxyId ?? null);
+    const siteRules = await this.siteRules.forEgress(userId);
+    const engine = profile?.engine ?? "bee";
+    const privateViaUpstream = upstream !== null && profile?.privateThroughProxy === true;
+    const pair = upstream === null && siteRules === null ? await this.pool.claim(engine) : null;
+    const secretForAgent = pair?.secret ?? secret;
+
+    let row: BrowserSessionRow;
+    try {
+      row = await this.database.db.transaction(async (tx) => {
+        await lockAccount(tx, userId);
+        // The installation's capacity, counted under one lock across every instance.
+        await tx.execute(sql`select pg_advisory_xact_lock(${CAPACITY_LOCK_KEY})`);
+        const [total] = await tx
+          .select({ count: count() })
+          .from(schema.browserSessions)
+          .where(inArray(schema.browserSessions.status, [...LIVE]));
+        if ((total?.count ?? 0) >= this.config.browser.maxLiveSessions) {
+          throw new ApiException(
+            "service_unavailable",
+            503,
+            "Brawzer’s cloud is at capacity right now. Try again in a few minutes.",
+            { headers: { "Retry-After": "60" } },
+          );
+        }
+        const live = await tx
+          .select({ id: schema.browserSessions.id })
+          .from(schema.browserSessions)
+          .where(
+            and(
+              eq(schema.browserSessions.userId, userId),
+              inArray(schema.browserSessions.status, [...LIVE]),
+            ),
+          );
+        if (live.length >= limits.liveSessions) {
+          throw new ApiException("conflict", 409, "A browser session is already running.");
+        }
+        const [created] = await tx
+          .insert(schema.browserSessions)
+          .values({
+            // A pooled pair's containers already carry the id reserved for it.
+            ...(pair ? { id: pair.sessionId } : {}),
+            userId,
+            authSessionId: auth.session.id,
+            profileId,
+            proxyId: profile?.proxyId ?? null,
+            engine,
+            status: "starting",
+            // Sealed once the row id exists; a placeholder keeps the column non-null meanwhile.
+            agentSecret: "",
+          })
+          .returning();
+        if (!created) throw new Error("Creating a browser session returned no row");
+        return created;
+      });
+    } catch (error) {
+      if (pair) this.pool.release(pair);
+      throw error;
+    }
 
     let started: { containerId: string; agentAddress: string };
     try {
       await this.database.db
         .update(schema.browserSessions)
-        .set({ agentSecret: await this.box.seal(secret, secretContext(row.id)) })
+        .set({ agentSecret: await this.box.seal(secretForAgent, secretContext(row.id)) })
         .where(eq(schema.browserSessions.id, row.id));
       // A profile that keeps its data starts from what was saved last time,
       // and browses through its proxy (ADR 0014).
       const restore = profile?.keepData ? await this.profileData.open(profile) : null;
-      const upstream = await this.proxies.forEgress(userId, profile?.proxyId ?? null);
-      started = await this.orchestrator.start(row.id, secret, restore, upstream, row.engine, {
-        // Only with a proxy: the proxy reaches the private addresses, never Brawzer.
-        privateViaUpstream: upstream !== null && profile?.privateThroughProxy === true,
-        siteRules: await this.siteRules.forEgress(userId),
-      });
+      started = pair
+        ? await this.orchestrator.launch(pair, pair.secret, restore)
+        : await this.orchestrator.start(row.id, secret, restore, upstream, row.engine, {
+            // Only with a proxy: the proxy reaches the private addresses, never Brawzer.
+            privateViaUpstream,
+            siteRules,
+          });
     } catch (error) {
       logger.warn(
         `Runtime for session ${row.id} failed to start: ${error instanceof Error ? error.message : ""}`,
@@ -515,10 +534,11 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       .where(inArray(schema.browserSessions.status, [...LIVE]));
     const liveIds = new Set(live.map((row) => row.id));
     for (const runtime of runtimes) {
-      if (!liveIds.has(runtime.sessionId)) {
-        logger.log(`Removing orphaned runtime for session ${runtime.sessionId}`);
-        await this.orchestrator.stopSession(runtime.sessionId, runtime.containerId);
-      }
+      if (liveIds.has(runtime.sessionId)) continue;
+      // A warm pool's pair waits for a session that doesn't exist yet; only a stale one goes.
+      if (runtime.pooledAt && Date.now() - runtime.pooledAt.getTime() < POOL_MAX_AGE_MS) continue;
+      logger.log(`Removing orphaned runtime for session ${runtime.sessionId}`);
+      await this.orchestrator.stopSession(runtime.sessionId, runtime.containerId);
     }
     await this.reap();
   }

@@ -127,6 +127,8 @@ export const envSchema = z.object({
     .optional(),
   /** Live cloud browser sessions across the installation; starting more waits for one to end. */
   BROWSER_MAX_LIVE_SESSIONS: z.coerce.number().int().min(1).max(100_000).default(200),
+  /** Container pairs kept waiting so a session without a proxy starts at once (Phase 8, idea 14). */
+  BROWSER_WARM_POOL: z.coerce.number().int().min(0).max(10).default(0),
   /** The runtime image (apps/runtime-agent/Dockerfile). */
   BROWSER_RUNTIME_IMAGE: z.string().min(1).default("brawzer-runtime:dev"),
   /** The Docker network runtime containers join; created if missing. */
@@ -271,6 +273,7 @@ export interface AppConfig {
     readonly docker: DockerEndpoint;
     readonly containerRuntime: string | null;
     readonly maxLiveSessions: number;
+    readonly warmPool: number;
     /** Where published agent ports bind on the engine host. */
     readonly region: string | null;
     readonly agentBind: string;
@@ -552,6 +555,7 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       docker,
       containerRuntime: values.BROWSER_CONTAINER_RUNTIME ?? null,
       maxLiveSessions: values.BROWSER_MAX_LIVE_SESSIONS,
+      warmPool: values.BROWSER_WARM_POOL,
       region: values.BROWSER_REGION ?? null,
       agentBind: values.BROWSER_AGENT_BIND ?? (docker.kind === "tcp" ? "0.0.0.0" : "127.0.0.1"),
       agentHost: values.BROWSER_AGENT_HOST ?? (docker.kind === "tcp" ? docker.host : "127.0.0.1"),

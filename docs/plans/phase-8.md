@@ -16,8 +16,8 @@ plan already named. They are built in value order, one commit each, on the
 | 8   | Per-account destination allow-lists and block-lists        | **Done** 2026-11-08: Site rules page; applied by the egress before anything else                           |
 | 11  | Passkey-only phone approval                                | **Done** 2026-11-08: approving needs a passkey whenever the account has one                                |
 | 13  | A key re-wrap job                                          | **Done** 2026-11-08: on the maintenance cadence and from the Admin API                                     |
-| 14  | Warm pool                                                  | Next                                                                                                       |
-| 15  | A scheduler across runtime hosts                           |                                                                                                            |
+| 14  | Warm pool                                                  | **Done** 2026-11-08: `BROWSER_WARM_POOL` pairs waiting per API instance                                    |
+| 15  | A scheduler across runtime hosts                           | Next                                                                                                       |
 | 16  | Relay back-pressure for downloads                          |                                                                                                            |
 | 17  | Metrics                                                    |                                                                                                            |
 | 18  | Image rebuild on upstream advisories                       |                                                                                                            |
@@ -180,3 +180,22 @@ retention cadence and from `POST /admin/maintenance/rewrap`, reporting rows
 per table and rows it had to leave. Checked in the secret box unit tests and
 an integration test that seals under one key, rotates, re-wraps through the
 Admin API and opens the secret with the new key alone.
+
+## 14. Warm pool
+
+A session took a few seconds to start cold: two containers created and
+started, the sidecar's firewall applied, the agent's readiness awaited. With
+`BROWSER_WARM_POOL=n`, each API instance keeps `n` egress-plus-runtime pairs
+started and waiting at the agent's "waiting" state (before any profile data
+or engine start), each with a session id reserved for it and its own secret,
+and labelled with when it was made. A session that needs nothing special
+(Bee, no proxy, no site rules) claims a pair, checked once more to be
+healthy and fresh, and the session row is made with the reserved id; the
+start then only restores the profile's data and starts the engine. Anything
+else starts cold as before, and the pool refills in the background. Pairs
+belong to the instance that made them: it discards them on shutdown, and
+reconciliation on any instance leaves pooled pairs alone for an hour. Pooled
+pairs hold the runtime's memory limit while they wait, so the default is 0
+and the runbook says what one costs. Checked in an integration test that
+waits for a pair, starts a session within a few seconds on that pair's
+container, and sees the pool refill.

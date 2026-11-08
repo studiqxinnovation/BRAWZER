@@ -16,6 +16,7 @@ import { BrowserService } from "./browser.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamGateway } from "./stream-gateway.js";
 import { StreamTickets } from "./stream-tickets.js";
+import { WarmPoolService } from "./warm-pool.service.js";
 
 /**
  * The cloud browser: sessions, the orchestrator and the stream relay (Phase
@@ -38,7 +39,7 @@ import { StreamTickets } from "./stream-tickets.js";
     BillingModule,
   ],
   controllers: [BrowserController],
-  providers: [OrchestratorService, StreamTickets, BrowserService, StreamGateway],
+  providers: [OrchestratorService, WarmPoolService, StreamTickets, BrowserService, StreamGateway],
   exports: [BrowserService, StreamGateway, OrchestratorService],
 })
 export class BrowserModule {}
