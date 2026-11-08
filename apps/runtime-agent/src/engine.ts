@@ -44,6 +44,20 @@ interface TargetInfo {
 const MAX_TABS = 16;
 const JPEG_QUALITY = 60;
 
+/** True for the engine's stand-in titles: the address itself, with or without its scheme. */
+function isFallbackTitle(title: string, url: string): boolean {
+  if (title === "" || title === url) return true;
+  try {
+    const parsed = new URL(url);
+    const withoutScheme = `${parsed.host}${parsed.pathname}${parsed.search}`;
+    return (
+      title === withoutScheme || title === parsed.host || title === withoutScheme.replace(/\/$/, "")
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** The engine's own UI surfaces (omnibox popups and the like) are never tabs. */
 const isInternal = (url: string) =>
   /^(chrome|devtools|chrome-untrusted|chrome-extension|chrome-search):/.test(url);
@@ -97,8 +111,10 @@ export class BrowserEngine {
         void this.considerTarget(targetInfo);
         return;
       }
-      tab.title = targetInfo.title;
       tab.url = targetInfo.url;
+      // The engine reports the address as the title until it has read one; that
+      // fallback must not replace a title already read from the page.
+      if (!isFallbackTitle(targetInfo.title, targetInfo.url)) tab.title = targetInfo.title;
       this.queueSnapshot();
     });
     this.cdp.on("Target.targetDestroyed", (params) => {

@@ -106,7 +106,7 @@ class Viewer {
       if (Date.now() > deadline) {
         const last = this.messages.at(-1);
         throw new Error(
-          `Timed out waiting for ${label} (close code ${String(this.closeCode)}, ${String(this.messages.length)} messages, ${String(this.frames.length)} frames, last: ${last ? JSON.stringify(last).slice(0, 200) : "none"})`,
+          `Timed out waiting for ${label} (close code ${String(this.closeCode)}, ${String(this.messages.length)} messages, ${String(this.frames.length)} frames, last: ${last ? JSON.stringify(last).slice(0, 800) : "none"})`,
         );
       }
       await new Promise<void>((resolve) => {

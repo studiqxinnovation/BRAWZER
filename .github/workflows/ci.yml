@@ -68,9 +68,12 @@ jobs:
       # routes on demand, which is too slow on a shared runner.
       - name: Production build for the browser tests
         # /dev and /design are compiled out of production builds unless enabled.
+        # The cloud browser stream is a WebSocket on the API's own address, which
+        # a production page may only open when its origin is allowed explicitly.
         run: pnpm build
         env:
           BRAWZER_DEV_PAGES: enabled
+          NEXT_PUBLIC_STREAM_ORIGIN: ws://127.0.0.1:4100
       - name: Browser tests (desktop and phone)
         run: pnpm test:e2e
       - name: Keep the report when tests fail
