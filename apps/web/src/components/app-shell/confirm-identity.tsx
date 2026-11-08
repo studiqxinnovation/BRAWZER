@@ -26,15 +26,18 @@ import { requestPasskey, usePasskeysSupported } from "@/lib/passkeys";
 import type { ApiResult } from "@/lib/api/client";
 import { leaveSignedInArea } from "@/lib/session-channel";
 
-type Confirm = () => Promise<boolean>;
+/** `passkeyOnly`: the server accepts a passkey alone for this step (approving a phone sign-in). */
+type Confirm = (options?: { passkeyOnly?: boolean }) => Promise<boolean>;
 
 const ConfirmIdentityContext = createContext<Confirm | null>(null);
 
 function ConfirmIdentityDialog({
   open,
+  passkeyOnly,
   onDone,
 }: {
   open: boolean;
+  passkeyOnly: boolean;
   onDone: (confirmed: boolean) => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -124,7 +127,9 @@ function ConfirmIdentityDialog({
       <DialogContent>
         <DialogTitle>Confirm it’s you</DialogTitle>
         <DialogDescription>
-          This change protects your account, so Brawzer checks it’s really you first.
+          {passkeyOnly
+            ? "Approving a sign-in needs your passkey, so your password is never typed on this phone."
+            : "This change protects your account, so Brawzer checks it’s really you first."}
         </DialogDescription>
         <form
           method="post"
@@ -134,19 +139,37 @@ function ConfirmIdentityDialog({
           className="mt-5 flex flex-col gap-4"
         >
           {failure && <FormMessage tone="danger">{failure}</FormMessage>}
-          <Field name="password" invalid={error !== null}>
-            <FieldLabel>Password</FieldLabel>
-            <PasswordInput name="password" autoComplete="current-password" required />
-            {error && <FieldError match>{error}</FieldError>}
-          </Field>
-          {passkeysSupported && (
-            <Button
-              variant="secondary"
-              loading={passkeyPending}
-              onClick={() => void confirmWithPasskey()}
-            >
-              Use a passkey instead
-            </Button>
+          {passkeyOnly ? (
+            passkeysSupported ? (
+              <Button
+                variant="primary"
+                loading={passkeyPending}
+                onClick={() => void confirmWithPasskey()}
+              >
+                Use your passkey
+              </Button>
+            ) : (
+              <FormMessage tone="info" title="This device can’t use passkeys">
+                Approve from a phone or computer that can, or add a security key.
+              </FormMessage>
+            )
+          ) : (
+            <>
+              <Field name="password" invalid={error !== null}>
+                <FieldLabel>Password</FieldLabel>
+                <PasswordInput name="password" autoComplete="current-password" required />
+                {error && <FieldError match>{error}</FieldError>}
+              </Field>
+              {passkeysSupported && (
+                <Button
+                  variant="secondary"
+                  loading={passkeyPending}
+                  onClick={() => void confirmWithPasskey()}
+                >
+                  Use a passkey instead
+                </Button>
+              )}
+            </>
           )}
           {needsCode && (
             <Field name="code" invalid={codeError !== null}>
@@ -170,9 +193,11 @@ function ConfirmIdentityDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" variant="primary" loading={pending}>
-              Confirm
-            </Button>
+            {!passkeyOnly && (
+              <Button type="submit" variant="primary" loading={pending}>
+                Confirm
+              </Button>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>
@@ -182,11 +207,14 @@ function ConfirmIdentityDialog({
 
 /** Lets sensitive actions in the signed-in app ask the person to confirm it's them. */
 export function ConfirmIdentityProvider({ children }: { children: ReactNode }) {
-  const [pending, setPending] = useState<((confirmed: boolean) => void) | null>(null);
+  const [pending, setPending] = useState<{
+    resolve: (confirmed: boolean) => void;
+    passkeyOnly: boolean;
+  } | null>(null);
   const confirm = useCallback<Confirm>(
-    () =>
+    (options) =>
       new Promise<boolean>((resolve) => {
-        setPending(() => resolve);
+        setPending({ resolve, passkeyOnly: options?.passkeyOnly === true });
       }),
     [],
   );
@@ -196,8 +224,9 @@ export function ConfirmIdentityProvider({ children }: { children: ReactNode }) {
       {children}
       <ConfirmIdentityDialog
         open={pending !== null}
+        passkeyOnly={pending?.passkeyOnly ?? false}
         onDone={(confirmed) => {
-          pending?.(confirmed);
+          pending?.resolve(confirmed);
           setPending(null);
         }}
       />
@@ -215,7 +244,8 @@ export function useConfirmedRequest() {
     async <T,>(request: () => Promise<ApiResult<T>>): Promise<ApiResult<T>> => {
       const first = await request();
       if (first.ok || first.error.code !== "reauthentication_required" || !confirm) return first;
-      return (await confirm()) ? request() : first;
+      const passkeyOnly = first.error.details?.includes("method: passkey") === true;
+      return (await confirm({ passkeyOnly })) ? request() : first;
     },
     [confirm],
   );

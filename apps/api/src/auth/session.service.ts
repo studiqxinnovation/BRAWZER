@@ -130,6 +130,7 @@ export class SessionService {
         persistent,
         authMethod: method,
         reauthenticatedAt: now,
+        reauthMethod: method,
         userAgent: meta.userAgent,
         ipAddress: meta.ip,
         createdAt: now,
@@ -216,12 +217,12 @@ export class SessionService {
     return session ? { token, session } : null;
   }
 
-  /** Records that the owner just proved who they are (see RecentAuthGuard). */
-  async confirmIdentity(sessionId: string): Promise<Date> {
+  /** Records that the owner just proved who they are, and how (see RecentAuthGuard). */
+  async confirmIdentity(sessionId: string, method: "password" | "passkey"): Promise<Date> {
     const now = new Date();
     await this.database.db
       .update(schema.authSessions)
-      .set({ reauthenticatedAt: now })
+      .set({ reauthenticatedAt: now, reauthMethod: method })
       .where(eq(schema.authSessions.id, sessionId));
     return now;
   }

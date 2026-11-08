@@ -283,7 +283,7 @@ export class PasskeyService {
     await this.verifyAssertion(challenge.challenge, input.response, auth.user.id).catch(() => {
       throw checkFailed();
     });
-    const at = await this.sessions.confirmIdentity(auth.session.id);
+    const at = await this.sessions.confirmIdentity(auth.session.id, "passkey");
     await this.events.record({
       type: "reauthenticated",
       userId: auth.user.id,

@@ -14,8 +14,8 @@ plan already named. They are built in value order, one commit each, on the
 | 4   | Clipboard with intent                                      | **Done** 2026-11-08: deliberate copy and paste, text only, each use recorded                               |
 | 9   | Private-address browsing through a saved proxy, on purpose | **Done** 2026-11-08: a per-profile switch, off by default, loopback still refused                          |
 | 8   | Per-account destination allow-lists and block-lists        | **Done** 2026-11-08: Site rules page; applied by the egress before anything else                           |
-| 11  | Passkey-only phone approval                                | Next                                                                                                       |
-| 13  | A key re-wrap job                                          |                                                                                                            |
+| 11  | Passkey-only phone approval                                | **Done** 2026-11-08: approving needs a passkey whenever the account has one                                |
+| 13  | A key re-wrap job                                          | Next                                                                                                       |
 | 14  | Warm pool                                                  |                                                                                                            |
 | 15  | A scheduler across runtime hosts                           |                                                                                                            |
 | 16  | Relay back-pressure for downloads                          |                                                                                                            |
@@ -149,3 +149,17 @@ stopped this"). The engine sees a refusal, never the list. Checked in the
 egress rule tests, the site rules API test (normalisation, limits, export,
 another account), the proxy journey (a subdomain of a blocked host refused
 at the egress, another host through the proxy) and the e2e page journey.
+
+## 11. Passkey-only phone approval
+
+Approving a sign-in from the phone used "confirm it's you", which accepts a
+password: the one place a password could still be typed on a phone. A
+session now remembers how its owner last proved who they are (`password`
+or `passkey`, and the sign-in's own method at first). Approving a phone
+request needs a passkey confirmation from the last ten minutes whenever the
+account has a passkey; the API answers `reauthentication_required` with the
+detail `method: passkey`, and the confirmation dialog then offers the
+passkey alone, with the reason stated. An account with no passkey can still
+approve with its password, and the approval page says a passkey would make
+that unnecessary. Checked in the phone sign-in integration test (a password
+confirmation refused, a passkey confirmation accepted, no passkey falls back).

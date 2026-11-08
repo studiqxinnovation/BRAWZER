@@ -456,7 +456,7 @@ export class AuthService {
     }
     await this.mfa.checkCodeForConfirmation(user.id, code);
     await this.limiter.reset(RATE_LIMITS.reauthFailures, user.id);
-    const at = await this.sessions.confirmIdentity(session.id);
+    const at = await this.sessions.confirmIdentity(session.id, "password");
     await this.events.record({
       type: "reauthenticated",
       userId: user.id,

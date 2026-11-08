@@ -61,6 +61,12 @@ export const authSessions = pgTable(
     authMethod: text().notNull().default("password"),
     /** When the owner last proved who they are; sensitive actions need this to be recent. */
     reauthenticatedAt: timestamptz().notNull().defaultNow(),
+    /**
+     * How: the sign-in's own method at first (password, password_totp,
+     * passkey, phone, sign_up_link), then "password" or "passkey" as they
+     * confirm. Approving a phone sign-in needs "passkey" (Phase 8, idea 11).
+     */
+    reauthMethod: text().notNull().default("password"),
     userAgent: text(),
     ipAddress: text(),
     createdAt: timestamptz().notNull().defaultNow(),

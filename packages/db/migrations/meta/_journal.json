@@ -127,6 +127,13 @@
       "when": 1794151366883,
       "tag": "0017_useful_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794151847714,
+      "tag": "0018_red_madame_masque",
+      "breakpoints": true
     }
   ]
 }

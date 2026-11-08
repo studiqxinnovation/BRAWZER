@@ -1,0 +1,1 @@
+ALTER TABLE "auth_sessions" ADD COLUMN "reauth_method" text DEFAULT 'password' NOT NULL;
