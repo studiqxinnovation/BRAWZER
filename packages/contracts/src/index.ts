@@ -1,5 +1,7 @@
 export * from "./account.ts";
 export * from "./auth.ts";
+export * from "./browser.ts";
+export * from "./browser-protocol.ts";
 export * from "./drive.ts";
 export * from "./errors.ts";
 export * from "./health.ts";
