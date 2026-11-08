@@ -88,6 +88,12 @@ reports nothing left, retire the previous key version (Transit:
 `min_decryption_version`; local: drop the old key from `ENCRYPTION_KEYS`).
 Only the wrapping of each data key changes; ciphertexts stay as they are.
 
+### Adding a runtime host
+
+1. Prepare the host as `infra/production/runtime-host/README.md` describes (engine over mutual TLS with the same CA; images pulled).
+2. Add it to `RUNTIME_HOSTS` on every API instance: `{"name":"rt-2","docker":"tcp://rt2.internal:2376","capacity":3}` (the name is written on each session's row, so keep it stable), and restart the instances one by one.
+3. Watch the health log line for the new host; sessions go to the healthy host with the most room. Removing a host: drain it (set its capacity to 0 is not supported; remove it from the list once its sessions have ended, or end them from the Admin page).
+
 ### Capacity
 
 `BROWSER_MAX_LIVE_SESSIONS` bounds the installation; a runtime host with

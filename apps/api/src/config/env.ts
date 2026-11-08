@@ -104,6 +104,13 @@ export const envSchema = z.object({
    */
   DOCKER_HOST: z.string().min(1).optional(),
   /**
+   * Several runtime hosts (Phase 8, idea 15): a JSON array of
+   * `{ name, docker, agentHost?, agentBind?, capacity }`, each `docker` a
+   * socket path or tcp://host:port reached with the DOCKER_TLS_* files.
+   * Without it, DOCKER_HOST is the one host, named "local".
+   */
+  RUNTIME_HOSTS: z.string().min(2).optional(),
+  /**
    * For a TCP engine (DOCKER_HOST=tcp://host:2376): PEM files for mutual
    * TLS, as Docker's own client expects them. Required in production.
    */
@@ -267,10 +274,12 @@ export interface AppConfig {
     readonly maxFileBytes: number;
   };
   readonly browser: {
-    /** Path of the Docker engine's Unix socket. */
-    /** The engine's Unix socket path, when it is one (development); empty for a TCP engine. */
+    /** The primary host's engine socket path, when it is one (development); empty for a TCP engine. */
     readonly dockerSocket: string;
+    /** The primary (first) runtime host's engine. */
     readonly docker: DockerEndpoint;
+    /** Every runtime host sessions may be placed on, the primary first. */
+    readonly hosts: readonly RuntimeHostConfig[];
     readonly containerRuntime: string | null;
     readonly maxLiveSessions: number;
     readonly warmPool: number;
@@ -467,6 +476,36 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       "DOCKER_TLS_CA, DOCKER_TLS_CERT, DOCKER_TLS_KEY: a TCP engine needs mutual TLS in production",
     );
   }
+  let hosts: RuntimeHostConfig[] = [];
+  if (values.RUNTIME_HOSTS) {
+    try {
+      hosts = parseRuntimeHosts(
+        values.RUNTIME_HOSTS,
+        { ca: values.DOCKER_TLS_CA, cert: values.DOCKER_TLS_CERT, key: values.DOCKER_TLS_KEY },
+        isProduction,
+      );
+    } catch (error) {
+      issues.push(error instanceof Error ? error.message : "RUNTIME_HOSTS: invalid");
+    }
+  }
+  if (hosts.length === 0) {
+    hosts = [
+      {
+        name: "local",
+        docker,
+        agentBind: values.BROWSER_AGENT_BIND ?? (docker.kind === "tcp" ? "0.0.0.0" : "127.0.0.1"),
+        agentHost: values.BROWSER_AGENT_HOST ?? (docker.kind === "tcp" ? docker.host : "127.0.0.1"),
+        capacity: values.BROWSER_MAX_LIVE_SESSIONS,
+      },
+    ];
+  }
+  const primary = hosts[0] ?? {
+    name: "local",
+    docker,
+    agentBind: "127.0.0.1",
+    agentHost: "127.0.0.1",
+    capacity: values.BROWSER_MAX_LIVE_SESSIONS,
+  };
   const adminEmails = (values.ADMIN_EMAILS ?? "")
     .split(",")
     .map((email) => email.trim().toLowerCase())
@@ -551,14 +590,15 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       maxFileBytes: values.DRIVE_MAX_FILE_BYTES ?? DRIVE_LIMITS.maxFileBytes,
     }),
     browser: Object.freeze({
-      dockerSocket: docker.kind === "socket" ? docker.path : "",
-      docker,
+      dockerSocket: primary.docker.kind === "socket" ? primary.docker.path : "",
+      docker: primary.docker,
+      hosts: Object.freeze(hosts),
       containerRuntime: values.BROWSER_CONTAINER_RUNTIME ?? null,
       maxLiveSessions: values.BROWSER_MAX_LIVE_SESSIONS,
       warmPool: values.BROWSER_WARM_POOL,
       region: values.BROWSER_REGION ?? null,
-      agentBind: values.BROWSER_AGENT_BIND ?? (docker.kind === "tcp" ? "0.0.0.0" : "127.0.0.1"),
-      agentHost: values.BROWSER_AGENT_HOST ?? (docker.kind === "tcp" ? docker.host : "127.0.0.1"),
+      agentBind: primary.agentBind,
+      agentHost: primary.agentHost,
       image: values.BROWSER_RUNTIME_IMAGE,
       network: values.BROWSER_RUNTIME_NETWORK,
       streamUrl: streamUrl.replace(/\/$/, ""),
@@ -581,6 +621,65 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       mailpitApiUrl: values.MAILPIT_API_URL,
       resendApiKey: values.RESEND_API_KEY,
     }),
+  });
+}
+
+/** One runtime host sessions may be placed on (Phase 8, idea 15). */
+export interface RuntimeHostConfig {
+  /** Short and stable: it is written on each session's row. */
+  readonly name: string;
+  readonly docker: DockerEndpoint;
+  /** Where the host's engine binds published agent ports. */
+  readonly agentBind: string;
+  /** Where the API reaches those ports. */
+  readonly agentHost: string;
+  /** Live sessions this host takes at most. */
+  readonly capacity: number;
+}
+
+const runtimeHostsSchema = z
+  .array(
+    z.object({
+      name: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, "lowercase letters, digits and - only"),
+      docker: z.string().min(1),
+      agentHost: z.string().min(1).optional(),
+      agentBind: z.string().min(1).optional(),
+      capacity: z.number().int().min(1).max(10_000),
+    }),
+  )
+  .min(1);
+
+/** RUNTIME_HOSTS as hosts, every TCP engine with the same client certificate. */
+export function parseRuntimeHosts(
+  json: string,
+  tls: { ca?: string | undefined; cert?: string | undefined; key?: string | undefined },
+  isProduction: boolean,
+): RuntimeHostConfig[] {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    throw new Error("RUNTIME_HOSTS: must be a JSON array of hosts");
+  }
+  const parsed = runtimeHostsSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`RUNTIME_HOSTS: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+  }
+  const names = new Set<string>();
+  return parsed.data.map((entry) => {
+    if (names.has(entry.name)) throw new Error(`RUNTIME_HOSTS: "${entry.name}" is listed twice`);
+    names.add(entry.name);
+    const endpoint = dockerEndpoint(entry.docker, tls);
+    if (isProduction && endpoint.kind === "tcp" && !endpoint.tls) {
+      throw new Error(`RUNTIME_HOSTS: "${entry.name}" needs mutual TLS in production`);
+    }
+    return {
+      name: entry.name,
+      docker: endpoint,
+      agentBind: entry.agentBind ?? (endpoint.kind === "tcp" ? "0.0.0.0" : "127.0.0.1"),
+      agentHost: entry.agentHost ?? (endpoint.kind === "tcp" ? endpoint.host : "127.0.0.1"),
+      capacity: entry.capacity,
+    };
   });
 }
 

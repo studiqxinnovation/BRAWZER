@@ -46,6 +46,7 @@ import { ProfilesService } from "../profiles/profiles.service.js";
 import { ProxiesService } from "../proxies/proxies.service.js";
 import { SiteRulesService } from "../site-rules/site-rules.service.js";
 import { POOL_MAX_AGE_MS, WarmPoolService } from "./warm-pool.service.js";
+import { RuntimeHostsService } from "../egress/runtime-hosts.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 
@@ -100,6 +101,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
     @Inject(SiteRulesService) private readonly siteRules: SiteRulesService,
     @Inject(WarmPoolService) private readonly pool: WarmPoolService,
+    @Inject(RuntimeHostsService) private readonly hosts: RuntimeHostsService,
     @Inject(BillingService) private readonly billing: BillingService,
     @Inject(REDIS) private readonly redis: Pick<Redis, "publish" | "set">,
   ) {}
@@ -249,11 +251,28 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
         if (live.length >= limits.liveSessions) {
           throw new ApiException("conflict", 409, "A browser session is already running.");
         }
+        // Where it runs: a waiting pair's own host, else the host with the most room.
+        const perHost = await tx
+          .select({ host: schema.browserSessions.runtimeHost, count: count() })
+          .from(schema.browserSessions)
+          .where(inArray(schema.browserSessions.status, [...LIVE]))
+          .groupBy(schema.browserSessions.runtimeHost);
+        const liveByHost = new Map(perHost.map((entry) => [entry.host ?? "local", entry.count]));
+        const host = pair ? this.hosts.byName(pair.host) : await this.hosts.pick(liveByHost);
+        if (!host) {
+          throw new ApiException(
+            "service_unavailable",
+            503,
+            "Brawzer’s cloud is at capacity right now. Try again in a few minutes.",
+            { headers: { "Retry-After": "60" } },
+          );
+        }
         const [created] = await tx
           .insert(schema.browserSessions)
           .values({
             // A pooled pair's containers already carry the id reserved for it.
             ...(pair ? { id: pair.sessionId } : {}),
+            runtimeHost: host.name,
             userId,
             authSessionId: auth.session.id,
             profileId,
@@ -272,7 +291,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       throw error;
     }
 
-    let started: { containerId: string; agentAddress: string };
+    let started: { host: string; containerId: string; agentAddress: string };
     try {
       await this.database.db
         .update(schema.browserSessions)
@@ -283,11 +302,19 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       const restore = profile?.keepData ? await this.profileData.open(profile) : null;
       started = pair
         ? await this.orchestrator.launch(pair, pair.secret, restore)
-        : await this.orchestrator.start(row.id, secret, restore, upstream, row.engine, {
-            // Only with a proxy: the proxy reaches the private addresses, never Brawzer.
-            privateViaUpstream,
-            siteRules,
-          });
+        : await this.orchestrator.start(
+            this.hosts.byName(row.runtimeHost),
+            row.id,
+            secret,
+            restore,
+            upstream,
+            row.engine,
+            {
+              // Only with a proxy: the proxy reaches the private addresses, never Brawzer.
+              privateViaUpstream,
+              siteRules,
+            },
+          );
     } catch (error) {
       logger.warn(
         `Runtime for session ${row.id} failed to start: ${error instanceof Error ? error.message : ""}`,
@@ -316,7 +343,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       .returning();
     if (!running) {
       // Ended (sign-out, account deleted) while the container was starting.
-      await this.orchestrator.stopSession(row.id, started.containerId);
+      await this.orchestrator.stopSession(started.host, row.id, started.containerId);
       throw notFound();
     }
     await this.securityEvents.record({
@@ -437,7 +464,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       if (reason !== "account_deleted" && reason !== "runtime_failed") {
         await this.saveProfileData(row);
       }
-      await this.orchestrator.stopSession(row.id, row.containerId);
+      await this.orchestrator.stopSession(row.runtimeHost, row.id, row.containerId);
     }
     if (reason !== "account_deleted") {
       await this.securityEvents.record({
@@ -519,7 +546,10 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
         await this.endSession(row, "idle", null);
       } else if (row.status === "starting" && age > BROWSER_LIMITS.startTimeoutSeconds * 2_000) {
         await this.endSession(row, "runtime_failed", null);
-      } else if (row.containerId && !(await this.orchestrator.isRunning(row.containerId))) {
+      } else if (
+        row.containerId &&
+        !(await this.orchestrator.isRunning(row.runtimeHost, row.containerId))
+      ) {
         await this.endSession(row, "runtime_failed", null);
       }
     }
@@ -537,8 +567,8 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       if (liveIds.has(runtime.sessionId)) continue;
       // A warm pool's pair waits for a session that doesn't exist yet; only a stale one goes.
       if (runtime.pooledAt && Date.now() - runtime.pooledAt.getTime() < POOL_MAX_AGE_MS) continue;
-      logger.log(`Removing orphaned runtime for session ${runtime.sessionId}`);
-      await this.orchestrator.stopSession(runtime.sessionId, runtime.containerId);
+      logger.log(`Removing orphaned runtime for session ${runtime.sessionId} on ${runtime.host}`);
+      await this.orchestrator.stopSession(runtime.host, runtime.sessionId, runtime.containerId);
     }
     await this.reap();
   }

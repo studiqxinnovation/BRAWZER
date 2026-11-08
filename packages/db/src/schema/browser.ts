@@ -34,6 +34,8 @@ export const browserSessions = pgTable(
     status: browserSessionStatus().notNull().default("starting"),
     /** The runtime container, once created. */
     containerId: text(),
+    /** The runtime host the containers were placed on (Phase 8, idea 15); null means the primary. */
+    runtimeHost: text(),
     /** Where the relay reaches the runtime agent (host:port on the API's side). */
     agentAddress: text(),
     /**

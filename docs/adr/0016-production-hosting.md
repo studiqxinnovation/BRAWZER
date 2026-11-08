@@ -66,5 +66,5 @@ so the production engine path is exercised before any host exists.
 
 - No Kubernetes. A runtime host is a plain Linux machine with Docker, gVisor and nftables; adding capacity is adding a host and, later, an orchestrator that picks one. Until then one `DOCKER_HOST` means one runtime host per API deployment, which is enough to launch and is stated in the runbook.
 - Mutual TLS to the engine means certificate rotation is part of operations (the runbook has the steps).
-- Capacity is a count, not a scheduler: at the limit, starting a session answers "at capacity"; nobody is queued.
+- Capacity is a count, not a queue: at the limit, starting a session answers "at capacity"; nobody is queued. Since Phase 8 (idea 15) the count is per runtime host: `RUNTIME_HOSTS` lists several engines with capacities, the healthy one with the most room takes each session, and the session row remembers its host.
 - The weekly rebuild changes images without a code change; deployments pin by digest and roll on purpose.

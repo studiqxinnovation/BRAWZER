@@ -17,8 +17,8 @@ plan already named. They are built in value order, one commit each, on the
 | 11  | Passkey-only phone approval                                | **Done** 2026-11-08: approving needs a passkey whenever the account has one                                |
 | 13  | A key re-wrap job                                          | **Done** 2026-11-08: on the maintenance cadence and from the Admin API                                     |
 | 14  | Warm pool                                                  | **Done** 2026-11-08: `BROWSER_WARM_POOL` pairs waiting per API instance                                    |
-| 15  | A scheduler across runtime hosts                           | Next                                                                                                       |
-| 16  | Relay back-pressure for downloads                          |                                                                                                            |
+| 15  | A scheduler across runtime hosts                           | **Done** 2026-11-08: `RUNTIME_HOSTS`, the host with the most room, remembered per session                  |
+| 16  | Relay back-pressure for downloads                          | Next                                                                                                       |
 | 17  | Metrics                                                    |                                                                                                            |
 | 18  | Image rebuild on upstream advisories                       |                                                                                                            |
 | 20  | Usage emails and in-app nudges                             |                                                                                                            |
@@ -199,3 +199,22 @@ pairs hold the runtime's memory limit while they wait, so the default is 0
 and the runbook says what one costs. Checked in an integration test that
 waits for a pair, starts a session within a few seconds on that pair's
 container, and sees the pool refill.
+
+## 15. A scheduler across runtime hosts
+
+The orchestrator took one engine endpoint. `RUNTIME_HOSTS` now lists
+several: a name, an engine (a socket path or `tcp://host:port`, every TCP
+engine reached with the same client certificate, which production
+requires), where the API reaches the agent ports, and a capacity. Without it
+`DOCKER_HOST` is the one host, named "local". Each host gets its own engine
+client and a cached health (asked at most every half minute). Placement is
+small on purpose: under the capacity lock, the live sessions per host are
+counted and the healthy host with the most room takes the session, ties in
+turn; when every healthy host is full, or none is healthy, starting answers
+503 with Retry-After, as the global limit does. The session row remembers
+its host, so stopping, packing, reaping and reconciling go to the right
+engine; a row without a host (older) means the primary. The warm pool
+spreads its pairs over the reachable hosts in turn, and this instance's
+proxy tester runs on the primary. Checked in the config tests and an
+integration test with two hosts of capacity one on this machine's engine
+and one host nobody answers on.

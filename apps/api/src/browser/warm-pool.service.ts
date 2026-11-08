@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
+import { RuntimeHostsService } from "../egress/runtime-hosts.service.js";
 import { OrchestratorService, POOL_LABEL, type RuntimePair } from "./orchestrator.service.js";
 
 const logger = new Logger("WarmPool");
@@ -39,6 +40,7 @@ export class WarmPoolService implements OnApplicationBootstrap, OnApplicationShu
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(OrchestratorService) private readonly orchestrator: OrchestratorService,
+    @Inject(RuntimeHostsService) private readonly hosts: RuntimeHostsService,
   ) {}
 
   get size(): number {
@@ -103,7 +105,11 @@ export class WarmPoolService implements OnApplicationBootstrap, OnApplicationShu
         const sessionId = randomUUID();
         const secret = randomBytes(32).toString("base64url");
         const madeAt = new Date();
+        // Spread over the reachable hosts, in turn; no host, nothing to add.
+        const host = await this.hosts.pick(new Map());
+        if (!host) return;
         const pair = await this.orchestrator.createPair(
+          host,
           sessionId,
           secret,
           null,

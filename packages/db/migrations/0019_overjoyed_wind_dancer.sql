@@ -1,0 +1,1 @@
+ALTER TABLE "browser_sessions" ADD COLUMN "runtime_host" text;
