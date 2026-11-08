@@ -1,4 +1,4 @@
-import { BROWSER_LIMITS } from "@brawzer/contracts";
+import { BROWSER_LIMITS, type SiteRulesForEgress } from "@brawzer/contracts";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { APP_CONFIG } from "../config/config.module.js";
 import { Readable } from "node:stream";
@@ -67,7 +67,9 @@ export class OrchestratorService {
     profileData: Readable | null = null,
     upstream: ProxyTarget | null = null,
     engine: "bee" | "firefox" = "bee",
-    options: { privateViaUpstream: boolean } = { privateViaUpstream: false },
+    options: { privateViaUpstream: boolean; siteRules?: SiteRulesForEgress | null } = {
+      privateViaUpstream: false,
+    },
   ): Promise<StartedRuntime> {
     const { browser } = this.config;
     await this.docker.ensureNetwork(browser.network);
@@ -82,6 +84,7 @@ export class OrchestratorService {
         `EGRESS_SECRET=${secret}`,
         ...(upstream ? [`EGRESS_UPSTREAM=${JSON.stringify(upstream)}`] : []),
         ...(options.privateViaUpstream ? ["EGRESS_PRIVATE_VIA_UPSTREAM=true"] : []),
+        ...(options.siteRules ? [`EGRESS_SITE_RULES=${JSON.stringify(options.siteRules)}`] : []),
         ...this.egress.commonEnv(),
       ],
       labels: { "brawzer.managed": "true", [SESSION_LABEL]: sessionId, [EGRESS_LABEL]: "true" },

@@ -28,6 +28,7 @@ const appPages = [
   { path: "/app/proxy", heading: "Proxy" },
   { path: "/app/extensions", heading: "Extensions" },
   { path: "/app/shield", heading: "Shield" },
+  { path: "/app/site-rules", heading: "Site rules" },
   { path: "/app/sessions", heading: "Sessions" },
   { path: "/app/account", heading: "Account" },
 ] as const;

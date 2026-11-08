@@ -753,12 +753,40 @@ describe("the egress (ADR 0014)", () => {
     );
     expect(socks.requests).toContain("nowhere-at-all.example:80");
 
-    // Private addresses stay refused even with a proxy, unless the profile asks
-    // for them to go through it; loopback never does.
-    await openPage(viewer, tab.id, "http://10.0.0.1/", "Blocked by Brawzer");
-    expect(socks.requests).not.toContain("10.0.0.1:80");
+    // The account's site rules are applied by the egress, before the proxy sees anything.
+    expect(
+      (await client.post("/site-rules", { kind: "block", host: "nowhere-at-all.example" }))
+        .statusCode,
+    ).toBe(201);
     viewer.close();
     expect((await client.delete(`/browser/sessions/${session.id}`)).statusCode).toBe(204);
+    const ruled = await openSession(client, profile.id);
+    await openPage(
+      ruled.viewer,
+      ruled.tab.id,
+      "http://sub.nowhere-at-all.example/",
+      "Blocked by Brawzer",
+    );
+    expect(socks.requests).not.toContain("sub.nowhere-at-all.example:80");
+    await openPage(
+      ruled.viewer,
+      ruled.tab.id,
+      "http://elsewhere.example/",
+      "Through the proxy: elsewhere.example",
+    );
+    ruled.viewer.close();
+    expect((await client.delete(`/browser/sessions/${ruled.session.id}`)).statusCode).toBe(204);
+    const rules = (await client.get("/site-rules")).json<{ rules: { id: string }[] }>().rules;
+    for (const rule of rules)
+      expect((await client.delete(`/site-rules/${rule.id}`)).statusCode).toBe(204);
+    const fresh = await openSession(client, profile.id);
+
+    // Private addresses stay refused even with a proxy, unless the profile asks
+    // for them to go through it; loopback never does.
+    await openPage(fresh.viewer, fresh.tab.id, "http://10.0.0.1/", "Blocked by Brawzer");
+    expect(socks.requests).not.toContain("10.0.0.1:80");
+    fresh.viewer.close();
+    expect((await client.delete(`/browser/sessions/${fresh.session.id}`)).statusCode).toBe(204);
     const opted = await client.patch(`/profiles/${profile.id}`, { privateThroughProxy: true });
     expect(opted.statusCode, opted.body).toBe(200);
     expect(opted.json<{ privateThroughProxy: boolean }>().privateThroughProxy).toBe(true);

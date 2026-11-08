@@ -1,6 +1,11 @@
 import type { ProxyTarget } from "@brawzer/proxy-client";
 import { z } from "zod";
 
+const siteRulesSchema = z.object({
+  allow: z.array(z.string().min(1).max(253)).max(1000),
+  block: z.array(z.string().min(1).max(253)).max(1000),
+});
+
 const upstreamSchema = z.object({
   protocol: z.enum(["http", "https", "socks4", "socks4a", "socks5"]),
   host: z.string().min(1).max(253),
@@ -25,6 +30,8 @@ export interface EgressConfig {
   allowPrivate: boolean;
   /** The profile's choice: private addresses go to its proxy rather than being refused. */
   privateViaUpstream: boolean;
+  /** The account's own site rules (Phase 8, idea 8), or none. */
+  siteRules: { allow: string[]; block: string[] } | null;
   /**
    * Development only: proxies and echo servers that the tests run on this
    * machine's loopback are reached under this name from inside the container.
@@ -50,6 +57,12 @@ export function readConfig(env: NodeJS.ProcessEnv): EgressConfig {
     if (!parsed.success) throw new Error("EGRESS_UPSTREAM is not a proxy description");
     upstream = parsed.data;
   }
+  let siteRules: { allow: string[]; block: string[] } | null = null;
+  if (env.EGRESS_SITE_RULES) {
+    const parsed = siteRulesSchema.safeParse(JSON.parse(env.EGRESS_SITE_RULES));
+    if (!parsed.success) throw new Error("EGRESS_SITE_RULES is not a rule set");
+    siteRules = parsed.data;
+  }
   const loopback = env.EGRESS_LOOPBACK_HOST?.trim();
   const uid = Number(env.EGRESS_UID ?? "10002");
   const gid = Number(env.EGRESS_GID ?? String(uid));
@@ -61,6 +74,7 @@ export function readConfig(env: NodeJS.ProcessEnv): EgressConfig {
     upstream,
     allowPrivate: env.EGRESS_ALLOW_PRIVATE === "true",
     privateViaUpstream: upstream !== null && env.EGRESS_PRIVATE_VIA_UPSTREAM === "true",
+    siteRules,
     loopbackHost: loopback === undefined || loopback === "" ? null : loopback,
     firewall: mode === "session" && env.EGRESS_FIREWALL !== "false",
     runAs: { uid, gid },

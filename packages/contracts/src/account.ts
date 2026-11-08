@@ -77,6 +77,10 @@ export const accountExportSchema = z.object({
       updatedAt: z.iso.datetime(),
     }),
   ),
+  /** The account's site rules: blocked hosts, and the allowed hosts that restrict browsing when any exist. */
+  siteRules: z.array(
+    z.object({ kind: z.enum(["allow", "block"]), host: z.string(), createdAt: z.iso.datetime() }),
+  ),
   /** Drive's records only; the files themselves are saved from Drive. */
   drive: z.object({
     folders: z.array(z.object({ path: z.string(), createdAt: z.iso.datetime() })),

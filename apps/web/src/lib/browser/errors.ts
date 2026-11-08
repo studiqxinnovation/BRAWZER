@@ -3,6 +3,7 @@ import { hostOf } from "./input";
 export type NavigationErrorKind =
   | "unresolved"
   | "blocked"
+  | "policy"
   | "unreachable"
   | "timeout"
   | "certificate"
@@ -22,6 +23,7 @@ export interface NavigationErrorText {
  * the agent knows why), by what they mean to a person.
  */
 const KINDS: readonly [NavigationErrorKind, RegExp][] = [
+  ["policy", /^BRAWZER_REFUSED_POLICY$/],
   [
     "unresolved",
     /^(BRAWZER_REFUSED_UNRESOLVED|ERR_NAME_NOT_RESOLVED|ERR_NAME_RESOLUTION_FAILED|ERR_DNS_|dnsNotFound|unknownSocketType)/,
@@ -75,6 +77,12 @@ export function describeNavigationError(code: string, url: string): NavigationEr
               : code === "BRAWZER_REFUSED_ENGINE"
                 ? `${site} is one of the engine’s own services, which Brawzer keeps switched off.`
                 : `${site} is a private or internal address, a port Brawzer doesn’t carry, or one of the engine’s own services. Brawzer only connects to public websites.`,
+      };
+    case "policy":
+      return {
+        kind,
+        title: "Your site rules stopped this",
+        detail: `${site} is on your list of blocked sites, or isn’t on your list of allowed sites. Change that on the Site rules page.`,
       };
     case "timeout":
       return {

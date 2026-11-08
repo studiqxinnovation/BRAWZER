@@ -22,6 +22,8 @@ export interface EgressProxyOptions {
   allowPrivate: boolean;
   /** The profile's choice: private addresses go to the proxy instead of being refused. */
   privateViaUpstream?: boolean;
+  /** The account's site rules, if it has any. */
+  siteRules?: { allow: readonly string[]; block: readonly string[] } | null;
   /** Development only: loopback targets are reached under this name. */
   loopbackHost: string | null;
   lookup?: (name: string) => Promise<readonly { address: string; family: number }[]>;
@@ -63,7 +65,9 @@ function blockedPage(target: string, reason: string): string {
         ? `${escapeHtml(target)} uses a port the cloud browser doesn’t open.`
         : reason === "engine"
           ? "This is one of the engine’s own background services, which the cloud browser doesn’t contact."
-          : `${escapeHtml(target)} is a private or local address, which the cloud browser never opens.`;
+          : reason === "policy"
+            ? `${escapeHtml(target)} is blocked by your site rules, or isn’t on your list of allowed sites. Change that on Brawzer’s Site rules page.`
+            : `${escapeHtml(target)} is a private or local address, which the cloud browser never opens.`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Blocked by Brawzer</title>
@@ -90,6 +94,7 @@ export function createEgressProxy(options: EgressProxyOptions): http.Server {
     hasUpstream: upstream !== null,
     allowPrivate: options.allowPrivate,
     privateViaUpstream: options.privateViaUpstream === true,
+    siteRules: options.siteRules ?? null,
     lookup,
   };
 

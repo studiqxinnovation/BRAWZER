@@ -33,6 +33,7 @@ if (config.mode === "tester") {
     upstream: config.upstream,
     allowPrivate: config.allowPrivate,
     privateViaUpstream: config.privateViaUpstream,
+    siteRules: config.siteRules,
     loopbackHost: config.loopbackHost,
     onRefused: (target, reason) => log("info", "refused", { target: target.slice(0, 253), reason }),
   });

@@ -5,6 +5,7 @@ import { DatabaseModule } from "../database/database.module.js";
 import { DriveModule } from "../drive/drive.module.js";
 import { ProfilesModule } from "../profiles/profiles.module.js";
 import { ProxiesModule } from "../proxies/proxies.module.js";
+import { SiteRulesModule } from "../site-rules/site-rules.module.js";
 import { EmailModule } from "../email/email.js";
 import { RateLimitModule } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsModule } from "../security-events/security-events.js";
@@ -22,6 +23,7 @@ import { AccountService } from "./account.service.js";
     SecurityModule,
     ProfilesModule,
     ProxiesModule,
+    SiteRulesModule,
     DriveModule,
     BrowserModule,
   ],

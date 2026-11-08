@@ -10,7 +10,7 @@ import type { Lookup } from "@brawzer/proxy-client";
 export type EgressDecision =
   | { kind: "direct"; address: string; port: number }
   | { kind: "upstream"; host: string; port: number }
-  | { kind: "refused"; reason: "address" | "unresolved" | "port" | "engine" };
+  | { kind: "refused"; reason: "address" | "unresolved" | "port" | "engine" | "policy" };
 
 export interface RuleOptions {
   hasUpstream: boolean;
@@ -21,7 +21,24 @@ export interface RuleOptions {
    * Loopback is refused regardless: that is this container.
    */
   privateViaUpstream?: boolean;
+  /** The account's own rules: blocked hosts never open; with any allowed hosts, only those open. */
+  siteRules?: { allow: readonly string[]; block: readonly string[] } | null;
   lookup: Lookup;
+}
+
+function hostMatchesRule(host: string, rule: string): boolean {
+  return host === rule || host.endsWith(`.${rule}`);
+}
+
+/** The account's rules, on the host as typed (an IP address counts as a host). */
+export function siteRulesRefuse(
+  host: string,
+  rules: { allow: readonly string[]; block: readonly string[] } | null | undefined,
+): boolean {
+  if (!rules) return false;
+  const lower = host.toLowerCase().replace(/\.$/, "");
+  if (rules.block.some((rule) => hostMatchesRule(lower, rule))) return true;
+  return rules.allow.length > 0 && !rules.allow.some((rule) => hostMatchesRule(lower, rule));
 }
 
 /** Loopback is never anyone's intranet: it is the sidecar and the runtime themselves. */
@@ -77,6 +94,9 @@ export async function decideEgress(
   if (!isAllowedPort(port)) return { kind: "refused", reason: "port" };
   const parsed = parseHost(host);
   if (!parsed) return { kind: "refused", reason: "address" };
+  if (siteRulesRefuse(parsed.kind === "ip" ? parsed.address : parsed.name, options.siteRules)) {
+    return { kind: "refused", reason: "policy" };
+  }
   if (parsed.kind === "ip") {
     if (!options.allowPrivate && !isPublicAddress(parsed.address)) {
       if (!(options.privateViaUpstream && options.hasUpstream) || isLoopback(parsed.address)) {

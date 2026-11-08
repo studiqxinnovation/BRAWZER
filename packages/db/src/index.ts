@@ -20,6 +20,7 @@ export type {
   EmailTokenPurpose,
   ProfileRow,
   ProxyRow,
+  SiteRuleRow,
   SecurityEventType,
   StoredProxyTest,
   SubscriptionRow,

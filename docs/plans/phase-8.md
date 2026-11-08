@@ -13,8 +13,8 @@ plan already named. They are built in value order, one commit each, on the
 | 5   | Find in page, zoom, reader mode                            | **Done** 2026-11-08: both engines, from the menu and Alt shortcuts                                         |
 | 4   | Clipboard with intent                                      | **Done** 2026-11-08: deliberate copy and paste, text only, each use recorded                               |
 | 9   | Private-address browsing through a saved proxy, on purpose | **Done** 2026-11-08: a per-profile switch, off by default, loopback still refused                          |
-| 8   | Per-account destination allow-lists and block-lists        | Next                                                                                                       |
-| 11  | Passkey-only phone approval                                |                                                                                                            |
+| 8   | Per-account destination allow-lists and block-lists        | **Done** 2026-11-08: Site rules page; applied by the egress before anything else                           |
+| 11  | Passkey-only phone approval                                | Next                                                                                                       |
 | 13  | A key re-wrap job                                          |                                                                                                            |
 | 14  | Warm pool                                                  |                                                                                                            |
 | 15  | A scheduler across runtime hosts                           |                                                                                                            |
@@ -129,3 +129,23 @@ containers get `EGRESS_PRIVATE_VIA_UPSTREAM` and `BRAWZER_PRIVATE_VIA_EGRESS`
 only for such profiles. Checked in the egress and agent rule tests, the
 proxy integration journey (refused, then through the proxy, loopback still
 refused) and the proxies e2e journey.
+
+## 8. Per-account destination allow-lists and block-lists
+
+A **Site rules** page under Protect. Two lists: blocked sites, which never
+open, and allowed sites, which once any exist are the only sites that open
+(a child's profile, a work-only computer). A rule is a host as a resolver
+reads it (lower-cased, international names to ASCII, a leading `www.` or
+`*.` dropped, no schemes or paths), covering the host and everything under
+it; an IP address is a host too. Up to 200 per account, listed in the data
+export, deleted with the account.
+
+Every session's egress receives the account's rules at start
+(`EGRESS_SITE_RULES`) and applies them before anything else in its decision,
+on the host as asked for: HTTP pages get the "Blocked by Brawzer" page with
+the reason, HTTPS tunnels are refused with `policy` as the reason, which the
+agent carries to the error page as `BRAWZER_REFUSED_POLICY` ("Your site rules
+stopped this"). The engine sees a refusal, never the list. Checked in the
+egress rule tests, the site rules API test (normalisation, limits, export,
+another account), the proxy journey (a subdomain of a blocked host refused
+at the egress, another host through the proxy) and the e2e page journey.

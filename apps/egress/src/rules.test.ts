@@ -124,4 +124,39 @@ describe("egress rules", () => {
       }),
     ).toEqual({ kind: "refused", reason: "address" });
   });
+
+  it("applies the account's site rules first: blocked never, allowed only when any are listed", async () => {
+    const base = { hasUpstream: false, allowPrivate: false, lookup };
+    const blocked = { ...base, siteRules: { allow: [], block: ["public.example"] } };
+    expect(await decideEgress("public.example", 443, blocked)).toEqual({
+      kind: "refused",
+      reason: "policy",
+    });
+    expect(await decideEgress("WWW.Public.example", 443, blocked)).toEqual({
+      kind: "refused",
+      reason: "policy",
+    });
+    expect(await decideEgress("notpublic.example", 443, blocked)).toEqual({
+      kind: "refused",
+      reason: "unresolved",
+    });
+    const onlySome = { ...base, siteRules: { allow: ["public.example"], block: [] } };
+    expect(await decideEgress("public.example", 443, onlySome)).toMatchObject({ kind: "direct" });
+    expect(await decideEgress("rebinding.example", 443, onlySome)).toEqual({
+      kind: "refused",
+      reason: "policy",
+    });
+    // Block wins over allow, and an address can be a rule too.
+    const both = { ...base, siteRules: { allow: ["public.example"], block: ["public.example"] } };
+    expect(await decideEgress("public.example", 443, both)).toEqual({
+      kind: "refused",
+      reason: "policy",
+    });
+    expect(
+      await decideEgress("93.184.216.34", 443, {
+        ...base,
+        siteRules: { allow: [], block: ["93.184.216.34"] },
+      }),
+    ).toEqual({ kind: "refused", reason: "policy" });
+  });
 });

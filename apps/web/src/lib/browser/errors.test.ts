@@ -18,6 +18,7 @@ describe("navigation errors", () => {
     expect(navigationErrorKind("BRAWZER_REFUSED_ADDRESS")).toBe("blocked");
     expect(navigationErrorKind("BRAWZER_REFUSED_PORT")).toBe("blocked");
     expect(navigationErrorKind("BRAWZER_REFUSED_ENGINE")).toBe("blocked");
+    expect(navigationErrorKind("BRAWZER_REFUSED_POLICY")).toBe("policy");
     expect(navigationErrorKind("ERR_SOMETHING_NEW")).toBe("other");
     expect(navigationErrorKind("")).toBe("other");
   });

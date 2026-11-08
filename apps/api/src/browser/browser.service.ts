@@ -44,6 +44,7 @@ import { SecurityEventsService } from "../security-events/security-events.js";
 import { ProfileDataService, ProfileDataTooLargeError } from "../profiles/profile-data.service.js";
 import { ProfilesService } from "../profiles/profiles.service.js";
 import { ProxiesService } from "../proxies/proxies.service.js";
+import { SiteRulesService } from "../site-rules/site-rules.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 
@@ -96,6 +97,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     @Inject(ProfilesService) private readonly profiles: ProfilesService,
     @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
+    @Inject(SiteRulesService) private readonly siteRules: SiteRulesService,
     @Inject(BillingService) private readonly billing: BillingService,
     @Inject(REDIS) private readonly redis: Pick<Redis, "publish" | "set">,
   ) {}
@@ -265,6 +267,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       started = await this.orchestrator.start(row.id, secret, restore, upstream, row.engine, {
         // Only with a proxy: the proxy reaches the private addresses, never Brawzer.
         privateViaUpstream: upstream !== null && profile?.privateThroughProxy === true,
+        siteRules: await this.siteRules.forEgress(userId),
       });
     } catch (error) {
       logger.warn(

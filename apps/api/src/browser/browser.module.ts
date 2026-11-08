@@ -7,6 +7,7 @@ import { DriveModule } from "../drive/drive.module.js";
 import { EgressModule } from "../egress/egress.module.js";
 import { ProfilesModule } from "../profiles/profiles.module.js";
 import { ProxiesModule } from "../proxies/proxies.module.js";
+import { SiteRulesModule } from "../site-rules/site-rules.module.js";
 import { RateLimitModule } from "../rate-limit/rate-limiter.js";
 import { RedisModule } from "../redis/redis.module.js";
 import { SecurityEventsModule } from "../security-events/security-events.js";
@@ -33,6 +34,7 @@ import { StreamTickets } from "./stream-tickets.js";
     DriveModule,
     EgressModule,
     ProxiesModule,
+    SiteRulesModule,
     BillingModule,
   ],
   controllers: [BrowserController],

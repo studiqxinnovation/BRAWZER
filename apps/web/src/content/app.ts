@@ -7,6 +7,7 @@ import {
   House,
   Layers,
   type LucideIcon,
+  ListFilter,
   MonitorSmartphone,
   Puzzle,
   ShieldCheck,
@@ -44,6 +45,7 @@ export const appNav: readonly AppNavGroup[] = [
     label: "Protect",
     items: [
       { href: "/app/shield", label: "Shield", icon: ShieldCheck, status: "available" },
+      { href: "/app/site-rules", label: "Site rules", icon: ListFilter, status: "available" },
       { href: "/app/sessions", label: "Sessions", icon: MonitorSmartphone, status: "available" },
     ],
   },

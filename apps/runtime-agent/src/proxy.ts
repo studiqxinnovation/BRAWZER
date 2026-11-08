@@ -46,7 +46,7 @@ function isLoopbackAddress(address: string): boolean {
 }
 
 /** Why a connection was refused: this proxy's own checks, or the egress's (ADR 0014). */
-export type RefusalReason = "address" | "unresolved" | "port" | "engine";
+export type RefusalReason = "address" | "unresolved" | "port" | "engine" | "policy";
 
 export type Decision =
   | { address: string; port: number }
@@ -54,7 +54,13 @@ export type Decision =
   | { refused: "address" | "unresolved" };
 
 function isRefusalReason(value: string): value is RefusalReason {
-  return value === "address" || value === "unresolved" || value === "port" || value === "engine";
+  return (
+    value === "address" ||
+    value === "unresolved" ||
+    value === "port" ||
+    value === "engine" ||
+    value === "policy"
+  );
 }
 
 const HOP_BY_HOP = new Set([
