@@ -1,4 +1,4 @@
-import { browserOverviewSchema, profileListSchema } from "@brawzer/contracts";
+import { browserOverviewSchema, profileListSchema, proxyListSchema } from "@brawzer/contracts";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -9,19 +9,36 @@ import { serverGet, signInAgain } from "@/lib/server-api";
 export const metadata: Metadata = { title: "Browser", robots: { index: false, follow: false } };
 
 async function Workspace() {
-  const [overview, profiles] = await Promise.all([
+  const [overview, profiles, proxies] = await Promise.all([
     serverGet("/browser", browserOverviewSchema),
     serverGet("/profiles", profileListSchema),
+    serverGet("/proxies", proxyListSchema),
   ]);
-  if (overview.kind === "signed-out" || profiles.kind === "signed-out") signInAgain("/app/browser");
-  if (overview.kind === "unavailable" || profiles.kind === "unavailable") {
+  if (
+    overview.kind === "signed-out" ||
+    profiles.kind === "signed-out" ||
+    proxies.kind === "signed-out"
+  ) {
+    signInAgain("/app/browser");
+  }
+  if (
+    overview.kind === "unavailable" ||
+    profiles.kind === "unavailable" ||
+    proxies.kind === "unavailable"
+  ) {
     return (
       <div className="mx-auto w-full max-w-2xl px-5 py-8 sm:px-8">
         <Unavailable />
       </div>
     );
   }
-  return <BrowserWorkspace initial={overview.data} profiles={profiles.data.profiles} />;
+  return (
+    <BrowserWorkspace
+      initial={overview.data}
+      profiles={profiles.data.profiles}
+      proxies={proxies.data.proxies.map(({ id, name }) => ({ id, name }))}
+    />
+  );
 }
 
 /** Full-height: the streamed page takes everything below the app's header. */

@@ -15,12 +15,14 @@ const TEMPORARY = "temporary";
 /** Before a session exists: choose a profile and start, with what to expect stated plainly. */
 export function StartPanel({
   profiles,
+  proxies,
   overview,
   starting,
   error,
   onStart,
 }: {
   profiles: readonly Profile[];
+  proxies: readonly { id: string; name: string }[];
   overview: BrowserOverview;
   starting: boolean;
   error: string | null;
@@ -28,6 +30,7 @@ export function StartPanel({
 }) {
   const [choice, setChoice] = useState<string>(profiles[0]?.id ?? TEMPORARY);
   const profile = profiles.find((candidate) => candidate.id === choice) ?? null;
+  const proxy = proxies.find((candidate) => candidate.id === profile?.proxyId) ?? null;
   const unavailable = overview.runtime === "unavailable";
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
@@ -63,6 +66,9 @@ export function StartPanel({
               : profile
                 ? `“${profile.name}” keeps nothing between sessions; the session starts clean and leaves nothing behind.`
                 : "The session starts clean and leaves nothing behind."}{" "}
+            {proxy
+              ? ` Websites see “${proxy.name}”: every connection goes through that proxy, and its password never leaves Brawzer’s servers.`
+              : " Websites see Brawzer’s cloud; the profile has no proxy."}{" "}
             It ends when you end it, when you sign out, after {overview.limits.idleMinutes} minutes
             without anyone watching, or after {overview.limits.maxHours} hours. Downloads and
             printed pages go to Drive, scanned and encrypted.
@@ -93,17 +99,15 @@ export function StartPanel({
       </Panel>
 
       <DevState
-        title="Some things aren’t in the cloud browser yet"
-        milestone="Phases 3b and 5"
-        requires={[
-          "Sound, and Firefox (WebRTC streaming, Phase 3b)",
-          "Browsing through your saved proxies (Phase 5)",
-        ]}
+        title="Sound and Firefox aren’t in the cloud browser yet"
+        milestone="Phase 3b"
+        requires={["WebRTC streaming with sound, and Firefox as a second engine (Phase 3b)"]}
       >
         Today: one Chromium per session, your tabs and address bar drawn by Brawzer, pages streamed
-        as pixels, private addresses blocked, downloads and printed pages saved to Drive, websites’
-        file requests answered from Drive, cookies and history kept per profile, and camera,
-        microphone and location refused.
+        as pixels, every connection through an egress that blocks private addresses and uses the
+        profile’s proxy, downloads and printed pages saved to Drive, websites’ file requests
+        answered from Drive, cookies and history kept per profile, and camera, microphone and
+        location refused.
       </DevState>
     </div>
   );

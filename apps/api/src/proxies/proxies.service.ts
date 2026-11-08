@@ -19,7 +19,7 @@ import {
   type StoredProxyTest,
   sql,
 } from "@brawzer/db";
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { AuthContext } from "../auth/session.service.js";
 import { lockAccount } from "../common/account-lock.js";
 import { ApiException } from "../common/api-exception.js";
@@ -33,7 +33,10 @@ import { DATABASE } from "../database/database.module.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { isObviouslyLocal, parseHost } from "@brawzer/net-policy";
-import type { ProxyTester } from "./proxy-tester.js";
+import type { ProxyTarget, ProxyTester } from "@brawzer/proxy-client";
+import { EgressService } from "../egress/egress.service.js";
+
+const logger = new Logger("Proxies");
 
 export const PROXY_TESTER = Symbol.for("brawzer.api.proxy-tester");
 
@@ -141,7 +144,25 @@ export class ProxiesService {
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(PROXY_TESTER) private readonly tester: ProxyTester,
+    @Inject(EgressService) private readonly egress: EgressService,
   ) {}
+
+  /** A profile's proxy as the egress needs it, credentials included; null without one. */
+  async forEgress(userId: string, proxyId: string | null): Promise<ProxyTarget | null> {
+    if (!proxyId) return null;
+    const [row] = await this.database.db
+      .select()
+      .from(schema.proxies)
+      .where(and(eq(schema.proxies.id, proxyId), eq(schema.proxies.userId, userId)))
+      .limit(1);
+    if (!row) return null;
+    return {
+      protocol: row.protocol,
+      host: row.host,
+      port: row.port,
+      credentials: await this.openCredentials(row),
+    };
+  }
 
   /** The stored form of a host, or a validation error. */
   private normalizeHost(input: string): string {
@@ -363,12 +384,28 @@ export class ProxiesService {
     this.runningByAccount.set(userId, mine + 1);
     this.runningTotal += 1;
     try {
-      const outcome = await this.tester.test({
+      const target: ProxyTarget = {
         protocol: row.protocol,
         host: row.host,
         port: row.port,
         credentials: await this.openCredentials(row),
-      });
+      };
+      let outcome;
+      if (this.config.proxyTests.runner === "egress") {
+        try {
+          outcome = await this.egress.test(target);
+        } catch (error) {
+          logger.warn(`Egress tester unavailable: ${error instanceof Error ? error.message : ""}`);
+          throw new ApiException(
+            "service_unavailable",
+            503,
+            "Proxy tests aren’t available right now. Try again in a moment.",
+            { headers: { "Retry-After": "10" } },
+          );
+        }
+      } else {
+        outcome = await this.tester.test(target);
+      }
       const stored: StoredProxyTest = { ...outcome, testedAt: new Date().toISOString() };
       await this.database.db
         .update(schema.proxies)

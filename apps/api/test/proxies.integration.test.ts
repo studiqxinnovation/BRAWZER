@@ -6,7 +6,7 @@ import {
   proxyTestResultSchema,
 } from "@brawzer/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ProxyTester } from "../src/proxies/proxy-tester.js";
+import { ProxyTester } from "@brawzer/proxy-client";
 import { createHarness, type Harness, type TestBrowser } from "./support/harness.js";
 import {
   echoServer,
@@ -191,7 +191,7 @@ describe("testing proxies", () => {
       credentials: AUTH,
     });
     const result = await runTest(client, proxy.id);
-    expect(result).toMatchObject({
+    expect(result, JSON.stringify(result)).toMatchObject({
       ok: true,
       reachable: true,
       authenticated: true,

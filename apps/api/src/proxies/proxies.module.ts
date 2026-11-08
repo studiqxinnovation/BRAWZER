@@ -3,15 +3,16 @@ import { AuthModule } from "../auth/auth.module.js";
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 import { DatabaseModule } from "../database/database.module.js";
+import { EgressModule } from "../egress/egress.module.js";
 import { RateLimitModule } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsModule } from "../security-events/security-events.js";
 import { NetworkController } from "./network.controller.js";
 import { PROXY_TESTER, ProxiesService } from "./proxies.service.js";
 import { ProxiesController } from "./proxies.controller.js";
-import { ProxyTester } from "./proxy-tester.js";
+import { ProxyTester } from "@brawzer/proxy-client";
 
 @Module({
-  imports: [AuthModule, DatabaseModule, RateLimitModule, SecurityEventsModule],
+  imports: [AuthModule, DatabaseModule, RateLimitModule, SecurityEventsModule, EgressModule],
   controllers: [ProxiesController, NetworkController],
   providers: [
     ProxiesService,

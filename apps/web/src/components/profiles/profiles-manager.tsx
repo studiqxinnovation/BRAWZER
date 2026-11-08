@@ -32,6 +32,7 @@ import { Switch } from "@brawzer/ui/components/switch";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type SubmitEvent, useRef, useState } from "react";
+import { useConfirmedRequest } from "@/components/app-shell/confirm-identity";
 import { Panel } from "@/components/app-shell/page";
 import { focusFirstInvalid } from "@/components/auth/auth-ui";
 import { LocalDate } from "@/components/local-date";
@@ -166,6 +167,7 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
   const formRef = useRef<HTMLFormElement>(null);
   const [open, setOpen] = useState(false);
   const [keepData, setKeepData] = useState(profile.keepData);
+  const confirmed = useConfirmedRequest();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -197,7 +199,7 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
     }
     setErrors({});
     setPending(true);
-    const result = await updateProfile(profile.id, parsed.data);
+    const result = await confirmed(() => updateProfile(profile.id, parsed.data));
     setPending(false);
     if (result.ok) {
       handleOpenChange(false);
@@ -235,7 +237,8 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
                 ]}
               />
               <p className="text-footnote text-ink-secondary">
-                Browsing goes through it from Phase 5.
+                Every connection of this profile’s sessions goes through it. Changing it asks you to
+                confirm it’s you.
               </p>
               {errors.proxyId && <p className="text-footnote text-danger">{errors.proxyId}</p>}
             </div>

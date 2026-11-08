@@ -198,7 +198,17 @@ describe("parseConfig", () => {
     expect(parseConfig(minimal, "1").proxyTests).toEqual({
       url: "http://127.0.0.1:4100/api/v1/network/echo",
       allowPrivate: false,
+      runner: "egress",
     });
+    expect(parseConfig({ ...minimal, PROXY_TEST_RUNNER: "inline" }, "1").proxyTests.runner).toBe(
+      "inline",
+    );
+    expect(issuesOf({ ...production, PROXY_TEST_RUNNER: "inline" })).toEqual([
+      "PROXY_TEST_RUNNER: must be egress in production",
+    ]);
+    expect(issuesOf({ ...production, EGRESS_LOOPBACK_HOST: "host.docker.internal" })).toEqual([
+      "EGRESS_LOOPBACK_HOST: must not be set in production",
+    ]);
     expect(
       parseConfig({ ...minimal, PROXY_TEST_ALLOW_PRIVATE: "true" }, "1").proxyTests.allowPrivate,
     ).toBe(true);

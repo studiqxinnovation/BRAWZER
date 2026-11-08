@@ -2,6 +2,7 @@ import { index, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { authSessions, users } from "./auth.ts";
 import { id, timestamptz } from "./columns.ts";
 import { browserEngine, profiles } from "./profiles.ts";
+import { proxies } from "./proxies.ts";
 
 /** Must match `browserSessionStatuses` in @brawzer/contracts (a test in the API enforces this). */
 export const browserSessionStatus = pgEnum("browser_session_status", [
@@ -27,6 +28,8 @@ export const browserSessions = pgTable(
       .notNull()
       .references(() => authSessions.id, { onDelete: "cascade" }),
     profileId: uuid().references(() => profiles.id, { onDelete: "set null" }),
+    /** The profile's proxy when the session started; its traffic goes through it (ADR 0014). */
+    proxyId: uuid().references(() => proxies.id, { onDelete: "set null" }),
     engine: browserEngine().notNull().default("chromium"),
     status: browserSessionStatus().notNull().default("starting"),
     /** The runtime container, once created. */

@@ -39,15 +39,13 @@ export default function ProfilesPage() {
           <Profiles />
         </Suspense>
         <DevState
-          title="Proxies and extensions aren’t used by profiles yet"
-          milestone="Phases 4 and 5"
-          requires={[
-            "Browsing through each profile’s proxy (Phase 5)",
-            "Extensions installed into a profile (Phase 4)",
-          ]}
+          title="Extensions aren’t available in profiles yet"
+          milestone="Phase 4"
+          requires={["A reviewed extension catalogue, and installs into a profile’s kept data"]}
         >
           Today, a profile opens in the cloud browser with its own cookies, history, sign-ins and
-          site data, saved encrypted between sessions (or starting clean every time, if you prefer).
+          site data, saved encrypted between sessions (or starting clean every time, if you prefer),
+          and browses through its proxy.
         </DevState>
       </div>
     </PageContainer>

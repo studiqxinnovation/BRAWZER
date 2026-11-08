@@ -18,6 +18,7 @@
     "@brawzer/contracts": "workspace:*",
     "@brawzer/db": "workspace:*",
     "@brawzer/net-policy": "workspace:*",
+    "@brawzer/proxy-client": "workspace:*",
     "@fastify/cookie": "catalog:",
     "@fastify/helmet": "catalog:",
     "@fastify/multipart": "catalog:",

@@ -39,8 +39,10 @@ if (config.testSite) {
 
 const proxy = createFilteringProxy({
   overrides,
+  egress: config.egress ?? undefined,
   onRefused: (host) => log("info", "refused connection", { host: host.slice(0, 253) }),
 });
+if (config.egress) log("info", "egress proxy in use", config.egress);
 await new Promise<void>((resolve) => proxy.listen(config.proxyPort, "127.0.0.1", resolve));
 
 // The engine starts when the orchestrator says so, after any profile data

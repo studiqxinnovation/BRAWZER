@@ -26,9 +26,19 @@ export interface ProxyOptions {
   overrides?: ReadonlyMap<string, ProxyOverride>;
   /** Called with the refused host (no path or query). */
   onRefused?: (host: string) => void;
+  /**
+   * The session's egress proxy (`host:port`, ADR 0014). With it set, every
+   * connection that isn't an override is forwarded there unresolved: the
+   * egress decides and connects, and names never meet this container's
+   * resolver. The local checks stay as a first, cheap refusal.
+   */
+  egress?: { host: string; port: number } | undefined;
 }
 
-export type Decision = { address: string; port: number } | { refused: "address" | "unresolved" };
+export type Decision =
+  | { address: string; port: number }
+  | { egress: true; host: string; port: number }
+  | { refused: "address" | "unresolved" };
 
 const HOP_BY_HOP = new Set([
   "proxy-connection",
@@ -61,11 +71,13 @@ export async function decide(
   const parsed = parseHost(host);
   if (!parsed) return { refused: "address" };
   if (parsed.kind === "ip") {
-    return isPublicAddress(parsed.address)
-      ? { address: parsed.address, port }
-      : { refused: "address" };
+    if (!isPublicAddress(parsed.address)) return { refused: "address" };
+    return options.egress
+      ? { egress: true, host: parsed.address, port }
+      : { address: parsed.address, port };
   }
   if (isObviouslyLocal(parsed)) return { refused: "address" };
+  if (options.egress) return { egress: true, host: parsed.name, port };
   let addresses: string[];
   try {
     addresses = await (options.resolve ?? defaultResolve)(parsed.name);
@@ -145,15 +157,25 @@ export function createFilteringProxy(options: ProxyOptions = {}): http.Server {
         return;
       }
       const upstream = http.request(
-        {
-          host: decision.address,
-          port: decision.port,
-          method: req.method,
-          path: `${url.pathname}${url.search}`,
-          headers: { ...forwardHeaders(req.headers), host: url.host },
-          setHost: false,
-          timeout: 30_000,
-        },
+        "egress" in decision
+          ? {
+              host: options.egress?.host,
+              port: options.egress?.port,
+              method: req.method,
+              path: url.href,
+              headers: { ...forwardHeaders(req.headers), host: url.host },
+              setHost: false,
+              timeout: 30_000,
+            }
+          : {
+              host: decision.address,
+              port: decision.port,
+              method: req.method,
+              path: `${url.pathname}${url.search}`,
+              headers: { ...forwardHeaders(req.headers), host: url.host },
+              setHost: false,
+              timeout: 30_000,
+            },
         (response) => {
           res.writeHead(response.statusCode ?? 502, forwardHeaders(response.headers));
           response.pipe(res);
@@ -185,10 +207,22 @@ export function createFilteringProxy(options: ProxyOptions = {}): http.Server {
         clientSocket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
         return;
       }
-      const upstream = net.connect(decision.port, decision.address);
+      const viaEgress = "egress" in decision;
+      const upstream = viaEgress
+        ? net.connect(options.egress?.port ?? 0, options.egress?.host ?? "127.0.0.1")
+        : net.connect(decision.port, decision.address);
       upstream.setNoDelay(true);
       upstream.once("connect", () => {
-        clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        if (!viaEgress) {
+          clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+          if (head.length > 0) upstream.write(head);
+          upstream.pipe(clientSocket);
+          clientSocket.pipe(upstream);
+          return;
+        }
+        // The egress answers the CONNECT itself (200 or a refusal), so its reply goes straight through.
+        const authority = `${net.isIPv6(decision.host) ? `[${decision.host}]` : decision.host}:${String(decision.port)}`;
+        upstream.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`);
         if (head.length > 0) upstream.write(head);
         upstream.pipe(clientSocket);
         clientSocket.pipe(upstream);

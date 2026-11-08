@@ -22,23 +22,31 @@ export interface ContainerSpec {
   image: string;
   env: readonly string[];
   labels: Readonly<Record<string, string>>;
-  /** Container port → bound to 127.0.0.1 on an ephemeral host port. */
-  publishPort: number;
+  /** Container ports → each bound to 127.0.0.1 on an ephemeral host port. */
+  publishPorts: readonly number[];
+  /** A network to join, or `container:<id>` to share another container's network namespace. */
   network: string;
-  seccompProfile: object;
+  /** Omitted for a container that shares another's namespace or needs none. */
+  seccompProfile?: object | undefined;
+  /** Capabilities kept on top of none; the egress service needs a few (ADR 0014). */
+  capAdd?: readonly string[] | undefined;
+  /** `host:gateway` style entries, for development only. */
+  extraHosts?: readonly string[] | undefined;
   memoryBytes: number;
   cpus: number;
   pidsLimit: number;
-  shmBytes: number;
-  tmpfsBytes: number;
+  shmBytes?: number | undefined;
+  tmpfsBytes?: number | undefined;
 }
 
 export interface ContainerState {
   id: string;
   running: boolean;
   exitCode: number | null;
-  /** The host port the published container port is bound to, when running. */
+  /** The host port the first published container port is bound to, when running. */
   hostPort: number | null;
+  /** Every published container port → its host port. */
+  hostPorts: Readonly<Record<number, number>>;
   labels: Readonly<Record<string, string>>;
 }
 
@@ -147,7 +155,8 @@ export class DockerClient {
   }
 
   async createContainer(spec: ContainerSpec): Promise<string> {
-    const port = `${String(spec.publishPort)}/tcp`;
+    const ports = spec.publishPorts.map((port) => `${String(port)}/tcp`);
+    const shared = spec.network.startsWith("container:");
     const created = await this.request<{ Id: string }>(
       "POST",
       `/containers/create?name=${encodeURIComponent(spec.name)}`,
@@ -155,15 +164,29 @@ export class DockerClient {
         Image: spec.image,
         Env: spec.env,
         Labels: spec.labels,
-        ExposedPorts: { [port]: {} },
+        // Ports belong to the namespace's owner; a container sharing one publishes nothing.
+        ...(shared ? {} : { ExposedPorts: Object.fromEntries(ports.map((port) => [port, {}])) }),
         HostConfig: {
           NetworkMode: spec.network,
-          PortBindings: { [port]: [{ HostIp: "127.0.0.1", HostPort: "" }] },
+          ...(shared
+            ? {}
+            : {
+                PortBindings: Object.fromEntries(
+                  ports.map((port) => [port, [{ HostIp: "127.0.0.1", HostPort: "" }]]),
+                ),
+              }),
+          ...(spec.extraHosts?.length ? { ExtraHosts: spec.extraHosts } : {}),
           ReadonlyRootfs: true,
           CapDrop: ["ALL"],
-          SecurityOpt: ["no-new-privileges", `seccomp=${JSON.stringify(spec.seccompProfile)}`],
-          Tmpfs: { "/tmp": `rw,nosuid,nodev,noexec,size=${String(spec.tmpfsBytes)}` },
-          ShmSize: spec.shmBytes,
+          ...(spec.capAdd?.length ? { CapAdd: spec.capAdd } : {}),
+          SecurityOpt: [
+            "no-new-privileges",
+            ...(spec.seccompProfile ? [`seccomp=${JSON.stringify(spec.seccompProfile)}`] : []),
+          ],
+          ...(spec.tmpfsBytes
+            ? { Tmpfs: { "/tmp": `rw,nosuid,nodev,noexec,size=${String(spec.tmpfsBytes)}` } }
+            : {}),
+          ...(spec.shmBytes ? { ShmSize: spec.shmBytes } : {}),
           Memory: spec.memoryBytes,
           MemorySwap: spec.memoryBytes,
           NanoCpus: Math.round(spec.cpus * 1e9),
@@ -188,13 +211,18 @@ export class DockerClient {
       if (error instanceof DockerError && error.status === 404) return null;
       throw error;
     }
-    const bindings = Object.values(response.NetworkSettings.Ports ?? {}).flat();
-    const hostPort = bindings.find((binding) => binding?.HostPort)?.HostPort;
+    const hostPorts: Record<number, number> = {};
+    for (const [port, bindings] of Object.entries(response.NetworkSettings.Ports ?? {})) {
+      const bound = bindings?.find((binding) => binding.HostPort)?.HostPort;
+      if (bound) hostPorts[Number(port.split("/")[0])] = Number(bound);
+    }
+    const first = Object.values(hostPorts)[0];
     return {
       id: response.Id,
       running: response.State.Running,
       exitCode: response.State.Running ? null : response.State.ExitCode,
-      hostPort: hostPort ? Number(hostPort) : null,
+      hostPort: first ?? null,
+      hostPorts,
       labels: response.Config.Labels ?? {},
     };
   }

@@ -1,0 +1,26 @@
+{
+  "name": "@brawzer/egress",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The egress service (ADR 0014): the only way out of a cloud browser session's network, applying ADR 0010's address rules and the profile's saved proxy; also runs proxy tests away from the API.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@brawzer/contracts": "workspace:*",
+    "@brawzer/net-policy": "workspace:*",
+    "@brawzer/proxy-client": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -38,6 +38,7 @@ import {
 import type { FastifyRequest } from "fastify";
 import { z } from "zod";
 import { SESSION_AUTH } from "../auth/auth.controller.js";
+import { assertRecentAuth } from "../auth/recent-auth.guard.js";
 import { CurrentAuth, SessionGuard } from "../auth/session.guard.js";
 import type { AuthContext } from "../auth/session.service.js";
 import { requestMeta } from "../common/request-meta.js";
@@ -104,6 +105,8 @@ export class ProfilesController {
     @Body({ schema: updateProfileRequestSchema }) body: z.output<typeof updateProfileRequestSchema>,
     @CurrentAuth() auth: AuthContext,
   ): Promise<Profile> {
+    // Browsing goes through the proxy (ADR 0014), so choosing one is a sensitive change.
+    if (body.proxyId !== undefined) assertRecentAuth(auth);
     return this.profiles.update(auth.user.id, id, body);
   }
 

@@ -67,6 +67,31 @@ describe("decide", () => {
   });
 });
 
+describe("decide with an egress", () => {
+  it("hands names and public literals to the egress unresolved, still refusing the obviously local", async () => {
+    const egress = { host: "127.0.0.1", port: 3129 };
+    const resolve = () => Promise.reject(new Error("must not resolve"));
+    expect(await decide("example.com", 443, { resolve, egress })).toEqual({
+      egress: true,
+      host: "example.com",
+      port: 443,
+    });
+    expect(await decide("93.184.216.34", 80, { resolve, egress })).toEqual({
+      egress: true,
+      host: "93.184.216.34",
+      port: 80,
+    });
+    expect(await decide("localhost", 80, { resolve, egress })).toEqual({ refused: "address" });
+    expect(await decide("10.1.2.3", 80, { resolve, egress })).toEqual({ refused: "address" });
+    // Overrides stay local, egress or not.
+    const overrides = new Map([["testsite.invalid", { host: "127.0.0.1", port: 8090 }]]);
+    expect(await decide("testsite.invalid", 80, { resolve, egress, overrides })).toEqual({
+      address: "127.0.0.1",
+      port: 8090,
+    });
+  });
+});
+
 describe("parseConnectTarget", () => {
   it("reads host:port, including bracketed IPv6", () => {
     expect(parseConnectTarget("example.com:443")).toEqual({ host: "example.com", port: 443 });

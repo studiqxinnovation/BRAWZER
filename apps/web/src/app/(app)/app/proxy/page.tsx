@@ -1,5 +1,4 @@
 import { proxyListSchema } from "@brawzer/contracts";
-import { DevState } from "@brawzer/ui/components/dev-state";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -29,25 +28,15 @@ export default function ProxyPage() {
     <PageContainer>
       <PageHeader title="Proxy">
         <p>
-          Give each profile its own network route. Passwords are encrypted on Brawzer’s servers and
-          never sent back to this computer.
+          Give each profile its own network route: websites see the proxy’s address, not Brawzer’s.
+          Passwords are encrypted on Brawzer’s servers, used only by the session’s egress, and never
+          sent back to this computer.
         </p>
       </PageHeader>
       <div className="flex flex-col gap-10">
         <Suspense fallback={<Skeleton className="h-40 w-full rounded-xl" />}>
           <Proxies />
         </Suspense>
-        <DevState
-          title="Browsing doesn’t go through proxies yet"
-          milestone="Phase 5"
-          requires={[
-            "The cloud browser (Phase 3)",
-            "An isolated egress service that sends each profile’s traffic through its proxy, with DNS and WebRTC leak protection (Phase 5)",
-          ]}
-        >
-          Today you can save proxies, test them from Brawzer’s servers and choose one for each
-          profile. Websites will see the proxy’s address once browsing uses it.
-        </DevState>
       </div>
     </PageContainer>
   );

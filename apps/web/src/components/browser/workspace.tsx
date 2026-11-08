@@ -150,9 +150,12 @@ function remainingLabel(expiresAt: string, now: number): string {
 export function BrowserWorkspace({
   initial,
   profiles,
+  proxies,
 }: {
   initial: BrowserOverview;
   profiles: readonly Profile[];
+  /** The account's saved proxies, for naming the one a session uses. */
+  proxies: readonly { id: string; name: string }[];
 }) {
   const toast = useToast();
   const [phase, setPhase] = useState<Phase>(
@@ -459,6 +462,7 @@ export function BrowserWorkspace({
     return (
       <StartPanel
         profiles={profiles}
+        proxies={proxies}
         overview={initial}
         starting={phase.kind === "starting"}
         error={startError}
@@ -495,6 +499,7 @@ export function BrowserWorkspace({
 
   const session = phase.session;
   const profileName = profiles.find((profile) => profile.id === session.profileId)?.name;
+  const proxyName = proxies.find((proxy) => proxy.id === session.proxyId)?.name;
   const shownAddress = address ?? displayUrl(activeTab?.url ?? "");
 
   return (
@@ -732,6 +737,7 @@ export function BrowserWorkspace({
       <div className="flex items-center gap-3 border-t border-line bg-surface px-3 py-1 text-caption text-ink-tertiary">
         <span>Streaming from Brawzer’s cloud{engine ? ` · ${engine}` : ""}</span>
         {profileName && <span>· {profileName}</span>}
+        <span>· {proxyName ? `via ${proxyName}` : "direct connection"}</span>
         <span className="ml-auto" aria-live="polite">
           Ends in {remainingLabel(session.expiresAt, now)} at most
         </span>

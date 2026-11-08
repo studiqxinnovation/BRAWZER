@@ -25,7 +25,7 @@
     "infra:reset": "docker compose --project-directory . -f infra/compose/compose.yaml down --volumes",
     "infra:status": "docker compose --project-directory . -f infra/compose/compose.yaml ps",
     "infra:logs": "docker compose --project-directory . -f infra/compose/compose.yaml logs --follow",
-    "runtime:build": "docker build -f apps/runtime-agent/Dockerfile -t brawzer-runtime:dev .",
+    "runtime:build": "docker build -f apps/runtime-agent/Dockerfile -t brawzer-runtime:dev . && docker build -f apps/egress/Dockerfile -t brawzer-egress:dev .",
     "db:generate": "pnpm --filter @brawzer/db run db:generate",
     "db:migrate": "pnpm --filter @brawzer/db run db:migrate"
   },

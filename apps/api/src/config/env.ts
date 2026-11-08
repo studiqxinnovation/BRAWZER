@@ -117,6 +117,23 @@ export const envSchema = z.object({
     .optional(),
   /** Serves testsite.invalid (HTTP and HTTPS) inside each runtime for the browser tests. Development and tests only. */
   BROWSER_TEST_SITE: z.stringbool().default(false),
+  /** The egress image (apps/egress/Dockerfile, ADR 0014): one container per session, plus the proxy tester. */
+  EGRESS_IMAGE: z.string().min(1).default("brawzer-egress:dev"),
+  /**
+   * Where proxy tests run: in the egress tester container (the default and
+   * the only option in production), or inside the API (`inline`, development
+   * without a container engine).
+   */
+  PROXY_TEST_RUNNER: z.enum(["egress", "inline"]).default("egress"),
+  /**
+   * Development only: proxies and echo servers on this machine's loopback
+   * are reached from egress containers under this name (Docker Desktop:
+   * host.docker.internal). Refused in production.
+   */
+  EGRESS_LOOPBACK_HOST: z
+    .string()
+    .regex(/^[a-z0-9.-]{1,253}$/i, "must be a host name")
+    .optional(),
   BUILD_SHA: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/, "must be a git commit SHA")
@@ -215,7 +232,12 @@ export interface AppConfig {
     /** Never true in production. */
     readonly testSite: boolean;
   };
+  readonly egress: {
+    readonly image: string;
+    readonly loopbackHost: string | null;
+  };
   readonly proxyTests: {
+    readonly runner: "egress" | "inline";
     /** The fixed destination of every proxy test. */
     readonly url: string;
     /** Never true in production. */
@@ -348,6 +370,12 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
   if (isProduction && values.PROXY_TEST_ALLOW_PRIVATE) {
     issues.push("PROXY_TEST_ALLOW_PRIVATE: must not be enabled in production");
   }
+  if (isProduction && values.PROXY_TEST_RUNNER !== "egress") {
+    issues.push("PROXY_TEST_RUNNER: must be egress in production");
+  }
+  if (isProduction && values.EGRESS_LOOPBACK_HOST) {
+    issues.push("EGRESS_LOOPBACK_HOST: must not be set in production");
+  }
   if (isProduction && values.STORAGE_ENDPOINT && !values.STORAGE_ENDPOINT.startsWith("https://")) {
     issues.push("STORAGE_ENDPOINT: must use https in production");
   }
@@ -392,7 +420,15 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
     breachedPasswordCheck: values.BREACHED_PASSWORD_CHECK ?? isProduction,
     securityHistoryRetentionDays: values.SECURITY_HISTORY_RETENTION_DAYS,
     encryption: Object.freeze(encryption),
-    proxyTests: Object.freeze({ url: proxyTestUrl, allowPrivate: values.PROXY_TEST_ALLOW_PRIVATE }),
+    proxyTests: Object.freeze({
+      url: proxyTestUrl,
+      allowPrivate: values.PROXY_TEST_ALLOW_PRIVATE,
+      runner: values.PROXY_TEST_RUNNER,
+    }),
+    egress: Object.freeze({
+      image: values.EGRESS_IMAGE,
+      loopbackHost: values.EGRESS_LOOPBACK_HOST ?? null,
+    }),
     storage: Object.freeze({
       endpoint: values.STORAGE_ENDPOINT,
       region: values.STORAGE_REGION,
