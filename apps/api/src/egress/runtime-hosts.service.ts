@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { DockerClient } from "../browser/docker.js";
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig, RuntimeHostConfig } from "../config/env.js";
+import { MetricsService } from "../metrics/metrics.service.js";
 
 const logger = new Logger("RuntimeHosts");
 
@@ -26,11 +27,33 @@ export class RuntimeHostsService {
   private readonly health = new Map<string, { ok: boolean; at: number }>();
   private turn = 0;
 
-  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+  constructor(
+    @Inject(APP_CONFIG) config: AppConfig,
+    @Inject(MetricsService) metrics: MetricsService,
+  ) {
     this.hosts = config.browser.hosts.map((host) => ({
       ...host,
       docker: new DockerClient(host.docker),
     }));
+    metrics.gauge(
+      "brawzer_runtime_host_healthy",
+      "1 when the runtime host answered its last check.",
+      async () =>
+        Promise.all(
+          this.hosts.map(async (host) => ({
+            labels: { host: host.name },
+            value: (await this.healthy(host)) ? 1 : 0,
+          })),
+        ),
+    );
+    metrics.gauge(
+      "brawzer_runtime_host_capacity",
+      "Live sessions a runtime host takes at most.",
+      () =>
+        Promise.resolve(
+          this.hosts.map((host) => ({ labels: { host: host.name }, value: host.capacity })),
+        ),
+    );
   }
 
   all(): readonly RuntimeHost[] {

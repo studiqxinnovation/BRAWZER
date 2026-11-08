@@ -12,6 +12,7 @@ import { CryptoModule } from "./crypto/crypto.module.js";
 import { DriveModule } from "./drive/drive.module.js";
 import type { AppConfig } from "./config/env.js";
 import { HealthModule } from "./health/health.module.js";
+import { MetricsModule } from "./metrics/metrics.module.js";
 import { MaintenanceModule } from "./maintenance/retention.js";
 import { SecurityModule } from "./security/security.module.js";
 
@@ -24,6 +25,7 @@ export class AppModule {
       imports: [
         ConfigModule.forRoot(config),
         CryptoModule,
+        MetricsModule,
         HealthModule,
         AuthModule,
         SecurityModule,

@@ -16,6 +16,7 @@ database.
 ## Watch
 
 - `GET /api/v1/health` on each API instance: `degraded` names the dependency (database, Valkey, store, scanner, runtime).
+- `GET /api/metrics` on each API instance (Prometheus text format; `Authorization: Bearer $METRICS_TOKEN`), to scrape and alert on: `brawzer_sessions_live{host}` against `brawzer_runtime_host_capacity{host}`, `brawzer_runtime_host_healthy{host}` and `brawzer_runtime_available`, `brawzer_session_starts_failed_total` and `brawzer_sessions_ended_total{reason="runtime_failed"}`, `brawzer_stream_viewers`, `brawzer_frames_dropped_total` against `brawzer_frames_relayed_total`, `brawzer_transfers_total{kind,state}` and `brawzer_transfer_pauses_total`, `brawzer_scan_seconds` (sum and count: the mean scan time) and `brawzer_scanner_unavailable_total`, `brawzer_stripe_webhooks_total{result}`, `brawzer_warm_pool_waiting`, `brawzer_maintenance_last_run_timestamp_seconds`, `brawzer_build_info{version}`. Counters are per instance and reset with it.
 - The API's logs: `Runtime unavailable`, `Egress tester unavailable`, `Reaping sessions failed`, `Saving profile data … failed`, `Removed orphaned` and `Retention run` lines are the ones to alert on or graph.
 - `docker ps --filter label=brawzer.managed` on a runtime host: the live sessions, two containers each.
 - Stripe's dashboard: webhook deliveries failing means plans stop following subscriptions; the route answers 401 to a bad signature and 204 otherwise.

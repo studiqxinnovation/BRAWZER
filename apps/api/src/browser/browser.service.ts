@@ -49,6 +49,7 @@ import { POOL_MAX_AGE_MS, WarmPoolService } from "./warm-pool.service.js";
 import { RuntimeHostsService } from "../egress/runtime-hosts.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamTickets } from "./stream-tickets.js";
+import { MetricsService } from "../metrics/metrics.service.js";
 
 const logger = new Logger("Browser");
 const LIVE = ["starting", "running"] as const;
@@ -102,6 +103,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     @Inject(SiteRulesService) private readonly siteRules: SiteRulesService,
     @Inject(WarmPoolService) private readonly pool: WarmPoolService,
     @Inject(RuntimeHostsService) private readonly hosts: RuntimeHostsService,
+    @Inject(MetricsService) private readonly metrics: MetricsService,
     @Inject(BillingService) private readonly billing: BillingService,
     @Inject(REDIS) private readonly redis: Pick<Redis, "publish" | "set">,
   ) {}
@@ -114,6 +116,23 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     void this.reconcile().catch((error: unknown) => {
       logger.warn(`Reconciling runtimes failed: ${error instanceof Error ? error.message : ""}`);
     });
+    this.metrics.gauge(
+      "brawzer_sessions_live",
+      "Live sessions (starting or running), by runtime host.",
+      async () => {
+        const rows = await this.database.db
+          .select({ host: schema.browserSessions.runtimeHost, count: count() })
+          .from(schema.browserSessions)
+          .where(inArray(schema.browserSessions.status, [...LIVE]))
+          .groupBy(schema.browserSessions.runtimeHost);
+        return rows.map((row) => ({ labels: { host: row.host ?? "local" }, value: row.count }));
+      },
+    );
+    this.metrics.gauge(
+      "brawzer_runtime_available",
+      "1 when a runtime host answered the last check.",
+      () => Promise.resolve([{ value: this.runtimeAvailable ? 1 : 0 }]),
+    );
     this.timer = setInterval(() => {
       void this.reapAsLeader().catch((error: unknown) => {
         logger.warn(`Reaping sessions failed: ${error instanceof Error ? error.message : ""}`);
@@ -291,6 +310,14 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       throw error;
     }
 
+    this.metrics.count(
+      "brawzer_sessions_started_total",
+      "Sessions asked for, by engine and start.",
+      {
+        engine,
+        start: pair ? "warm" : "cold",
+      },
+    );
     let started: { host: string; containerId: string; agentAddress: string };
     try {
       await this.database.db
@@ -318,6 +345,10 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     } catch (error) {
       logger.warn(
         `Runtime for session ${row.id} failed to start: ${error instanceof Error ? error.message : ""}`,
+      );
+      this.metrics.count(
+        "brawzer_session_starts_failed_total",
+        "Sessions whose runtime failed to start.",
       );
       await this.markEnded(row.id, "runtime_failed");
       throw new ApiException(
@@ -457,6 +488,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
   ): Promise<void> {
     const ended = await this.markEnded(row.id, reason);
     if (!ended) return;
+    this.metrics.count("brawzer_sessions_ended_total", "Sessions ended, by reason.", { reason });
     this.events.emit("ended", row.id);
     // Other instances may hold the viewer's relay.
     this.redis.publish(SESSION_ENDED_CHANNEL, row.id).catch(() => undefined);

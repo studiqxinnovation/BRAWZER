@@ -34,6 +34,7 @@ import { REDIS } from "../redis/redis.module.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { BrowserService, SESSION_ENDED_CHANNEL } from "./browser.service.js";
 import { StreamTickets } from "./stream-tickets.js";
+import { MetricsService } from "../metrics/metrics.service.js";
 
 const logger = new Logger("StreamGateway");
 const TICKET_WAIT_MS = 5_000;
@@ -115,6 +116,7 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
     @Inject(DriveService) private readonly drive: DriveService,
     @Inject(SecurityEventsService) private readonly securityEvents: SecurityEventsService,
     @Inject(REDIS) private readonly redis: Redis,
+    @Inject(MetricsService) private readonly metrics: MetricsService,
   ) {
     this.browser.events.on("ended", (sessionId: string) => {
       this.relays.get(sessionId)?.close(STREAM_CLOSE_CODES.ended, "ended");
@@ -123,6 +125,9 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
 
   /** A session ended on any instance: cut its viewer here too (ADR 0016). */
   onApplicationBootstrap(): void {
+    this.metrics.gauge("brawzer_stream_viewers", "Pages watching a session on this instance.", () =>
+      Promise.resolve([{ value: this.relays.size }]),
+    );
     const subscriber = this.redis.duplicate({
       enableOfflineQueue: true,
       maxRetriesPerRequest: null,
@@ -212,6 +217,10 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
     // Downloads are bounded in memory: a full buffer pauses the agent until Drive catches up.
     const pressure = new BackPressure(agent, () => {
       this.stats.transferPauses += 1;
+      this.metrics.count(
+        "brawzer_transfer_pauses_total",
+        "Downloads that paused their agent while Drive caught up.",
+      );
     });
     let closed = false;
     const close = (code: number, reason: string) => {
@@ -357,6 +366,10 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
       if (client.readyState !== WebSocket.OPEN) return;
       if (client.bufferedAmount > MAX_BUFFERED_BYTES) {
         // The page is behind: drop the frame and acknowledge it in its place.
+        this.metrics.count(
+          "brawzer_frames_dropped_total",
+          "Frames dropped because the page was behind.",
+        );
         const frame = decodeFrame(bytes);
         if (frame && agent.readyState === WebSocket.OPEN) {
           agent.send(
@@ -369,6 +382,7 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         }
         return;
       }
+      this.metrics.count("brawzer_frames_relayed_total", "Frames relayed to pages.");
       client.send(bytes, { binary: true });
     });
     agent.on("close", () => {
@@ -411,6 +425,14 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
           },
           meta,
         );
+        this.metrics.count(
+          "brawzer_transfers_total",
+          "Downloads and printed pages, by kind and outcome.",
+          {
+            kind: message.kind,
+            state: file.status === "infected" ? "quarantined" : "saved",
+          },
+        );
         toPage({
           ...message,
           state: file.status === "infected" ? "quarantined" : "saved",
@@ -424,6 +446,14 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         if (!body.destroyed) body.destroy();
         pressure.release(message.transferId);
         const refusal = error instanceof ApiException ? error : null;
+        this.metrics.count(
+          "brawzer_transfers_total",
+          "Downloads and printed pages, by kind and outcome.",
+          {
+            kind: message.kind,
+            state: refusal?.code === "payload_too_large" ? "too_large" : "failed",
+          },
+        );
         toPage({
           ...message,
           state: refusal?.code === "payload_too_large" ? "too_large" : "failed",

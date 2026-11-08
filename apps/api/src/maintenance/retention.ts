@@ -13,6 +13,7 @@ import { DATABASE, DatabaseModule } from "../database/database.module.js";
 import { StorageModule } from "../storage/storage.module.js";
 import { OrphanService } from "./orphans.js";
 import { RewrapService } from "./rewrap.js";
+import { MetricsService } from "../metrics/metrics.service.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -52,9 +53,21 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(OrphanService) private readonly orphans: OrphanService,
     @Inject(RewrapService) private readonly rewrap: RewrapService,
+    @Inject(MetricsService) private readonly metrics: MetricsService,
   ) {}
 
+  private lastRun: Date | null = null;
+
   onApplicationBootstrap(): void {
+    this.metrics.gauge(
+      "brawzer_maintenance_last_run_timestamp_seconds",
+      "When retention last ran here, as a Unix time; 0 before the first run.",
+      () =>
+        Promise.resolve([{ value: this.lastRun ? Math.floor(this.lastRun.getTime() / 1000) : 0 }]),
+    );
+    this.metrics.gauge("brawzer_build_info", "The running version, as a label.", () =>
+      Promise.resolve([{ labels: { version: this.config.version }, value: 1 }]),
+    );
     // A few minutes after start, then every 6 hours. Timers never keep the process alive.
     const first = setTimeout(() => void this.runSafely(), 5 * 60_000);
     const repeat = setInterval(() => void this.runSafely(), 6 * 60 * 60_000);
@@ -71,6 +84,7 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
     try {
       const result = await this.run();
       if (result) {
+        this.lastRun = new Date();
         logger.log(`Removed expired data: ${JSON.stringify(result)}`);
         // Same lock holder, same cadence: objects nothing refers to any more.
         const orphans = await this.orphans.run();

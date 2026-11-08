@@ -19,8 +19,8 @@ plan already named. They are built in value order, one commit each, on the
 | 14  | Warm pool                                                  | **Done** 2026-11-08: `BROWSER_WARM_POOL` pairs waiting per API instance                                    |
 | 15  | A scheduler across runtime hosts                           | **Done** 2026-11-08: `RUNTIME_HOSTS`, the host with the most room, remembered per session                  |
 | 16  | Relay back-pressure for downloads                          | **Done** 2026-11-08: a bounded buffer per transfer; the agent pauses while Drive catches up                |
-| 17  | Metrics                                                    | Next                                                                                                       |
-| 18  | Image rebuild on upstream advisories                       |                                                                                                            |
+| 17  | Metrics                                                    | **Done** 2026-11-08: `GET /api/metrics`, Prometheus text, behind a token                                   |
+| 18  | Image rebuild on upstream advisories                       | Next                                                                                                       |
 | 20  | Usage emails and in-app nudges                             |                                                                                                            |
 | 21  | Trials and promotion codes                                 |                                                                                                            |
 | 22  | Admin: sessions and runtime view                           |                                                                                                            |
@@ -232,3 +232,18 @@ at a time and waited for it to leave, so pausing the socket is all it takes
 to hold the download at the source. Pauses are counted for the metrics.
 Checked in a unit test of the pacing and an integration test that downloads
 24 MiB through a session into Drive, whole.
+
+## 17. Metrics
+
+The API logged the right lines but nothing counted them. A small registry
+(no library: counters, summaries and gauges read at scrape time) serves
+`GET /api/metrics` in Prometheus's text format, behind `METRICS_TOKEN`
+(required in production; open in development). What it carries is what the
+runbook's "watch" section asks for: live sessions per runtime host against
+each host's capacity and health, session starts (cold or warm) and failures,
+ends by reason, pages watching, frames relayed and dropped, downloads and
+printed pages by outcome, download pauses, scan time and scanner outages,
+Stripe webhooks by result, warm pairs waiting, when maintenance last ran,
+and the running version. Nothing names a person, an address or a page.
+Checked in the registry's unit test and an integration test with and
+without the token.

@@ -178,6 +178,8 @@ export const envSchema = z.object({
   BILLING_PLANS: z.string().optional(),
   /** Comma-separated addresses that are administrators when their accounts exist. */
   ADMIN_EMAILS: z.string().optional(),
+  /** Bearer token a scraper presents at GET /api/metrics; required in production (Phase 8, idea 17). */
+  METRICS_TOKEN: z.string().min(16).optional(),
   BUILD_SHA: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/, "must be a git commit SHA")
@@ -302,6 +304,7 @@ export interface AppConfig {
   readonly billing: BillingConfig;
   /** Lower-cased addresses of administrators. */
   readonly adminEmails: readonly string[];
+  readonly metricsToken: string | null;
   readonly proxyTests: {
     readonly runner: "egress" | "inline";
     /** The fixed destination of every proxy test. */
@@ -432,6 +435,9 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
     values.PROXY_TEST_URL ?? `http://${echoHost}:${String(values.API_PORT)}/api/v1/network/echo`;
   if (isProduction && !proxyTestUrl.startsWith("https://")) {
     issues.push("PROXY_TEST_URL: must be set to an https URL in production");
+  }
+  if (isProduction && !values.METRICS_TOKEN) {
+    issues.push("METRICS_TOKEN: is required in production (16+ characters)");
   }
   if (isProduction && values.PROXY_TEST_ALLOW_PRIVATE) {
     issues.push("PROXY_TEST_ALLOW_PRIVATE: must not be enabled in production");
@@ -570,6 +576,7 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       plans,
     }),
     adminEmails,
+    metricsToken: values.METRICS_TOKEN ?? null,
     storage: Object.freeze({
       endpoint: values.STORAGE_ENDPOINT,
       region: values.STORAGE_REGION,

@@ -30,6 +30,7 @@ import { DATABASE } from "../database/database.module.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { PlanCatalogue } from "./plans.js";
 import { STRIPE, type Stripe } from "./stripe.js";
+import { MetricsService } from "../metrics/metrics.service.js";
 
 const logger = new Logger("Billing");
 const PRICE_CACHE_MS = 10 * 60_000;
@@ -69,6 +70,7 @@ export class BillingService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(STRIPE) private readonly stripe: Stripe | null,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
+    @Inject(MetricsService) private readonly metrics: MetricsService,
   ) {
     this.catalogue = new PlanCatalogue(config.billing.plans);
   }
@@ -283,8 +285,14 @@ export class BillingService {
         this.config.billing.webhookSecret,
       );
     } catch {
+      this.metrics.count("brawzer_stripe_webhooks_total", "Stripe webhooks, by result.", {
+        result: "bad_signature",
+      });
       throw new ApiException("unauthorized", 401, "The webhook signature is invalid.");
     }
+    this.metrics.count("brawzer_stripe_webhooks_total", "Stripe webhooks, by result.", {
+      result: "received",
+    });
     const seen = await this.database.db
       .insert(schema.billingEvents)
       .values({ stripeEventId: event.id, type: event.type })

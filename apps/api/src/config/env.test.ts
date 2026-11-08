@@ -11,6 +11,7 @@ const minimal = {
 };
 
 const production = {
+  METRICS_TOKEN: "a-scraper-token-for-tests",
   ...minimal,
   NODE_ENV: "production",
   WEB_ORIGIN: "https://brawzer.example",
@@ -165,6 +166,7 @@ describe("parseConfig", () => {
       "EMAIL_TRANSPORT: must be resend in production",
       "KEY_PROVIDER: must be a key management service (vault) in production",
       "PROXY_TEST_URL: must be set to an https URL in production",
+      "METRICS_TOKEN: is required in production (16+ characters)",
       "BROWSER_STREAM_URL: must be set to a wss:// URL in production",
     ]);
     expect(issuesOf({ ...production, RESEND_API_KEY: undefined })).toEqual([

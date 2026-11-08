@@ -10,6 +10,7 @@ import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 import { RuntimeHostsService } from "../egress/runtime-hosts.service.js";
 import { OrchestratorService, POOL_LABEL, type RuntimePair } from "./orchestrator.service.js";
+import { MetricsService } from "../metrics/metrics.service.js";
 
 const logger = new Logger("WarmPool");
 
@@ -41,6 +42,7 @@ export class WarmPoolService implements OnApplicationBootstrap, OnApplicationShu
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(OrchestratorService) private readonly orchestrator: OrchestratorService,
     @Inject(RuntimeHostsService) private readonly hosts: RuntimeHostsService,
+    @Inject(MetricsService) private readonly metrics: MetricsService,
   ) {}
 
   get size(): number {
@@ -57,6 +59,9 @@ export class WarmPoolService implements OnApplicationBootstrap, OnApplicationShu
   }
 
   onApplicationBootstrap(): void {
+    this.metrics.gauge("brawzer_warm_pool_waiting", "Container pairs waiting for a session.", () =>
+      Promise.resolve([{ value: this.pairs.length }]),
+    );
     if (this.size === 0) return;
     const first = setTimeout(() => void this.fill(), 3_000);
     const repeat = setInterval(() => void this.fill(), 20_000);
