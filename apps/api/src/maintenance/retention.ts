@@ -12,6 +12,7 @@ import type { AppConfig } from "../config/env.js";
 import { DATABASE, DatabaseModule } from "../database/database.module.js";
 import { StorageModule } from "../storage/storage.module.js";
 import { OrphanService } from "./orphans.js";
+import { RewrapService } from "./rewrap.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -50,6 +51,7 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(OrphanService) private readonly orphans: OrphanService,
+    @Inject(RewrapService) private readonly rewrap: RewrapService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -73,6 +75,11 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
         // Same lock holder, same cadence: objects nothing refers to any more.
         const orphans = await this.orphans.run();
         if (orphans.removed > 0) logger.log(`Orphaned objects: ${JSON.stringify(orphans)}`);
+        // And any secret still wrapped by a previous key-encryption key.
+        const rewrapped = await this.rewrap.run();
+        if (rewrapped && (Object.keys(rewrapped.rewrapped).length > 0 || rewrapped.failed > 0)) {
+          logger.log(`Re-wrapped secrets: ${JSON.stringify(rewrapped)}`);
+        }
       }
     } catch (error) {
       logger.error(`Retention run failed: ${error instanceof Error ? error.message : "unknown"}`);
@@ -137,7 +144,7 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
 
 @Module({
   imports: [DatabaseModule, StorageModule],
-  providers: [RetentionService, OrphanService],
-  exports: [RetentionService],
+  providers: [RetentionService, OrphanService, RewrapService],
+  exports: [RetentionService, RewrapService],
 })
 export class MaintenanceModule {}

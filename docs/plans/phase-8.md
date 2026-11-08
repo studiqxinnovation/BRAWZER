@@ -15,8 +15,8 @@ plan already named. They are built in value order, one commit each, on the
 | 9   | Private-address browsing through a saved proxy, on purpose | **Done** 2026-11-08: a per-profile switch, off by default, loopback still refused                          |
 | 8   | Per-account destination allow-lists and block-lists        | **Done** 2026-11-08: Site rules page; applied by the egress before anything else                           |
 | 11  | Passkey-only phone approval                                | **Done** 2026-11-08: approving needs a passkey whenever the account has one                                |
-| 13  | A key re-wrap job                                          | Next                                                                                                       |
-| 14  | Warm pool                                                  |                                                                                                            |
+| 13  | A key re-wrap job                                          | **Done** 2026-11-08: on the maintenance cadence and from the Admin API                                     |
+| 14  | Warm pool                                                  | Next                                                                                                       |
 | 15  | A scheduler across runtime hosts                           |                                                                                                            |
 | 16  | Relay back-pressure for downloads                          |                                                                                                            |
 | 17  | Metrics                                                    |                                                                                                            |
@@ -163,3 +163,20 @@ passkey alone, with the reason stated. An account with no passkey can still
 approve with its password, and the approval page says a passkey would make
 that unnecessary. Checked in the phone sign-in integration test (a password
 confirmation refused, a passkey confirmation accepted, no passkey falls back).
+
+## 13. A key re-wrap job
+
+The runbook said rotation re-wraps rows when they are next written, which
+could take months. Now the key providers can say whether a wrapped data key
+still uses the current key (locally: the first key in `ENCRYPTION_KEYS`;
+Transit: the key's latest version, read from the ciphertext's `vault:vN:`
+prefix against the key's `latest_version`) and re-wrap it (locally by
+unwrapping and wrapping again; Transit through its `rewrap` call, so the
+data key never leaves the key service). A maintenance job walks every sealed
+column (proxy credentials, TOTP secrets, Drive file keys, profile data keys,
+session agent secrets) in batches under its own advisory lock and updates a
+row only if it is still as read, so a concurrent write wins. It runs with the
+retention cadence and from `POST /admin/maintenance/rewrap`, reporting rows
+per table and rows it had to leave. Checked in the secret box unit tests and
+an integration test that seals under one key, rotates, re-wraps through the
+Admin API and opens the secret with the new key alone.

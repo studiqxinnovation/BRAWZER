@@ -69,4 +69,28 @@ export class SecretBox {
   static keyIdOf(sealed: string): string | undefined {
     return sealed.split(".")[1];
   }
+
+  /**
+   * After a key rotation: the same secret, its data key wrapped by the
+   * current key. Only the wrapping changes; the ciphertext, and so the
+   * context it is bound to, stay as they were. Null when nothing is to do.
+   */
+  async rewrap(sealed: string): Promise<string | null> {
+    const parts = sealed.split(".");
+    const [version, keyId, wrapped, iv, ciphertext, tag] = parts;
+    if (
+      parts.length !== 6 ||
+      version !== VERSION ||
+      !keyId ||
+      !wrapped ||
+      !iv ||
+      !ciphertext ||
+      !tag
+    ) {
+      throw new Error("Not a sealed secret");
+    }
+    if (await this.keys.isCurrent(keyId, decode(wrapped))) return null;
+    const fresh = await this.keys.rewrap(keyId, decode(wrapped));
+    return [VERSION, fresh.keyId, encode(fresh.wrapped), iv, ciphertext, tag].join(".");
+  }
 }

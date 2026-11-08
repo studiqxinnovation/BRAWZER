@@ -1,4 +1,6 @@
 import {
+  type RewrapResult,
+  rewrapResultSchema,
   type AdminAccount,
   type AdminAccountList,
   adminAccountListSchema,
@@ -7,6 +9,9 @@ import {
   adminSetPlanRequestSchema,
 } from "@brawzer/contracts";
 import {
+  HttpCode,
+  HttpStatus,
+  Post,
   Body,
   Controller,
   Get,
@@ -36,6 +41,7 @@ import type { AuthContext } from "../auth/session.service.js";
 import { requestMeta } from "../common/request-meta.js";
 import { AdminGuard } from "./admin.guard.js";
 import { AdminService } from "./admin.service.js";
+import { RewrapService } from "../maintenance/rewrap.js";
 
 const idSchema = z.uuid({ error: "That isn’t a valid ID." });
 
@@ -46,7 +52,24 @@ const idSchema = z.uuid({ error: "That isn’t a valid ID." });
 @ApiUnauthorizedResponse({ description: "No valid session." })
 @ApiForbiddenResponse({ description: "Not an administrator, or no recent sign-in." })
 export class AdminController {
-  constructor(@Inject(AdminService) private readonly admin: AdminService) {}
+  constructor(
+    @Inject(AdminService) private readonly admin: AdminService,
+    @Inject(RewrapService) private readonly rewrap: RewrapService,
+  ) {}
+
+  @Post("maintenance/rewrap")
+  @HttpCode(HttpStatus.OK)
+  @SerializeOptions({ schema: rewrapResultSchema })
+  @ApiOperation({
+    summary: "Re-wrap every secret under the current encryption key",
+    description:
+      "After rotating the key-encryption key: every sealed value still wrapped by a previous key is re-wrapped now, so the previous key can be retired. Also runs on the maintenance cadence.",
+  })
+  @ApiOkResponse({ standardSchema: rewrapResultSchema })
+  async rewrapSecrets(): Promise<RewrapResult> {
+    const result = await this.rewrap.run();
+    return result ? { ...result, ran: true } : { rewrapped: {}, failed: 0, ran: false };
+  }
 
   @Get("accounts")
   @SerializeOptions({ schema: adminAccountListSchema })

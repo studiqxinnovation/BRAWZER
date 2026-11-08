@@ -21,7 +21,7 @@ deleting the account, signing other devices out).
 - Each secret is encrypted with its own random 256-bit data key (AES-256-GCM, random 96-bit IV).
 - The data key is stored only wrapped by a key-encryption key, which Brawzer never holds in production.
 - Every ciphertext is bound to its record through GCM's authenticated data (for example `totp:<user id>`). A value copied onto another row fails to decrypt.
-- Stored format: `v1.<key id>.<wrapped data key>.<iv>.<ciphertext>.<tag>`. The key ID makes rotation possible: new secrets use the current key, older ones still open.
+- Stored format: `v1.<key id>.<wrapped data key>.<iv>.<ciphertext>.<tag>`. The key ID makes rotation possible: new secrets use the current key, older ones still open, and a maintenance job re-wraps every older one under the current key (Phase 8, idea 13; the runbook has the steps).
 
 **Key providers:**
 

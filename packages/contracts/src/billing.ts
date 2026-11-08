@@ -134,6 +134,15 @@ export const adminAccountSchema = adminAccountSummarySchema.extend({
   planNote: z.string().nullable(),
 });
 
+/** What the re-wrap job did (Phase 8, idea 13): rows per table, and rows it had to leave. */
+export const rewrapResultSchema = z.object({
+  rewrapped: z.record(z.string(), z.number().int().nonnegative()),
+  failed: z.number().int().nonnegative(),
+  /** False when another instance was already running it; nothing was done here. */
+  ran: z.boolean(),
+});
+export type RewrapResult = z.infer<typeof rewrapResultSchema>;
+
 export const adminAccountListSchema = z.object({
   accounts: z.array(adminAccountSummarySchema),
   nextCursor: z.uuid().nullable(),

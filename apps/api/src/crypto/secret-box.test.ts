@@ -22,6 +22,22 @@ describe("SecretBox with local keys", () => {
     expect(await box.open(first, "totp:user-1")).toBe("JBSWY3DPEHPK3PXP");
   });
 
+  it("re-wraps a secret under the current key after a rotation, and only then", async () => {
+    const old = key("local-1");
+    const sealedBefore = await new SecretBox(new LocalKeyProvider([old])).seal("s3cret", "proxy:a");
+    expect(await new SecretBox(new LocalKeyProvider([old])).rewrap(sealedBefore)).toBeNull();
+    // Rotation: a new first key, the old one still readable.
+    const rotated = new SecretBox(new LocalKeyProvider([current, old]));
+    const rewrapped = await rotated.rewrap(sealedBefore);
+    expect(rewrapped).not.toBeNull();
+    expect(rewrapped?.startsWith("v1.local-2.")).toBe(true);
+    expect(rewrapped?.split(".").slice(3)).toEqual(sealedBefore.split(".").slice(3));
+    expect(await rotated.open(rewrapped ?? "", "proxy:a")).toBe("s3cret");
+    // Once every row is re-wrapped the old key can go.
+    expect(await box.open(rewrapped ?? "", "proxy:a")).toBe("s3cret");
+    await expect(box.open(sealedBefore, "proxy:a")).rejects.toThrow();
+  });
+
   it("refuses a sealed value copied onto another record", async () => {
     const sealed = await box.seal("proxy-password", "proxy:a");
     await expect(box.open(sealed, "proxy:b")).rejects.toThrow();

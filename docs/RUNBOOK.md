@@ -77,10 +77,16 @@ image's `docker image inspect` labels and in each session's status bar).
 
 ### Rotating the encryption key
 
-The key service's key-encryption key wraps every data key (ADR 0008);
-rotate it in the key service and keep the previous version readable until
-every row has been re-wrapped (a re-wrap job is not built; rows are
-re-wrapped when they are next written).
+The key service's key-encryption key wraps every data key (ADR 0008).
+Rotate it in the key service (Transit: `POST transit/keys/brawzer/rotate`;
+local development: put a new `id:key` first in `ENCRYPTION_KEYS` and keep
+the old one after it), then re-wrap every row: `POST /api/v1/admin/maintenance/rewrap`
+from the Admin page's account (confirm it's you first), or wait for the
+maintenance cadence (every six hours, five minutes after a start). The
+response counts rows per table and rows it had to leave; when every run
+reports nothing left, retire the previous key version (Transit:
+`min_decryption_version`; local: drop the old key from `ENCRYPTION_KEYS`).
+Only the wrapping of each data key changes; ciphertexts stay as they are.
 
 ### Capacity
 
