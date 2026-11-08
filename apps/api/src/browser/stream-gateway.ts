@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { PassThrough } from "node:stream";
+import { BackPressure, TRANSFER_BUFFER_BYTES } from "./back-pressure.js";
 import {
   agentMessageSchema,
   binaryKind,
@@ -103,6 +104,8 @@ interface IncomingTransfer {
 @Injectable()
 export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly relays = new Map<string, { close(code: number, reason: string): void }>();
+  /** Figures for the metrics: how often a download had to pause its agent. */
+  readonly stats = { transferPauses: 0 };
   private subscriber: Redis | null = null;
 
   constructor(
@@ -206,6 +209,10 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
     agent.binaryType = "nodebuffer";
 
     const incoming = new Map<string, IncomingTransfer>();
+    // Downloads are bounded in memory: a full buffer pauses the agent until Drive catches up.
+    const pressure = new BackPressure(agent, () => {
+      this.stats.transferPauses += 1;
+    });
     let closed = false;
     const close = (code: number, reason: string) => {
       if (closed) return;
@@ -217,6 +224,7 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         transfer.body.destroy(new Error("The stream closed before the file arrived."));
       }
       incoming.clear();
+      pressure.releaseAll();
       if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
         client.close(code, reason);
       }
@@ -315,7 +323,7 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         const message = agentMessageSchema.safeParse(candidate);
         if (!message.success) return;
         if (message.data.type === "transfer" && message.data.state === "received") {
-          this.receiveTransfer(message.data, incoming, auth, meta, toPage);
+          this.receiveTransfer(message.data, incoming, auth, meta, toPage, pressure);
         }
         if (message.data.type === "clipboard" && message.data.text !== "") {
           void this.securityEvents
@@ -336,10 +344,13 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         const chunk = decodeTransferChunk(bytes);
         const transfer = chunk ? incoming.get(chunk.header.transferId) : undefined;
         if (!chunk || !transfer) return;
-        if (chunk.data.length > 0) transfer.body.write(Buffer.from(chunk.data));
+        if (chunk.data.length > 0) {
+          pressure.write(chunk.header.transferId, transfer.body, Buffer.from(chunk.data));
+        }
         if (chunk.header.last) {
           transfer.body.end();
           incoming.delete(chunk.header.transferId);
+          pressure.release(chunk.header.transferId);
         }
         return;
       }
@@ -382,8 +393,9 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
     auth: { user: { id: string }; session: { id: string } },
     meta: RequestMeta,
     toPage: (message: object) => void,
+    pressure: BackPressure,
   ): void {
-    const body = new PassThrough();
+    const body = new PassThrough({ highWaterMark: TRANSFER_BUFFER_BYTES });
     incoming.set(message.transferId, { message, body });
     void (async () => {
       try {
@@ -410,6 +422,7 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
       } catch (error) {
         incoming.delete(message.transferId);
         if (!body.destroyed) body.destroy();
+        pressure.release(message.transferId);
         const refusal = error instanceof ApiException ? error : null;
         toPage({
           ...message,

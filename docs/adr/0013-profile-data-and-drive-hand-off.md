@@ -50,6 +50,8 @@ from Brawzer's encryption, not Chromium's.
 
 ## Consequences
 
+- **Bounded memory in the relay** (Phase 8, idea 16): a transfer waits in the relay to at most 2 MiB; a full buffer pauses the agent's socket until Drive's upload has drained it.
+
 - The relay holds a download in memory while Drive takes it, bounded by Drive's per-file limit. Fine for one API instance in development; a production relay would stream through a bounded queue.
 - A download that completes while nobody is watching waits in the container for the next viewer and is lost if the session ends first. Acceptable for now; a later version can hand over without a viewer.
 - Chromium doesn't report script-driven title changes in its new headless mode, so the agent re-reads the active tab's title while someone watches. Cheap, and it also made the chooser observable in tests.

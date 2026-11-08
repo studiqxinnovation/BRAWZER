@@ -18,8 +18,8 @@ plan already named. They are built in value order, one commit each, on the
 | 13  | A key re-wrap job                                          | **Done** 2026-11-08: on the maintenance cadence and from the Admin API                                     |
 | 14  | Warm pool                                                  | **Done** 2026-11-08: `BROWSER_WARM_POOL` pairs waiting per API instance                                    |
 | 15  | A scheduler across runtime hosts                           | **Done** 2026-11-08: `RUNTIME_HOSTS`, the host with the most room, remembered per session                  |
-| 16  | Relay back-pressure for downloads                          | Next                                                                                                       |
-| 17  | Metrics                                                    |                                                                                                            |
+| 16  | Relay back-pressure for downloads                          | **Done** 2026-11-08: a bounded buffer per transfer; the agent pauses while Drive catches up                |
+| 17  | Metrics                                                    | Next                                                                                                       |
 | 18  | Image rebuild on upstream advisories                       |                                                                                                            |
 | 20  | Usage emails and in-app nudges                             |                                                                                                            |
 | 21  | Trials and promotion codes                                 |                                                                                                            |
@@ -218,3 +218,17 @@ spreads its pairs over the reachable hosts in turn, and this instance's
 proxy tester runs on the primary. Checked in the config tests and an
 integration test with two hosts of capacity one on this machine's engine
 and one host nobody answers on.
+
+## 16. Relay back-pressure for downloads
+
+The relay wrote every chunk of a download into the stream that Drive's
+upload reads (scanning and encrypting as it goes), whatever the upload's
+pace: a slow scan or store meant the whole file waiting in the API's
+memory. The stream now has a 2 MiB buffer per transfer, and when a write
+reports it full the agent's socket is paused until the stream drains; it
+stays paused while any transfer in flight is full, and every end (saved,
+failed, the stream closing) releases it. The agent already sent one chunk
+at a time and waited for it to leave, so pausing the socket is all it takes
+to hold the download at the source. Pauses are counted for the metrics.
+Checked in a unit test of the pacing and an integration test that downloads
+24 MiB through a session into Drive, whole.
