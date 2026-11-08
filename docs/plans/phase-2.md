@@ -1,7 +1,7 @@
 # Phase 2 plan: identity, profiles and proxies
 
 - **Status:** Approved 2026-11-07, with every decision taken as recommended (table at the end).
-- **Progress:** 2.1 to 2.6 and 2.8 done; 2.7 not built ([review](../reviews/phase-2.md)).
+- **Progress:** 2.1 to 2.6 and 2.8 done ([review](../reviews/phase-2.md)); 2.7 built on 2026-11-08 ([review addendum](../reviews/phase-2.md#milestone-27-sign-in-with-your-phone-built-2026-11-08)).
 - **Date:** 2026-11-07
 - **Builds on:** Phase 1 ([review](../reviews/phase-1.md)).
 
@@ -156,7 +156,7 @@ Each milestone ships on its own, with tests, docs and a commit, like Phase 1.
 
 ### 2.7 Sign in with your phone (QR approval)
 
-_Approved, but not built in Phase 2. Not scheduled yet._
+_Built on 2026-11-08, as described below; `apps/api/src/auth/phone`, the `/sign-in/phone` and `/app/approve-sign-in` pages._
 
 - **For:** public computers without Bluetooth, which can't use the phone-passkey option. That's common on library and café PCs.
 - **Flow:**

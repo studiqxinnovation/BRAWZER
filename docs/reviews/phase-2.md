@@ -87,3 +87,11 @@ milestone.
 | An "undo email change" link for the old address      | Built after this review: a 7-day single-use link that restores the address, sets a new password and signs out every device |
 | "Confirm it's you" before changing a profile's proxy | Not required while no traffic flows; recommended from Phase 5                                                              |
 | When to build phone sign-in by QR code (2.7)         | Not scheduled                                                                                                              |
+
+## Milestone 2.7: sign in with your phone (built 2026-11-08)
+
+For computers without Bluetooth, where the phone-passkey option isn't offered. The computer (`/sign-in/phone`) asks the API for a request and shows a QR code (an SVG drawn by the server, shown in an image) and a two-digit number; it polls every two seconds. The phone, signed in, scans the code and opens `/app/approve-sign-in`, sees the computer's browser and address, picks the matching number from three, and confirms it's its owner (a recent sign-in, otherwise the usual "confirm it's you"); the computer then gets a shared-computer session, once.
+
+Defences against QR-login phishing, as the plan listed: **number matching** (two decoys, three wrong picks refuse the request for good), **device details** on the phone with a warning in plain words, **two-minute single-use requests** (the challenge is consumed by the one poll that signs in), **two separate secrets** (the computer's poll token and the phone's key, stored hashed; neither alone does anything), **rate limits** on starting, polling and approving, a **security event** (`phone_sign_in.approved`, with the computer's browser) and an **email** to the account every time. The computer never holds a session until the phone approves, and never types anything.
+
+Tests: `apps/api/test/phone-sign-in.integration.test.ts` (the full flow, wrong numbers, the step-up, "not me", the secrets kept apart, strangers refused) and the two-context browser test in `apps/web/e2e/auth.spec.ts`.

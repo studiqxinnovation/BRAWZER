@@ -1,6 +1,6 @@
 # 0006 Browser streaming
 
-- **Status:** Accepted for step 3a after the milestone 3.1 measurements (2026-11-07). Step 3b stays proposed.
+- **Status:** Accepted for step 3a after the milestone 3.1 measurements (2026-11-07). Step 3b stays proposed; a spike on 2026-11-08 ([findings](../reviews/phase-3b-spike.md)) ruled out capturing from inside headless Chromium and confirmed the virtual-display pipeline as the way.
 - **Date:** 2026-11-06
 
 ## Context
