@@ -63,6 +63,8 @@ minutes, like deleting a passkey.
 
 ## Consequences
 
+- **Checked in CI** (Phase 8, idea 10): an integration test starts real sessions and probes them from the engine's user: read-only root, `noexec` scratch, no capabilities, the shared namespace, the ruleset, no direct route out, no DNS, and the proxy's refusals for private, loopback and vendor addresses. Writing it found that the engine's user could still resolve names through the container engine's embedded resolver on loopback, because its NAT rewrote the port before the filter saw the packet; the DNS rule now sits in a chain at raw priority, ahead of that NAT.
+
 - Two containers per session, the sidecar small (256 MiB, one CPU). Starting a session takes one more container start.
 - `host.docker.internal` is the only private address development egress containers need (test proxies and echo servers on the host); `EGRESS_LOOPBACK_HOST` rewrites loopback targets to it and is refused in production.
 - A WebRTC or DNS leak would need a route the namespace doesn't have; the engine's flags stay as a second layer.
