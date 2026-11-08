@@ -54,3 +54,18 @@ tab, no network between the browser and the reader of the frames. Scripts:
 - **Frames at device pixel ratio 1**, up to 1920×1080. High-density screens are scaled up locally; streaming at 2× would roughly quadruple the bytes.
 - **Acknowledgements travel end to end.** The agent acknowledges a frame to Chromium only when the viewer reports it has drawn that frame, so each viewer's connection sets its own frame rate.
 - **Frames replace, never queue.** If a newer frame arrives before an older one is sent, the older one is dropped.
+
+## Addendum (2026-11-08): sound without WebRTC
+
+Sound came by the shortest honest path rather than with step 3b's WebRTC:
+the runtime starts a PulseAudio server of the session's own with one null
+sink, both engines play into it (they find it through `PULSE_SERVER`; the
+3b spike's failure to see Chromium connect was the spike's probe lacking
+the session seccomp profile, not the engine), the agent captures the sink's
+monitor with `parec` (one channel, 24 kHz, 16-bit, 20 ms chunks, silence
+skipped) and streams it as `A` binary messages beside the frames, never
+acknowledged. The page plays them on a Web Audio context scheduled a little
+ahead, unlocked by the person's first click or keystroke, with a speaker
+control in the status bar. About 380 kbit/s while sound plays, nothing while
+it doesn't. WebRTC video (lower latency, hardware encode) remains a later
+step; the frame stream stays the production path.

@@ -168,3 +168,22 @@ describe("transfer and file chooser messages", () => {
     expect(clientMessageSchema.safeParse({ type: "print", tabId: "t" }).success).toBe(true);
   });
 });
+
+describe("audio chunks", () => {
+  it("round-trip, keep a whole number of samples and tell their kind", async () => {
+    const { encodeAudioChunk, decodeAudioChunk, binaryKind } =
+      await import("./browser-protocol.ts");
+    const samples = new Uint8Array([0, 1, 2, 3]);
+    const bytes = encodeAudioChunk({ seq: 7, sampleRate: 24_000, channels: 1 }, samples);
+    expect(binaryKind(bytes)).toBe("audio");
+    expect(decodeAudioChunk(bytes)).toEqual({
+      header: { seq: 7, sampleRate: 24_000, channels: 1 },
+      samples,
+    });
+    expect(
+      decodeAudioChunk(
+        encodeAudioChunk({ seq: 0, sampleRate: 24_000, channels: 2 }, samples.subarray(0, 2)),
+      ),
+    ).toBeNull();
+  });
+});

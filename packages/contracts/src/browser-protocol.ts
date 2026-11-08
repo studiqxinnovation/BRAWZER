@@ -111,6 +111,8 @@ const baseClientMessages = [
   z.object({ type: z.literal("zoom"), tabId: tabIdSchema, factor: z.number().min(0.25).max(5) }),
   /** Reader view on or off; `reader` on the tab says what happened. */
   z.object({ type: z.literal("reader"), tabId: tabIdSchema, on: z.boolean() }),
+  /** Sound from the session's pages, streamed to this viewer or not (Phase 3b). */
+  z.object({ type: z.literal("sound"), on: z.boolean() }),
   /** Clipboard with intent: the page's selected text, asked for on purpose; answered with `clipboard`. */
   z.object({ type: z.literal("copy"), tabId: tabIdSchema }),
   /** Text from the local computer's clipboard, typed into the page's focused field on purpose. */
@@ -345,6 +347,7 @@ export const TRANSFER_CHUNK_BYTES = 256 * 1024;
 
 const FRAME_MAGIC = 0x42; // "B"
 const TRANSFER_MAGIC = 0x54; // "T"
+const AUDIO_MAGIC = 0x41; // "A"
 const PREFIX_BYTES = 6; // magic, version, header length (uint32)
 
 function encodeBinary(magic: number, header: object, payload: Uint8Array): Uint8Array {
@@ -380,11 +383,46 @@ function decodeBinary(
 }
 
 /** Which kind of binary message this is, without decoding it. */
-export function binaryKind(bytes: Uint8Array): "frame" | "transfer" | null {
+export function binaryKind(bytes: Uint8Array): "frame" | "transfer" | "audio" | null {
   if (bytes.length < PREFIX_BYTES || bytes[1] !== BROWSER_PROTOCOL_VERSION) return null;
   if (bytes[0] === FRAME_MAGIC) return "frame";
   if (bytes[0] === TRANSFER_MAGIC) return "transfer";
+  if (bytes[0] === AUDIO_MAGIC) return "audio";
   return null;
+}
+
+/**
+ * Sound from the session (Phase 3b): what the pages play, captured from the
+ * container's own audio sink, as signed 16-bit little-endian samples. Chunks
+ * are short (tens of milliseconds) and never acknowledged; a page that falls
+ * behind just loses some.
+ */
+export const audioChunkHeaderSchema = z.object({
+  seq: z.number().int().min(0),
+  sampleRate: z.number().int().min(8000).max(48_000),
+  channels: z.number().int().min(1).max(2),
+});
+
+export type AudioChunkHeader = z.infer<typeof audioChunkHeaderSchema>;
+
+/** The largest audio payload in one chunk (about a quarter of a second of stereo 48 kHz). */
+export const AUDIO_CHUNK_BYTES = 48_000;
+
+/** `A`, version, big-endian header length, the JSON header, then the samples. */
+export function encodeAudioChunk(header: AudioChunkHeader, samples: Uint8Array): Uint8Array {
+  return encodeBinary(AUDIO_MAGIC, header, samples);
+}
+
+/** Null for anything that isn't a well-formed audio chunk. The samples are a view, not a copy. */
+export function decodeAudioChunk(
+  bytes: Uint8Array,
+): { header: AudioChunkHeader; samples: Uint8Array } | null {
+  const decoded = decodeBinary(AUDIO_MAGIC, bytes);
+  if (!decoded) return null;
+  const header = audioChunkHeaderSchema.safeParse(decoded.header);
+  if (!header.success || decoded.payload.length > AUDIO_CHUNK_BYTES) return null;
+  if (decoded.payload.length % (2 * header.data.channels) !== 0) return null;
+  return { header: header.data, samples: decoded.payload };
 }
 
 /** `B`, version, big-endian header length, the JSON header, then the JPEG bytes. */

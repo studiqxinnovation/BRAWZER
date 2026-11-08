@@ -48,6 +48,8 @@ import {
   ShieldCheck,
   Square,
   X,
+  Volume2,
+  VolumeX,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -729,15 +731,40 @@ export function StatusBar({
   proxy,
   profile,
   remaining,
+  sound,
 }: {
   region: string | null;
   engine: string;
   proxy: { name: string; protocol: string } | null;
   profile: Profile | null;
   remaining: string;
+  sound: { on: boolean; unlocked: boolean; onToggle: () => void };
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line bg-surface-raised px-4 py-1.5 text-footnote text-ink-secondary">
+      <Tooltip
+        content={
+          !sound.on
+            ? "Sound is off. Click to hear the page."
+            : sound.unlocked
+              ? "Sound is on. Click to mute."
+              : "Sound plays once you click or type in the page."
+        }
+      >
+        <button
+          type="button"
+          aria-pressed={sound.on}
+          className="flex h-6 items-center gap-1 rounded-md px-1.5 text-ink-secondary hover:bg-hover hover:text-ink"
+          onClick={sound.onToggle}
+        >
+          {sound.on ? (
+            <Volume2 aria-hidden="true" className="size-3.5" />
+          ) : (
+            <VolumeX aria-hidden="true" className="size-3.5" />
+          )}
+          {sound.on ? (sound.unlocked ? "Sound on" : "Sound on · click the page") : "Sound off"}
+        </button>
+      </Tooltip>
       <span className="flex items-center gap-2">
         <span aria-hidden="true" className="size-2 rounded-full bg-success" />
         Cloud session{region ? ` · ${region}` : ""}

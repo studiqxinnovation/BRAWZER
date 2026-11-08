@@ -29,6 +29,7 @@ FROM ${NODE_IMAGE} AS runtime
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     chromium firefox-esr fonts-liberation fonts-noto-core fonts-noto-color-emoji tini ca-certificates \
+    pulseaudio pulseaudio-utils \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin browser
 # Managed policies: enforced by the engine itself, whatever a page does.

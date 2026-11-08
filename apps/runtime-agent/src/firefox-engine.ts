@@ -412,6 +412,7 @@ export class FirefoxEngine implements Engine {
     switch (message.type) {
       case "hello":
       case "ping":
+      case "sound":
         return;
       case "resize":
         await this.setViewport(message.viewport);

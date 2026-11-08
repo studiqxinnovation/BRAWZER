@@ -50,6 +50,16 @@ test.describe("browser", () => {
     expect(await wcagViolations(page)).toEqual([]);
     await expect(page.getByText("Direct connection")).toBeVisible();
     await expect(page.getByText("Isolated")).toBeVisible();
+    // Sound is on by default and mutes from the status bar.
+    const sound = page.getByRole("button", { name: /^Sound on/ });
+    await expect(sound).toHaveAttribute("aria-pressed", "true");
+    await sound.click();
+    await expect(page.getByRole("button", { name: "Sound off" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await page.getByRole("button", { name: "Sound off" }).click();
+    await expect(sound).toBeVisible();
 
     // A bare host opens over HTTPS: the test site served inside the runtime.
     const address = page.getByRole("textbox", { name: "Address or search" });
@@ -241,9 +251,6 @@ test.describe("browser", () => {
   }) => {
     await signedIn(page, baseURL, "browser-start");
     await expect(page.getByRole("button", { name: "Start browsing" })).toBeVisible();
-    await expect(page.getByRole("note", { name: /Development state/ })).toContainText(
-      "WebRTC streaming with sound",
-    );
     // The panel says where websites will see the session from.
     await expect(
       page.getByText("Websites see Brawzer’s cloud; the profile has no proxy."),

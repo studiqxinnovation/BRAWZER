@@ -2,6 +2,9 @@ import {
   type AgentMessage,
   agentMessageSchema,
   type ClientMessageInput,
+  type AudioChunkHeader,
+  binaryKind,
+  decodeAudioChunk,
   decodeFrame,
   type FrameHeader,
   STREAM_CLOSE_CODES,
@@ -11,6 +14,7 @@ import {
 export type StreamEvent =
   | { kind: "message"; message: AgentMessage }
   | { kind: "frame"; header: FrameHeader; image: Blob }
+  | { kind: "audio"; header: AudioChunkHeader; samples: Uint8Array }
   | { kind: "closed"; code: number; reason: string };
 
 const PING_INTERVAL_MS = 20_000;
@@ -51,7 +55,13 @@ export class BrowserStream {
         }
         return;
       }
-      const frame = decodeFrame(new Uint8Array(event.data));
+      const bytes = new Uint8Array(event.data);
+      if (binaryKind(bytes) === "audio") {
+        const chunk = decodeAudioChunk(bytes);
+        if (chunk) this.onEvent({ kind: "audio", header: chunk.header, samples: chunk.samples });
+        return;
+      }
+      const frame = decodeFrame(bytes);
       if (!frame) return;
       this.onEvent({
         kind: "frame",

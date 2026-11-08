@@ -30,7 +30,7 @@ plan already named. They are built in value order, one commit each, on the
 | 6   | Pop-out work mode                                          |                                                                                                            |
 | 12  | Report a page                                              |                                                                                                            |
 | 19  | Team accounts                                              |                                                                                                            |
-| 7   | Sound, then WebRTC (Phase 3b)                              | Last: needs a virtual display, GStreamer and TURN ([spike](../reviews/phase-3b-spike.md))                  |
+| 7   | Sound, then WebRTC (Phase 3b)                              | **Sound done** 2026-11-08 (ADR 0006 addendum); WebRTC video still later                                    |
 
 ## 10. Isolation checks as a CI job
 

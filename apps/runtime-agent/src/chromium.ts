@@ -12,6 +12,8 @@ export interface LaunchOptions {
   viewport: { width: number; height: number };
   /** The first tab's page: Brawzer's own start page, through the proxy override. */
   startUrl: string;
+  /** Sound: where the engine finds the session's audio server. */
+  extraEnv?: Record<string, string> | undefined;
   /**
    * Public keys whose certificate errors are ignored: only the test site's,
    * in development and tests. Every other certificate is checked as usual.
@@ -85,6 +87,7 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
       TZ: "UTC",
       // No desktop bus in the container; this stops the engine looking for one.
       DBUS_SESSION_BUS_ADDRESS: "disabled:",
+      ...options.extraEnv,
     },
   });
 

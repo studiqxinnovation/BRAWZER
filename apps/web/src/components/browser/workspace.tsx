@@ -30,6 +30,7 @@ import {
 import { endBrowserSession, requestStreamTicket, startBrowserSession } from "@/lib/api/browser";
 import { displayUrl, hostOf, resolveTyped, searchUrl } from "@/lib/browser/input";
 import { nextZoom } from "@/lib/browser/zoom";
+import { AudioPlayer } from "@/lib/browser/audio";
 import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/stream";
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
 import {
@@ -185,6 +186,32 @@ export function BrowserWorkspace({
     result: { matches: number; active: number } | null;
   } | null>(null);
   const findTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The session's sound, played here; on by default, muted from the status bar. */
+  const audioRef = useRef(new AudioPlayer());
+  const [soundOn, setSoundOn] = useState(true);
+  const [soundUnlocked, setSoundUnlocked] = useState(false);
+  useEffect(() => {
+    const player = audioRef.current;
+    return () => {
+      player.close();
+    };
+  }, []);
+  /** Any input on the page is the gesture the browser wants before it plays. */
+  const unlockSound = useCallback(() => {
+    audioRef.current.unlock();
+    setSoundUnlocked(audioRef.current.unlocked);
+    // The context reports "running" a moment after resume.
+    setTimeout(() => {
+      setSoundUnlocked(audioRef.current.unlocked);
+    }, 150);
+  }, []);
+  function toggleSound() {
+    const next = !soundOn;
+    setSoundOn(next);
+    audioRef.current.setOn(next);
+    if (next) unlockSound();
+    send({ type: "sound", on: next });
+  }
   /** Text the page offered for the local clipboard, waiting for the once-per-session confirmation. */
   const [pendingCopy, setPendingCopy] = useState<string | null>(null);
   const copyConfirmed = useRef(false);
@@ -218,6 +245,10 @@ export function BrowserWorkspace({
 
   const handleEvent = useCallback(
     (event: StreamEvent) => {
+      if (event.kind === "audio") {
+        audioRef.current.play(event.header, event.samples);
+        return;
+      }
       if (event.kind === "frame") {
         viewportRef.current?.draw(event.header, event.image);
         return;
@@ -773,7 +804,12 @@ export function BrowserWorkspace({
       )}
 
       {/* The page */}
-      <div className="relative flex min-h-0 flex-1 flex-col" id="browser-viewport">
+      <div
+        className="relative flex min-h-0 flex-1 flex-col"
+        id="browser-viewport"
+        onPointerDownCapture={unlockSound}
+        onKeyDownCapture={unlockSound}
+      >
         <BrowserViewport
           ref={viewportRef}
           tabId={activeTab?.id ?? null}
@@ -831,6 +867,7 @@ export function BrowserWorkspace({
         proxy={sessionProxy}
         profile={sessionProfile}
         remaining={remainingLabel(session.expiresAt, now)}
+        sound={{ on: soundOn, unlocked: soundUnlocked, onToggle: toggleSound }}
       />
 
       <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />

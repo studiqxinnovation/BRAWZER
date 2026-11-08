@@ -26,7 +26,7 @@ the websites' code and keeps none of their cookies, history or downloads.
 
 - **Sessions are not kept.** Each session starts clean and is destroyed when it ends. Persistent profiles (cookies and history kept between sessions, encrypted) are Phase 4; profiles are chosen at start but only their names are used until then.
 - **No downloads to Drive** (Phase 4) and **no traffic through saved proxies** (Phase 5).
-- **No WebRTC streaming or audio.** Those are ADR 0006's step 3b. They need a media pipeline and TURN servers, and are planned separately once 3a is measured. (Firefox, first planned behind 3b, came without it: milestone 3.10.)
+- **No WebRTC streaming.** That is ADR 0006's step 3b. It needs a media pipeline and TURN servers, and is planned separately once 3a is measured. (Firefox came without it, milestone 3.10; sound came without it too, as PCM chunks beside the frames, on 2026-11-08: see the ADR's addendum.)
 - **No production hosting.** Containers run on the local Docker engine; Kubernetes, the warm pool and capacity planning are Phase 7.
 
 ## Architecture

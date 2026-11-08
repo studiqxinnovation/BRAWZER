@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { type Engine, RefusalLog } from "./engine-types.ts";
 import { readerScript } from "./page-tools.ts";
+import { SessionAudio } from "./audio.ts";
 import { BrowserEngine } from "./engine.ts";
 import { type LaunchedFirefox, launchFirefox } from "./firefox.ts";
 import { FirefoxEngine } from "./firefox-engine.ts";
@@ -47,6 +48,10 @@ if (config.testSite) {
   trustedSpkiHashes.push(certificate.spkiHash);
   log("info", "test site enabled", { host: TEST_SITE_HOST });
 }
+
+// Sound: the session's own audio server, started before either engine.
+const audio = new SessionAudio(config.scratchDir);
+const soundReady = await audio.start();
 
 const refusals = new RefusalLog();
 // Reader view runs Mozilla's Readability inside the page; its source is read once.
@@ -129,6 +134,7 @@ const lifecycle: AgentLifecycle = {
       const launched = await launchFirefox({
         binary: config.firefoxBinary,
         scratchDir: config.scratchDir,
+        extraEnv: soundReady ? audio.env() : {},
         proxyPort: config.proxyPort,
         downloadDir: engineOptions.downloadDir,
         viewport: config.initialViewport,
@@ -145,6 +151,7 @@ const lifecycle: AgentLifecycle = {
       const launched = launchChromium({
         binary: config.chromiumBinary,
         scratchDir: config.scratchDir,
+        extraEnv: soundReady ? audio.env() : {},
         proxyPort: config.proxyPort,
         viewport: config.initialViewport,
         startUrl: BEE_HOME_URL,
@@ -166,12 +173,13 @@ const lifecycle: AgentLifecycle = {
   },
   async pack() {
     state = "stopped";
+    audio.close();
     await stopEngine();
     return packProfile(config.scratchDir);
   },
 };
 
-const server = createAgentServer(lifecycle, config.sessionSecret);
+const server = createAgentServer(lifecycle, config.sessionSecret, audio);
 
 process.on("SIGTERM", () => {
   exit(0, "SIGTERM");

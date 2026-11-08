@@ -13,7 +13,7 @@ Profiles, history and downloads stay with your account, not on the machine.
 > Chromium) or Firefox, streamed into Brawzer's own chrome,
 > downloads and printed pages into Drive, file choosers answered from Drive,
 > profiles that keep their cookies and history encrypted between sessions;
-> sound and WebRTC (Phase 3b) are not built: a spike ruled out capture inside headless Chromium ([findings](docs/reviews/phase-3b-spike.md)); Firefox came without them ([ADR 0017](docs/adr/0017-bee-browser-and-firefox.md)). Phase 4: Drive. Phase 5: an egress
+> sound streams from the session's own audio server (Phase 3b, [ADR 0006](docs/adr/0006-browser-streaming.md)); WebRTC video is not built, the frame stream stays ([spike](docs/reviews/phase-3b-spike.md)); Firefox came without it ([ADR 0017](docs/adr/0017-bee-browser-and-firefox.md)). Phase 4: Drive. Phase 5: an egress
 > sidecar per session, traffic through the profile's proxy, proxy tests out
 > of the API. Phase 6: plans with limits, Stripe billing, administration;
 > pricing itself is undecided and no price appears anywhere. Phase 7: production

@@ -100,6 +100,17 @@ function handleTestSiteRequest(req: http.IncomingMessage, res: http.ServerRespon
     case "/second":
       send(200, page("Second page", "<h1>Second page</h1>"));
       return;
+    case "/sound":
+      // A tone starts on a click (as autoplay rules want), loud enough to be unmistakable.
+      send(
+        200,
+        page(
+          "Sound test",
+          `<h1>Sound test</h1>
+<button class="box" style="top:40px" onclick="const c=new AudioContext();const o=c.createOscillator();o.frequency.value=440;const g=c.createGain();g.gain.value=0.5;o.connect(g).connect(c.destination);o.start();document.title='Playing';setInterval(()=>c.resume(),300)">Play a tone</button>`,
+        ),
+      );
+      return;
     case "/article": {
       const paragraphs = Array.from(
         { length: 8 },

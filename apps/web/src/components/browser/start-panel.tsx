@@ -2,7 +2,6 @@
 
 import type { BrowserOverview, Profile } from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
-import { DevState } from "@brawzer/ui/components/dev-state";
 import { FormMessage } from "@brawzer/ui/components/form-message";
 import { Select } from "@brawzer/ui/components/select";
 import { Play } from "lucide-react";
@@ -98,18 +97,6 @@ export function StartPanel({
           </div>
         </form>
       </Panel>
-
-      <DevState
-        title="Sound isn’t in the cloud browser yet"
-        milestone="Phase 3b"
-        requires={["WebRTC streaming with sound (Phase 3b)"]}
-      >
-        Today: Bee Browser or Firefox per session, your tabs and address bar drawn by Brawzer, pages
-        streamed as pixels, every connection through an egress that blocks private addresses and
-        uses the profile’s proxy, downloads and printed pages saved to Drive, websites’ file
-        requests answered from Drive, cookies and history kept per profile, and camera, microphone
-        and location refused.
-      </DevState>
     </div>
   );
 }

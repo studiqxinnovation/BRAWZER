@@ -364,6 +364,11 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         return;
       }
       if (client.readyState !== WebSocket.OPEN) return;
+      if (binaryKind(bytes) === "audio") {
+        // Sound is live: a page that is behind loses some, and never waits for it.
+        if (client.bufferedAmount <= MAX_BUFFERED_BYTES) client.send(bytes, { binary: true });
+        return;
+      }
       if (client.bufferedAmount > MAX_BUFFERED_BYTES) {
         // The page is behind: drop the frame and acknowledge it in its place.
         this.metrics.count(

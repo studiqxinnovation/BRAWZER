@@ -1,4 +1,6 @@
 import {
+  binaryKind,
+  decodeAudioChunk,
   accountExportSchema,
   type AgentMessage,
   agentMessageSchema,
@@ -65,6 +67,8 @@ async function ticketFor(client: TestBrowser, id: string) {
 class Viewer {
   readonly messages: AgentMessage[] = [];
   readonly frames: { tabId: string; frameId: number; bytes: number }[] = [];
+  /** Sound chunks, with whether anything audible was in them. */
+  readonly audio: { seq: number; bytes: number; loud: boolean }[] = [];
   closeCode: number | null = null;
   private readonly socket: WebSocket;
   private waiters: (() => void)[] = [];
@@ -83,7 +87,24 @@ class Viewer {
     });
     this.socket.on("message", (data: Buffer, isBinary: boolean) => {
       if (isBinary) {
-        const frame = decodeFrame(new Uint8Array(data));
+        const bytes = new Uint8Array(data);
+        if (binaryKind(bytes) === "audio") {
+          const chunk = decodeAudioChunk(bytes);
+          if (chunk) {
+            const view = new DataView(
+              chunk.samples.buffer,
+              chunk.samples.byteOffset,
+              chunk.samples.byteLength,
+            );
+            let loud = false;
+            for (let offset = 0; offset + 1 < chunk.samples.length; offset += 2) {
+              if (Math.abs(view.getInt16(offset, true)) > 2000) loud = true;
+            }
+            this.audio.push({ seq: chunk.header.seq, bytes: chunk.samples.length, loud });
+          }
+          return;
+        }
+        const frame = decodeFrame(bytes);
         if (frame) {
           this.frames.push({ ...frame.header, bytes: frame.image.length });
           this.send({
@@ -308,6 +329,38 @@ describe("cloud browser sessions", () => {
     await viewer.until(() => viewer.activeTab()?.zoom === 1, "zoom reset");
     viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
     await viewer.until(() => viewer.activeTab()?.title === "Brawzer test site", "home again");
+
+    // Sound: what the page plays reaches the viewer as audio chunks, and only while wanted.
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/sound" });
+    await viewer.until(() => viewer.activeTab()?.title === "Sound test", "sound page");
+    for (const kind of ["down", "up"] as const) {
+      viewer.send({
+        type: "mouse",
+        tabId: tab!.id,
+        kind,
+        x: 100,
+        y: 60,
+        button: "left",
+        buttons: kind === "down" ? 1 : 0,
+        clickCount: 1,
+        modifiers: 0,
+      });
+    }
+    await viewer.until(() => viewer.activeTab()?.title === "Playing", "tone started");
+    await viewer.until(() => viewer.audio.some((chunk) => chunk.loud), "audible sound", 20_000);
+    expect(viewer.audio[0]?.bytes).toBe(960);
+    viewer.send({ type: "sound", on: false });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const heard = viewer.audio.length;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    expect(viewer.audio.length).toBe(heard);
+    viewer.send({ type: "sound", on: true });
+    await viewer.until(() => viewer.audio.length > heard, "sound back on", 20_000);
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
+    await viewer.until(
+      () => viewer.activeTab()?.title === "Brawzer test site" && !viewer.activeTab()?.loading,
+      "home after sound",
+    );
 
     // A click on the "Second page" box (fixed at 40,40 → 320,96).
     const click = (kind: "down" | "up") =>
@@ -906,6 +959,17 @@ describe("Firefox, the second engine", () => {
     );
     await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
     expect(viewer.activeTab()?.error).toBeNull();
+
+    // Sound on Firefox, through the same audio server.
+    await openPage(viewer, tab.id, "http://testsite.invalid/sound", "Sound test");
+    click(viewer, tab.id, 100, 60);
+    await viewer.until(() => viewer.activeTab()?.title === "Playing", "firefox tone started");
+    await viewer.until(
+      () => viewer.audio.some((chunk) => chunk.loud),
+      "firefox audible sound",
+      20_000,
+    );
+    await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
 
     // Find, zoom and reader view work the same way on Firefox.
     viewer.send({ type: "find", tabId: tab.id, text: "second", forward: true });
