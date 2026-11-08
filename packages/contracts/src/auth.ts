@@ -167,3 +167,56 @@ export type RevokeOtherSessionsResponse = z.infer<typeof revokeOtherSessionsResp
 export function sessionCookieName(secure: boolean): string {
   return secure ? "__Host-brawzer_session" : "brawzer_session";
 }
+
+// ── Sign in with your phone (milestone 2.7) ───────────────────────────────
+
+/** How long a computer's request waits for the phone. */
+export const PHONE_SIGN_IN_SECONDS = 120;
+
+const phoneTokenSchema = z.string().min(20).max(128);
+const phoneCodeSchema = z.string().regex(/^[1-9][0-9]$/, "A two-digit number.");
+
+/** What the computer shows: the QR code (as SVG), the number to match, and how to poll. */
+export const phoneSignInStartResponseSchema = z.object({
+  requestId: z.uuid(),
+  pollToken: phoneTokenSchema,
+  code: phoneCodeSchema,
+  expiresAt: z.iso.datetime(),
+  qrSvg: z.string(),
+  /** What the QR code encodes; shown nowhere, but tests read it from the page. */
+  approvalUrl: z.url(),
+});
+
+export const phoneSignInPollRequestSchema = z.object({ pollToken: phoneTokenSchema });
+
+export const phoneSignInStates = ["pending", "approved", "denied", "expired"] as const;
+
+export const phoneSignInPollResponseSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("pending") }),
+  z.object({ state: z.literal("denied") }),
+  z.object({ state: z.literal("expired") }),
+  z.object({ state: z.literal("approved"), account: accountSchema, session: sessionInfoSchema }),
+]);
+
+/** What the phone sees before approving: where the request came from, and the numbers to choose from. */
+export const phoneApprovalSchema = z.object({
+  requestId: z.uuid(),
+  state: z.enum(phoneSignInStates),
+  device: z.string().nullable(),
+  ipAddress: z.string().nullable(),
+  expiresAt: z.iso.datetime(),
+  /** The computer's number and two decoys, in a fixed order. */
+  codes: z.array(phoneCodeSchema).length(3),
+});
+
+export const phoneApproveRequestSchema = z.object({
+  key: phoneTokenSchema,
+  code: phoneCodeSchema,
+});
+
+export const phoneDenyRequestSchema = z.object({ key: phoneTokenSchema });
+
+export type PhoneSignInStart = z.infer<typeof phoneSignInStartResponseSchema>;
+export type PhoneSignInPoll = z.infer<typeof phoneSignInPollResponseSchema>;
+export type PhoneApproval = z.infer<typeof phoneApprovalSchema>;
+export type PhoneSignInState = (typeof phoneSignInStates)[number];

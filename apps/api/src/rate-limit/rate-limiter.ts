@@ -33,6 +33,9 @@ export const RATE_LIMITS = {
   driveContentPerIp: { name: "drive-content-ip", limit: 60, windowSeconds: 60 },
   browserStartsPerAccount: { name: "browser-start", limit: 20, windowSeconds: 15 * 60 },
   browserTicketsPerAccount: { name: "browser-ticket", limit: 60, windowSeconds: 15 * 60 },
+  phoneStartsPerIp: { name: "phone-start-ip", limit: 20, windowSeconds: 15 * 60 },
+  phonePollsPerIp: { name: "phone-poll-ip", limit: 600, windowSeconds: 15 * 60 },
+  phoneApprovalsPerAccount: { name: "phone-approve", limit: 20, windowSeconds: 15 * 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {

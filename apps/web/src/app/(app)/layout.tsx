@@ -20,8 +20,10 @@ export const instant = false;
 /** The signed-in app: sidebar on wide screens, a top bar with a drawer on small ones. */
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   await connection();
-  const session = await getSession();
-  const admin = session.kind === "ok" && session.data.account.role === "admin";
+  // Not awaited: the shell renders at once, and the admin entry joins when the session is known.
+  const admin = getSession().then(
+    (session) => session.kind === "ok" && session.data.account.role === "admin",
+  );
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
       <SkipLink />

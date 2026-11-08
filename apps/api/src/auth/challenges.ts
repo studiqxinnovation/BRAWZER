@@ -66,6 +66,24 @@ export class ChallengeService {
     return row ?? null;
   }
 
+  /** Merges fields into a live challenge's data (phone approvals change state). */
+  async updateData(
+    id: string,
+    purpose: AuthChallengePurpose,
+    patch: Record<string, string | number | boolean | null>,
+    userId?: string,
+  ): Promise<boolean> {
+    const [row] = await this.database.db
+      .update(schema.authChallenges)
+      .set({
+        data: sql`${schema.authChallenges.data} || ${JSON.stringify(patch)}::jsonb`,
+        ...(userId ? { userId } : {}),
+      })
+      .where(this.live(id, purpose))
+      .returning({ id: schema.authChallenges.id });
+    return row !== undefined;
+  }
+
   /** Counts a failed attempt against a live challenge; returns the new count. */
   async recordFailure(id: string): Promise<number> {
     const [row] = await this.database.db

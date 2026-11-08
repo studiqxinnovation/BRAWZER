@@ -337,6 +337,11 @@ export class BrowserEngine {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     if (this.tabs.size === 0) await this.createTab();
+    // Ready means a tab is active too: the welcome names it, and a welcome
+    // without one is invalid and would be dropped by the relay.
+    while (this.activeId === null && Date.now() < deadline + 5_000) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     this.ready = true;
   }
 
@@ -349,7 +354,7 @@ export class BrowserEngine {
         protocol: BROWSER_PROTOCOL_VERSION,
         engine: { name: "chromium", version: this.version.slice(0, 64) },
         tabs: this.snapshot(),
-        activeTabId: this.activeId ?? "",
+        activeTabId: this.activeId ?? this.order[0] ?? "",
       });
       void this.syncScreencasts();
       void this.handOver();
