@@ -72,6 +72,10 @@ export const accountSchema = z.object({
   id: z.uuid(),
   email: z.email(),
   emailVerified: z.boolean(),
+  /** Administrators see the Admin page. */
+  role: z.enum(["user", "admin"]),
+  /** The plan the account is on (Phase 6). */
+  planCode: z.string(),
   createdAt: z.iso.datetime(),
 });
 

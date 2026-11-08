@@ -152,6 +152,8 @@ export class MfaController {
         id: user.id,
         email: user.email,
         emailVerified: user.emailVerifiedAt !== null,
+        role: user.role,
+        planCode: user.planCode,
         createdAt: user.createdAt.toISOString(),
       },
       session: this.sessions.describe(issued.session),

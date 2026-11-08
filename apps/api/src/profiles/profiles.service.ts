@@ -1,4 +1,4 @@
-import { MAX_PROFILES, type Profile, type ProfileColor } from "@brawzer/contracts";
+import { type Profile, type ProfileColor } from "@brawzer/contracts";
 import {
   and,
   asc,
@@ -17,6 +17,7 @@ import { isForeignKeyViolation, isUniqueViolation } from "../common/database-err
 import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
+import { BillingService } from "../billing/billing.service.js";
 import { ProfileDataService } from "./profile-data.service.js";
 
 const notFound = () => new ApiException("not_found", 404, "That profile doesn’t exist.");
@@ -60,6 +61,7 @@ export class ProfilesService {
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
     @Inject(ProfileDataService) private readonly data: ProfileDataService,
+    @Inject(BillingService) private readonly billing: BillingService,
   ) {}
 
   /** The row, for the cloud browser: which data to restore and whether to save it. */
@@ -101,11 +103,12 @@ export class ProfilesService {
           })
           .from(schema.profiles)
           .where(eq(schema.profiles.userId, userId));
-        if ((stats?.count ?? 0) >= MAX_PROFILES) {
+        const limit = (await this.billing.limitsFor(userId)).profiles;
+        if ((stats?.count ?? 0) >= limit) {
           throw new ApiException(
             "limit_reached",
             409,
-            `You can have up to ${String(MAX_PROFILES)} profiles while Brawzer is in development.`,
+            `Your plan allows ${String(limit)} profiles. Delete one, or move to a plan with more.`,
           );
         }
         const [row] = await tx

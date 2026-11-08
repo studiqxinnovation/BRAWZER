@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
+import { BillingModule } from "../billing/billing.module.js";
 import { CryptoModule } from "../crypto/crypto.module.js";
 import { DatabaseModule } from "../database/database.module.js";
 import { RateLimitModule } from "../rate-limit/rate-limiter.js";
@@ -21,6 +22,7 @@ import { DownloadTickets } from "./tickets.js";
     RedisModule,
     RateLimitModule,
     SecurityEventsModule,
+    BillingModule,
   ],
   controllers: [DriveController],
   providers: [DriveService, DownloadTickets],

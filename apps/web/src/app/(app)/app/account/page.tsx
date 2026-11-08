@@ -1,6 +1,5 @@
-import { mfaStatusSchema, passkeyListSchema } from "@brawzer/contracts";
+import { billingOverviewSchema, mfaStatusSchema, passkeyListSchema } from "@brawzer/contracts";
 import { Badge } from "@brawzer/ui/components/badge";
-import { DevState } from "@brawzer/ui/components/dev-state";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
 import { BadgeCheck } from "lucide-react";
 import type { Metadata } from "next";
@@ -10,6 +9,7 @@ import { ChangePasswordForm } from "@/components/account/change-password-form";
 import { DeleteAccount } from "@/components/account/delete-account";
 import { DownloadData } from "@/components/account/download-data";
 import { PasskeysSection } from "@/components/account/passkeys-section";
+import { PlanSection } from "@/components/account/plan-section";
 import { TwoFactorSection } from "@/components/account/two-factor-section";
 import {
   PageContainer,
@@ -93,6 +93,13 @@ async function YourData() {
   return <DownloadData sharedComputer={!state.data.session.persistent} />;
 }
 
+async function Plan() {
+  const overview = await serverGet("/billing", billingOverviewSchema);
+  if (overview.kind === "signed-out") signInAgain("/app/account");
+  if (overview.kind === "unavailable") return <Unavailable />;
+  return <PlanSection overview={overview.data} />;
+}
+
 async function DeleteSection() {
   const state = await getSession();
   if (state.kind === "signed-out") signInAgain("/app/account");
@@ -112,6 +119,15 @@ export default function AccountPage() {
           <Suspense fallback={<Skeleton className="h-28 w-full rounded-xl" />}>
             <AccountDetails />
           </Suspense>
+        </section>
+
+        <section aria-labelledby="plan-heading" className="flex flex-col gap-4">
+          <SectionHeading id="plan-heading">Plan</SectionHeading>
+          <Panel className="p-5 sm:p-6">
+            <Suspense fallback={<Skeleton className="h-40 w-full rounded-lg" />}>
+              <Plan />
+            </Suspense>
+          </Panel>
         </section>
 
         <section aria-labelledby="passkeys-heading" className="flex flex-col gap-4">
@@ -174,12 +190,6 @@ export default function AccountPage() {
             </Suspense>
           </Panel>
         </section>
-
-        <DevState
-          title="Plans and storage aren’t available yet"
-          milestone="Phase 6"
-          requires={["Choosing a plan and paying for it", "Seeing how much Drive storage you use"]}
-        />
       </div>
     </PageContainer>
   );

@@ -12,10 +12,19 @@ import {
 } from "drizzle-orm/pg-core";
 import { id, timestamptz } from "./columns.ts";
 
+/** Must match `accountRoles` in @brawzer/contracts (a test in the API enforces this). */
+export const accountRole = pgEnum("account_role", ["user", "admin"]);
+
 export const users = pgTable("users", {
   id: id(),
   /** Stored trimmed and lower-cased; unique. */
   email: text().notNull().unique("users_email_unique"),
+  role: accountRole().notNull().default("user"),
+  /** The plan in force (Phase 6): the free plan, or one from the subscription or an administrator. */
+  planCode: text().notNull().default("free"),
+  planSource: text().notNull().default("free"),
+  /** An administrator's reason for setting the plan. */
+  planNote: text(),
   emailVerifiedAt: timestamptz(),
   /** argon2id hash. Nullable for future passkey-only accounts. */
   passwordHash: text(),
@@ -139,6 +148,10 @@ export const securityEventType = pgEnum("security_event_type", [
   "browser.file_saved",
   "browser.file_sent",
   "profile.data_cleared",
+  "billing.subscription_started",
+  "billing.subscription_changed",
+  "billing.subscription_ended",
+  "admin.plan_changed",
   "phone_sign_in.approved",
   "sign_in.new_device",
 ]);

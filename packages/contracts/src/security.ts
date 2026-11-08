@@ -42,6 +42,10 @@ export const securityEventTypes = [
   "browser.file_saved",
   "browser.file_sent",
   "profile.data_cleared",
+  "billing.subscription_started",
+  "billing.subscription_changed",
+  "billing.subscription_ended",
+  "admin.plan_changed",
   "phone_sign_in.approved",
   "sign_in.new_device",
 ] as const;
@@ -64,6 +68,8 @@ export const securityEventSchema = z.object({
     count: z.number().int().nonnegative().optional(),
     /** For files from the cloud browser: "download" or "print". */
     kind: z.string().optional(),
+    /** For plan changes: the plan's code. */
+    plan: z.string().optional(),
   }),
 });
 

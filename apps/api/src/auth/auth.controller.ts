@@ -59,6 +59,8 @@ function accountOf(user: User): CurrentSessionResponse["account"] {
     id: user.id,
     email: user.email,
     emailVerified: user.emailVerifiedAt !== null,
+    role: user.role,
+    planCode: user.planCode,
     createdAt: user.createdAt.toISOString(),
   };
 }
