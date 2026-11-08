@@ -10,6 +10,8 @@ export interface LaunchOptions {
   scratchDir: string;
   proxyPort: number;
   viewport: { width: number; height: number };
+  /** The first tab's page: Brawzer's own start page, through the proxy override. */
+  startUrl: string;
   /**
    * Public keys whose certificate errors are ignored: only the test site's,
    * in development and tests. Every other certificate is checked as usual.
@@ -68,7 +70,7 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
     ...(options.trustedSpkiHashes?.length
       ? [`--ignore-certificate-errors-spki-list=${options.trustedSpkiHashes.join(",")}`]
       : []),
-    "about:blank",
+    options.startUrl,
   ];
 
   const child = spawn(options.binary, args, {

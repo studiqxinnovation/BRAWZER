@@ -22,7 +22,7 @@ export function StartPanel({
   onStart,
 }: {
   profiles: readonly Profile[];
-  proxies: readonly { id: string; name: string }[];
+  proxies: readonly { id: string; name: string; protocol: string }[];
   overview: BrowserOverview;
   starting: boolean;
   error: string | null;
@@ -43,8 +43,9 @@ export function StartPanel({
       <div>
         <h1 className="text-title-1 text-balance text-ink">Browser</h1>
         <p className="mt-2 max-w-xl text-body text-pretty text-ink-secondary">
-          A real Chromium that runs in Brawzer’s cloud and appears here. Only the page’s pixels
-          reach this computer; it never runs the websites you visit and keeps none of their data.
+          Bee Browser, Brawzer’s own browser built on Chromium, or Firefox, runs in Brawzer’s cloud
+          and appears here. Only the page’s pixels reach this computer; it never runs the websites
+          you visit and keeps none of their data.
         </p>
       </div>
 
@@ -99,15 +100,15 @@ export function StartPanel({
       </Panel>
 
       <DevState
-        title="Sound and Firefox aren’t in the cloud browser yet"
+        title="Sound isn’t in the cloud browser yet"
         milestone="Phase 3b"
-        requires={["WebRTC streaming with sound, and Firefox as a second engine (Phase 3b)"]}
+        requires={["WebRTC streaming with sound (Phase 3b)"]}
       >
-        Today: one Chromium per session, your tabs and address bar drawn by Brawzer, pages streamed
-        as pixels, every connection through an egress that blocks private addresses and uses the
-        profile’s proxy, downloads and printed pages saved to Drive, websites’ file requests
-        answered from Drive, cookies and history kept per profile, and camera, microphone and
-        location refused.
+        Today: Bee Browser or Firefox per session, your tabs and address bar drawn by Brawzer, pages
+        streamed as pixels, every connection through an egress that blocks private addresses and
+        uses the profile’s proxy, downloads and printed pages saved to Drive, websites’ file
+        requests answered from Drive, cookies and history kept per profile, and camera, microphone
+        and location refused.
       </DevState>
     </div>
   );

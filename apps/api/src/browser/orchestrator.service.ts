@@ -66,6 +66,7 @@ export class OrchestratorService {
     secret: string,
     profileData: Readable | null = null,
     upstream: ProxyTarget | null = null,
+    engine: "bee" | "firefox" = "bee",
   ): Promise<StartedRuntime> {
     const { browser } = this.config;
     await this.docker.ensureNetwork(browser.network);
@@ -104,6 +105,7 @@ export class OrchestratorService {
           `BRAWZER_AGENT_PORT=${String(AGENT_PORT)}`,
           `BRAWZER_MAX_FILE_BYTES=${String(this.config.drive.maxFileBytes)}`,
           `BRAWZER_EGRESS_PROXY=127.0.0.1:${String(EGRESS_PROXY_PORT)}`,
+          `BRAWZER_ENGINE=${engine}`,
           ...(browser.testSite ? ["BRAWZER_TEST_SITE=true"] : []),
         ],
         labels: { "brawzer.managed": "true", [SESSION_LABEL]: sessionId },

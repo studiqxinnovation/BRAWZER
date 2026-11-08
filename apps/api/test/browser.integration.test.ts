@@ -222,7 +222,7 @@ describe("cloud browser sessions", () => {
     );
     await viewer.until(() => viewer.messages.some((m) => m.type === "welcome"), "welcome");
     const welcome = viewer.messages.find((m) => m.type === "welcome");
-    expect(welcome?.type === "welcome" && welcome.engine.name).toBe("chromium");
+    expect(welcome?.type === "welcome" && welcome.engine.name).toBe("bee");
     const tab = viewer.activeTab();
     expect(tab).toBeDefined();
 
@@ -430,7 +430,7 @@ describe("cloud browser sessions", () => {
     );
     const exported = accountExportSchema.parse((await client.get("/account/export")).json());
     expect(exported.browserSessions).toHaveLength(1);
-    expect(exported.browserSessions[0]).toMatchObject({ engine: "chromium", endReason: "user" });
+    expect(exported.browserSessions[0]).toMatchObject({ engine: "bee", endReason: "user" });
   }, 90_000);
 
   it("refuses the stream without a valid ticket, and a ticket works only once", async () => {
@@ -757,3 +757,130 @@ async function fetchDocker(
     request.end();
   });
 }
+
+describe("Firefox, the second engine", () => {
+  it("browses, types, shows dialogs, downloads, prints, takes Drive files and keeps cookies", async () => {
+    const { client, email } = await account("browser-firefox");
+    const created = await client.post("/profiles", {
+      name: "Fox",
+      color: "copper",
+      engine: "firefox",
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const profile = profileSchema.parse(created.json());
+    expect(profile.engine).toBe("firefox");
+    const upload = await client.upload("/drive/files", {
+      name: "notes.txt",
+      content: Buffer.from("hello drive"),
+    });
+    const driveFile = driveFileSchema.parse(upload.json());
+
+    const { session, viewer, tab } = await openSession(client, profile.id);
+    expect(session.engine).toBe("firefox");
+    const welcome = viewer.messages.find((m) => m.type === "welcome");
+    expect(welcome?.type === "welcome" && welcome.engine.name).toBe("firefox");
+
+    // HTTP and HTTPS through the proxy, with frames arriving.
+    await openPage(viewer, tab.id, "https://testsite.invalid/second", "Second page");
+    await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
+    await viewer.until(() => viewer.frames.length > 0, "a frame");
+    expect(viewer.frames[0]).toMatchObject({ tabId: tab.id, width: 800, height: 600 });
+
+    // A click follows a link; typing submits the search form.
+    click(viewer, tab.id, 100, 60);
+    await viewer.until(() => viewer.activeTab()?.title === "Second page", "clicked link");
+    viewer.send({ type: "back", tabId: tab.id });
+    await viewer.until(() => viewer.activeTab()?.title === "Brawzer test site", "back");
+    click(viewer, tab.id, 100, 220);
+    viewer.send({ type: "text", tabId: tab.id, text: "fox" });
+    viewer.send({
+      type: "key",
+      tabId: tab.id,
+      kind: "down",
+      key: "Enter",
+      code: "Enter",
+      keyCode: 13,
+    });
+    viewer.send({
+      type: "key",
+      tabId: tab.id,
+      kind: "up",
+      key: "Enter",
+      code: "Enter",
+      keyCode: 13,
+    });
+    await viewer.until(() => viewer.activeTab()?.title === "Results for fox", "search submitted");
+
+    // A dialog, drawn by Brawzer and answered.
+    await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
+    click(viewer, tab.id, 100, 140);
+    await viewer.until(() => viewer.messages.some((m) => m.type === "dialog"), "dialog");
+    expect(viewer.messages.find((m) => m.type === "dialog")).toMatchObject({
+      kind: "alert",
+      message: "Hello from the test site",
+    });
+    viewer.send({ type: "dialog", tabId: tab.id, accept: true });
+
+    // A download goes to Drive; so does a printed page.
+    click(viewer, tab.id, 100, 300);
+    await viewer.until(
+      () =>
+        viewer.messages.some(
+          (m) => m.type === "transfer" && m.kind === "download" && m.state === "saved",
+        ),
+      "download saved",
+    );
+    viewer.send({ type: "print", tabId: tab.id });
+    await viewer.until(
+      () =>
+        viewer.messages.some(
+          (m) => m.type === "transfer" && m.kind === "print" && m.state === "saved",
+        ),
+      "printed page saved",
+    );
+
+    // A file chooser is answered from Drive.
+    await openPage(viewer, tab.id, "http://testsite.invalid/upload", "Upload page");
+    click(viewer, tab.id, 100, 60);
+    await viewer.until(
+      () => viewer.messages.some((m) => m.type === "file-chooser"),
+      "file chooser",
+    );
+    const chooser = viewer.messages.find((m) => m.type === "file-chooser");
+    viewer.send({
+      type: "file-chooser",
+      tabId: tab.id,
+      chooserId: chooser?.type === "file-chooser" ? chooser.chooserId : "",
+      fileIds: [driveFile.id],
+    });
+    await viewer.until(
+      () => viewer.activeTab()?.title === "notes.txt 11",
+      "page received the file",
+    );
+
+    // A cookie survives into the next session under the profile.
+    await openPage(viewer, tab.id, "http://testsite.invalid/set-cookie", "Cookie set");
+    await openPage(viewer, tab.id, "http://testsite.invalid/cookie", "Cookie: brawzer_test=kept");
+    viewer.close();
+    expect((await client.delete(`/browser/sessions/${session.id}`)).statusCode).toBe(204);
+    const again = await openSession(client, profile.id);
+    await openPage(
+      again.viewer,
+      again.tab.id,
+      "http://testsite.invalid/cookie",
+      "Cookie: brawzer_test=kept",
+    );
+    again.viewer.close();
+    await client.delete(`/browser/sessions/${again.session.id}`);
+
+    const files = await h.database.pool.query<{ name: string }>(
+      `select f.name from drive_files f join users u on u.id = f.user_id where u.email = $1 order by f.name`,
+      [email],
+    );
+    expect(files.rows.map((row) => row.name)).toEqual([
+      "Brawzer test site.pdf",
+      "brawzer-test.bin",
+      "notes.txt",
+    ]);
+  }, 180_000);
+});

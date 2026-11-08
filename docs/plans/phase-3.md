@@ -26,7 +26,7 @@ the websites' code and keeps none of their cookies, history or downloads.
 
 - **Sessions are not kept.** Each session starts clean and is destroyed when it ends. Persistent profiles (cookies and history kept between sessions, encrypted) are Phase 4; profiles are chosen at start but only their names are used until then.
 - **No downloads to Drive** (Phase 4) and **no traffic through saved proxies** (Phase 5).
-- **No WebRTC streaming, audio or Firefox.** Those are ADR 0006's step 3b. They need a media pipeline and TURN servers, and are planned separately once 3a is measured.
+- **No WebRTC streaming or audio.** Those are ADR 0006's step 3b. They need a media pipeline and TURN servers, and are planned separately once 3a is measured. (Firefox, first planned behind 3b, came without it: milestone 3.10.)
 - **No production hosting.** Containers run on the local Docker engine; Kubernetes, the warm pool and capacity planning are Phase 7.
 
 ## Architecture
@@ -81,11 +81,33 @@ chosen settings in ADR 0006 and mark it accepted.
 Security review (isolation, escape paths, network reach, ticket and relay
 abuse, resource exhaustion), performance notes, and `docs/reviews/phase-3.md`.
 
+### 3.10 Bee Browser and Firefox ([ADR 0017](../adr/0017-bee-browser-and-firefox.md))
+
+Added 2026-11-08, after the 3b spike.
+
+- The Chromium engine becomes **Bee Browser**: Brawzer's own browser, honest about
+  being built on Chromium. Its chrome follows the Bee design: a tab strip with a
+  coloured initial per site and the mark at the left, the address with the host in
+  ink and the path lighter, the padlock, an "Isolated" badge, the profile chip, a
+  downloads button with a "Saved to Brawzer Drive" panel, a "…" menu, and a status
+  bar (cloud session and region, proxy, what the profile keeps, time left). A new
+  tab opens Brawzer's own start page, served inside the container.
+- **Firefox ESR** as the second engine, chosen per profile, driven over WebDriver
+  BiDi with the same frame stream, input, dialogs, downloads, printing, file
+  choosers and profile data as Bee. An enterprise policy file and `user.js` apply
+  the same refusals and force every connection through the filtering proxy.
+- The database enum value is renamed in place (`chromium` → `bee`).
+- **Tests:** the Firefox journey in the browser integration suite (browse over HTTP
+  and HTTPS, click, back through the back-forward cache, type and submit, a dialog,
+  a download and a printed page into Drive, a file chooser answered from Drive,
+  cookies kept across sessions); the e2e browser journey through the new chrome
+  (downloads panel, the "…" menu); the design page and product copy.
+
 ## Decisions
 
 | #   | Decision                                | Taken as                                                                                                                                                                                                                                                                                                                                                                           |
 | --- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Streaming method for Phase 3            | CDP screencast (ADR 0006, 3a); WebRTC and Firefox later                                                                                                                                                                                                                                                                                                                            |
+| 1   | Streaming method for Phase 3            | CDP screencast for Bee (ADR 0006, 3a); BiDi screenshots for Firefox (ADR 0017); WebRTC later                                                                                                                                                                                                                                                                                       |
 | 2   | Engine package in the image             | Debian's Chromium package, updated with the image                                                                                                                                                                                                                                                                                                                                  |
 | 3   | Live sessions per account (temporary)   | 1                                                                                                                                                                                                                                                                                                                                                                                  |
 | 4   | Session limits                          | 15 minutes without a viewer ends a session; 4 hours at most                                                                                                                                                                                                                                                                                                                        |

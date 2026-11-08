@@ -178,7 +178,11 @@ export const agentMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("welcome"),
     protocol: z.literal(BROWSER_PROTOCOL_VERSION),
-    engine: z.object({ name: z.literal("chromium"), version: z.string().max(64) }),
+    engine: z.object({
+      name: z.enum(["bee", "firefox"]),
+      /** What the engine says it is, such as "Chrome/156.0.8078.79" or "153.6.0esr". */
+      version: z.string().max(64),
+    }),
     tabs: z.array(tabStateSchema),
     activeTabId: tabIdSchema,
   }),

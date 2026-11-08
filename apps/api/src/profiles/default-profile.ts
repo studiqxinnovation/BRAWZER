@@ -11,7 +11,7 @@ export async function createDefaultProfile(
 ): Promise<void> {
   await executor.execute(sql`
     insert into profiles (user_id, name, color, engine, position)
-    select ${userId}, 'Personal', 'indigo', 'chromium', 0
+    select ${userId}, 'Personal', 'indigo', 'bee', 0
     where not exists (select 1 from profiles where user_id = ${userId})
   `);
 }

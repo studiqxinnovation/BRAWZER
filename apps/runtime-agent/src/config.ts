@@ -5,7 +5,10 @@ export interface AgentConfig {
   sessionSecret: string;
   /** Where the relay connects (inside the container). */
   port: number;
+  /** Bee (Brawzer's own browser, on Chromium) or Firefox. */
+  engine: "bee" | "firefox";
   chromiumBinary: string;
+  firefoxBinary: string;
   /** The filtering proxy every page connection goes through (loopback only). */
   proxyPort: number;
   /** Development and tests only: a local site reachable as http://testsite.invalid/. */
@@ -29,7 +32,9 @@ export function readConfig(env: NodeJS.ProcessEnv): AgentConfig {
   return {
     sessionSecret: secret,
     port,
+    engine: env.BRAWZER_ENGINE === "firefox" ? "firefox" : "bee",
     chromiumBinary: env.CHROMIUM_BIN ?? "/usr/bin/chromium",
+    firefoxBinary: env.FIREFOX_BIN ?? "/usr/bin/firefox-esr",
     proxyPort: 3128,
     testSite: env.BRAWZER_TEST_SITE === "true",
     egress: readEgress(env.BRAWZER_EGRESS_PROXY),

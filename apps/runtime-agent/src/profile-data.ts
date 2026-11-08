@@ -35,6 +35,18 @@ const EXCLUDED = [
   "profile/Default/Site Characteristics Database",
   "*.log",
   "*.journal",
+  // Firefox: caches, locks and crash data; everything else in the profile is the profile.
+  "profile/cache2",
+  "profile/startupCache",
+  "profile/shader-cache",
+  "profile/lock",
+  "profile/.parentlock",
+  "profile/minidumps",
+  "profile/crashes",
+  "profile/sessionstore-backups",
+  "profile/storage/temporary",
+  "profile/safebrowsing",
+  "profile/user.js",
 ];
 
 /** The arguments that make the archive: exported so a test can check what is left out. */

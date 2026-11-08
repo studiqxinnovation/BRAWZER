@@ -55,7 +55,17 @@ export class ChunkWriter {
     this.done.catch(() => undefined);
   }
 
-  async write(seq: number, data: Uint8Array, last: boolean): Promise<void> {
+  /** Chunks arrive as fast as the socket delivers them; writes happen one at a time. */
+  private queue: Promise<void> = Promise.resolve();
+
+  write(seq: number, data: Uint8Array, last: boolean): Promise<void> {
+    // Two concurrent writes would each open the file and leak a handle, which
+    // Node treats as fatal when it is collected; the queue keeps them in order.
+    this.queue = this.queue.then(() => this.writeNow(seq, data, last));
+    return this.queue;
+  }
+
+  private async writeNow(seq: number, data: Uint8Array, last: boolean): Promise<void> {
     if (this.settled) return;
     try {
       if (seq !== this.expected) throw new Error("chunk out of order");

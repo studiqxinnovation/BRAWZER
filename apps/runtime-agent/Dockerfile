@@ -23,21 +23,24 @@ RUN pnpm --filter "@brawzer/runtime-agent..." run build \
   && pnpm --filter @brawzer/runtime-agent deploy --prod /out
 
 FROM ${NODE_IMAGE} AS runtime
-# Chromium from Debian (security updates arrive with image rebuilds), fonts
-# for most scripts, and tini to reap processes as PID 1.
+# Debian's Chromium (the base of Bee, Brawzer's own browser) and Firefox ESR
+# (security updates arrive with image rebuilds), fonts for most scripts, and
+# tini to reap processes as PID 1.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    chromium fonts-liberation fonts-noto-core fonts-noto-color-emoji tini ca-certificates \
+    chromium firefox-esr fonts-liberation fonts-noto-core fonts-noto-color-emoji tini ca-certificates \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin browser
 # Managed policies: enforced by the engine itself, whatever a page does.
 COPY apps/runtime-agent/policies.json /etc/chromium/policies/managed/brawzer.json
+COPY apps/runtime-agent/policies-firefox.json /usr/lib/firefox-esr/distribution/policies.json
 WORKDIR /app
 COPY --from=build /out/package.json ./package.json
 COPY --from=build /out/dist ./dist
 COPY --from=build /out/node_modules ./node_modules
 ENV NODE_ENV=production \
     CHROMIUM_BIN=/usr/bin/chromium \
+    FIREFOX_BIN=/usr/bin/firefox-esr \
     BRAWZER_SCRATCH_DIR=/tmp \
     BRAWZER_AGENT_PORT=7000
 USER browser

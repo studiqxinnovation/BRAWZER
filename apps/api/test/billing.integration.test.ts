@@ -211,7 +211,7 @@ describe("checkout and webhooks", () => {
     // An hour of browsing earlier this month, straight into the records.
     await h.database.pool.query(
       `insert into browser_sessions (user_id, auth_session_id, engine, status, agent_secret, started_at, ended_at, end_reason)
-       select $1, s.id, 'chromium', 'ended', '', now() - interval '2 hours', now() - interval '1 hour', 'user'
+       select $1, s.id, 'bee', 'ended', '', now() - interval '2 hours', now() - interval '1 hour', 'user'
          from auth_sessions s where s.user_id = $1 limit 1`,
       [userId],
     );

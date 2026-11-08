@@ -3,7 +3,6 @@ import { mkdirSync } from "node:fs";
 import { open, rm } from "node:fs/promises";
 import path from "node:path";
 import {
-  type AgentMessage,
   BROWSER_PROTOCOL_VERSION,
   type ChosenFile,
   encodeFrame,
@@ -15,25 +14,13 @@ import {
   type TransferMessage,
   type Viewport,
 } from "@brawzer/contracts";
+import { BEE_VERSION } from "./bee.ts";
 import type { CdpConnection } from "./cdp.ts";
+import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
-import { type BinarySink, ChunkWriter, sendFile } from "./transfers.ts";
+import { ChunkWriter, sendFile } from "./transfers.ts";
 
-/** Who is watching the stream right now, if anyone. */
-export interface Viewer extends BinarySink {
-  send(message: AgentMessage): void;
-  /** False when the viewer can't take the frame right now; it is then dropped and acknowledged. */
-  sendFrame(frame: Uint8Array): boolean;
-}
-
-export interface EngineOptions {
-  /** Where the engine puts downloads and printed pages until they are handed over. */
-  downloadDir: string;
-  /** Where Drive files for a page's file chooser are written. */
-  uploadDir: string;
-  /** Drive's per-file limit: larger downloads are cancelled. */
-  maxFileBytes: number;
-}
+export type { EngineOptions, Viewer } from "./engine-types.ts";
 
 /** A download or a printed page on its way to Drive. */
 interface Transfer {
@@ -140,7 +127,7 @@ const securityOf = (state: string): TabSecurity => {
  * active tab, input, page dialogs, and the refusals Brawzer's UI explains.
  * Everything the viewer sees or sends goes through {@link handle}.
  */
-export class BrowserEngine {
+export class BrowserEngine implements Engine {
   private readonly tabs = new Map<string, Tab>();
   private order: string[] = [];
   private activeId: string | null = null;
@@ -159,6 +146,7 @@ export class BrowserEngine {
   private handingOver = false;
   private readonly choosers = new Map<string, Chooser>();
   private titleTimer: NodeJS.Timeout | null = null;
+  private userAgent = "";
 
   constructor(
     private readonly cdp: CdpConnection,
@@ -323,8 +311,12 @@ export class BrowserEngine {
       if (tab) this.frameArrived(tab, params as { data: string; sessionId: string });
     });
 
-    const version = await this.cdp.send<{ product: string }>("Browser.getVersion");
+    const version = await this.cdp.send<{ product: string; userAgent: string }>(
+      "Browser.getVersion",
+    );
     this.version = version.product;
+    // Bee is Brawzer's own browser: it says so, after what it is built on.
+    this.userAgent = `${version.userAgent} Bee/${BEE_VERSION}`;
     // Downloads land in the scratch directory under their id and are handed to Drive.
     await this.cdp.send("Browser.setDownloadBehavior", {
       behavior: "allowAndName",
@@ -352,7 +344,7 @@ export class BrowserEngine {
       viewer.send({
         type: "welcome",
         protocol: BROWSER_PROTOCOL_VERSION,
-        engine: { name: "chromium", version: this.version.slice(0, 64) },
+        engine: { name: "bee", version: this.version.slice(0, 64) },
         tabs: this.snapshot(),
         activeTabId: this.activeId ?? this.order[0] ?? "",
       });
@@ -725,7 +717,7 @@ export class BrowserEngine {
   private async createTab(url?: string): Promise<void> {
     if (this.tabs.size >= MAX_TABS) return;
     const { targetId } = await this.cdp.send<{ targetId: string }>("Target.createTarget", {
-      url: url ?? "about:blank",
+      url: url ?? this.options.homeUrl,
     });
     this.pendingActivation = targetId;
     const existing = this.tabs.get(targetId);
@@ -779,6 +771,7 @@ export class BrowserEngine {
         this.cdp.send("Security.enable", {}, sessionId),
         this.cdp.send("Page.setInterceptFileChooserDialog", { enabled: true }, sessionId),
         this.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId),
+        this.cdp.send("Emulation.setUserAgentOverride", { userAgent: this.userAgent }, sessionId),
         this.cdp.send(
           "Emulation.setDeviceMetricsOverride",
           { ...this.viewport, deviceScaleFactor: 1, mobile: false },

@@ -1,9 +1,13 @@
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { STREAM_CLOSE_CODES } from "@brawzer/contracts";
+import { BEE_HOME_HOST, BEE_HOME_PORT, BEE_HOME_URL, createBeeHome } from "./bee.ts";
 import { type LaunchedChromium, launchChromium } from "./chromium.ts";
 import { readConfig } from "./config.ts";
+import type { Engine } from "./engine-types.ts";
 import { BrowserEngine } from "./engine.ts";
+import { type LaunchedFirefox, launchFirefox } from "./firefox.ts";
+import { FirefoxEngine } from "./firefox-engine.ts";
 import { log } from "./log.ts";
 import { packProfile, restoreProfile } from "./profile-data.ts";
 import type { ProxyOverride } from "./proxy.ts";
@@ -20,6 +24,10 @@ const config = readConfig(process.env);
 
 const overrides = new Map<string, ProxyOverride>();
 const trustedSpkiHashes: string[] = [];
+// Bee's start page: the new tab, served here and never from the internet.
+const beeHome = createBeeHome();
+await new Promise<void>((resolve) => beeHome.listen(BEE_HOME_PORT, "127.0.0.1", resolve));
+overrides.set(BEE_HOME_HOST, { host: "127.0.0.1", port: BEE_HOME_PORT });
 if (config.testSite) {
   const certificate = await generateTestSiteCertificate(config.scratchDir);
   const site = createTestSite();
@@ -48,8 +56,8 @@ await new Promise<void>((resolve) => proxy.listen(config.proxyPort, "127.0.0.1",
 // The engine starts when the orchestrator says so, after any profile data
 // has been restored (PUT /profile, then POST /start).
 let state: AgentState = "waiting";
-let chromium: LaunchedChromium | null = null;
-let engine: BrowserEngine | null = null;
+let chromium: LaunchedChromium | LaunchedFirefox | null = null;
+let engine: Engine | null = null;
 let exiting = false;
 
 function exit(code: number, reason: string): void {
@@ -91,24 +99,47 @@ const lifecycle: AgentLifecycle = {
   restore: (archive: Readable) => restoreProfile(config.scratchDir, archive),
   async start() {
     state = "starting";
-    const launched = launchChromium({
-      binary: config.chromiumBinary,
-      scratchDir: config.scratchDir,
-      proxyPort: config.proxyPort,
-      viewport: config.initialViewport,
-      trustedSpkiHashes,
-    });
-    const started = new BrowserEngine(launched.cdp, config.initialViewport, {
+    const engineOptions = {
       downloadDir: path.join(config.scratchDir, "downloads"),
       uploadDir: path.join(config.scratchDir, "uploads"),
       maxFileBytes: config.maxFileBytes,
-    });
-    chromium = launched;
-    engine = started;
-    launched.cdp.onClose((error) => {
+      homeUrl: BEE_HOME_URL,
+    };
+    const onGone = (error: Error) => {
       // The engine left on its own (crash, kill): the session is over.
       if (state === "running" || state === "starting") exit(1, error.message);
-    });
+    };
+    let started: Engine;
+    if (config.engine === "firefox") {
+      const launched = await launchFirefox({
+        binary: config.firefoxBinary,
+        scratchDir: config.scratchDir,
+        proxyPort: config.proxyPort,
+        downloadDir: engineOptions.downloadDir,
+        viewport: config.initialViewport,
+        startUrl: BEE_HOME_URL,
+      });
+      started = new FirefoxEngine(launched.bidi, config.initialViewport, {
+        ...engineOptions,
+        // Only the test site's certificate is unknown; in tests that is what this allows.
+        acceptInsecureCerts: config.testSite,
+      });
+      chromium = launched;
+      launched.bidi.onClose(onGone);
+    } else {
+      const launched = launchChromium({
+        binary: config.chromiumBinary,
+        scratchDir: config.scratchDir,
+        proxyPort: config.proxyPort,
+        viewport: config.initialViewport,
+        startUrl: BEE_HOME_URL,
+        trustedSpkiHashes,
+      });
+      started = new BrowserEngine(launched.cdp, config.initialViewport, engineOptions);
+      chromium = launched;
+      launched.cdp.onClose(onGone);
+    }
+    engine = started;
     try {
       await started.start();
     } catch (error) {
@@ -116,7 +147,7 @@ const lifecycle: AgentLifecycle = {
       throw error;
     }
     state = "running";
-    log("info", "engine ready");
+    log("info", "engine ready", { engine: config.engine });
   },
   async pack() {
     state = "stopped";

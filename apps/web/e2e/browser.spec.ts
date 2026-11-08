@@ -48,7 +48,8 @@ test.describe("browser", () => {
       .poll(() => viewport.getAttribute("data-frames"), { timeout: 30_000 })
       .not.toBe("0");
     expect(await wcagViolations(page)).toEqual([]);
-    await expect(page.getByText("direct connection")).toBeVisible();
+    await expect(page.getByText("Direct connection")).toBeVisible();
+    await expect(page.getByText("Isolated")).toBeVisible();
 
     // A bare host opens over HTTPS: the test site served inside the runtime.
     const address = page.getByRole("textbox", { name: "Address or search" });
@@ -93,11 +94,21 @@ test.describe("browser", () => {
       timeout: 30_000,
     });
 
-    // So does the page itself, as a PDF, from Brawzer's toolbar.
-    await page.getByRole("button", { name: "Save page as PDF in Drive" }).click();
+    // So does the page itself, as a PDF, from Brawzer's menu.
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Save page as PDF in Drive" }).click();
     await expect(page.getByText("“Brawzer test site.pdf” is in Drive")).toBeVisible({
       timeout: 30_000,
     });
+
+    // The downloads panel lists both, scanned and saved.
+    await page.getByRole("button", { name: /^Downloads/ }).click();
+    const saved = page.getByRole("list", { name: "Files from this session" });
+    await expect(saved).toContainText("brawzer-test.bin");
+    await expect(saved).toContainText("Brawzer test site.pdf");
+    await expect(saved.getByText("Scanned")).toHaveCount(2);
+    expect(await wcagViolations(page)).toEqual([]);
+    await page.keyboard.press("Escape");
 
     // A website asking for a file is offered Drive, never this computer.
     await clickPage(page, 100, 380);
@@ -118,7 +129,8 @@ test.describe("browser", () => {
     await expect(page.getByRole("tab")).toHaveCount(1);
 
     // Ending destroys the session.
-    await page.getByRole("button", { name: "End session" }).click();
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "End session" }).click();
     const confirm = page.getByRole("alertdialog", { name: "End this browser session?" });
     await confirm.getByRole("button", { name: "End session" }).click();
     await expect(page.getByText("You ended this browser session.")).toBeVisible();

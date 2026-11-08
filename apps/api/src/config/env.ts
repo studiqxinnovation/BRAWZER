@@ -118,6 +118,8 @@ export const envSchema = z.object({
    */
   BROWSER_AGENT_BIND: z.string().min(1).optional(),
   BROWSER_AGENT_HOST: z.string().min(1).optional(),
+  /** Where sessions run, shown in the Browser page's status bar (a city or a region). */
+  BROWSER_REGION: z.string().trim().min(1).max(80).optional(),
   /** An OCI runtime registered with the engine for session containers, such as `runsc` (gVisor). */
   BROWSER_CONTAINER_RUNTIME: z
     .string()
@@ -270,6 +272,7 @@ export interface AppConfig {
     readonly containerRuntime: string | null;
     readonly maxLiveSessions: number;
     /** Where published agent ports bind on the engine host. */
+    readonly region: string | null;
     readonly agentBind: string;
     /** Where the API reaches those ports. */
     readonly agentHost: string;
@@ -549,6 +552,7 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       docker,
       containerRuntime: values.BROWSER_CONTAINER_RUNTIME ?? null,
       maxLiveSessions: values.BROWSER_MAX_LIVE_SESSIONS,
+      region: values.BROWSER_REGION ?? null,
       agentBind: values.BROWSER_AGENT_BIND ?? (docker.kind === "tcp" ? "0.0.0.0" : "127.0.0.1"),
       agentHost: values.BROWSER_AGENT_HOST ?? (docker.kind === "tcp" ? docker.host : "127.0.0.1"),
       image: values.BROWSER_RUNTIME_IMAGE,

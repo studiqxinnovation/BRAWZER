@@ -1,7 +1,7 @@
 "use client";
 
+import { browserEngines, engineDetails } from "@brawzer/contracts";
 import { type ProfileColor, profileColors } from "@brawzer/contracts";
-import { Badge } from "@brawzer/ui/components/badge";
 import { Field, FieldError, FieldLabel, Input } from "@brawzer/ui/components/field";
 import { Check } from "lucide-react";
 import { profileColorShades } from "@/lib/profiles";
@@ -56,26 +56,28 @@ export function ProfileNameAndColor({
   );
 }
 
-/** Engine choice for a new profile. Firefox is shown, honestly, as not yet available. */
+/** Engine choice for a new profile: Brawzer's own Bee Browser, or Firefox. */
 export function EngineChoice() {
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-2 text-callout font-medium text-ink">Browser engine</legend>
-      <label className="flex items-center gap-2.5 text-callout text-ink">
-        <input
-          type="radio"
-          name="engine"
-          value="chromium"
-          defaultChecked
-          className="size-4 accent-accent"
-        />
-        Chromium
-      </label>
-      <label className="flex flex-wrap items-center gap-2.5 text-callout text-ink-secondary">
-        <input type="radio" name="engine" value="firefox" disabled className="size-4" />
-        Firefox
-        <Badge>Planned for Phase 3b</Badge>
-      </label>
+      {browserEngines.map((engine) => (
+        <label key={engine} className="flex items-start gap-2.5 text-callout text-ink">
+          <input
+            type="radio"
+            name="engine"
+            value={engine}
+            defaultChecked={engine === "bee"}
+            className="mt-1 size-4 accent-accent"
+          />
+          <span>
+            <span className="block">{engineDetails[engine].name}</span>
+            <span className="block text-footnote text-ink-secondary">
+              {engineDetails[engine].basis}
+            </span>
+          </span>
+        </label>
+      ))}
     </fieldset>
   );
 }

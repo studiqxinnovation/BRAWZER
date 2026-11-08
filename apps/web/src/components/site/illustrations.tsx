@@ -112,7 +112,7 @@ export const sampleProfiles = [
   {
     initial: "P",
     name: "Personal",
-    detail: "4 tabs · Chromium",
+    detail: "4 tabs · Bee Browser",
     color: profileColorShades.indigo.hex,
   },
   { initial: "W", name: "Work", detail: "Proxy · Frankfurt", color: profileColorShades.teal.hex },

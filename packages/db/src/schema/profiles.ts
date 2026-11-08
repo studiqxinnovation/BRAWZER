@@ -26,8 +26,8 @@ export const profileColor = pgEnum("profile_color", [
   "slate",
 ]);
 
-/** Must match `browserEngines` in @brawzer/contracts. Firefox is accepted from Phase 3b. */
-export const browserEngine = pgEnum("browser_engine", ["chromium", "firefox"]);
+/** Must match `browserEngines` in @brawzer/contracts: Bee (Brawzer's own, on Chromium) and Firefox. */
+export const browserEngine = pgEnum("browser_engine", ["bee", "firefox"]);
 
 /**
  * A browser profile: a name, a colour, a place in the list, and (since the
@@ -46,7 +46,7 @@ export const profiles = pgTable(
     /** Trimmed; unique per account, ignoring case. */
     name: text().notNull(),
     color: profileColor().notNull(),
-    engine: browserEngine().notNull().default("chromium"),
+    engine: browserEngine().notNull().default("bee"),
     /** Order in the account's list, lowest first. Gaps are allowed. */
     position: integer().notNull(),
     /** Cleared when the proxy is deleted. Traffic goes through it from Phase 5. */

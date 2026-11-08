@@ -112,8 +112,8 @@ const modules = [
 ];
 
 const engines = [
-  { name: "Chromium", basis: "Blink", status: "First release" },
-  { name: "Firefox", basis: "Gecko", status: "Planned" },
+  { name: "Bee Browser", basis: "Chromium (Blink)", status: "Built" },
+  { name: "Firefox", basis: "Gecko", status: "Built" },
   { name: "WebKit", basis: "WebKit", status: "Exploring" },
 ];
 
@@ -170,9 +170,11 @@ export default function ProductPage() {
 
       <section aria-labelledby="engines-title" className="py-20 sm:py-28">
         <Container className="grid gap-12 lg:grid-cols-2 lg:gap-20">
-          <SectionIntro id="engines-title" eyebrow="Engines" title="Chromium first. Firefox next.">
-            Brawzer’s interface stays the same whichever engine runs underneath. Browsers such as
-            Microsoft Edge are built on Chromium too, so they aren’t listed separately.
+          <SectionIntro id="engines-title" eyebrow="Engines" title="Bee Browser, and Firefox.">
+            Bee Browser is Brawzer’s own browser, built on Chromium. Firefox is the second engine,
+            chosen per profile. Brawzer’s interface stays the same whichever runs underneath;
+            browsers such as Microsoft Edge are built on Chromium too, so they aren’t listed
+            separately.
           </SectionIntro>
           <div className="self-end overflow-hidden rounded-xl border border-line bg-surface">
             <table className="w-full text-left text-callout">

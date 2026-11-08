@@ -41,7 +41,7 @@ describe("a new account's profiles", () => {
     expect(profiles[0]).toMatchObject({
       name: "Personal",
       color: "indigo",
-      engine: "chromium",
+      engine: "bee",
       position: 0,
     });
   });
@@ -74,7 +74,7 @@ describe("creating profiles", () => {
     const response = await create(client, "  Work  ", "teal");
     expect(response.statusCode).toBe(201);
     const work = profileSchema.parse(response.json());
-    expect(work).toMatchObject({ name: "Work", color: "teal", engine: "chromium", position: 1 });
+    expect(work).toMatchObject({ name: "Work", color: "teal", engine: "bee", position: 1 });
     expect((await list(client)).profiles.map((profile) => profile.name)).toEqual([
       "Personal",
       "Work",
@@ -102,10 +102,7 @@ describe("creating profiles", () => {
         "name: Use letters, numbers, spaces and punctuation.",
       ],
       [{ name: "Work", color: "chartreuse" }, "color: Choose a colour."],
-      [
-        { name: "Work", color: "teal", engine: "firefox" },
-        "engine: Chromium is the only engine available today.",
-      ],
+      [{ name: "Work", color: "teal", engine: "safari" }, "engine: Choose Bee or Firefox."],
     ];
     for (const [body, detail] of cases) {
       const response = await client.post("/profiles", body);
