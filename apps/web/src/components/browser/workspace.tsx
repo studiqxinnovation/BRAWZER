@@ -27,7 +27,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { endBrowserSession, requestStreamTicket, startBrowserSession } from "@/lib/api/browser";
-import { displayUrl, hostOf, resolveTyped } from "@/lib/browser/input";
+import { displayUrl, hostOf, resolveTyped, searchUrl } from "@/lib/browser/input";
 import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/stream";
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
 import {
@@ -37,6 +37,7 @@ import {
   isStartPage,
   MoreMenu,
   NavButtons,
+  NavigationErrorPage,
   ProfileChip,
   type RecentTransfer,
   StatusBar,
@@ -610,6 +611,33 @@ export function BrowserWorkspace({
           onShortcut={onShortcut}
           onReady={onReady}
         />
+        {activeTab?.error && live && (
+          <NavigationErrorPage
+            tab={activeTab}
+            onRetry={() => {
+              navigate(activeTab.error?.url ?? activeTab.url);
+            }}
+            onCopy={() => {
+              const address = activeTab.error?.url ?? activeTab.url;
+              navigator.clipboard.writeText(address).then(
+                () => {
+                  toast.add({ title: "Address copied", description: address, type: "success" });
+                },
+                () => {
+                  toast.add({
+                    title: "Couldn’t copy the address",
+                    description: "Select it in the address bar instead.",
+                    type: "error",
+                  });
+                },
+              );
+            }}
+            onSearch={() => {
+              const host = hostOf(activeTab.error?.url ?? activeTab.url);
+              navigate(searchUrl(host || displayUrl(activeTab.url)));
+            }}
+          />
+        )}
         {(!live || !firstFrame) && (
           <div
             className="absolute inset-0 flex items-center justify-center bg-canvas/90"

@@ -50,3 +50,25 @@ checks read the engine's own view of the session (`docker inspect`).
 
 The test runs with private ranges refused at the network level, as in
 production, which the harness asks for with `PROXY_TEST_ALLOW_PRIVATE=false`.
+
+## 1. Brawzer-drawn error pages
+
+A failed navigation used to stream the engine's own error page, the one
+piece of engine chrome a person still saw. Now each engine reports the
+failure as data on the tab (`error: { url, code }`): Bee from the frame's
+unreachable address and the code its error page names, Firefox from
+`about:neterror`'s parameters. The web app draws the page over the viewport in
+Brawzer's style, sorted into what the code means (no such website, refused by
+Brawzer, not answering, too slow, certificate, redirect loop, bad address),
+naming the host and never the engine, with "Try again", "Copy the address"
+and, for a name that doesn't exist, "Search for it". The engine's code is
+shown small for anyone who needs it.
+
+Over HTTPS every refusal by the proxy looks the same to an engine (a failed
+tunnel), so the egress now says why in a header on its 403, the agent's proxy
+notes the reason per `host:port` for a few seconds, and a tunnel failure for
+that address gets Brawzer's own code instead: `BRAWZER_REFUSED_ADDRESS`
+(private or internal), `BRAWZER_REFUSED_PORT`, `BRAWZER_REFUSED_ENGINE` (the
+engine's own services) or `BRAWZER_REFUSED_UNRESOLVED` (no such name, with
+"Search for it"). Checked in the browser integration journeys (both engines)
+and the e2e journey, with the accessibility audit.

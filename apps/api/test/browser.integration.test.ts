@@ -247,6 +247,24 @@ describe("cloud browser sessions", () => {
     expect(viewer.frames[0]).toMatchObject({ tabId: tab!.id, width: 800, height: 600 });
     expect(viewer.frames[0]!.bytes).toBeGreaterThan(1000);
 
+    // A connection the proxy refuses (a private address) is reported
+    // as data, with the address that failed and the engine's code, so Brawzer
+    // draws the error page; the next page clears it.
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "https://10.0.0.1/" });
+    await viewer.until(
+      () => viewer.activeTab()?.error?.code === "BRAWZER_REFUSED_ADDRESS",
+      "navigation error",
+    );
+    expect(viewer.activeTab()).toMatchObject({
+      url: "https://10.0.0.1/",
+      error: { url: "https://10.0.0.1/", code: "BRAWZER_REFUSED_ADDRESS" },
+    });
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
+    await viewer.until(
+      () => viewer.activeTab()?.title === "Brawzer test site" && viewer.activeTab()?.error === null,
+      "error cleared",
+    );
+
     // A click on the "Second page" box (fixed at 40,40 → 320,96).
     const click = (kind: "down" | "up") =>
       viewer.send({
@@ -782,7 +800,14 @@ describe("Firefox, the second engine", () => {
 
     // HTTP and HTTPS through the proxy, with frames arriving.
     await openPage(viewer, tab.id, "https://testsite.invalid/second", "Second page");
+    // A refused connection: Firefox's error page is reported as data, never shown.
+    viewer.send({ type: "navigate", tabId: tab.id, url: "https://10.0.0.1/" });
+    await viewer.until(
+      () => viewer.activeTab()?.error?.code === "BRAWZER_REFUSED_ADDRESS",
+      "firefox navigation error",
+    );
     await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
+    expect(viewer.activeTab()?.error).toBeNull();
     await viewer.until(() => viewer.frames.length > 0, "a frame");
     expect(viewer.frames[0]).toMatchObject({ tabId: tab.id, width: 800, height: 600 });
 

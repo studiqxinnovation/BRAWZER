@@ -4,7 +4,7 @@ import { STREAM_CLOSE_CODES } from "@brawzer/contracts";
 import { BEE_HOME_HOST, BEE_HOME_PORT, BEE_HOME_URL, createBeeHome } from "./bee.ts";
 import { type LaunchedChromium, launchChromium } from "./chromium.ts";
 import { readConfig } from "./config.ts";
-import type { Engine } from "./engine-types.ts";
+import { type Engine, RefusalLog } from "./engine-types.ts";
 import { BrowserEngine } from "./engine.ts";
 import { type LaunchedFirefox, launchFirefox } from "./firefox.ts";
 import { FirefoxEngine } from "./firefox-engine.ts";
@@ -45,10 +45,14 @@ if (config.testSite) {
   log("info", "test site enabled", { host: TEST_SITE_HOST });
 }
 
+const refusals = new RefusalLog();
 const proxy = createFilteringProxy({
   overrides,
   egress: config.egress ?? undefined,
-  onRefused: (host) => log("info", "refused connection", { host: host.slice(0, 253) }),
+  onRefused: (host, reason) => {
+    log("info", "refused connection", { host: host.slice(0, 253), reason });
+    refusals.note(host.replace(/^\[|\]$/g, "").slice(0, 300), reason);
+  },
 });
 if (config.egress) log("info", "egress proxy in use", config.egress);
 await new Promise<void>((resolve) => proxy.listen(config.proxyPort, "127.0.0.1", resolve));
@@ -104,6 +108,7 @@ const lifecycle: AgentLifecycle = {
       uploadDir: path.join(config.scratchDir, "uploads"),
       maxFileBytes: config.maxFileBytes,
       homeUrl: BEE_HOME_URL,
+      refusalFor: (url: string) => refusals.codeFor(url),
     };
     const onGone = (error: Error) => {
       // The engine left on its own (crash, kill): the session is over.

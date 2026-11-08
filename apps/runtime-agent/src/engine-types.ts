@@ -17,6 +17,43 @@ export interface EngineOptions {
   maxFileBytes: number;
   /** The page a new tab opens: Bee's own start page. */
   homeUrl: string;
+  /**
+   * Why the proxy refused `host:port` a moment ago, if it did: a tunnel the
+   * engine reports as failed then gets Brawzer's own reason as its code.
+   */
+  refusalFor: (url: string) => string | null;
+}
+
+/** Remembers the proxy's refusals briefly, keyed by `host:port`, for the engines' error pages. */
+export class RefusalLog {
+  private readonly entries = new Map<string, { reason: string; at: number }>();
+
+  constructor(private readonly keepMs = 15_000) {}
+
+  note(authority: string, reason: string): void {
+    const key = authority.toLowerCase();
+    this.entries.set(key, { reason, at: Date.now() });
+    if (this.entries.size > 200) {
+      const oldest = this.entries.keys().next().value;
+      if (oldest !== undefined) this.entries.delete(oldest);
+    }
+  }
+
+  /** The code for a page at `url`, as `BRAWZER_REFUSED_<REASON>`, or null. */
+  codeFor(url: string): string | null {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return null;
+    }
+    const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+    const key = `${parsed.hostname.replace(/^\[|\]$/g, "")}:${port}`.toLowerCase();
+    const entry =
+      this.entries.get(key) ?? this.entries.get(`${parsed.hostname}:${port}`.toLowerCase());
+    if (!entry || Date.now() - entry.at > this.keepMs) return null;
+    return `BRAWZER_REFUSED_${entry.reason.toUpperCase()}`;
+  }
 }
 
 /**

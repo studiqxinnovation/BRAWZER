@@ -13,11 +13,22 @@ import {
   type TransferKind,
   type TransferMessage,
   type Viewport,
+  type NavigationError,
 } from "@brawzer/contracts";
 import type { BidiConnection } from "./bidi.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
+
+/** Firefox's own error page, `about:neterror?e=<code>&u=<address>`, as the failure it stands for. */
+function errorPageOf(url: string): NavigationError | null {
+  if (!url.startsWith("about:neterror?") && !url.startsWith("about:certerror?")) return null;
+  const params = new URLSearchParams(url.slice(url.indexOf("?") + 1));
+  return {
+    url: (params.get("u") ?? "").slice(0, 4096),
+    code: (params.get("e") ?? "").slice(0, 64),
+  };
+}
 
 interface Tab {
   id: string;
@@ -27,6 +38,8 @@ interface Tab {
   canGoBack: boolean;
   canGoForward: boolean;
   security: TabSecurity;
+  /** Firefox is showing its own error page for this address. */
+  error: NavigationError | null;
 }
 
 interface Transfer {
@@ -203,23 +216,35 @@ export class FirefoxEngine implements Engine {
       const tab = this.tabs.get(info.context);
       if (!tab) return;
       tab.loading = true;
-      tab.url = info.url;
-      tab.security = securityOf(info.url);
+      // Firefox shows a failure as a navigation of its own to about:neterror;
+      // the address bar keeps the address that failed.
+      const failure = this.explained(errorPageOf(info.url));
+      if (failure) {
+        tab.url = failure.url || tab.url;
+        tab.error = failure;
+      } else {
+        tab.url = info.url;
+        tab.security = securityOf(info.url);
+        tab.error = null;
+      }
       this.queueSnapshot();
     });
     // Firefox ESR 153 has no navigationAborted event; a stopped navigation
     // reaches "complete" through the title poll instead.
     this.bidi.on("browsingContext.navigationFailed", (params) => {
-      const tab = this.tabs.get((params as { context: string }).context);
+      const info = params as { context: string; url: string };
+      const tab = this.tabs.get(info.context);
       if (!tab) return;
       tab.loading = false;
+      tab.error = { url: info.url || tab.url, code: "" };
+      void this.readErrorCode(tab);
       this.queueSnapshot();
     });
     // A page restored from the back-forward cache commits without a load event.
     this.bidi.on("browsingContext.navigationCommitted", (params) => {
       const info = params as { context: string; url: string };
       const tab = this.tabs.get(info.context);
-      if (!tab) return;
+      if (!tab || errorPageOf(info.url)) return;
       tab.url = info.url;
       tab.security = securityOf(info.url);
       void this.refreshTitle(tab);
@@ -228,7 +253,7 @@ export class FirefoxEngine implements Engine {
       this.bidi.on(event, (params) => {
         const info = params as { context: string; url: string };
         const tab = this.tabs.get(info.context);
-        if (!tab) return;
+        if (!tab || errorPageOf(info.url)) return;
         tab.url = info.url;
         tab.security = securityOf(info.url);
         void this.refreshTitle(tab);
@@ -239,8 +264,15 @@ export class FirefoxEngine implements Engine {
       const tab = this.tabs.get(info.context);
       if (!tab) return;
       tab.loading = false;
-      tab.url = info.url;
-      tab.security = securityOf(info.url);
+      const failure = this.explained(errorPageOf(info.url));
+      if (failure) {
+        tab.url = failure.url || tab.url;
+        tab.error = failure;
+      } else {
+        tab.url = info.url;
+        tab.security = securityOf(info.url);
+        if (tab.error && tab.error.url !== info.url) tab.error = null;
+      }
       void this.refreshTitle(tab);
       this.lastFrameHash = "";
     });
@@ -608,6 +640,7 @@ export class FirefoxEngine implements Engine {
       canGoBack: false,
       canGoForward: false,
       security: securityOf(url),
+      error: null,
     };
     this.tabs.set(id, tab);
     this.order.push(id);
@@ -673,29 +706,79 @@ export class FirefoxEngine implements Engine {
     return result.result?.value;
   }
 
+  /** Brawzer's own reason for a refused tunnel, when the proxy noted one for that address. */
+  private explained(error: NavigationError | null): NavigationError | null {
+    if (error?.code !== "proxyConnectFailure") return error;
+    return { url: error.url, code: this.options.refusalFor(error.url) ?? error.code };
+  }
+
+  /** Firefox's error page is `about:neterror?e=<code>&u=<address>`; Brawzer draws the explanation. */
+  private async readErrorCode(tab: Tab): Promise<void> {
+    const failed = tab.error;
+    if (!failed) return;
+    // The error document replaces the page shortly after the event; look a few times.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      if (tab.error !== failed) return;
+      try {
+        const value = await this.evaluate(tab, "document.documentURI");
+        if (tab.error !== failed || typeof value !== "string") return;
+        if (value.startsWith("about:neterror?") || value.startsWith("about:certerror?")) {
+          const params = new URLSearchParams(value.slice(value.indexOf("?") + 1));
+          const code = params.get("e") ?? "";
+          const url = params.get("u") ?? failed.url;
+          const explained = this.explained({ url: url || failed.url, code: code.slice(0, 64) });
+          if (explained) tab.error = explained;
+          this.queueSnapshot();
+          return;
+        }
+      } catch {
+        return; // The page moved on.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+
   private async refreshTitle(tab: Tab): Promise<void> {
     try {
       const value = await this.evaluate(
         tab,
-        "JSON.stringify({ title: document.title, url: location.href, complete: document.readyState === 'complete', back: typeof navigation !== 'undefined' ? navigation.canGoBack : history.length > 1, forward: typeof navigation !== 'undefined' ? navigation.canGoForward : false })",
+        "JSON.stringify({ title: document.title, url: location.href, doc: document.documentURI, complete: document.readyState === 'complete', back: typeof navigation !== 'undefined' ? navigation.canGoBack : history.length > 1, forward: typeof navigation !== 'undefined' ? navigation.canGoForward : false })",
       );
       if (typeof value !== "string") return;
       const state = JSON.parse(value) as {
         title: string;
         url: string;
+        doc: string;
         complete: boolean;
         back: boolean;
         forward: boolean;
       };
       let changed = false;
-      // A back-forward cache restore reaches "complete" without a load event.
-      if (tab.loading && state.complete && state.url === tab.url) {
-        tab.loading = false;
-        this.lastFrameHash = "";
+      // Firefox's error page is a document of its own; whichever events were
+      // seen, what is shown decides what the tab reports.
+      const failure = this.explained(errorPageOf(state.doc));
+      if (failure) {
+        if (tab.error?.code !== failure.code || tab.error.url !== failure.url) {
+          tab.error = failure;
+          if (failure.url) tab.url = failure.url;
+          changed = true;
+        }
+        if (tab.loading && state.complete) {
+          tab.loading = false;
+          changed = true;
+        }
+      } else if (tab.error && state.url === tab.url && state.complete) {
+        tab.error = null;
         changed = true;
       }
       if (state.title !== tab.title) {
         tab.title = state.title;
+        changed = true;
+      }
+      // A back-forward cache restore reaches "complete" without a load event.
+      if (tab.loading && state.complete && state.url === tab.url) {
+        tab.loading = false;
+        this.lastFrameHash = "";
         changed = true;
       }
       if (state.back !== tab.canGoBack || state.forward !== tab.canGoForward) {
@@ -721,6 +804,7 @@ export class FirefoxEngine implements Engine {
         canGoBack: tab.canGoBack,
         canGoForward: tab.canGoForward,
         security: tab.security,
+        error: tab.error,
       }));
   }
 

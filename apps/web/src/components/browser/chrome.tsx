@@ -26,6 +26,7 @@ import {
   Check,
   ChevronDown,
   CircleAlert,
+  Copy,
   Download,
   Ellipsis,
   FileText,
@@ -37,6 +38,7 @@ import {
   Plus,
   Printer,
   RotateCw,
+  Search,
   ShieldAlert,
   ShieldCheck,
   Square,
@@ -45,6 +47,7 @@ import {
 import { type RefObject, type SubmitEvent } from "react";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { formatBytes } from "@/lib/drive";
+import { describeNavigationError } from "@/lib/browser/errors";
 import { hostOf } from "@/lib/browser/input";
 import { initialOf, profileColorShades } from "@/lib/profiles";
 
@@ -563,6 +566,72 @@ export function StatusBar({
         </span>
         <span aria-live="polite">Ends in {remaining} at most</span>
       </span>
+    </div>
+  );
+}
+
+/**
+ * Drawn by Brawzer over the engine's own error page, which is the one piece
+ * of engine chrome a person would otherwise still see. The address stays in
+ * the bar; the actions are the page's own.
+ */
+export function NavigationErrorPage({
+  tab,
+  onRetry,
+  onCopy,
+  onSearch,
+}: {
+  tab: TabState;
+  onRetry: () => void;
+  onCopy: () => void;
+  onSearch: () => void;
+}) {
+  if (!tab.error) return null;
+  const text = describeNavigationError(tab.error.code, tab.error.url);
+  const Icon = text.kind === "blocked" ? ShieldAlert : CircleAlert;
+  return (
+    <div
+      role="region"
+      aria-label="This page couldn’t be opened"
+      data-testid="navigation-error"
+      data-error-kind={text.kind}
+      className="absolute inset-0 flex items-center justify-center overflow-auto bg-canvas px-6 py-10"
+    >
+      <div className="flex w-full max-w-md flex-col items-start gap-4">
+        <span
+          className={cn(
+            "flex size-12 items-center justify-center rounded-2xl",
+            text.kind === "blocked"
+              ? "bg-success-soft text-success"
+              : "bg-hover text-ink-secondary",
+          )}
+        >
+          <Icon aria-hidden="true" className="size-6" />
+        </span>
+        <h2 className="text-title-2 text-balance text-ink">{text.title}</h2>
+        <p className="text-body text-pretty text-ink-secondary">{text.detail}</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Button variant="primary" onClick={onRetry}>
+            <RotateCw aria-hidden="true" />
+            Try again
+          </Button>
+          <Button variant="secondary" onClick={onCopy}>
+            <Copy aria-hidden="true" />
+            Copy the address
+          </Button>
+          {(text.kind === "unresolved" || text.kind === "address") && (
+            <Button variant="secondary" onClick={onSearch}>
+              <Search aria-hidden="true" />
+              Search for it
+            </Button>
+          )}
+        </div>
+        {tab.error.code !== "" && (
+          <p className="text-caption text-ink-tertiary">
+            The engine reported <code className="font-mono">{tab.error.code}</code>.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

@@ -24,8 +24,8 @@ export interface ProxyOptions {
   resolve?: (name: string) => Promise<string[]>;
   /** Development only: names served by a local test site instead of the internet. */
   overrides?: ReadonlyMap<string, ProxyOverride>;
-  /** Called with the refused host (no path or query). */
-  onRefused?: (host: string) => void;
+  /** Called with the refused `host:port` (no path or query) and why, here or in the egress. */
+  onRefused?: (host: string, reason: RefusalReason) => void;
   /**
    * The session's egress proxy (`host:port`, ADR 0014). With it set, every
    * connection that isn't an override is forwarded there unresolved: the
@@ -35,10 +35,17 @@ export interface ProxyOptions {
   egress?: { host: string; port: number } | undefined;
 }
 
+/** Why a connection was refused: this proxy's own checks, or the egress's (ADR 0014). */
+export type RefusalReason = "address" | "unresolved" | "port" | "engine";
+
 export type Decision =
   | { address: string; port: number }
   | { egress: true; host: string; port: number }
   | { refused: "address" | "unresolved" };
+
+function isRefusalReason(value: string): value is RefusalReason {
+  return value === "address" || value === "unresolved" || value === "port" || value === "engine";
+}
 
 const HOP_BY_HOP = new Set([
   "proxy-connection",
@@ -152,7 +159,7 @@ export function createFilteringProxy(options: ProxyOptions = {}): http.Server {
         process.stdout.write(`${JSON.stringify({ proxy: "request", host: url.host, decision })}\n`);
       }
       if ("refused" in decision) {
-        options.onRefused?.(url.host);
+        options.onRefused?.(url.host, decision.refused);
         sendBlocked(res, url.host, decision);
         return;
       }
@@ -203,7 +210,7 @@ export function createFilteringProxy(options: ProxyOptions = {}): http.Server {
         );
       }
       if ("refused" in decision) {
-        options.onRefused?.(req.url ?? "");
+        options.onRefused?.(req.url ?? "", decision.refused);
         clientSocket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
         return;
       }
@@ -220,11 +227,18 @@ export function createFilteringProxy(options: ProxyOptions = {}): http.Server {
           clientSocket.pipe(upstream);
           return;
         }
-        // The egress answers the CONNECT itself (200 or a refusal), so its reply goes straight through.
+        // The egress answers the CONNECT itself (200 or a refusal), so its reply
+        // goes straight through; a refusal's reason is noted on the way.
         const authority = `${net.isIPv6(decision.host) ? `[${decision.host}]` : decision.host}:${String(decision.port)}`;
         upstream.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`);
         if (head.length > 0) upstream.write(head);
-        upstream.pipe(clientSocket);
+        upstream.once("data", (first: Buffer) => {
+          const reply = first.subarray(0, 512).toString("latin1");
+          const refused = /^HTTP\/1\.[01] 403[^]*?x-brawzer-refused:\s*(\w+)/i.exec(reply)?.[1];
+          if (refused && isRefusalReason(refused)) options.onRefused?.(req.url ?? "", refused);
+          clientSocket.write(first);
+          upstream.pipe(clientSocket);
+        });
         clientSocket.pipe(upstream);
       });
       upstream.on("error", () => {

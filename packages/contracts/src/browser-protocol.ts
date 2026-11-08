@@ -135,6 +135,17 @@ export const relayMessageSchema = z.discriminatedUnion("type", [
 
 export const tabSecuritySchema = z.enum(["secure", "insecure", "neutral"]);
 
+/**
+ * A navigation the engine couldn't complete: the address it tried and the
+ * engine's own code for why (Chromium's `ERR_…`, Firefox's `dnsNotFound`
+ * and friends). Brawzer draws the explanation; the engine's page is never
+ * what the person reads.
+ */
+export const navigationErrorSchema = z.object({
+  url: z.string().max(4096),
+  code: z.string().max(64),
+});
+
 export const tabStateSchema = z.object({
   id: tabIdSchema,
   url: z.string().max(4096),
@@ -143,6 +154,7 @@ export const tabStateSchema = z.object({
   canGoBack: z.boolean(),
   canGoForward: z.boolean(),
   security: tabSecuritySchema,
+  error: navigationErrorSchema.nullable(),
 });
 
 export const dialogKinds = ["alert", "confirm", "prompt", "beforeunload"] as const;
@@ -241,6 +253,7 @@ export type RelayMessage = z.infer<typeof relayMessageSchema>;
 export type ChosenFile = z.infer<typeof chosenFileSchema>;
 export type AgentMessage = z.infer<typeof agentMessageSchema>;
 export type TabState = z.infer<typeof tabStateSchema>;
+export type NavigationError = z.infer<typeof navigationErrorSchema>;
 export type TabSecurity = z.infer<typeof tabSecuritySchema>;
 export type DialogKind = (typeof dialogKinds)[number];
 export type RefusedAction = (typeof refusedActions)[number];

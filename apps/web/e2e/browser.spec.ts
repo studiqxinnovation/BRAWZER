@@ -63,6 +63,30 @@ test.describe("browser", () => {
     await address.press("Enter");
     await expect(page.getByLabel("Not secure")).toBeVisible();
 
+    // A connection Brawzer refuses (a private address) gets Brawzer's own
+    // error page, not the engine's, with the address kept and a way back.
+    await address.fill("https://10.0.0.1/");
+    await address.press("Enter");
+    const failed = page.getByTestId("navigation-error");
+    await expect(failed).toBeVisible({ timeout: 30_000 });
+    await expect(failed).toHaveAttribute("data-error-kind", "blocked");
+    await expect(
+      failed.getByRole("heading", { name: "Brawzer didn’t allow this connection" }),
+    ).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await failed.getByRole("button", { name: "Copy the address" }).click();
+    await expect(page.getByText("Address copied")).toBeVisible();
+    // A name nobody answers to, over HTTPS, is told apart from a refusal.
+    await address.fill("https://no-such-host.example/");
+    await address.press("Enter");
+    await expect(failed).toHaveAttribute("data-error-kind", "unresolved", { timeout: 30_000 });
+    await expect(failed.getByRole("button", { name: "Search for it" })).toBeVisible();
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(failed).toBeHidden();
+    await expect(tab(page, "Brawzer test site")).toBeVisible();
+
     // A click inside the page follows a link; Back returns.
     await clickPage(page, 100, 60);
     await expect(tab(page, "Second page")).toBeVisible();

@@ -13,6 +13,7 @@ import {
   type TransferKind,
   type TransferMessage,
   type Viewport,
+  type NavigationError,
 } from "@brawzer/contracts";
 import { BEE_VERSION } from "./bee.ts";
 import type { CdpConnection } from "./cdp.ts";
@@ -44,6 +45,14 @@ interface Chooser {
   writers: Map<string, ChunkWriter>;
 }
 
+/** Chromium's `net::ERR_NAME_NOT_RESOLVED` → `ERR_NAME_NOT_RESOLVED`, within the protocol's size. */
+function errorCode(text: string): string {
+  return text.replace(/^net::/, "").slice(0, 64);
+}
+
+/** A failed tunnel is the proxy refusing; the proxy's own reason says why. */
+const TUNNEL_FAILURES = new Set(["ERR_TUNNEL_CONNECTION_FAILED", "ERR_PROXY_CONNECTION_FAILED"]);
+
 interface Tab {
   id: string;
   sessionId: string;
@@ -54,6 +63,10 @@ interface Tab {
   canGoBack: boolean;
   canGoForward: boolean;
   security: TabSecurity;
+  /** The engine is showing its own error page for this address. */
+  error: NavigationError | null;
+  /** What the last navigate command answered, for an error page that names no code yet. */
+  lastNavigateError: string;
   screencasting: boolean;
   /** Frames sent to the viewer but not yet drawn, by frame id → engine's screencast session id. */
   inFlight: Map<number, string>;
@@ -219,10 +232,24 @@ export class BrowserEngine implements Engine {
 
     this.cdp.on("Page.frameNavigated", (params, sessionId) => {
       const tab = this.tabBySession(sessionId);
-      const { frame } = params as { frame: { id: string; parentId?: string; url: string } };
+      const { frame } = params as {
+        frame: { id: string; parentId?: string; url: string; unreachableUrl?: string };
+      };
       if (!tab || frame.parentId) return;
       tab.mainFrameId = frame.id;
-      tab.url = frame.url;
+      // An error page keeps the address that failed; Brawzer draws the explanation.
+      if (frame.unreachableUrl) {
+        tab.url = frame.unreachableUrl;
+        tab.error = this.explained({
+          url: frame.unreachableUrl,
+          code: errorCode(tab.lastNavigateError),
+        });
+        tab.lastNavigateError = "";
+        void this.readErrorCode(tab);
+      } else {
+        tab.url = frame.url;
+        tab.error = null;
+      }
       void this.refreshHistory(tab);
     });
     this.cdp.on("Page.navigatedWithinDocument", (params, sessionId) => {
@@ -397,7 +424,16 @@ export class BrowserEngine implements Engine {
           { url: message.url },
           tab.sessionId,
         );
-        if (result.errorText) log("info", "navigation failed", { errorText: result.errorText });
+        if (result.errorText && result.errorText !== "net::ERR_ABORTED") {
+          log("info", "navigation failed", { errorText: result.errorText });
+          // The frame may already show the error page, or be about to.
+          if (tab.error?.code === "") {
+            tab.error = this.explained({ url: tab.error.url, code: errorCode(result.errorText) });
+            this.queueSnapshot();
+          } else if (!tab.error) {
+            tab.lastNavigateError = result.errorText;
+          }
+        }
         return;
       }
       case "back":
@@ -760,6 +796,8 @@ export class BrowserEngine implements Engine {
       canGoBack: false,
       canGoForward: false,
       security: "neutral",
+      error: null,
+      lastNavigateError: "",
       screencasting: false,
       inFlight: new Map(),
     };
@@ -885,7 +923,46 @@ export class BrowserEngine implements Engine {
         canGoBack: tab.canGoBack,
         canGoForward: tab.canGoForward,
         security: tab.security,
+        error: tab.error,
       }));
+  }
+
+  /** Brawzer's own reason for a refused tunnel, when the proxy noted one for that address. */
+  private explained(error: NavigationError): NavigationError {
+    if (!TUNNEL_FAILURES.has(error.code)) return error;
+    return { url: error.url, code: this.options.refusalFor(error.url) ?? error.code };
+  }
+
+  /** The engine's error page names its code in the document; the person never sees that page. */
+  private async readErrorCode(tab: Tab): Promise<void> {
+    const failed = tab.error;
+    if (!failed) return;
+    // The error page renders shortly after the frame commits; look a few times.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      if (tab.error !== failed) return;
+      try {
+        const { result } = await this.cdp.send<{ result: { value?: unknown } }>(
+          "Runtime.evaluate",
+          {
+            expression:
+              "(document.querySelector('.error-code') || document.querySelector('#error-code'))?.textContent?.trim() || ''",
+            returnByValue: true,
+          },
+          tab.sessionId,
+        );
+        if (tab.error !== failed) return;
+        if (typeof result.value === "string" && result.value !== "") {
+          tab.error = this.explained({ url: failed.url, code: errorCode(result.value) });
+          this.queueSnapshot();
+          return;
+        }
+      } catch {
+        return; // The page moved on.
+      }
+      if (failed.code !== "") return;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    this.queueSnapshot();
   }
 
   /** Coalesces bursts of changes into one snapshot per tick. */

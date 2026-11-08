@@ -133,6 +133,8 @@ export function createEgressProxy(options: EgressProxyOptions): http.Server {
         options.onRefused?.(url.host, decision.reason);
         res.writeHead(403, {
           "content-type": "text/html; charset=utf-8",
+          // The runtime reads why, to explain a failed page in its own words.
+          "x-brawzer-refused": decision.reason,
           "content-security-policy": "default-src 'none'",
           "cache-control": "no-store",
         });
@@ -182,7 +184,9 @@ export function createEgressProxy(options: EgressProxyOptions): http.Server {
         : ({ kind: "refused", reason: "address" } as const);
       if (decision.kind === "refused") {
         options.onRefused?.(req.url ?? "", decision.reason);
-        clientSocket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+        clientSocket.end(
+          `HTTP/1.1 403 Forbidden\r\nX-Brawzer-Refused: ${decision.reason}\r\nConnection: close\r\n\r\n`,
+        );
         return;
       }
       let channel: Duplex;
