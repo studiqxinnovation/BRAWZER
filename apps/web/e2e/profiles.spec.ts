@@ -65,8 +65,13 @@ test.describe("profiles", () => {
     const edit = page.getByRole("dialog", { name: "Edit “Work”" });
     await edit.getByRole("textbox", { name: "Name" }).fill("Office");
     await pickColour(edit, "Rose");
+    // Whether browsing data survives between sessions is the profile's choice.
+    const keep = edit.getByRole("switch", { name: "Keep browsing data between sessions" });
+    await expect(keep).toBeChecked();
+    await keep.click();
     await edit.getByRole("button", { name: "Save" }).click();
     await expect.poll(() => names(page)).toEqual(["Office", "Personal"]);
+    await expect(page.getByText("Starts every session clean")).toBeVisible();
 
     // Delete, after confirming.
     await page.getByRole("button", { name: "Delete Office" }).click();

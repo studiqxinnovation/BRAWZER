@@ -2,7 +2,8 @@ import { z } from "zod";
 
 /** Must match the database enums of the same names (a test in the API enforces this). */
 export const driveFileStatuses = ["clean", "infected"] as const;
-export const driveFileSources = ["upload"] as const;
+/** Where a file came from: this device, or the cloud browser (a download or a printed page). */
+export const driveFileSources = ["upload", "browser"] as const;
 
 /** Temporary limits until plans exist (Phase 6). */
 export const DRIVE_LIMITS = {
@@ -135,6 +136,7 @@ export const downloadTicketQuerySchema = z.object({
 export type DriveFileStatus = z.infer<typeof driveFileStatusSchema>;
 export type DriveFolder = z.infer<typeof driveFolderSchema>;
 export type DriveFile = z.infer<typeof driveFileSchema>;
+export type DriveFileSource = z.infer<typeof driveFileSourceSchema>;
 export type DriveUsage = z.infer<typeof driveUsageSchema>;
 export type DriveOverview = z.infer<typeof driveOverviewSchema>;
 export type DriveFileList = z.infer<typeof driveFileListSchema>;

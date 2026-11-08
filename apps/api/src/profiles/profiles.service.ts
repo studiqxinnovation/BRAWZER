@@ -17,6 +17,7 @@ import { isForeignKeyViolation, isUniqueViolation } from "../common/database-err
 import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
+import { ProfileDataService } from "./profile-data.service.js";
 
 const notFound = () => new ApiException("not_found", 404, "That profile doesn’t exist.");
 
@@ -38,6 +39,11 @@ export function toProfile(row: ProfileRow): Profile {
     engine: row.engine,
     position: row.position,
     proxyId: row.proxyId,
+    keepData: row.keepData,
+    data:
+      row.dataObjectKey && row.dataSavedAt
+        ? { bytes: row.dataBytes ?? 0, savedAt: row.dataSavedAt.toISOString() }
+        : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -53,7 +59,18 @@ export class ProfilesService {
   constructor(
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
+    @Inject(ProfileDataService) private readonly data: ProfileDataService,
   ) {}
+
+  /** The row, for the cloud browser: which data to restore and whether to save it. */
+  async find(userId: string, id: string): Promise<ProfileRow | undefined> {
+    const [row] = await this.database.db
+      .select()
+      .from(schema.profiles)
+      .where(and(eq(schema.profiles.id, id), eq(schema.profiles.userId, userId)))
+      .limit(1);
+    return row;
+  }
 
   private rows(executor: DatabaseExecutor, userId: string): Promise<ProfileRow[]> {
     return executor
@@ -118,6 +135,7 @@ export class ProfilesService {
       name?: string | undefined;
       color?: ProfileColor | undefined;
       proxyId?: string | null | undefined;
+      keepData?: boolean | undefined;
     },
   ): Promise<Profile> {
     if (input.proxyId) {
@@ -137,6 +155,7 @@ export class ProfilesService {
           ...(input.name === undefined ? {} : { name: input.name }),
           ...(input.color === undefined ? {} : { color: input.color }),
           ...(input.proxyId === undefined ? {} : { proxyId: input.proxyId }),
+          ...(input.keepData === undefined ? {} : { keepData: input.keepData }),
           updatedAt: new Date(),
         })
         .where(and(eq(schema.profiles.id, id), eq(schema.profiles.userId, userId)))
@@ -151,26 +170,45 @@ export class ProfilesService {
     return toProfile(row);
   }
 
-  /** Deletes a profile. An account always keeps at least one. */
+  /** Deletes a profile and its saved browsing data. An account always keeps at least one. */
   async remove(auth: AuthContext, id: string, meta: RequestMeta): Promise<void> {
     const userId = auth.user.id;
-    await this.database.db.transaction(async (tx) => {
+    const removed = await this.database.db.transaction(async (tx) => {
       await lockAccount(tx, userId);
       const rows = await this.rows(tx, userId);
-      if (!rows.some((row) => row.id === id)) throw notFound();
+      const row = rows.find((candidate) => candidate.id === id);
+      if (!row) throw notFound();
       if (rows.length <= 1) {
         throw new ApiException("conflict", 409, "You need at least one profile.");
       }
       await tx
         .delete(schema.profiles)
         .where(and(eq(schema.profiles.id, id), eq(schema.profiles.userId, userId)));
+      return row;
     });
+    if (removed.dataObjectKey) await this.data.removeObjects([removed.dataObjectKey]);
     await this.events.record({
       type: "profile.deleted",
       userId,
       sessionId: auth.session.id,
       meta,
     });
+  }
+
+  /** Forgets the profile's cookies, history and site data. */
+  async clearData(auth: AuthContext, id: string, meta: RequestMeta): Promise<Profile> {
+    const row = await this.find(auth.user.id, id);
+    if (!row) throw notFound();
+    await this.data.clear(row);
+    await this.events.record({
+      type: "profile.data_cleared",
+      userId: auth.user.id,
+      sessionId: auth.session.id,
+      meta,
+    });
+    const after = await this.find(auth.user.id, id);
+    if (!after) throw notFound();
+    return toProfile(after);
   }
 
   /** Puts the account's profiles in the given order; `ids` must list every one of them. */

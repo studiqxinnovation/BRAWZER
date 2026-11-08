@@ -1,6 +1,5 @@
 import { driveFileListSchema, driveOverviewSchema } from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
-import { DevState } from "@brawzer/ui/components/dev-state";
 import { EmptyState } from "@brawzer/ui/components/empty-state";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
 import { FolderX } from "lucide-react";
@@ -93,17 +92,6 @@ export default function DrivePage({ searchParams }: PageProps<"/app/drive">) {
         <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
           <Contents searchParams={searchParams} />
         </Suspense>
-        <DevState
-          title="Downloads from the cloud browser don’t land here yet"
-          milestone="After Phase 3"
-          requires={[
-            "A hand-off from the cloud browser to Drive for downloads and printed pages (today the cloud browser refuses downloads)",
-            "A Drive file picker for websites that ask for an upload",
-          ]}
-        >
-          Today you can upload files from the device you’re using, organise them, preview safe types
-          and save them to a computer when you choose to.
-        </DevState>
       </div>
     </PageContainer>
   );

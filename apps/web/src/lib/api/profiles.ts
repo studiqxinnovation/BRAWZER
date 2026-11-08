@@ -16,6 +16,13 @@ export const updateProfile = (id: string, body: UpdateProfileRequest) =>
     schema: profileSchema,
   });
 
+/** Forgets the profile's cookies, history and site data. */
+export const clearProfileData = (id: string) =>
+  apiRequest(`/profiles/${encodeURIComponent(id)}/data`, {
+    method: "DELETE",
+    schema: profileSchema,
+  });
+
 export const deleteProfile = (id: string) =>
   apiRequest<undefined>(`/profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
 

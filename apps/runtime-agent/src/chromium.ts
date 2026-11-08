@@ -31,8 +31,9 @@ export interface LaunchedChromium {
  */
 export function launchChromium(options: LaunchOptions): LaunchedChromium {
   const userDataDir = path.join(options.scratchDir, "profile");
+  const cacheDir = path.join(options.scratchDir, "cache");
   const home = path.join(options.scratchDir, "home");
-  for (const dir of [userDataDir, home]) mkdirSync(dir, { recursive: true });
+  for (const dir of [userDataDir, cacheDir, home]) mkdirSync(dir, { recursive: true });
 
   const args = [
     "--headless=new",
@@ -58,6 +59,8 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
     "--no-pings",
     "--disable-gpu",
     "--disable-dev-shm-usage",
+    // The HTTP cache lives outside the profile: never kept between sessions.
+    `--disk-cache-dir=${cacheDir}`,
     "--disk-cache-size=52428800",
     "--password-store=basic",
     "--lang=en-US",

@@ -3,12 +3,26 @@ import {
   type CreateFolderRequest,
   downloadTicketSchema,
   type DriveFile,
+  driveFileListSchema,
+  driveOverviewSchema,
   driveFileSchema,
   driveFolderSchema,
   type UpdateFileRequest,
   type UpdateFolderRequest,
 } from "@brawzer/contracts";
 import { type ApiFailure, type ApiResult, apiRequest } from "./client";
+
+/** Every folder and the usage. */
+export const fetchDriveOverview = () => apiRequest("/drive", { schema: driveOverviewSchema });
+
+/** One folder's files (the top level without `folderId`), or a search everywhere with `q`. */
+export const listDriveFiles = (query: { folderId?: string | null; q?: string } = {}) => {
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
+  else if (query.folderId) params.set("folderId", query.folderId);
+  const search = params.toString();
+  return apiRequest(`/drive/files${search ? `?${search}` : ""}`, { schema: driveFileListSchema });
+};
 
 export const createFolder = (body: CreateFolderRequest) =>
   apiRequest("/drive/folders", { method: "POST", body, schema: driveFolderSchema });

@@ -39,6 +39,9 @@ export const securityEventTypes = [
   "drive.folder_deleted",
   "browser.session_started",
   "browser.session_ended",
+  "browser.file_saved",
+  "browser.file_sent",
+  "profile.data_cleared",
   "phone_sign_in.approved",
   "sign_in.new_device",
 ] as const;
@@ -59,6 +62,8 @@ export const securityEventSchema = z.object({
     persistent: z.boolean().optional(),
     reason: z.string().optional(),
     count: z.number().int().nonnegative().optional(),
+    /** For files from the cloud browser: "download" or "print". */
+    kind: z.string().optional(),
   }),
 });
 

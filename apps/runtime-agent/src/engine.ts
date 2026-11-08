@@ -1,20 +1,60 @@
+import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { open, rm } from "node:fs/promises";
+import path from "node:path";
 import {
   type AgentMessage,
   BROWSER_PROTOCOL_VERSION,
-  type ClientMessage,
+  type ChosenFile,
   encodeFrame,
+  type RelayMessage,
   type TabSecurity,
   type TabState,
+  type TransferChunkHeader,
+  type TransferKind,
+  type TransferMessage,
   type Viewport,
 } from "@brawzer/contracts";
 import type { CdpConnection } from "./cdp.ts";
 import { log } from "./log.ts";
+import { type BinarySink, ChunkWriter, sendFile } from "./transfers.ts";
 
 /** Who is watching the stream right now, if anyone. */
-export interface Viewer {
+export interface Viewer extends BinarySink {
   send(message: AgentMessage): void;
   /** False when the viewer can't take the frame right now; it is then dropped and acknowledged. */
   sendFrame(frame: Uint8Array): boolean;
+}
+
+export interface EngineOptions {
+  /** Where the engine puts downloads and printed pages until they are handed over. */
+  downloadDir: string;
+  /** Where Drive files for a page's file chooser are written. */
+  uploadDir: string;
+  /** Drive's per-file limit: larger downloads are cancelled. */
+  maxFileBytes: number;
+}
+
+/** A download or a printed page on its way to Drive. */
+interface Transfer {
+  id: string;
+  tabId: string;
+  kind: TransferKind;
+  filename: string;
+  path: string;
+  bytes: number;
+  /** Set once a final state was reported, so the engine's later events don't report twice. */
+  finished: boolean;
+}
+
+/** A page's open file chooser, waiting for Drive files. */
+interface Chooser {
+  id: string;
+  tabId: string;
+  backendNodeId: number;
+  dir: string;
+  /** By transfer id, once the relay has said which files come. */
+  writers: Map<string, ChunkWriter>;
 }
 
 interface Tab {
@@ -43,6 +83,23 @@ interface TargetInfo {
 
 const MAX_TABS = 16;
 const JPEG_QUALITY = 60;
+/**
+ * How often the active tab's title is re-read while someone is watching. The
+ * engine reports titles on navigation but not when a page's script changes
+ * them later (unread counts and the like), so the agent asks.
+ */
+const TITLE_POLL_MS = 1_500;
+/** Downloads in flight at once; a page starting more has the extra ones cancelled. */
+const MAX_ACTIVE_DOWNLOADS = 3;
+
+/** The engine's suggested filename, reduced to something Drive accepts; Drive cleans it again. */
+function suggestedName(name: string, fallback: string): string {
+  const cleaned = name
+    .replace(/[\p{Cc}/\\]/gu, " ")
+    .trim()
+    .slice(0, 255);
+  return cleaned === "" ? fallback : cleaned;
+}
 
 /** True for the engine's stand-in titles: the address itself, with or without its scheme. */
 function isFallbackTitle(title: string, url: string): boolean {
@@ -55,6 +112,16 @@ function isFallbackTitle(title: string, url: string): boolean {
     );
   } catch {
     return false;
+  }
+}
+
+class TooLargeError extends Error {}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
   }
 }
 
@@ -85,12 +152,23 @@ export class BrowserEngine {
   private readonly attaching = new Set<string>();
   private snapshotQueued = false;
   private ready = false;
+  private closing = false;
+  private readonly transfers = new Map<string, Transfer>();
+  /** Finished transfers waiting for a viewer to hand them to. */
+  private readonly handoverQueue: string[] = [];
+  private handingOver = false;
+  private readonly choosers = new Map<string, Chooser>();
+  private titleTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly cdp: CdpConnection,
     initialViewport: Viewport,
+    private readonly options: EngineOptions,
   ) {
     this.viewport = initialViewport;
+    for (const dir of [options.downloadDir, options.uploadDir]) {
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+    }
   }
 
   get isReady(): boolean {
@@ -130,11 +208,25 @@ export class BrowserEngine {
       void this.cdp.send("Target.closeTarget", { targetId }).catch(() => undefined);
     });
     this.cdp.on("Browser.downloadWillBegin", (params) => {
-      const { frameId } = params as { frameId: string };
+      const { frameId, guid, suggestedFilename } = params as {
+        frameId: string;
+        guid: string;
+        url: string;
+        suggestedFilename: string;
+      };
       const tab =
         [...this.tabs.values()].find((candidate) => candidate.mainFrameId === frameId) ??
         this.activeTab();
-      if (tab) this.viewer?.send({ type: "refused", tabId: tab.id, action: "download" });
+      this.downloadStarted(guid, tab?.id ?? "", suggestedFilename);
+    });
+    this.cdp.on("Browser.downloadProgress", (params) => {
+      const progress = params as {
+        guid: string;
+        totalBytes: number;
+        receivedBytes: number;
+        state: "inProgress" | "completed" | "canceled";
+      };
+      void this.downloadProgressed(progress);
     });
 
     this.cdp.on("Page.frameNavigated", (params, sessionId) => {
@@ -201,9 +293,30 @@ export class BrowserEngine {
         defaultValue: (dialog.defaultPrompt ?? "").slice(0, 4096),
       });
     });
-    this.cdp.on("Page.fileChooserOpened", (_params, sessionId) => {
+    this.cdp.on("Page.fileChooserOpened", (params, sessionId) => {
       const tab = this.tabBySession(sessionId);
-      if (tab) this.viewer?.send({ type: "refused", tabId: tab.id, action: "upload" });
+      if (!tab) return;
+      const { mode, backendNodeId } = params as { mode: string; backendNodeId?: number };
+      if (backendNodeId === undefined || !this.viewer) {
+        // Nothing to fill, or nobody to ask: the page's chooser stays empty.
+        this.viewer?.send({ type: "refused", tabId: tab.id, action: "upload" });
+        return;
+      }
+      const chooser: Chooser = {
+        id: randomUUID(),
+        tabId: tab.id,
+        backendNodeId,
+        dir: "",
+        writers: new Map(),
+      };
+      chooser.dir = path.join(this.options.uploadDir, chooser.id);
+      this.choosers.set(chooser.id, chooser);
+      this.viewer.send({
+        type: "file-chooser",
+        tabId: tab.id,
+        chooserId: chooser.id,
+        multiple: mode === "selectMultiple",
+      });
     });
     this.cdp.on("Page.screencastFrame", (params, sessionId) => {
       const tab = this.tabBySession(sessionId);
@@ -212,7 +325,12 @@ export class BrowserEngine {
 
     const version = await this.cdp.send<{ product: string }>("Browser.getVersion");
     this.version = version.product;
-    await this.cdp.send("Browser.setDownloadBehavior", { behavior: "deny", eventsEnabled: true });
+    // Downloads land in the scratch directory under their id and are handed to Drive.
+    await this.cdp.send("Browser.setDownloadBehavior", {
+      behavior: "allowAndName",
+      downloadPath: this.options.downloadDir,
+      eventsEnabled: true,
+    });
     await this.cdp.send("Target.setDiscoverTargets", { discover: true });
     const deadline = Date.now() + 5_000;
     while (this.tabs.size === 0 && Date.now() < deadline) {
@@ -234,17 +352,24 @@ export class BrowserEngine {
         activeTabId: this.activeId ?? "",
       });
       void this.syncScreencasts();
+      void this.handOver();
     });
+    this.titleTimer ??= setInterval(() => {
+      const active = this.activeTab();
+      if (active && !active.loading) void this.refreshTitle(active, false);
+    }, TITLE_POLL_MS);
   }
 
   detachViewer(viewer: Viewer): void {
     if (this.viewer !== viewer) return;
     this.viewer = null;
+    if (this.titleTimer) clearInterval(this.titleTimer);
+    this.titleTimer = null;
     void this.syncScreencasts();
   }
 
   /** Everything the viewer may ask for. Invalid tab ids are ignored, never fatal. */
-  async handle(message: ClientMessage): Promise<void> {
+  async handle(message: RelayMessage): Promise<void> {
     switch (message.type) {
       case "hello":
       case "ping":
@@ -348,16 +473,236 @@ export class BrowserEngine {
           tab.sessionId,
         );
         return;
+      case "print":
+        await this.printToDrive(tab);
+        return;
+      case "file-chooser":
+        this.expectChosenFiles(message.chooserId, message.files);
+        return;
+    }
+  }
+
+  /** A piece of a Drive file for a page's file chooser, from the relay. */
+  async receiveChunk(header: TransferChunkHeader, data: Uint8Array): Promise<void> {
+    for (const chooser of this.choosers.values()) {
+      const writer = chooser.writers.get(header.transferId);
+      if (writer) {
+        await writer.write(header.seq, data, header.last);
+        return;
+      }
     }
   }
 
   async close(): Promise<void> {
     this.ready = false;
+    this.closing = true;
+    if (this.titleTimer) clearInterval(this.titleTimer);
+    this.titleTimer = null;
     try {
       await this.cdp.send("Browser.close");
     } catch {
       // Already gone.
     }
+  }
+
+  // ── Files: downloads and printed pages to Drive, Drive files to pages ──
+
+  private report(transfer: Transfer, state: TransferMessage["state"], reason?: string): void {
+    this.viewer?.send({
+      type: "transfer",
+      transferId: transfer.id,
+      tabId: transfer.tabId,
+      kind: transfer.kind,
+      filename: transfer.filename,
+      state,
+      bytes: transfer.bytes,
+      ...(reason !== undefined ? { reason } : {}),
+    });
+  }
+
+  private downloadStarted(guid: string, tabId: string, suggested: string): void {
+    const transfer: Transfer = {
+      id: guid,
+      tabId,
+      kind: "download",
+      filename: suggestedName(suggested, "download"),
+      path: path.join(this.options.downloadDir, guid),
+      bytes: 0,
+      finished: false,
+    };
+    this.transfers.set(guid, transfer);
+    const active = [...this.transfers.values()].filter(
+      (candidate) => candidate.kind === "download" && !candidate.finished,
+    );
+    if (active.length > MAX_ACTIVE_DOWNLOADS) {
+      void this.cancelDownload(transfer, "failed", "Too many downloads at once.");
+      return;
+    }
+    this.report(transfer, "started");
+  }
+
+  private async downloadProgressed(progress: {
+    guid: string;
+    totalBytes: number;
+    receivedBytes: number;
+    state: "inProgress" | "completed" | "canceled";
+  }): Promise<void> {
+    const transfer = this.transfers.get(progress.guid);
+    if (!transfer || transfer.finished) return;
+    transfer.bytes = progress.receivedBytes;
+    if (Math.max(progress.totalBytes, progress.receivedBytes) > this.options.maxFileBytes) {
+      await this.cancelDownload(transfer, "too_large");
+      return;
+    }
+    if (progress.state === "canceled") {
+      transfer.finished = true;
+      this.transfers.delete(transfer.id);
+      await rm(transfer.path, { force: true }).catch(() => undefined);
+      this.report(transfer, "canceled");
+      return;
+    }
+    if (progress.state === "completed") {
+      transfer.bytes = progress.receivedBytes;
+      this.queueHandover(transfer);
+    }
+  }
+
+  private async cancelDownload(
+    transfer: Transfer,
+    state: "too_large" | "failed",
+    reason?: string,
+  ): Promise<void> {
+    if (transfer.finished) return;
+    transfer.finished = true;
+    this.transfers.delete(transfer.id);
+    await this.cdp.send("Browser.cancelDownload", { guid: transfer.id }).catch(() => undefined);
+    await rm(transfer.path, { force: true }).catch(() => undefined);
+    this.report(transfer, state, reason);
+  }
+
+  /** The whole file is on disk: hand it over now, or as soon as someone is watching. */
+  private queueHandover(transfer: Transfer): void {
+    this.handoverQueue.push(transfer.id);
+    void this.handOver();
+  }
+
+  private async handOver(): Promise<void> {
+    if (this.handingOver) return;
+    this.handingOver = true;
+    try {
+      while (this.viewer && this.handoverQueue.length > 0) {
+        const id = this.handoverQueue[0];
+        const transfer = id === undefined ? undefined : this.transfers.get(id);
+        if (!transfer) {
+          this.handoverQueue.shift();
+          continue;
+        }
+        const viewer = this.viewer;
+        this.report(transfer, "received");
+        try {
+          await sendFile(viewer, transfer.id, transfer.path);
+          this.handoverQueue.shift();
+          transfer.finished = true;
+          this.transfers.delete(transfer.id);
+          await rm(transfer.path, { force: true }).catch(() => undefined);
+        } catch (error) {
+          // The viewer went away mid-file: keep the file and try again with the next viewer.
+          log("warn", "hand-over interrupted", {
+            message: error instanceof Error ? error.message : "",
+          });
+          break;
+        }
+      }
+    } finally {
+      this.handingOver = false;
+    }
+  }
+
+  /** Renders the tab to a PDF in the scratch directory and hands it over like a download. */
+  private async printToDrive(tab: Tab): Promise<void> {
+    const id = `print-${randomUUID()}`;
+    const transfer: Transfer = {
+      id,
+      tabId: tab.id,
+      kind: "print",
+      filename: suggestedName(`${tab.title || hostOf(tab.url) || "page"}.pdf`, "page.pdf"),
+      path: path.join(this.options.downloadDir, id),
+      bytes: 0,
+      finished: false,
+    };
+    this.transfers.set(id, transfer);
+    this.report(transfer, "started");
+    try {
+      const { data } = await this.cdp.send<{ data: string }>(
+        "Page.printToPDF",
+        { printBackground: true, preferCSSPageSize: true },
+        tab.sessionId,
+      );
+      const bytes = Buffer.from(data, "base64");
+      transfer.bytes = bytes.length;
+      if (bytes.length > this.options.maxFileBytes) throw new TooLargeError();
+      const file = await open(transfer.path, "w", 0o600);
+      try {
+        await file.write(bytes);
+      } finally {
+        await file.close();
+      }
+      this.queueHandover(transfer);
+    } catch (error) {
+      transfer.finished = true;
+      this.transfers.delete(id);
+      await rm(transfer.path, { force: true }).catch(() => undefined);
+      if (error instanceof TooLargeError) {
+        this.report(transfer, "too_large");
+      } else {
+        log("warn", "print failed", { message: error instanceof Error ? error.message : "" });
+        this.report(transfer, "failed", "The page couldn’t be printed.");
+      }
+    }
+  }
+
+  /** The relay has resolved the chosen Drive files; their bytes follow as chunks. */
+  private expectChosenFiles(chooserId: string, files: ChosenFile[]): void {
+    const chooser = this.choosers.get(chooserId);
+    if (!chooser) return;
+    this.choosers.delete(chooserId);
+    const tab = this.tabs.get(chooser.tabId);
+    if (!tab || files.length === 0) return;
+    mkdirSync(chooser.dir, { recursive: true, mode: 0o700 });
+    const used = new Set<string>();
+    for (const file of files) {
+      let name = suggestedName(file.name, "file");
+      // Two chosen files with one name: the second gets a suffix, as Drive would.
+      for (let n = 2; used.has(name.toLowerCase()); n += 1)
+        name = `${suggestedName(file.name, "file")} (${String(n)})`;
+      used.add(name.toLowerCase());
+      chooser.writers.set(
+        file.transferId,
+        new ChunkWriter(path.join(chooser.dir, name), this.options.maxFileBytes),
+      );
+    }
+    this.choosers.set(chooserId, chooser);
+    void Promise.all([...chooser.writers.values()].map((writer) => writer.done))
+      .then(async () => {
+        await this.cdp.send(
+          "DOM.setFileInputFiles",
+          {
+            files: [...chooser.writers.values()].map((writer) => writer.path),
+            backendNodeId: chooser.backendNodeId,
+          },
+          tab.sessionId,
+        );
+        log("info", "file chooser answered", { files: chooser.writers.size });
+      })
+      .catch((error: unknown) => {
+        log("warn", "file chooser failed", {
+          message: error instanceof Error ? error.message : "",
+        });
+        this.viewer?.send({ type: "refused", tabId: tab.id, action: "upload" });
+      })
+      .finally(() => {
+        this.choosers.delete(chooserId);
+      });
   }
 
   // ── Tabs ──────────────────────────────────────────────────────────────
@@ -464,8 +809,13 @@ export class BrowserEngine {
       this.activeId = null;
       if (next) {
         void this.activate(next);
-      } else {
-        void this.createTab();
+      } else if (!this.closing) {
+        // The last tab went: a session always has one. (While closing, tabs go on purpose.)
+        this.createTab().catch((error: unknown) => {
+          log("warn", "could not open a tab", {
+            message: error instanceof Error ? error.message : "",
+          });
+        });
       }
     }
     this.queueSnapshot();
@@ -481,18 +831,21 @@ export class BrowserEngine {
   }
 
   /** The engine reports a page's address changes, but not always its title. */
-  private async refreshTitle(tab: Tab): Promise<void> {
+  private async refreshTitle(tab: Tab, withHistory = true): Promise<void> {
     try {
       const { result } = await this.cdp.send<{ result: { value?: unknown } }>(
         "Runtime.evaluate",
         { expression: "document.title", returnByValue: true },
         tab.sessionId,
       );
-      if (typeof result.value === "string" && result.value !== "") tab.title = result.value;
+      if (typeof result.value === "string" && result.value !== "" && result.value !== tab.title) {
+        tab.title = result.value;
+        this.queueSnapshot();
+      }
     } catch {
       // The tab may be gone.
     }
-    await this.refreshHistory(tab);
+    if (withHistory) await this.refreshHistory(tab);
   }
 
   private async refreshHistory(tab: Tab): Promise<void> {

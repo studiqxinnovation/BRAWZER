@@ -23,7 +23,7 @@ export interface ViewportHandle {
 
 /** Brawzer's own shortcuts, handled by the workspace rather than sent to the page. */
 export type Shortcut =
-  "address" | "new-tab" | "close-tab" | "back" | "forward" | "reload" | "leave";
+  "address" | "new-tab" | "close-tab" | "back" | "forward" | "reload" | "print" | "leave";
 
 function shortcutOf(event: KeyboardEvent): Shortcut | null {
   if (event.key === "Escape" && event.shiftKey) return "leave";
@@ -37,6 +37,8 @@ function shortcutOf(event: KeyboardEvent): Shortcut | null {
       return "close-tab";
     case "KeyR":
       return "reload";
+    case "KeyP":
+      return "print";
     case "ArrowLeft":
       return "back";
     case "ArrowRight":

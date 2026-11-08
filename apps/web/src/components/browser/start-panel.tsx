@@ -9,6 +9,9 @@ import { Play } from "lucide-react";
 import { type SubmitEvent, useState } from "react";
 import { Panel } from "@/components/app-shell/page";
 
+/** The Select value for a session that belongs to no profile. */
+const TEMPORARY = "temporary";
+
 /** Before a session exists: choose a profile and start, with what to expect stated plainly. */
 export function StartPanel({
   profiles,
@@ -23,12 +26,13 @@ export function StartPanel({
   error: string | null;
   onStart: (profileId: string | null) => void;
 }) {
-  const [profileId, setProfileId] = useState<string>(profiles[0]?.id ?? "");
+  const [choice, setChoice] = useState<string>(profiles[0]?.id ?? TEMPORARY);
+  const profile = profiles.find((candidate) => candidate.id === choice) ?? null;
   const unavailable = overview.runtime === "unavailable";
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    onStart(profileId || null);
+    onStart(profile?.id ?? null);
   }
 
   return (
@@ -45,15 +49,23 @@ export function StartPanel({
         <form method="post" onSubmit={submit} className="flex flex-col gap-5">
           <Select
             label="Profile"
-            options={profiles.map((profile) => ({ value: profile.id, label: profile.name }))}
-            value={profileId}
-            onValueChange={setProfileId}
-            disabled={profiles.length === 0 || starting}
+            options={[
+              ...profiles.map((candidate) => ({ value: candidate.id, label: candidate.name })),
+              { value: TEMPORARY, label: "Temporary session (nothing kept)" },
+            ]}
+            value={choice}
+            onValueChange={setChoice}
+            disabled={starting}
           />
           <p className="text-footnote text-ink-tertiary">
-            The session ends when you end it, when you sign out, after {overview.limits.idleMinutes}{" "}
-            minutes without anyone watching, or after {overview.limits.maxHours} hours. Nothing is
-            kept between sessions yet.
+            {profile?.keepData
+              ? `Cookies, history and site data are saved to “${profile.name}”, encrypted, when the session ends, and are back next time.`
+              : profile
+                ? `“${profile.name}” keeps nothing between sessions; the session starts clean and leaves nothing behind.`
+                : "The session starts clean and leaves nothing behind."}{" "}
+            It ends when you end it, when you sign out, after {overview.limits.idleMinutes} minutes
+            without anyone watching, or after {overview.limits.maxHours} hours. Downloads and
+            printed pages go to Drive, scanned and encrypted.
           </p>
           {unavailable && (
             <FormMessage tone="danger" title="The cloud browser isn’t available right now">
@@ -82,17 +94,16 @@ export function StartPanel({
 
       <DevState
         title="Some things aren’t in the cloud browser yet"
-        milestone="Phases 3b to 5"
+        milestone="Phases 3b and 5"
         requires={[
           "Sound, and Firefox (WebRTC streaming, Phase 3b)",
-          "Downloads saved to Drive and uploads picked from it",
-          "Cookies and history kept between sessions (persistent profiles)",
           "Browsing through your saved proxies (Phase 5)",
         ]}
       >
         Today: one Chromium per session, your tabs and address bar drawn by Brawzer, pages streamed
-        as pixels, private addresses blocked, and downloads, uploads, printing, camera, microphone
-        and location refused.
+        as pixels, private addresses blocked, downloads and printed pages saved to Drive, websites’
+        file requests answered from Drive, cookies and history kept per profile, and camera,
+        microphone and location refused.
       </DevState>
     </div>
   );

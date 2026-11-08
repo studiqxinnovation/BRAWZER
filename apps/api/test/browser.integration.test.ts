@@ -10,6 +10,7 @@ import {
   streamTicketSchema,
   type TabState,
 } from "@brawzer/contracts";
+import { driveFileSchema, profileListSchema, profileSchema } from "@brawzer/contracts";
 import { WebSocket } from "ws";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHarness, type Harness, type TestBrowser } from "./support/harness.js";
@@ -19,8 +20,15 @@ import { createHarness, type Harness, type TestBrowser } from "./support/harness
 let h: Harness;
 let baseUrl: string;
 
+/** Small, so an over-limit download is quick to produce. */
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
+const EICAR = String.raw`X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*`;
+
 beforeAll(async () => {
-  h = await createHarness({ ipPrefix: "100.69.0", env: { BROWSER_TEST_SITE: "true" } });
+  h = await createHarness({
+    ipPrefix: "100.69.0",
+    env: { BROWSER_TEST_SITE: "true", DRIVE_MAX_FILE_BYTES: String(MAX_FILE_BYTES) },
+  });
   baseUrl = await h.listen();
 });
 
@@ -135,6 +143,44 @@ class Viewer {
   close(): void {
     this.socket.close();
   }
+}
+
+/** Starts a session and a viewer on it, and waits for the engine's welcome. */
+async function openSession(client: TestBrowser, profileId?: string) {
+  const response = await client.post("/browser/sessions", profileId ? { profileId } : {});
+  expect(response.statusCode, response.body).toBe(201);
+  const session = browserSessionSchema.parse(response.json());
+  const ticket = await ticketFor(client, session.id);
+  const viewer = new Viewer(
+    `${baseUrl}/api/v1/browser/sessions/${session.id}/stream`,
+    ticket.ticket,
+    h.origin,
+  );
+  await viewer.until(() => viewer.messages.some((m) => m.type === "welcome"), "welcome");
+  return { session, viewer, tab: viewer.activeTab()! };
+}
+
+/** Navigates the viewer's active tab and waits until the title is `title`. */
+async function openPage(viewer: Viewer, tabId: string, url: string, title: string) {
+  viewer.send({ type: "navigate", tabId, url });
+  await viewer.until(
+    () => viewer.activeTab()?.title === title && !viewer.activeTab()?.loading,
+    `page titled ${title}`,
+  );
+}
+
+function click(viewer: Viewer, tabId: string, x: number, y: number) {
+  viewer.send({
+    type: "mouse",
+    tabId,
+    kind: "down",
+    x,
+    y,
+    button: "left",
+    buttons: 1,
+    clickCount: 1,
+  });
+  viewer.send({ type: "mouse", tabId, kind: "up", x, y, button: "left", clickCount: 1 });
 }
 
 describe("cloud browser sessions", () => {
@@ -334,10 +380,22 @@ describe("cloud browser sessions", () => {
       button: "left",
       clickCount: 1,
     });
+    // The download is handed to Drive: scanned, encrypted, in the Downloads folder.
     await viewer.until(
-      () => viewer.messages.some((m) => m.type === "refused" && m.action === "download"),
-      "download refusal",
+      () => viewer.messages.some((m) => m.type === "transfer" && m.state === "saved"),
+      "download saved to Drive",
     );
+    const saved = viewer.messages.find((m) => m.type === "transfer" && m.state === "saved");
+    expect(saved).toMatchObject({ kind: "download", filename: "brawzer-test.bin", bytes: 1024 });
+    const downloads = await h.database.pool.query<{ name: string; source: string; folder: string }>(
+      `select f.name, f.source, d.name as folder from drive_files f
+         join users u on u.id = f.user_id join drive_folders d on d.id = f.folder_id
+        where u.email = $1`,
+      [email],
+    );
+    expect(downloads.rows).toEqual([
+      { name: "brawzer-test.bin", source: "browser", folder: "Downloads" },
+    ]);
 
     // Private addresses are blocked inside the container.
     viewer.send({ type: "navigate", tabId: tab!.id, url: "http://127.0.0.1:4100/api/v1/health" });
@@ -422,4 +480,148 @@ describe("cloud browser sessions", () => {
     );
     expect(rows.rows[0]).toEqual({ status: "ended", end_reason: "signed_out" });
   }, 60_000);
+});
+
+describe("files between the cloud browser and Drive", () => {
+  it("saves a printed page as a PDF, and refuses a download over the limit", async () => {
+    const { client, email } = await account("browser-files");
+    const { session, viewer, tab } = await openSession(client);
+    await openPage(viewer, tab.id, "http://testsite.invalid/second", "Second page");
+
+    viewer.send({ type: "print", tabId: tab.id });
+    await viewer.until(
+      () =>
+        viewer.messages.some(
+          (m) => m.type === "transfer" && m.kind === "print" && m.state === "saved",
+        ),
+      "printed page saved",
+    );
+    const printed = viewer.messages.find((m) => m.type === "transfer" && m.state === "saved");
+    expect(printed).toMatchObject({ filename: "Second page.pdf" });
+    const files = await h.database.pool.query<{ name: string; content_type: string }>(
+      `select f.name, f.content_type from drive_files f join users u on u.id = f.user_id where u.email = $1`,
+      [email],
+    );
+    expect(files.rows).toEqual([{ name: "Second page.pdf", content_type: "application/pdf" }]);
+
+    // Over Drive's per-file limit: cancelled in the engine, nothing kept.
+    viewer.send({
+      type: "navigate",
+      tabId: tab.id,
+      url: `http://testsite.invalid/download?bytes=${String(MAX_FILE_BYTES + 1)}&name=huge.bin`,
+    });
+    await viewer.until(
+      () => viewer.messages.some((m) => m.type === "transfer" && m.state === "too_large"),
+      "download refused as too large",
+    );
+    expect(
+      (await h.database.pool.query("select 1 from drive_files where name = 'huge.bin'")).rowCount,
+    ).toBe(0);
+    expect(await h.eventTypes(email)).toEqual(expect.arrayContaining(["browser.file_saved"]));
+
+    viewer.close();
+    await client.delete(`/browser/sessions/${session.id}`);
+  }, 90_000);
+
+  it("gives a page's file chooser clean Drive files, never quarantined ones", async () => {
+    const { client, email } = await account("browser-chooser");
+    const clean = await client.upload("/drive/files", {
+      name: "notes.txt",
+      content: Buffer.from("hello drive"),
+    });
+    expect(clean.statusCode, clean.body).toBe(201);
+    const cleanFile = driveFileSchema.parse(clean.json());
+    const infected = await client.upload("/drive/files", {
+      name: "virus.txt",
+      content: Buffer.from(EICAR),
+    });
+    expect(infected.statusCode, infected.body).toBe(201);
+    const infectedFile = driveFileSchema.parse(infected.json());
+    expect(infectedFile.status).toBe("infected");
+
+    const { session, viewer, tab } = await openSession(client);
+    await openPage(viewer, tab.id, "http://testsite.invalid/upload", "Upload page");
+    click(viewer, tab.id, 100, 60);
+    await viewer.until(
+      () => viewer.messages.some((m) => m.type === "file-chooser"),
+      "file chooser",
+    );
+    const chooser = viewer.messages.find((m) => m.type === "file-chooser");
+    expect(chooser).toMatchObject({ tabId: tab.id, multiple: true });
+    viewer.send({
+      type: "file-chooser",
+      tabId: tab.id,
+      chooserId: chooser?.type === "file-chooser" ? chooser.chooserId : "",
+      fileIds: [cleanFile.id, infectedFile.id],
+    });
+    // The page sees the file it was given (name and size), and only that one.
+    await viewer.until(
+      () => viewer.activeTab()?.title === "notes.txt 11",
+      "page received the file",
+    );
+    expect(await h.eventTypes(email)).toEqual(expect.arrayContaining(["browser.file_sent"]));
+
+    viewer.close();
+    await client.delete(`/browser/sessions/${session.id}`);
+  }, 90_000);
+});
+
+describe("profiles that keep their data", () => {
+  it("keeps cookies between sessions, not in temporary sessions, and forgets them on request", async () => {
+    const { client } = await account("browser-profile");
+    const list = profileListSchema.parse((await client.get("/profiles")).json());
+    const profile = list.profiles[0]!;
+    expect(profile).toMatchObject({ keepData: true, data: null });
+
+    // Session 1 under the profile: a site sets a cookie.
+    const first = await openSession(client, profile.id);
+    await openPage(first.viewer, first.tab.id, "http://testsite.invalid/set-cookie", "Cookie set");
+    first.viewer.close();
+    expect((await client.delete(`/browser/sessions/${first.session.id}`)).statusCode).toBe(204);
+    const afterFirst = profileSchema.parse(
+      profileListSchema.parse((await client.get("/profiles")).json()).profiles[0],
+    );
+    expect(afterFirst.data).not.toBeNull();
+    expect(afterFirst.data!.bytes).toBeGreaterThan(0);
+
+    // Session 2 under the same profile sees it; a temporary session doesn't.
+    const second = await openSession(client, profile.id);
+    await openPage(
+      second.viewer,
+      second.tab.id,
+      "http://testsite.invalid/cookie",
+      "Cookie: brawzer_test=kept",
+    );
+    second.viewer.close();
+    await client.delete(`/browser/sessions/${second.session.id}`);
+    const temporary = await openSession(client);
+    await openPage(
+      temporary.viewer,
+      temporary.tab.id,
+      "http://testsite.invalid/cookie",
+      "Cookie: none",
+    );
+    temporary.viewer.close();
+    await client.delete(`/browser/sessions/${temporary.session.id}`);
+
+    // Clearing the data forgets the cookie; a profile that keeps nothing saves nothing.
+    const cleared = await client.delete(`/profiles/${profile.id}/data`);
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    expect(profileSchema.parse(cleared.json()).data).toBeNull();
+    expect((await client.patch(`/profiles/${profile.id}`, { keepData: false })).statusCode).toBe(
+      200,
+    );
+    const third = await openSession(client, profile.id);
+    await openPage(third.viewer, third.tab.id, "http://testsite.invalid/cookie", "Cookie: none");
+    await openPage(third.viewer, third.tab.id, "http://testsite.invalid/set-cookie", "Cookie set");
+    third.viewer.close();
+    await client.delete(`/browser/sessions/${third.session.id}`);
+    const final = profileListSchema.parse((await client.get("/profiles")).json()).profiles[0]!;
+    expect(final.data).toBeNull();
+    const objects = await h.database.pool.query(
+      "select 1 from profiles where data_object_key is not null and id = $1",
+      [profile.id],
+    );
+    expect(objects.rowCount).toBe(0);
+  }, 180_000);
 });

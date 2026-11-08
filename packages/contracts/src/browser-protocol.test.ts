@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   agentMessageSchema,
+  binaryKind,
   browserUrlSchema,
   clientMessageSchema,
   decodeFrame,
+  decodeTransferChunk,
   encodeFrame,
+  encodeTransferChunk,
+  TRANSFER_CHUNK_BYTES,
 } from "./browser-protocol.ts";
 
 describe("browser URLs", () => {
@@ -85,5 +89,79 @@ describe("frames", () => {
     expect(decodeFrame(new Uint8Array([0x42, 1, 0xff, 0xff, 0xff, 0xff]))).toBeNull();
     const badHeader = new Uint8Array([0x42, 1, 0, 0, 0, 2, 0x7b, 0x7d]);
     expect(decodeFrame(badHeader)).toBeNull();
+  });
+});
+
+describe("transfer chunks", () => {
+  it("round-trips a chunk and tells the two binary kinds apart", () => {
+    const data = new Uint8Array([1, 2, 3, 4]);
+    const bytes = encodeTransferChunk({ transferId: "dl-1", seq: 3, last: true }, data);
+    expect(binaryKind(bytes)).toBe("transfer");
+    expect(decodeFrame(bytes)).toBeNull();
+    const decoded = decodeTransferChunk(bytes);
+    expect(decoded?.header).toEqual({ transferId: "dl-1", seq: 3, last: true });
+    expect(Array.from(decoded?.data ?? [])).toEqual([1, 2, 3, 4]);
+
+    const frame = encodeFrame({ tabId: "t", frameId: 1, width: 10, height: 10 }, data);
+    expect(binaryKind(frame)).toBe("frame");
+    expect(decodeTransferChunk(frame)).toBeNull();
+    expect(binaryKind(new Uint8Array([0x58, 1, 0, 0, 0, 0]))).toBeNull();
+  });
+
+  it("refuses oversized chunks and bad headers", () => {
+    const big = encodeTransferChunk(
+      { transferId: "x", seq: 0, last: false },
+      new Uint8Array(TRANSFER_CHUNK_BYTES + 1),
+    );
+    expect(decodeTransferChunk(big)).toBeNull();
+    const badHeader = encodeTransferChunk(
+      { transferId: "", seq: -1, last: false },
+      new Uint8Array(1),
+    );
+    expect(decodeTransferChunk(badHeader)).toBeNull();
+  });
+});
+
+describe("transfer and file chooser messages", () => {
+  it("validates the agent's transfer states and the page's chooser answer", () => {
+    expect(
+      agentMessageSchema.safeParse({
+        type: "transfer",
+        transferId: "dl-1",
+        tabId: "t",
+        kind: "download",
+        filename: "report.pdf",
+        state: "saved",
+        bytes: 10,
+        fileId: "019a0b1c-0000-7000-8000-000000000000",
+      }).success,
+    ).toBe(true);
+    expect(
+      agentMessageSchema.safeParse({
+        type: "transfer",
+        transferId: "dl-1",
+        tabId: "t",
+        kind: "download",
+        filename: "report.pdf",
+        state: "exploded",
+      }).success,
+    ).toBe(false);
+    expect(
+      clientMessageSchema.safeParse({
+        type: "file-chooser",
+        tabId: "t",
+        chooserId: "c1",
+        fileIds: ["019a0b1c-0000-7000-8000-000000000000"],
+      }).success,
+    ).toBe(true);
+    expect(
+      clientMessageSchema.safeParse({
+        type: "file-chooser",
+        tabId: "t",
+        chooserId: "c1",
+        fileIds: ["nope"],
+      }).success,
+    ).toBe(false);
+    expect(clientMessageSchema.safeParse({ type: "print", tabId: "t" }).success).toBe(true);
   });
 });

@@ -96,7 +96,7 @@ export class ProfilesController {
 
   @Patch(":id")
   @SerializeOptions({ schema: profileSchema })
-  @ApiOperation({ summary: "Rename or recolour a profile" })
+  @ApiOperation({ summary: "Rename or recolour a profile, choose its proxy or what it keeps" })
   @ApiOkResponse({ description: "The updated profile.", standardSchema: profileSchema })
   @ApiNotFoundResponse({ description: "No such profile on this account." })
   update(
@@ -121,5 +121,22 @@ export class ProfilesController {
     @Req() request: FastifyRequest,
   ): Promise<void> {
     await this.profiles.remove(auth, id, requestMeta(request));
+  }
+
+  @Delete(":id/data")
+  @HttpCode(HttpStatus.OK)
+  @SerializeOptions({ schema: profileSchema })
+  @ApiOperation({
+    summary: "Clear a profile's browsing data",
+    description: "Forgets the cookies, history and site data kept between sessions.",
+  })
+  @ApiOkResponse({ description: "The profile, without saved data.", standardSchema: profileSchema })
+  @ApiNotFoundResponse({ description: "No such profile on this account." })
+  clearData(
+    @Param("id", { schema: profileIdSchema }) id: string,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<Profile> {
+    return this.profiles.clearData(auth, id, requestMeta(request));
   }
 }

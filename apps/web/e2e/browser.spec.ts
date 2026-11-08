@@ -86,9 +86,29 @@ test.describe("browser", () => {
     await dialog.getByRole("button", { name: "OK" }).click();
     await expect(dialog).toBeHidden();
 
-    // Downloads are refused and explained.
+    // A download goes to Drive, scanned, and the person is told.
     await clickPage(page, 100, 300);
-    await expect(page.getByText("Download refused")).toBeVisible();
+    await expect(page.getByText("“brawzer-test.bin” is in Drive")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // So does the page itself, as a PDF, from Brawzer's toolbar.
+    await page.getByRole("button", { name: "Save page as PDF in Drive" }).click();
+    await expect(page.getByText("“Brawzer test site.pdf” is in Drive")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // A website asking for a file is offered Drive, never this computer.
+    await clickPage(page, 100, 380);
+    const picker = page.getByRole("dialog", { name: "testsite.invalid asks for a file" });
+    await expect(picker).toBeVisible();
+    await picker.getByRole("button", { name: "Downloads" }).click();
+    await expect(picker.getByRole("list", { name: "Drive files" })).toContainText(
+      "brawzer-test.bin",
+    );
+    expect(await wcagViolations(page)).toEqual([]);
+    await picker.getByRole("button", { name: "Cancel" }).click();
+    await expect(picker).toBeHidden();
 
     // Tabs.
     await page.getByRole("button", { name: "New tab" }).click();
@@ -102,6 +122,13 @@ test.describe("browser", () => {
     await confirm.getByRole("button", { name: "End session" }).click();
     await expect(page.getByText("You ended this browser session.")).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);
+
+    // Drive holds both files, marked as the cloud browser's.
+    await page.goto("/app/drive");
+    await page.getByRole("link", { name: "Downloads" }).click();
+    await expect(page.getByText("brawzer-test.bin")).toBeVisible();
+    await expect(page.getByText("Brawzer test site.pdf")).toBeVisible();
+    await expect(page.getByText("From the cloud browser")).toHaveCount(2);
 
     const history = await page.request.get("/api/v1/security/events");
     const { events } = (await history.json()) as { events: { type: string }[] };
@@ -117,8 +144,10 @@ test.describe("browser", () => {
     await signedIn(page, baseURL, "browser-start");
     await expect(page.getByRole("button", { name: "Start browsing" })).toBeVisible();
     await expect(page.getByRole("note", { name: /Development state/ })).toContainText(
-      "Downloads saved to Drive",
+      "Browsing through your saved proxies",
     );
+    // The default profile keeps its data; a temporary session is offered too.
+    await expect(page.getByText(/Cookies, history and site data are saved to/)).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);
   });
 });

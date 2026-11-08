@@ -1,15 +1,28 @@
+import { randomUUID } from "node:crypto";
+import { PassThrough } from "node:stream";
 import {
+  agentMessageSchema,
+  binaryKind,
+  type ClientMessage,
   clientMessageSchema,
   decodeFrame,
+  decodeTransferChunk,
+  encodeTransferChunk,
+  type RelayMessage,
   STREAM_CLOSE_CODES,
   streamAuthMessageSchema,
+  TRANSFER_CHUNK_BYTES,
+  type TransferMessage,
 } from "@brawzer/contracts";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { WebSocket } from "ws";
-import { isAllowedOrigin } from "../common/request-meta.js";
+import { ApiException } from "../common/api-exception.js";
+import { isAllowedOrigin, type RequestMeta, requestMeta } from "../common/request-meta.js";
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
+import { DriveService, type OpenedFile } from "../drive/drive.service.js";
+import { SecurityEventsService } from "../security-events/security-events.js";
 import { BrowserService } from "./browser.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 
@@ -22,13 +35,13 @@ const MAX_BAD_MESSAGES = 20;
 const MAX_QUEUED_MESSAGES = 100;
 /** Queued bytes towards the page above which frames are dropped (and acknowledged for it). */
 const MAX_BUFFERED_BYTES = 8 * 1024 * 1024;
+/** Where the cloud browser's downloads and printed pages go in Drive. */
+const DOWNLOADS_FOLDER = "Downloads";
 
 type RawData = Buffer | ArrayBuffer | Buffer[];
 
 function rawText(data: RawData): string {
-  if (Buffer.isBuffer(data)) return data.toString("utf8");
-  if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
-  return Buffer.from(data).toString("utf8");
+  return rawBytes(data).toString("utf8");
 }
 
 function rawBytes(data: RawData): Buffer {
@@ -47,12 +60,37 @@ function sendError(
   }
 }
 
+/** Sends one binary message to the agent and resolves once it has left the process. */
+function sendBinary(agent: WebSocket, bytes: Uint8Array): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (agent.readyState !== WebSocket.OPEN) {
+      reject(new Error("agent gone"));
+      return;
+    }
+    agent.send(bytes, { binary: true }, (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
+
+/** A download or printed page arriving from the agent, on its way into Drive. */
+interface IncomingTransfer {
+  message: TransferMessage;
+  body: PassThrough;
+}
+
 /**
  * Relays the Browser page's WebSocket to the session's runtime agent. The
  * page proves itself with a single-use ticket (first message), the relay
  * proves itself to the agent with the session's secret; neither side ever
  * sees the other's credential. Messages from the page are validated before
  * they are passed on; the agent validates them again.
+ *
+ * Files never reach the page: downloads and printed pages come from the
+ * agent as transfer chunks and go into Drive here (scanned and encrypted
+ * like any upload), and a page's file chooser is answered with Drive files
+ * streamed to the agent the same way.
  */
 @Injectable()
 export class StreamGateway {
@@ -62,6 +100,8 @@ export class StreamGateway {
     @Inject(BrowserService) private readonly browser: BrowserService,
     @Inject(StreamTickets) private readonly tickets: StreamTickets,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(DriveService) private readonly drive: DriveService,
+    @Inject(SecurityEventsService) private readonly securityEvents: SecurityEventsService,
   ) {
     this.browser.events.on("ended", (sessionId: string) => {
       this.relays.get(sessionId)?.close(STREAM_CLOSE_CODES.ended, "ended");
@@ -76,6 +116,7 @@ export class StreamGateway {
       client.close(STREAM_CLOSE_CODES.unauthorized, "origin");
       return;
     }
+    const meta = requestMeta(request);
     const timer = setTimeout(() => {
       sendError(client, "unauthorized", "No ticket was presented.");
       client.close(STREAM_CLOSE_CODES.unauthorized, "no ticket");
@@ -88,7 +129,7 @@ export class StreamGateway {
         if (early.length < MAX_QUEUED_MESSAGES) early.push({ data: payload, isBinary });
       };
       client.on("message", keep);
-      void this.authenticate(client, id, data, () => {
+      void this.authenticate(client, id, data, meta, () => {
         client.off("message", keep);
         return early;
       });
@@ -100,6 +141,7 @@ export class StreamGateway {
     client: WebSocket,
     id: string,
     data: RawData,
+    meta: RequestMeta,
     takeEarly: () => { data: RawData; isBinary: boolean }[],
   ): Promise<void> {
     logger.debug(`Stream ticket presented for session ${id}`);
@@ -121,6 +163,7 @@ export class StreamGateway {
       return;
     }
     if (client.readyState !== WebSocket.OPEN) return;
+    const auth = { user: { id: claims.userId }, session: { id: claims.authSessionId } };
 
     const agent = new WebSocket(`ws://${access.agentAddress}/stream`, {
       headers: { authorization: `Bearer ${access.secret}` },
@@ -129,6 +172,7 @@ export class StreamGateway {
     });
     agent.binaryType = "nodebuffer";
 
+    const incoming = new Map<string, IncomingTransfer>();
     let closed = false;
     const close = (code: number, reason: string) => {
       if (closed) return;
@@ -136,6 +180,10 @@ export class StreamGateway {
       clearInterval(check);
       clearInterval(touch);
       if (this.relays.get(id) === relay) this.relays.delete(id);
+      for (const transfer of incoming.values()) {
+        transfer.body.destroy(new Error("The stream closed before the file arrived."));
+      }
+      incoming.clear();
       if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
         client.close(code, reason);
       }
@@ -163,9 +211,21 @@ export class StreamGateway {
     }, TOUCH_INTERVAL_MS);
     void this.browser.touch(id).catch(() => undefined);
 
-    let bad = 0;
+    const toPage = (message: object) => {
+      if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(message));
+    };
     // What the page sends before the agent answers waits here.
     const queued: string[] = [];
+    const toAgent = (message: RelayMessage) => {
+      const serialized = JSON.stringify(message);
+      if (agent.readyState === WebSocket.OPEN) {
+        agent.send(serialized);
+      } else if (queued.length < MAX_QUEUED_MESSAGES) {
+        queued.push(serialized);
+      }
+    };
+
+    let bad = 0;
     const onClientMessage = (data: RawData, isBinary: boolean) => {
       if (isBinary) {
         close(STREAM_CLOSE_CODES.badMessage, "text only");
@@ -187,12 +247,11 @@ export class StreamGateway {
         if (++bad > MAX_BAD_MESSAGES) close(STREAM_CLOSE_CODES.badMessage, "bad messages");
         return;
       }
-      const serialized = JSON.stringify(parsed.data);
-      if (agent.readyState === WebSocket.OPEN) {
-        agent.send(serialized);
-      } else if (queued.length < MAX_QUEUED_MESSAGES) {
-        queued.push(serialized);
+      if (parsed.data.type === "file-chooser") {
+        void this.answerChooser(parsed.data, auth, meta, agent, toAgent);
+        return;
       }
+      toAgent(parsed.data);
     };
     for (const message of takeEarly()) onClientMessage(message.data, message.isBinary);
     client.on("message", onClientMessage);
@@ -200,12 +259,35 @@ export class StreamGateway {
       for (const message of queued.splice(0)) agent.send(message);
     });
     agent.on("message", (data: RawData, isBinary: boolean) => {
-      if (client.readyState !== WebSocket.OPEN) return;
       if (!isBinary) {
-        client.send(rawText(data));
+        const text = rawText(data);
+        let candidate: unknown;
+        try {
+          candidate = JSON.parse(text);
+        } catch {
+          candidate = undefined;
+        }
+        const message = agentMessageSchema.safeParse(candidate);
+        if (!message.success) return;
+        if (message.data.type === "transfer" && message.data.state === "received") {
+          this.receiveTransfer(message.data, incoming, auth, meta, toPage);
+        }
+        toPage(message.data);
         return;
       }
       const bytes = rawBytes(data);
+      if (binaryKind(bytes) === "transfer") {
+        const chunk = decodeTransferChunk(bytes);
+        const transfer = chunk ? incoming.get(chunk.header.transferId) : undefined;
+        if (!chunk || !transfer) return;
+        if (chunk.data.length > 0) transfer.body.write(Buffer.from(chunk.data));
+        if (chunk.header.last) {
+          transfer.body.end();
+          incoming.delete(chunk.header.transferId);
+        }
+        return;
+      }
+      if (client.readyState !== WebSocket.OPEN) return;
       if (client.bufferedAmount > MAX_BUFFERED_BYTES) {
         // The page is behind: drop the frame and acknowledge it in its place.
         const frame = decodeFrame(bytes);
@@ -232,6 +314,123 @@ export class StreamGateway {
     client.on("close", () => {
       close(1000, "client closed");
     });
+  }
+
+  /**
+   * The agent has a whole download or printed page: the chunks that follow
+   * go into Drive as one upload. The page learns how it went.
+   */
+  private receiveTransfer(
+    message: TransferMessage,
+    incoming: Map<string, IncomingTransfer>,
+    auth: { user: { id: string }; session: { id: string } },
+    meta: RequestMeta,
+    toPage: (message: object) => void,
+  ): void {
+    const body = new PassThrough();
+    incoming.set(message.transferId, { message, body });
+    void (async () => {
+      try {
+        const folderId = await this.drive.ensureFolder(auth.user.id, DOWNLOADS_FOLDER);
+        const file = await this.drive.upload(
+          auth,
+          folderId,
+          {
+            filename: message.filename,
+            stream: body,
+            source: "browser",
+            kind: message.kind,
+          },
+          meta,
+        );
+        toPage({
+          ...message,
+          state: file.status === "infected" ? "quarantined" : "saved",
+          filename: file.name,
+          bytes: file.size,
+          fileId: file.id,
+          ...(file.threat ? { reason: file.threat } : {}),
+        });
+      } catch (error) {
+        incoming.delete(message.transferId);
+        if (!body.destroyed) body.destroy();
+        const refusal = error instanceof ApiException ? error : null;
+        toPage({
+          ...message,
+          state: refusal?.code === "payload_too_large" ? "too_large" : "failed",
+          reason: refusal?.message ?? "The file couldn’t be saved to Drive.",
+        });
+        if (!refusal) {
+          logger.warn(
+            `Saving a ${message.kind} from the cloud browser failed: ${error instanceof Error ? error.message : ""}`,
+          );
+        }
+      }
+    })();
+  }
+
+  /**
+   * The page chose Drive files for a website's file chooser: tell the agent
+   * what comes, then stream each file to it. Only clean files of the account
+   * are opened; anything else is silently left out.
+   */
+  private async answerChooser(
+    answer: Extract<ClientMessage, { type: "file-chooser" }>,
+    auth: { user: { id: string }; session: { id: string } },
+    meta: RequestMeta,
+    agent: WebSocket,
+    toAgent: (message: RelayMessage) => void,
+  ): Promise<void> {
+    let opened: OpenedFile[];
+    try {
+      opened = await this.drive.openForBrowser(auth.user.id, answer.fileIds);
+    } catch (error) {
+      logger.warn(
+        `Opening Drive files for a page failed: ${error instanceof Error ? error.message : ""}`,
+      );
+      opened = [];
+    }
+    const files = opened.map((file) => ({
+      transferId: randomUUID(),
+      name: file.file.name,
+      bytes: file.file.size,
+    }));
+    toAgent({ type: "file-chooser", tabId: answer.tabId, chooserId: answer.chooserId, files });
+    if (files.length === 0) {
+      for (const file of opened) file.body.destroy();
+      return;
+    }
+    try {
+      for (const [index, file] of opened.entries()) {
+        const transferId = files[index]?.transferId ?? "";
+        let seq = 0;
+        for await (const piece of file.body as AsyncIterable<Buffer>) {
+          for (let offset = 0; offset < piece.length; offset += TRANSFER_CHUNK_BYTES) {
+            const data = piece.subarray(offset, offset + TRANSFER_CHUNK_BYTES);
+            await sendBinary(
+              agent,
+              encodeTransferChunk({ transferId, seq: seq++, last: false }, data),
+            );
+          }
+        }
+        await sendBinary(
+          agent,
+          encodeTransferChunk({ transferId, seq, last: true }, new Uint8Array(0)),
+        );
+      }
+      await this.securityEvents.record({
+        type: "browser.file_sent",
+        userId: auth.user.id,
+        sessionId: auth.session.id,
+        meta,
+        metadata: { count: files.length },
+      });
+    } catch (error) {
+      for (const file of opened) if (!file.body.destroyed) file.body.destroy();
+      logger.warn(
+        `Sending Drive files to a page failed: ${error instanceof Error ? error.message : ""}`,
+      );
+    }
   }
 
   /** How many sessions currently have a viewer. */

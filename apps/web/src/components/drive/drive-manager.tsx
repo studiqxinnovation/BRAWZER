@@ -120,6 +120,7 @@ function FileRow({
               Quarantined
             </Badge>
           )}
+          {file.source === "browser" && <Badge tone="neutral">From the cloud browser</Badge>}
           <span>{describeType(file.contentType)}</span>
           <span aria-hidden="true">·</span>
           <span>{formatBytes(file.size)}</span>

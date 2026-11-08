@@ -13,6 +13,7 @@ import { isUniqueViolation } from "../common/database-errors.js";
 import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
 import { DriveService } from "../drive/drive.service.js";
+import { ProfileDataService } from "../profiles/profile-data.service.js";
 import { EmailService } from "../email/email.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
@@ -46,6 +47,7 @@ export class AccountService {
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
     @Inject(DriveService) private readonly drive: DriveService,
     @Inject(BrowserService) private readonly browser: BrowserService,
+    @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
     @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
   ) {}
 
@@ -205,9 +207,13 @@ export class AccountService {
     }
     // Containers and Drive objects aren't rows: stop and list them first.
     await this.browser.endAllForUser(user.id, "account_deleted");
-    const objectKeys = await this.drive.objectKeysOf(user.id);
+    const [objectKeys, profileObjectKeys] = await Promise.all([
+      this.drive.objectKeysOf(user.id),
+      this.profileData.objectKeysOf(user.id),
+    ]);
     await this.database.db.delete(schema.users).where(eq(schema.users.id, user.id));
     await this.drive.removeAllObjects(objectKeys);
+    await this.profileData.removeObjects(profileObjectKeys);
     this.email.sendAccountDeleted(user.email);
     logger.log(`Account ${user.id} deleted by its owner`);
   }

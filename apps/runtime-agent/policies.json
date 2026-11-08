@@ -12,7 +12,8 @@
     "javascript://*",
     "ftp://*"
   ],
-  "DownloadRestrictions": 3,
+  "DownloadRestrictions": 0,
+  "PromptForDownloadLocation": false,
   "PrintingEnabled": false,
   "DefaultNotificationsSetting": 2,
   "DefaultGeolocationSetting": 2,
