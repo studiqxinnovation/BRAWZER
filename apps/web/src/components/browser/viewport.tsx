@@ -35,7 +35,9 @@ export type Shortcut =
   | "zoom-in"
   | "zoom-out"
   | "zoom-reset"
-  | "reader";
+  | "reader"
+  | "copy"
+  | "paste";
 
 function shortcutOf(event: KeyboardEvent): Shortcut | null {
   if (event.key === "Escape" && event.shiftKey) return "leave";
@@ -44,6 +46,10 @@ function shortcutOf(event: KeyboardEvent): Shortcut | null {
   switch (event.code) {
     case "KeyF":
       return "find";
+    case "KeyC":
+      return "copy";
+    case "KeyV":
+      return "paste";
     case "Equal":
     case "NumpadAdd":
       return "zoom-in";

@@ -284,6 +284,18 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         void this.answerChooser(parsed.data, auth, meta, agent, toAgent);
         return;
       }
+      if (parsed.data.type === "paste") {
+        // Clipboard with intent: the act is recorded (how much), never the text.
+        void this.securityEvents
+          .record({
+            type: "browser.clipboard_pasted",
+            userId: auth.user.id,
+            sessionId: auth.session.id,
+            meta,
+            metadata: { chars: parsed.data.text.length },
+          })
+          .catch(() => undefined);
+      }
       toAgent(parsed.data);
     };
     for (const message of takeEarly()) onClientMessage(message.data, message.isBinary);
@@ -304,6 +316,17 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         if (!message.success) return;
         if (message.data.type === "transfer" && message.data.state === "received") {
           this.receiveTransfer(message.data, incoming, auth, meta, toPage);
+        }
+        if (message.data.type === "clipboard" && message.data.text !== "") {
+          void this.securityEvents
+            .record({
+              type: "browser.clipboard_copied",
+              userId: auth.user.id,
+              sessionId: auth.session.id,
+              meta,
+              metadata: { chars: message.data.text.length },
+            })
+            .catch(() => undefined);
         }
         toPage(message.data);
         return;

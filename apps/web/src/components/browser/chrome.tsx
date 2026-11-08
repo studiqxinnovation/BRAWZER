@@ -26,6 +26,7 @@ import {
   ArrowRight,
   BookOpenText,
   ChevronUp,
+  ClipboardPaste,
   Check,
   ChevronDown,
   CircleAlert,
@@ -560,6 +561,8 @@ export function MoreMenu({
   onNewTab,
   onPrint,
   onFind,
+  onCopy,
+  onPaste,
   onZoom,
   onReader,
   onFullScreen,
@@ -574,6 +577,8 @@ export function MoreMenu({
   onNewTab: () => void;
   onPrint: () => void;
   onFind: () => void;
+  onCopy: () => void;
+  onPaste: () => void;
   onZoom: (direction: 1 | -1 | 0) => void;
   onReader: () => void;
   onFullScreen: () => void;
@@ -599,6 +604,12 @@ export function MoreMenu({
         </MenuItem>
         <MenuItem icon={<Search />} disabled={!canPrint} onClick={onFind}>
           Find in page
+        </MenuItem>
+        <MenuItem icon={<Copy />} disabled={!canPrint} onClick={onCopy}>
+          Copy selection to this computer
+        </MenuItem>
+        <MenuItem icon={<ClipboardPaste />} disabled={!canPrint} onClick={onPaste}>
+          Paste from this computer
         </MenuItem>
         <MenuItem
           icon={reader ? <SearchX /> : <BookOpenText />}

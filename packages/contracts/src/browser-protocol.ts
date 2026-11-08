@@ -11,6 +11,8 @@ import { BROWSER_LIMITS } from "./browser.ts";
 export const BROWSER_PROTOCOL_VERSION = 1;
 
 const { viewport } = BROWSER_LIMITS;
+/** The most text one deliberate copy or paste carries between the page and the local computer. */
+export const CLIPBOARD_MAX_CHARS = 65_536;
 
 export const viewportSchema = z.object({
   width: z.number().int().min(viewport.minWidth).max(viewport.maxWidth),
@@ -109,6 +111,14 @@ const baseClientMessages = [
   z.object({ type: z.literal("zoom"), tabId: tabIdSchema, factor: z.number().min(0.25).max(5) }),
   /** Reader view on or off; `reader` on the tab says what happened. */
   z.object({ type: z.literal("reader"), tabId: tabIdSchema, on: z.boolean() }),
+  /** Clipboard with intent: the page's selected text, asked for on purpose; answered with `clipboard`. */
+  z.object({ type: z.literal("copy"), tabId: tabIdSchema }),
+  /** Text from the local computer's clipboard, typed into the page's focused field on purpose. */
+  z.object({
+    type: z.literal("paste"),
+    tabId: tabIdSchema,
+    text: z.string().min(1).max(CLIPBOARD_MAX_CHARS),
+  }),
   z.object({ type: z.literal("ping") }),
 ] as const;
 
@@ -270,6 +280,12 @@ export const agentMessageSchema = z.discriminatedUnion("type", [
   }),
   /** Reader view was asked for and the page has no article to read. */
   z.object({ type: z.literal("reader-unavailable"), tabId: tabIdSchema }),
+  /** The page's selected text, after a `copy`; empty when nothing is selected. */
+  z.object({
+    type: z.literal("clipboard"),
+    tabId: tabIdSchema,
+    text: z.string().max(CLIPBOARD_MAX_CHARS),
+  }),
   z.object({ type: z.literal("pong") }),
 ]);
 

@@ -188,6 +188,16 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
             : `${String(details.count ?? 0)} Drive files were given to a website in the cloud browser`,
         tone: "neutral",
       };
+    case "browser.clipboard_copied":
+      return {
+        title: `${String(details.chars ?? 0)} characters copied from the cloud browser to a computer’s clipboard`,
+        tone: "neutral",
+      };
+    case "browser.clipboard_pasted":
+      return {
+        title: `${String(details.chars ?? 0)} characters pasted from a computer’s clipboard into the cloud browser`,
+        tone: "neutral",
+      };
     case "proxy.created":
       return { title: "Proxy added", tone: "neutral" };
     case "proxy.updated":

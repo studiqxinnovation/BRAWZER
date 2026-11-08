@@ -140,6 +140,38 @@ export function EndSessionDialog({
   );
 }
 
+/** Copying to the local clipboard is the one thing that leaves something on this computer. */
+export function ConfirmCopyDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  chars,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  chars: number;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogTitle>Copy to this computer’s clipboard?</AlertDialogTitle>
+        <AlertDialogDescription>
+          {String(chars)} characters from the page would go to the clipboard of the computer you’re
+          using, where other programs can read them until something else is copied. Brawzer records
+          that you copied, never what. This is asked once per session.
+        </AlertDialogDescription>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button variant="secondary" />}>Don’t copy</AlertDialogClose>
+          <Button variant="primary" onClick={onConfirm}>
+            Copy
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 const SHORTCUTS: readonly { keys: readonly string[]; does: string }[] = [
   { keys: ["Alt", "L"], does: "Edit the address" },
   { keys: ["Alt", "T"], does: "New tab" },
@@ -152,6 +184,8 @@ const SHORTCUTS: readonly { keys: readonly string[]; does: string }[] = [
   { keys: ["Alt", "-"], does: "Zoom out" },
   { keys: ["Alt", "0"], does: "Reset zoom" },
   { keys: ["Alt", "Shift", "R"], does: "Reader view" },
+  { keys: ["Alt", "C"], does: "Copy the page’s selection to this computer" },
+  { keys: ["Alt", "V"], does: "Paste from this computer into the page" },
   { keys: ["Alt", "←"], does: "Back" },
   { keys: ["Alt", "→"], does: "Forward" },
   { keys: ["Shift", "Esc"], does: "Leave the page, back to Brawzer’s controls" },

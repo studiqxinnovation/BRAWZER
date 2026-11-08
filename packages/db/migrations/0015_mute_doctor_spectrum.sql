@@ -1,0 +1,2 @@
+ALTER TYPE "public"."security_event_type" ADD VALUE 'browser.clipboard_copied' BEFORE 'profile.data_cleared';--> statement-breakpoint
+ALTER TYPE "public"."security_event_type" ADD VALUE 'browser.clipboard_pasted' BEFORE 'profile.data_cleared';

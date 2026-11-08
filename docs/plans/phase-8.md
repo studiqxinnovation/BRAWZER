@@ -11,8 +11,8 @@ plan already named. They are built in value order, one commit each, on the
 | 1   | Brawzer-drawn error pages                                  | Next                                                                                                       |
 | 2   | Bookmarks and history as Brawzer records                   | Not built: work on it was stopped on 2026-11-08 and is not resumed; idea 3 (which built on it) waits too   |
 | 5   | Find in page, zoom, reader mode                            | **Done** 2026-11-08: both engines, from the menu and Alt shortcuts                                         |
-| 4   | Clipboard with intent                                      | Next                                                                                                       |
-| 9   | Private-address browsing through a saved proxy, on purpose |                                                                                                            |
+| 4   | Clipboard with intent                                      | **Done** 2026-11-08: deliberate copy and paste, text only, each use recorded                               |
+| 9   | Private-address browsing through a saved proxy, on purpose | Next                                                                                                       |
 | 8   | Per-account destination allow-lists and block-lists        |                                                                                                            |
 | 11  | Passkey-only phone approval                                |                                                                                                            |
 | 13  | A key re-wrap job                                          |                                                                                                            |
@@ -96,3 +96,19 @@ either engine through one set of scripts (`apps/runtime-agent/src/page-tools.ts`
 
 Checked in both integration journeys (the test site gained an article page)
 and the e2e journey.
+
+## 4. Clipboard with intent
+
+Copy and paste between the page and the local computer stay off by default:
+nothing crosses on its own. Two deliberate actions carry text, and only
+text: **Copy selection to this computer** (Alt+C, or the menu) asks the
+engine for the page's selected text (a field's selection when a field has
+focus) and, after a confirmation that says plainly that the clipboard of the
+computer in use is where it goes (asked once per session), writes it to the
+local clipboard; **Paste from this computer** (Alt+V, or the menu) reads the
+local clipboard and types it into the page's focused field (Chromium's
+insert-text input, Firefox's `insertText` command with a typed fallback).
+Each transfer is capped at 64 KiB and recorded in the security history as a
+count of characters, never the text: `browser.clipboard_copied` and
+`browser.clipboard_pasted`, written by the relay on the way through.
+Checked in both integration journeys and the e2e journey.

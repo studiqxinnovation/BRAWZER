@@ -41,6 +41,8 @@ export const securityEventTypes = [
   "browser.session_ended",
   "browser.file_saved",
   "browser.file_sent",
+  "browser.clipboard_copied",
+  "browser.clipboard_pasted",
   "profile.data_cleared",
   "billing.subscription_started",
   "billing.subscription_changed",
@@ -66,6 +68,8 @@ export const securityEventSchema = z.object({
     persistent: z.boolean().optional(),
     reason: z.string().optional(),
     count: z.number().int().nonnegative().optional(),
+    /** Clipboard with intent: how much text crossed, never what. */
+    chars: z.number().int().nonnegative().optional(),
     /** For files from the cloud browser: "download" or "print". */
     kind: z.string().optional(),
     /** For plan changes: the plan's code. */

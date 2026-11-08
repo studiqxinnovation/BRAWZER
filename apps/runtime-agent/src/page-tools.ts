@@ -58,6 +58,19 @@ export function findScript(text: string, forward: boolean, caseSensitive: boolea
   })()`;
 }
 
+/** The page's selected text: a field's selection when a field has focus, else the document's. */
+export function selectionScript(maxChars: number): string {
+  return `(() => {
+    const active = document.activeElement;
+    let text = "";
+    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA") && typeof active.selectionStart === "number") {
+      text = active.value.slice(active.selectionStart, active.selectionEnd);
+    }
+    if (!text) text = String(getSelection() || "");
+    return text.slice(0, ${String(maxChars)});
+  })()`;
+}
+
 export const FIND_STOP_SCRIPT = `(() => { delete window.__brawzerFind; getSelection()?.removeAllRanges(); return "ok"; })()`;
 
 /** CSS zoom on the root element: layout zoom, kept per tab by the engine and re-applied on load. */

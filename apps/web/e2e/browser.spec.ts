@@ -95,8 +95,30 @@ test.describe("browser", () => {
     await findBox.fill("second");
     await expect(page.getByRole("search", { name: "Find in page" })).toContainText("1 of 1");
     expect(await wcagViolations(page)).toEqual([]);
+
+    // Clipboard with intent: the selection goes to this computer only after a
+    // confirmation (once per session), and a paste types into the page's field.
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Copy selection to this computer" }).click();
+    const copyDialog = page.getByRole("alertdialog", {
+      name: "Copy to this computer’s clipboard?",
+    });
+    await expect(copyDialog).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+    await copyDialog.getByRole("button", { name: "Copy", exact: true }).click();
+    await expect(page.getByText("Copied to this computer")).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("Second");
     await findBox.press("Escape");
     await expect(findBox).toBeHidden();
+    await clickPage(page, 100, 220);
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Paste from this computer" }).click();
+    await expect(page.getByText("Pasted into the page")).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(tab(page, "Results for Second")).toBeVisible();
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible();
 
     // Zoom shows in the address bar and resets from there.
     await page.getByRole("button", { name: "More" }).click();
@@ -204,7 +226,12 @@ test.describe("browser", () => {
     const history = await page.request.get("/api/v1/security/events");
     const { events } = (await history.json()) as { events: { type: string }[] };
     expect(events.map((event) => event.type)).toEqual(
-      expect.arrayContaining(["browser.session_started", "browser.session_ended"]),
+      expect.arrayContaining([
+        "browser.session_started",
+        "browser.session_ended",
+        "browser.clipboard_copied",
+        "browser.clipboard_pasted",
+      ]),
     );
   });
 

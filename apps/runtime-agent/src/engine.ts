@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { open, rm } from "node:fs/promises";
 import path from "node:path";
 import {
+  CLIPBOARD_MAX_CHARS,
   BROWSER_PROTOCOL_VERSION,
   type ChosenFile,
   encodeFrame,
@@ -19,7 +20,7 @@ import { BEE_VERSION } from "./bee.ts";
 import type { CdpConnection } from "./cdp.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
-import { FIND_STOP_SCRIPT, findScript, zoomScript } from "./page-tools.ts";
+import { FIND_STOP_SCRIPT, findScript, selectionScript, zoomScript } from "./page-tools.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
 
 export type { EngineOptions, Viewer } from "./engine-types.ts";
@@ -525,6 +526,20 @@ export class BrowserEngine implements Engine {
       case "zoom":
       case "reader":
         await this.pageTool(tab, message);
+        return;
+      case "copy": {
+        const value = await this.evaluate(tab, selectionScript(CLIPBOARD_MAX_CHARS)).catch(
+          () => "",
+        );
+        this.viewer?.send({
+          type: "clipboard",
+          tabId: tab.id,
+          text: typeof value === "string" ? value : "",
+        });
+        return;
+      }
+      case "paste":
+        await this.cdp.send("Input.insertText", { text: message.text }, tab.sessionId);
         return;
     }
   }

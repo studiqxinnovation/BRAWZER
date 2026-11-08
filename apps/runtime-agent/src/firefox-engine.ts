@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { open, rm } from "node:fs/promises";
 import path from "node:path";
 import {
+  CLIPBOARD_MAX_CHARS,
   BROWSER_PROTOCOL_VERSION,
   type ChosenFile,
   encodeFrame,
@@ -19,7 +20,7 @@ import type { BidiConnection } from "./bidi.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
-import { FIND_STOP_SCRIPT, findScript, zoomScript } from "./page-tools.ts";
+import { FIND_STOP_SCRIPT, findScript, selectionScript, zoomScript } from "./page-tools.ts";
 
 /** Firefox's own error page, `about:neterror?e=<code>&u=<address>`, as the failure it stands for. */
 function errorPageOf(url: string): NavigationError | null {
@@ -553,6 +554,30 @@ export class FirefoxEngine implements Engine {
       case "find-stop":
         await this.evaluate(tab, FIND_STOP_SCRIPT).catch(() => undefined);
         return;
+      case "copy": {
+        const value = await this.evaluate(tab, selectionScript(CLIPBOARD_MAX_CHARS)).catch(
+          () => "",
+        );
+        this.viewer?.send({
+          type: "clipboard",
+          tabId: tab.id,
+          text: typeof value === "string" ? value : "",
+        });
+        return;
+      }
+      case "paste": {
+        // Typed as the keyboard would, so it lands wherever the click before it put the focus.
+        const actions = Array.from(message.text).flatMap((char) => [
+          { type: "keyDown", value: char },
+          { type: "keyUp", value: char },
+        ]);
+        await this.bidi.send("input.performActions", {
+          context: tab.id,
+          actions: [{ type: "key", id: "keyboard", actions }],
+        });
+        this.lastFrameHash = "";
+        return;
+      }
       case "zoom":
         tab.zoom = message.factor;
         await this.evaluate(tab, zoomScript(message.factor)).catch(() => undefined);
@@ -563,9 +588,21 @@ export class FirefoxEngine implements Engine {
         if (!message.on) {
           // The page itself is gone (replaced by the reading layout): open it afresh.
           if (tab.reader) {
-            await this.bidi
-              .send("browsingContext.navigate", { context: tab.id, url: tab.url, wait: "none" })
-              .catch(() => undefined);
+            // Firefox's load events are unreliable when the current document was
+            // written by script, so the navigation is awaited and the state settled here.
+            const url = tab.url;
+            await Promise.race([
+              this.bidi
+                .send("browsingContext.navigate", { context: tab.id, url, wait: "complete" })
+                .catch(() => undefined),
+              new Promise((resolve) => setTimeout(resolve, 10_000)),
+            ]);
+            tab.reader = false;
+            tab.loading = false;
+            tab.url = url;
+            this.lastFrameHash = "";
+            void this.refreshTitle(tab);
+            this.queueSnapshot();
           }
           return;
         }

@@ -276,6 +276,13 @@ describe("cloud browser sessions", () => {
         ),
       "find result",
     );
+    // Clipboard with intent: the selection the find made, asked for on purpose;
+    // a paste types into the focused field.
+    viewer.send({ type: "copy", tabId: tab!.id });
+    await viewer.until(
+      () => viewer.messages.some((m) => m.type === "clipboard" && m.text === "Second"),
+      "selection copied",
+    );
     viewer.send({ type: "find-stop", tabId: tab!.id });
     viewer.send({ type: "zoom", tabId: tab!.id, factor: 1.5 });
     await viewer.until(() => viewer.activeTab()?.zoom === 1.5, "zoom applied");
@@ -352,6 +359,8 @@ describe("cloud browser sessions", () => {
       button: "left",
       clickCount: 1,
     });
+    // A paste from the local computer types into the focused field, then keys follow.
+    viewer.send({ type: "paste", tabId: tab!.id, text: "brown " });
     for (const char of "hi") {
       viewer.send({
         type: "key",
@@ -387,7 +396,10 @@ describe("cloud browser sessions", () => {
       code: "Enter",
       keyCode: 13,
     });
-    await viewer.until(() => viewer.activeTab()?.title === "Results for hi", "search results");
+    await viewer.until(
+      () => viewer.activeTab()?.title === "Results for brown hi",
+      "search results",
+    );
 
     // A page dialog reaches the viewer, who answers it.
     viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
@@ -856,6 +868,11 @@ describe("Firefox, the second engine", () => {
         ),
       "firefox find result",
     );
+    viewer.send({ type: "copy", tabId: tab.id });
+    await viewer.until(
+      () => viewer.messages.some((m) => m.type === "clipboard" && m.text === "Second"),
+      "firefox selection copied",
+    );
     viewer.send({ type: "find-stop", tabId: tab.id });
     viewer.send({ type: "zoom", tabId: tab.id, factor: 1.25 });
     await viewer.until(() => viewer.activeTab()?.zoom === 1.25, "firefox zoom");
@@ -879,6 +896,7 @@ describe("Firefox, the second engine", () => {
     viewer.send({ type: "back", tabId: tab.id });
     await viewer.until(() => viewer.activeTab()?.title === "Brawzer test site", "back");
     click(viewer, tab.id, 100, 220);
+    viewer.send({ type: "paste", tabId: tab.id, text: "brown " });
     viewer.send({ type: "text", tabId: tab.id, text: "fox" });
     viewer.send({
       type: "key",
@@ -896,7 +914,10 @@ describe("Firefox, the second engine", () => {
       code: "Enter",
       keyCode: 13,
     });
-    await viewer.until(() => viewer.activeTab()?.title === "Results for fox", "search submitted");
+    await viewer.until(
+      () => viewer.activeTab()?.title === "Results for brown fox",
+      "search submitted",
+    );
 
     // A dialog, drawn by Brawzer and answered.
     await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");

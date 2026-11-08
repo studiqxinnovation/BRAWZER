@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CLIPBOARD_MAX_CHARS,
   type AgentMessage,
   type BrowserOverview,
   type BrowserSession,
@@ -45,7 +46,13 @@ import {
   StatusBar,
   TabStrip,
 } from "./chrome";
-import { EndSessionDialog, PageDialog, type PageDialogState, ShortcutsDialog } from "./dialogs";
+import {
+  ConfirmCopyDialog,
+  EndSessionDialog,
+  PageDialog,
+  type PageDialogState,
+  ShortcutsDialog,
+} from "./dialogs";
 import { type ChooserRequest, DrivePicker } from "./drive-picker";
 import { StartPanel } from "./start-panel";
 import { BrowserViewport, type Shortcut, type ViewportHandle } from "./viewport";
@@ -178,6 +185,9 @@ export function BrowserWorkspace({
     result: { matches: number; active: number } | null;
   } | null>(null);
   const findTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Text the page offered for the local clipboard, waiting for the once-per-session confirmation. */
+  const [pendingCopy, setPendingCopy] = useState<string | null>(null);
+  const copyConfirmed = useRef(false);
   const [address, setAddress] = useState<string | null>(null);
   const [ending, setEnding] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -266,6 +276,19 @@ export function BrowserWorkspace({
             ? { text: current.text, result: { matches: message.matches, active: message.active } }
             : current,
         );
+        return;
+      case "clipboard":
+        if (message.text === "") {
+          toast.add({
+            title: "Nothing is selected",
+            description: "Select text in the page first, then copy it to this computer.",
+            type: "info",
+          });
+        } else if (copyConfirmed.current) {
+          copyToLocal(message.text);
+        } else {
+          setPendingCopy(message.text);
+        }
         return;
       case "reader-unavailable":
         toast.add({
@@ -483,10 +506,64 @@ export function BrowserWorkspace({
         case "reader":
           if (tab) send({ type: "reader", tabId: tab.id, on: !tab.reader });
           return;
+        case "copy":
+          if (tab) send({ type: "copy", tabId: tab.id });
+          return;
+        case "paste":
+          if (tab) pasteFromLocal(tab.id);
+          return;
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pasteFromLocal only uses send and toast
     [tabs, activeTabId, send],
   );
+
+  /** The local clipboard: written only after the page's text was asked for on purpose. */
+  function copyToLocal(text: string) {
+    navigator.clipboard.writeText(text).then(
+      () => {
+        toast.add({
+          title: "Copied to this computer",
+          description: `${String(text.length)} characters are on this computer’s clipboard.`,
+          type: "success",
+        });
+      },
+      () => {
+        toast.add({
+          title: "Couldn’t reach this computer’s clipboard",
+          description: "The browser refused clipboard access for this page.",
+          type: "error",
+        });
+      },
+    );
+  }
+
+  function pasteFromLocal(tabId: string) {
+    navigator.clipboard.readText().then(
+      (text) => {
+        const trimmed = text.slice(0, CLIPBOARD_MAX_CHARS);
+        if (trimmed === "") {
+          toast.add({ title: "This computer’s clipboard is empty", type: "info" });
+          return;
+        }
+        send({ type: "paste", tabId, text: trimmed });
+        // Back to the page, so the next keystroke (Enter, say) goes where the text went.
+        viewportRef.current?.focus();
+        toast.add({
+          title: "Pasted into the page",
+          description: `${String(trimmed.length)} characters went to the page’s focused field.`,
+          type: "success",
+        });
+      },
+      () => {
+        toast.add({
+          title: "Couldn’t read this computer’s clipboard",
+          description: "Allow clipboard access for Brawzer in your browser, then try again.",
+          type: "error",
+        });
+      },
+    );
+  }
 
   /** Each keystroke in the find bar asks the engine for the first match, a moment later. */
   function changeFind(text: string) {
@@ -658,6 +735,12 @@ export function BrowserWorkspace({
           onFind={() => {
             onShortcut("find");
           }}
+          onCopy={() => {
+            onShortcut("copy");
+          }}
+          onPaste={() => {
+            onShortcut("paste");
+          }}
           onZoom={(direction) => {
             onShortcut(direction === 0 ? "zoom-reset" : direction === 1 ? "zoom-in" : "zoom-out");
           }}
@@ -751,6 +834,21 @@ export function BrowserWorkspace({
       />
 
       <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <ConfirmCopyDialog
+        open={pendingCopy !== null}
+        chars={pendingCopy?.length ?? 0}
+        onOpenChange={(open) => {
+          if (!open) setPendingCopy(null);
+        }}
+        onConfirm={() => {
+          if (pendingCopy !== null) {
+            copyConfirmed.current = true;
+            copyToLocal(pendingCopy);
+          }
+          setPendingCopy(null);
+          viewportRef.current?.focus();
+        }}
+      />
       <PageDialog
         dialog={dialog}
         onAnswer={(accept, text) => {
