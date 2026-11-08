@@ -41,7 +41,7 @@ export async function startSocksProxy(auth: { username: string; password: string
       });
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, "0.0.0.0", resolve));
   return {
     port: (server.address() as AddressInfo).port,
     close: () =>

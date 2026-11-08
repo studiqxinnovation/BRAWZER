@@ -28,7 +28,9 @@ function listen(
     socket.on("close", () => sockets.delete(socket));
   });
   return new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
+    // All interfaces: egress containers reach this machine through the Docker
+    // bridge on Linux (host-gateway), where the host's loopback isn't visible.
+    server.listen(0, "0.0.0.0", () => {
       resolve({
         port: (server.address() as AddressInfo).port,
         requests,
