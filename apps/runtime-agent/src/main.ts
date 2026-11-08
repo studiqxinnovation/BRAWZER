@@ -57,6 +57,7 @@ const readabilitySource = readFileSync(
 const proxy = createFilteringProxy({
   overrides,
   egress: config.egress ?? undefined,
+  privateViaEgress: config.privateViaEgress,
   onRefused: (host, reason) => {
     log("info", "refused connection", { host: host.slice(0, 253), reason });
     refusals.note(host.replace(/^\[|\]$/g, "").slice(0, 300), reason);

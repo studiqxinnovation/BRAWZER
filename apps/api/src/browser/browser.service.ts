@@ -262,7 +262,10 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       // and browses through its proxy (ADR 0014).
       const restore = profile?.keepData ? await this.profileData.open(profile) : null;
       const upstream = await this.proxies.forEgress(userId, profile?.proxyId ?? null);
-      started = await this.orchestrator.start(row.id, secret, restore, upstream, row.engine);
+      started = await this.orchestrator.start(row.id, secret, restore, upstream, row.engine, {
+        // Only with a proxy: the proxy reaches the private addresses, never Brawzer.
+        privateViaUpstream: upstream !== null && profile?.privateThroughProxy === true,
+      });
     } catch (error) {
       logger.warn(
         `Runtime for session ${row.id} failed to start: ${error instanceof Error ? error.message : ""}`,

@@ -12,8 +12,8 @@ plan already named. They are built in value order, one commit each, on the
 | 2   | Bookmarks and history as Brawzer records                   | Not built: work on it was stopped on 2026-11-08 and is not resumed; idea 3 (which built on it) waits too   |
 | 5   | Find in page, zoom, reader mode                            | **Done** 2026-11-08: both engines, from the menu and Alt shortcuts                                         |
 | 4   | Clipboard with intent                                      | **Done** 2026-11-08: deliberate copy and paste, text only, each use recorded                               |
-| 9   | Private-address browsing through a saved proxy, on purpose | Next                                                                                                       |
-| 8   | Per-account destination allow-lists and block-lists        |                                                                                                            |
+| 9   | Private-address browsing through a saved proxy, on purpose | **Done** 2026-11-08: a per-profile switch, off by default, loopback still refused                          |
+| 8   | Per-account destination allow-lists and block-lists        | Next                                                                                                       |
 | 11  | Passkey-only phone approval                                |                                                                                                            |
 | 13  | A key re-wrap job                                          |                                                                                                            |
 | 14  | Warm pool                                                  |                                                                                                            |
@@ -112,3 +112,20 @@ Each transfer is capped at 64 KiB and recorded in the security history as a
 count of characters, never the text: `browser.clipboard_copied` and
 `browser.clipboard_pasted`, written by the relay on the way through.
 Checked in both integration journeys and the e2e journey.
+
+## 9. Private-address browsing through a saved proxy, on purpose
+
+People with a legitimate reason to reach a company intranet through their
+own proxy couldn't: the egress refused private targets even when the proxy
+would do the resolving and connecting on its own network. A profile with a
+proxy now has a switch, **Reach private addresses through the proxy**, off
+by default and needing "confirm it's you" to change. With it on, both
+filters (the agent's cheap first check and the egress rules) hand private
+and internal addresses to the proxy unresolved instead of refusing them;
+nothing in Brawzer connects to those addresses, and loopback (`127.*`,
+`::1`, `localhost`) stays refused on both hops, since that is the session's
+own container. Without a proxy the switch has no effect. The session's
+containers get `EGRESS_PRIVATE_VIA_UPSTREAM` and `BRAWZER_PRIVATE_VIA_EGRESS`
+only for such profiles. Checked in the egress and agent rule tests, the
+proxy integration journey (refused, then through the proxy, loopback still
+refused) and the proxies e2e journey.

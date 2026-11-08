@@ -33,6 +33,16 @@ export interface ProxyOptions {
    * resolver. The local checks stay as a first, cheap refusal.
    */
   egress?: { host: string; port: number } | undefined;
+  /**
+   * With an egress: private and internal targets are handed to it (the
+   * profile's proxy reaches them) instead of being refused here. Loopback is
+   * refused regardless: that is this container.
+   */
+  privateViaEgress?: boolean;
+}
+
+function isLoopbackAddress(address: string): boolean {
+  return address.startsWith("127.") || address === "::1" || /^::ffff:127\./i.test(address);
 }
 
 /** Why a connection was refused: this proxy's own checks, or the egress's (ADR 0014). */
@@ -77,13 +87,20 @@ export async function decide(
   if (!Number.isInteger(port) || port < 1 || port > 65_535) return { refused: "address" };
   const parsed = parseHost(host);
   if (!parsed) return { refused: "address" };
+  const intranet = options.egress !== undefined && options.privateViaEgress === true;
   if (parsed.kind === "ip") {
-    if (!isPublicAddress(parsed.address)) return { refused: "address" };
+    if (!isPublicAddress(parsed.address)) {
+      if (!intranet || isLoopbackAddress(parsed.address)) return { refused: "address" };
+    }
     return options.egress
       ? { egress: true, host: parsed.address, port }
       : { address: parsed.address, port };
   }
-  if (isObviouslyLocal(parsed)) return { refused: "address" };
+  if (isObviouslyLocal(parsed)) {
+    if (!intranet || parsed.name === "localhost" || parsed.name.endsWith(".localhost")) {
+      return { refused: "address" };
+    }
+  }
   if (options.egress) return { egress: true, host: parsed.name, port };
   let addresses: string[];
   try {

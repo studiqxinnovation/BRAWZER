@@ -15,6 +15,8 @@ export interface AgentConfig {
   testSite: boolean;
   /** The session's egress proxy, when the orchestrator runs one (ADR 0014). */
   egress: { host: string; port: number } | null;
+  /** The profile's choice: private addresses are handed to the egress (and its proxy) instead of refused here. */
+  privateViaEgress: boolean;
   /** Writable scratch space; the root file system is read-only. */
   scratchDir: string;
   /** The largest file the engine may download or print; Drive's per-file limit, set by the orchestrator. */
@@ -38,6 +40,7 @@ export function readConfig(env: NodeJS.ProcessEnv): AgentConfig {
     proxyPort: 3128,
     testSite: env.BRAWZER_TEST_SITE === "true",
     egress: readEgress(env.BRAWZER_EGRESS_PROXY),
+    privateViaEgress: env.BRAWZER_PRIVATE_VIA_EGRESS === "true",
     scratchDir: env.BRAWZER_SCRATCH_DIR ?? "/tmp",
     maxFileBytes: Math.max(1, Number(env.BRAWZER_MAX_FILE_BYTES ?? "") || 100 * 1024 * 1024),
     initialViewport: {

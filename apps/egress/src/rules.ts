@@ -15,7 +15,18 @@ export type EgressDecision =
 export interface RuleOptions {
   hasUpstream: boolean;
   allowPrivate: boolean;
+  /**
+   * The profile asked for private and internal addresses to go to its proxy
+   * (which reaches them on its own network; nothing here connects to them).
+   * Loopback is refused regardless: that is this container.
+   */
+  privateViaUpstream?: boolean;
   lookup: Lookup;
+}
+
+/** Loopback is never anyone's intranet: it is the sidecar and the runtime themselves. */
+function isLoopback(address: string): boolean {
+  return address.startsWith("127.") || address === "::1" || /^::ffff:127\./i.test(address);
 }
 
 /**
@@ -68,14 +79,19 @@ export async function decideEgress(
   if (!parsed) return { kind: "refused", reason: "address" };
   if (parsed.kind === "ip") {
     if (!options.allowPrivate && !isPublicAddress(parsed.address)) {
-      return { kind: "refused", reason: "address" };
+      if (!(options.privateViaUpstream && options.hasUpstream) || isLoopback(parsed.address)) {
+        return { kind: "refused", reason: "address" };
+      }
     }
     return options.hasUpstream
       ? { kind: "upstream", host: parsed.address, port }
       : { kind: "direct", address: parsed.address, port };
   }
   if (!options.allowPrivate && isObviouslyLocal(parsed)) {
-    return { kind: "refused", reason: "address" };
+    const intranet = options.privateViaUpstream && options.hasUpstream;
+    if (!intranet || parsed.name === "localhost" || parsed.name.endsWith(".localhost")) {
+      return { kind: "refused", reason: "address" };
+    }
   }
   if (isEngineHost(parsed.name)) return { kind: "refused", reason: "engine" };
   if (options.hasUpstream) return { kind: "upstream", host: parsed.name, port };

@@ -86,4 +86,42 @@ describe("egress rules", () => {
       await decideEgress("public.example", 25, { hasUpstream: false, allowPrivate: false, lookup }),
     ).toEqual({ kind: "refused", reason: "port" });
   });
+
+  it("hands private addresses to the proxy only when the profile asked, never loopback", async () => {
+    const base = { hasUpstream: true, allowPrivate: false, lookup };
+    expect(await decideEgress("10.0.0.5", 80, base)).toEqual({
+      kind: "refused",
+      reason: "address",
+    });
+    expect(await decideEgress("intranet.local", 80, base)).toEqual({
+      kind: "refused",
+      reason: "address",
+    });
+    const intranet = { ...base, privateViaUpstream: true };
+    expect(await decideEgress("10.0.0.5", 80, intranet)).toEqual({
+      kind: "upstream",
+      host: "10.0.0.5",
+      port: 80,
+    });
+    expect(await decideEgress("intranet.local", 443, intranet)).toEqual({
+      kind: "upstream",
+      host: "intranet.local",
+      port: 443,
+    });
+    for (const host of ["127.0.0.1", "::1", "localhost", "app.localhost"]) {
+      expect(await decideEgress(host, 80, intranet), host).toEqual({
+        kind: "refused",
+        reason: "address",
+      });
+    }
+    // Without a proxy the switch means nothing: there is no one to hand the address to.
+    expect(
+      await decideEgress("10.0.0.5", 80, {
+        hasUpstream: false,
+        allowPrivate: false,
+        privateViaUpstream: true,
+        lookup,
+      }),
+    ).toEqual({ kind: "refused", reason: "address" });
+  });
 });

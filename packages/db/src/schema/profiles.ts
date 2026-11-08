@@ -53,6 +53,12 @@ export const profiles = pgTable(
     proxyId: uuid().references(() => proxies.id, { onDelete: "set null" }),
     /** Whether browsing data (cookies, history, site data) is saved when a session ends. */
     keepData: boolean().notNull().default(true),
+    /**
+     * With a proxy: private and internal addresses are handed to the proxy
+     * instead of refused, for intranets reached through one's own proxy. Off
+     * by default; loopback stays refused either way (Phase 8, idea 9).
+     */
+    privateThroughProxy: boolean().notNull().default(false),
     dataObjectKey: text().unique("profiles_data_object_key_unique"),
     dataWrappedKey: text(),
     /** Size of the saved data as stored (compressed, before encryption). */

@@ -23,6 +23,8 @@ export interface EgressConfig {
   upstream: ProxyTarget | null;
   /** Development and tests only: private and local addresses are allowed. */
   allowPrivate: boolean;
+  /** The profile's choice: private addresses go to its proxy rather than being refused. */
+  privateViaUpstream: boolean;
   /**
    * Development only: proxies and echo servers that the tests run on this
    * machine's loopback are reached under this name from inside the container.
@@ -58,6 +60,7 @@ export function readConfig(env: NodeJS.ProcessEnv): EgressConfig {
     proxyPort: 3129,
     upstream,
     allowPrivate: env.EGRESS_ALLOW_PRIVATE === "true",
+    privateViaUpstream: upstream !== null && env.EGRESS_PRIVATE_VIA_UPSTREAM === "true",
     loopbackHost: loopback === undefined || loopback === "" ? null : loopback,
     firewall: mode === "session" && env.EGRESS_FIREWALL !== "false",
     runAs: { uid, gid },

@@ -20,6 +20,8 @@ export interface EgressProxyOptions {
   /** The profile's saved proxy, or null for direct connections. */
   upstream: ProxyTarget | null;
   allowPrivate: boolean;
+  /** The profile's choice: private addresses go to the proxy instead of being refused. */
+  privateViaUpstream?: boolean;
   /** Development only: loopback targets are reached under this name. */
   loopbackHost: string | null;
   lookup?: (name: string) => Promise<readonly { address: string; family: number }[]>;
@@ -84,7 +86,12 @@ export function createEgressProxy(options: EgressProxyOptions): http.Server {
   const tunnel = upstream
     ? new ProxyTunnel({ allowPrivate: options.allowPrivate, lookup, timeoutMs: 20_000 })
     : null;
-  const rules = { hasUpstream: upstream !== null, allowPrivate: options.allowPrivate, lookup };
+  const rules = {
+    hasUpstream: upstream !== null,
+    allowPrivate: options.allowPrivate,
+    privateViaUpstream: options.privateViaUpstream === true,
+    lookup,
+  };
 
   /** A stream to the destination, however it is reached. */
   async function openChannel(decision: EgressDecision): Promise<Duplex> {

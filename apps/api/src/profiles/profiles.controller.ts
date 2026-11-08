@@ -105,8 +105,10 @@ export class ProfilesController {
     @Body({ schema: updateProfileRequestSchema }) body: z.output<typeof updateProfileRequestSchema>,
     @CurrentAuth() auth: AuthContext,
   ): Promise<Profile> {
-    // Browsing goes through the proxy (ADR 0014), so choosing one is a sensitive change.
-    if (body.proxyId !== undefined) assertRecentAuth(auth);
+    // Browsing goes through the proxy (ADR 0014), so choosing one is a sensitive
+    // change; so is letting it reach private addresses (Phase 8, idea 9).
+    if (body.proxyId !== undefined || body.privateThroughProxy !== undefined)
+      assertRecentAuth(auth);
     return this.profiles.update(auth.user.id, id, body);
   }
 

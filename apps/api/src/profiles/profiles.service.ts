@@ -41,6 +41,7 @@ export function toProfile(row: ProfileRow): Profile {
     position: row.position,
     proxyId: row.proxyId,
     keepData: row.keepData,
+    privateThroughProxy: row.privateThroughProxy,
     data:
       row.dataObjectKey && row.dataSavedAt
         ? { bytes: row.dataBytes ?? 0, savedAt: row.dataSavedAt.toISOString() }
@@ -139,6 +140,7 @@ export class ProfilesService {
       color?: ProfileColor | undefined;
       proxyId?: string | null | undefined;
       keepData?: boolean | undefined;
+      privateThroughProxy?: boolean | undefined;
     },
   ): Promise<Profile> {
     if (input.proxyId) {
@@ -159,6 +161,9 @@ export class ProfilesService {
           ...(input.color === undefined ? {} : { color: input.color }),
           ...(input.proxyId === undefined ? {} : { proxyId: input.proxyId }),
           ...(input.keepData === undefined ? {} : { keepData: input.keepData }),
+          ...(input.privateThroughProxy === undefined
+            ? {}
+            : { privateThroughProxy: input.privateThroughProxy }),
           updatedAt: new Date(),
         })
         .where(and(eq(schema.profiles.id, id), eq(schema.profiles.userId, userId)))

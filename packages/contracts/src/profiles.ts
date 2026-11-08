@@ -65,6 +65,12 @@ export const profileSchema = z.object({
   proxyId: z.uuid().nullable(),
   /** Whether cookies, history and site data are kept between sessions. */
   keepData: z.boolean(),
+  /**
+   * With a proxy: private and internal addresses go to the proxy instead of
+   * being refused, so an intranet behind one's own proxy is reachable.
+   * Off by default. Without a proxy it has no effect.
+   */
+  privateThroughProxy: z.boolean(),
   /** The saved browsing data, if any: how much (compressed) and when it was last saved. */
   data: z
     .object({
@@ -94,13 +100,15 @@ export const updateProfileRequestSchema = z
     color: profileColorSchema.optional(),
     proxyId: z.uuid({ error: "Choose one of your proxies." }).nullable().optional(),
     keepData: z.boolean().optional(),
+    privateThroughProxy: z.boolean().optional(),
   })
   .refine(
     (value) =>
       value.name !== undefined ||
       value.color !== undefined ||
       value.proxyId !== undefined ||
-      value.keepData !== undefined,
+      value.keepData !== undefined ||
+      value.privateThroughProxy !== undefined,
     { error: "Change the name, colour, proxy or what is kept." },
   );
 

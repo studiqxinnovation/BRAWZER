@@ -46,6 +46,32 @@ describe("decide", () => {
     expect(await decide("example.com", 0, { resolve })).toEqual({ refused: "address" });
   });
 
+  it("hands private targets to the egress only when the profile asked, never loopback", async () => {
+    const egress = { host: "127.0.0.1", port: 3129 };
+    expect(await decide("10.0.0.5", 80, { resolve, egress })).toEqual({ refused: "address" });
+    expect(await decide("10.0.0.5", 80, { resolve, egress, privateViaEgress: true })).toEqual({
+      egress: true,
+      host: "10.0.0.5",
+      port: 80,
+    });
+    expect(
+      await decide("intranet.local", 443, { resolve, egress, privateViaEgress: true }),
+    ).toEqual({
+      egress: true,
+      host: "intranet.local",
+      port: 443,
+    });
+    for (const host of ["127.0.0.1", "::1", "localhost", "app.localhost"]) {
+      expect(await decide(host, 80, { resolve, egress, privateViaEgress: true }), host).toEqual({
+        refused: "address",
+      });
+    }
+    // Without an egress there is nothing to hand the address to.
+    expect(await decide("10.0.0.5", 80, { resolve, privateViaEgress: true })).toEqual({
+      refused: "address",
+    });
+  });
+
   it("routes overridden names to the local test site only when configured", async () => {
     const overrides = new Map([
       ["testsite.invalid", { host: "127.0.0.1", port: 8090, tlsPort: 8091 }],

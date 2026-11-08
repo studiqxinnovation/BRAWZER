@@ -63,6 +63,7 @@ minutes, like deleting a passkey.
 
 ## Consequences
 
+- **Private addresses through the proxy, by choice** (Phase 8, idea 9): a per-profile switch, off by default, lets both filters hand private and internal targets to the saved proxy unresolved. Loopback is refused regardless, on both hops.
 - **Checked in CI** (Phase 8, idea 10): an integration test starts real sessions and probes them from the engine's user: read-only root, `noexec` scratch, no capabilities, the shared namespace, the ruleset, no direct route out, no DNS, and the proxy's refusals for private, loopback and vendor addresses. Writing it found that the engine's user could still resolve names through the container engine's embedded resolver on loopback, because its NAT rewrote the port before the filter saw the packet; the DNS rule now sits in a chain at raw priority, ahead of that NAT.
 
 - Two containers per session, the sidecar small (256 MiB, one CPU). Starting a session takes one more container start.

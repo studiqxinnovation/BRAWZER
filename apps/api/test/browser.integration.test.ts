@@ -752,19 +752,40 @@ describe("the egress (ADR 0014)", () => {
       "Through the proxy: nowhere-at-all.example",
     );
     expect(socks.requests).toContain("nowhere-at-all.example:80");
+
+    // Private addresses stay refused even with a proxy, unless the profile asks
+    // for them to go through it; loopback never does.
+    await openPage(viewer, tab.id, "http://10.0.0.1/", "Blocked by Brawzer");
+    expect(socks.requests).not.toContain("10.0.0.1:80");
+    viewer.close();
+    expect((await client.delete(`/browser/sessions/${session.id}`)).statusCode).toBe(204);
+    const opted = await client.patch(`/profiles/${profile.id}`, { privateThroughProxy: true });
+    expect(opted.statusCode, opted.body).toBe(200);
+    expect(opted.json<{ privateThroughProxy: boolean }>().privateThroughProxy).toBe(true);
+    const again = await openSession(client, profile.id);
+    await openPage(again.viewer, again.tab.id, "http://10.0.0.1/", "Through the proxy: 10.0.0.1");
+    expect(socks.requests).toContain("10.0.0.1:80");
+    await openPage(
+      again.viewer,
+      again.tab.id,
+      "http://127.0.0.1:7000/healthz",
+      "Blocked by Brawzer",
+    );
+    expect(socks.requests).not.toContain("127.0.0.1:7000");
     // The runtime's own environment never holds the proxy's password.
     const containers = await h.database.pool.query<{ container_id: string }>(
       "select container_id from browser_sessions where id = $1",
-      [session.id],
+      [again.session.id],
     );
     const runtimeEnv = (
       await fetchDocker(`/containers/${containers.rows[0]?.container_id ?? ""}/json`)
     ).Config.Env.join("\n");
     expect(runtimeEnv).not.toContain(auth.password);
     expect(runtimeEnv).toContain("BRAWZER_EGRESS_PROXY=");
-    viewer.close();
-    await client.delete(`/browser/sessions/${session.id}`);
-  }, 90_000);
+    expect(runtimeEnv).toContain("BRAWZER_PRIVATE_VIA_EGRESS=true");
+    again.viewer.close();
+    await client.delete(`/browser/sessions/${again.session.id}`);
+  }, 120_000);
 
   it("asks the owner to confirm it's them before a profile's proxy changes", async () => {
     const { client, email } = await account("browser-proxy-stepup");

@@ -67,6 +67,7 @@ export class OrchestratorService {
     profileData: Readable | null = null,
     upstream: ProxyTarget | null = null,
     engine: "bee" | "firefox" = "bee",
+    options: { privateViaUpstream: boolean } = { privateViaUpstream: false },
   ): Promise<StartedRuntime> {
     const { browser } = this.config;
     await this.docker.ensureNetwork(browser.network);
@@ -80,6 +81,7 @@ export class OrchestratorService {
         "EGRESS_MODE=session",
         `EGRESS_SECRET=${secret}`,
         ...(upstream ? [`EGRESS_UPSTREAM=${JSON.stringify(upstream)}`] : []),
+        ...(options.privateViaUpstream ? ["EGRESS_PRIVATE_VIA_UPSTREAM=true"] : []),
         ...this.egress.commonEnv(),
       ],
       labels: { "brawzer.managed": "true", [SESSION_LABEL]: sessionId, [EGRESS_LABEL]: "true" },
@@ -106,6 +108,7 @@ export class OrchestratorService {
           `BRAWZER_MAX_FILE_BYTES=${String(this.config.drive.maxFileBytes)}`,
           `BRAWZER_EGRESS_PROXY=127.0.0.1:${String(EGRESS_PROXY_PORT)}`,
           `BRAWZER_ENGINE=${engine}`,
+          ...(options.privateViaUpstream ? ["BRAWZER_PRIVATE_VIA_EGRESS=true"] : []),
           ...(browser.testSite ? ["BRAWZER_TEST_SITE=true"] : []),
         ],
         labels: { "brawzer.managed": "true", [SESSION_LABEL]: sessionId },

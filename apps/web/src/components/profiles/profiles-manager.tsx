@@ -168,6 +168,8 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
   const formRef = useRef<HTMLFormElement>(null);
   const [open, setOpen] = useState(false);
   const [keepData, setKeepData] = useState(profile.keepData);
+  const [privateThroughProxy, setPrivateThroughProxy] = useState(profile.privateThroughProxy);
+  const [proxyChoice, setProxyChoice] = useState(profile.proxyId ?? NO_PROXY);
   const confirmed = useConfirmedRequest();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
@@ -175,11 +177,12 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
-    if (!next) {
-      setErrors({});
-      setFailure(null);
-      setKeepData(profile.keepData);
-    }
+    // Fresh from the profile each time it opens (it may have changed since), and clean on close.
+    setErrors({});
+    setFailure(null);
+    setKeepData(profile.keepData);
+    setPrivateThroughProxy(profile.privateThroughProxy);
+    setProxyChoice(profile.proxyId ?? NO_PROXY);
   }
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
@@ -191,6 +194,8 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
       color: data.get("color"),
       ...(proxyChoice === null ? {} : { proxyId: proxyChoice === NO_PROXY ? null : proxyChoice }),
       keepData,
+      // Only meaningful with a proxy; dropping the proxy switches it off.
+      privateThroughProxy: proxyChoice !== null && proxyChoice !== NO_PROXY && privateThroughProxy,
     });
     setFailure(null);
     if (!parsed.success) {
@@ -231,7 +236,8 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
               <Select
                 label="Proxy"
                 name="proxyId"
-                defaultValue={profile.proxyId ?? NO_PROXY}
+                value={proxyChoice}
+                onValueChange={setProxyChoice}
                 options={[
                   { value: NO_PROXY, label: "No proxy" },
                   ...proxies.map((proxy) => ({ value: proxy.id, label: proxy.name })),
@@ -260,6 +266,22 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
             </span>
             <Switch checked={keepData} onCheckedChange={setKeepData} />
           </label>
+          {proxies.length > 0 && proxyChoice !== NO_PROXY && (
+            <label className="flex items-start justify-between gap-4">
+              <span>
+                <span className="block text-callout font-medium text-ink">
+                  Reach private addresses through the proxy
+                </span>
+                <span className="block text-footnote text-ink-secondary">
+                  Intranet sites and devices on the proxy’s own network become reachable: Brawzer
+                  hands those addresses to the proxy instead of refusing them, and never connects to
+                  them itself. Off, every private address is refused. Changing it asks you to
+                  confirm it’s you.
+                </span>
+              </span>
+              <Switch checked={privateThroughProxy} onCheckedChange={setPrivateThroughProxy} />
+            </label>
+          )}
           <DialogFooter className="mt-1">
             <Button
               variant="secondary"
@@ -449,7 +471,7 @@ export function ProfilesManager({
                   <p className="text-footnote text-ink-secondary">
                     {engineLabels[profile.engine]}
                     {profile.proxyId && proxyNames.has(profile.proxyId)
-                      ? ` · Proxy: ${proxyNames.get(profile.proxyId) ?? ""}`
+                      ? ` · Proxy: ${proxyNames.get(profile.proxyId) ?? ""}${profile.privateThroughProxy ? " · Private addresses through the proxy" : ""}`
                       : ""}{" "}
                     · Created <LocalDate iso={profile.createdAt} />
                   </p>
