@@ -28,11 +28,13 @@ import {
 } from "react";
 import { endBrowserSession, requestStreamTicket, startBrowserSession } from "@/lib/api/browser";
 import { displayUrl, hostOf, resolveTyped, searchUrl } from "@/lib/browser/input";
+import { nextZoom } from "@/lib/browser/zoom";
 import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/stream";
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
 import {
   AddressBar,
   DownloadsButton,
+  FindBar,
   IsolatedBadge,
   isStartPage,
   MoreMenu,
@@ -171,6 +173,11 @@ export function BrowserWorkspace({
   const [transfers, setTransfers] = useState<RecentTransfer[]>([]);
   const [unseenTransfers, setUnseenTransfers] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [find, setFind] = useState<{
+    text: string;
+    result: { matches: number; active: number } | null;
+  } | null>(null);
+  const findTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [ending, setEnding] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -252,6 +259,20 @@ export function BrowserWorkspace({
       }
       case "refused":
         toast.add({ ...REFUSALS[message.action], type: "error" });
+        return;
+      case "find-result":
+        setFind((current) =>
+          current?.text === message.text
+            ? { text: current.text, result: { matches: message.matches, active: message.active } }
+            : current,
+        );
+        return;
+      case "reader-unavailable":
+        toast.add({
+          title: "Nothing to read here",
+          description: "Reader view needs an article; this page doesn’t have one.",
+          type: "info",
+        });
         return;
       case "transfer": {
         // The downloads panel keeps the session's files; a toast says when one is done.
@@ -447,10 +468,47 @@ export function BrowserWorkspace({
         case "print":
           if (tab) send({ type: "print", tabId: tab.id });
           return;
+        case "find":
+          if (tab) setFind((current) => current ?? { text: "", result: null });
+          return;
+        case "zoom-in":
+        case "zoom-out":
+        case "zoom-reset":
+          if (tab) {
+            const factor =
+              shortcut === "zoom-reset" ? 1 : nextZoom(tab.zoom, shortcut === "zoom-in" ? 1 : -1);
+            send({ type: "zoom", tabId: tab.id, factor });
+          }
+          return;
+        case "reader":
+          if (tab) send({ type: "reader", tabId: tab.id, on: !tab.reader });
+          return;
       }
     },
     [tabs, activeTabId, send],
   );
+
+  /** Each keystroke in the find bar asks the engine for the first match, a moment later. */
+  function changeFind(text: string) {
+    setFind({ text, result: null });
+    if (findTimer.current) clearTimeout(findTimer.current);
+    if (!activeTab) return;
+    const tabId = activeTab.id;
+    if (text === "") {
+      send({ type: "find-stop", tabId });
+      return;
+    }
+    findTimer.current = setTimeout(() => {
+      send({ type: "find", tabId, text, forward: true });
+    }, 150);
+  }
+
+  function closeFind() {
+    if (findTimer.current) clearTimeout(findTimer.current);
+    setFind(null);
+    if (activeTab) send({ type: "find-stop", tabId: activeTab.id });
+    viewportRef.current?.focus();
+  }
 
   async function fullScreen() {
     const container = containerRef.current;
@@ -565,6 +623,12 @@ export function BrowserWorkspace({
             setAddress(null);
             viewportRef.current?.focus();
           }}
+          onResetZoom={() => {
+            onShortcut("zoom-reset");
+          }}
+          onLeaveReader={() => {
+            onShortcut("reader");
+          }}
         />
         <IsolatedBadge />
         <ProfileChip
@@ -583,11 +647,22 @@ export function BrowserWorkspace({
         <MoreMenu
           canPrint={Boolean(activeTab) && !isStartPage(activeTab?.url ?? "")}
           coarsePointer={coarsePointer}
+          zoom={activeTab?.zoom ?? 1}
+          reader={activeTab?.reader ?? false}
           onNewTab={() => {
             send({ type: "new-tab" });
           }}
           onPrint={() => {
             onShortcut("print");
+          }}
+          onFind={() => {
+            onShortcut("find");
+          }}
+          onZoom={(direction) => {
+            onShortcut(direction === 0 ? "zoom-reset" : direction === 1 ? "zoom-in" : "zoom-out");
+          }}
+          onReader={() => {
+            onShortcut("reader");
           }}
           onFullScreen={() => void fullScreen()}
           onKeyboard={() => viewportRef.current?.focusKeyboard()}
@@ -599,6 +674,20 @@ export function BrowserWorkspace({
           }}
         />
       </div>
+
+      {find && (
+        <FindBar
+          text={find.text}
+          result={find.result}
+          onChange={changeFind}
+          onStep={(forward) => {
+            if (activeTab && find.text !== "") {
+              send({ type: "find", tabId: activeTab.id, text: find.text, forward });
+            }
+          }}
+          onClose={closeFind}
+        />
+      )}
 
       {/* The page */}
       <div className="relative flex min-h-0 flex-1 flex-col" id="browser-viewport">

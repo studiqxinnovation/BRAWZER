@@ -19,6 +19,7 @@ import { BEE_VERSION } from "./bee.ts";
 import type { CdpConnection } from "./cdp.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
+import { FIND_STOP_SCRIPT, findScript, zoomScript } from "./page-tools.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
 
 export type { EngineOptions, Viewer } from "./engine-types.ts";
@@ -67,6 +68,10 @@ interface Tab {
   error: NavigationError | null;
   /** What the last navigate command answered, for an error page that names no code yet. */
   lastNavigateError: string;
+  /** Brawzer's layout zoom for this tab, re-applied as pages load. */
+  zoom: number;
+  /** Brawzer's reader view is showing in place of the page. */
+  reader: boolean;
   screencasting: boolean;
   /** Frames sent to the viewer but not yet drawn, by frame id → engine's screencast session id. */
   inFlight: Map<number, string>;
@@ -263,6 +268,7 @@ export class BrowserEngine implements Engine {
       if (!tab) return;
       if ((params as { frameId: string }).frameId !== tab.mainFrameId) return;
       tab.loading = true;
+      tab.reader = false;
       this.queueSnapshot();
     });
     this.cdp.on("Page.frameStoppedLoading", (params, sessionId) => {
@@ -274,7 +280,9 @@ export class BrowserEngine implements Engine {
     });
     this.cdp.on("Page.loadEventFired", (_params, sessionId) => {
       const tab = this.tabBySession(sessionId);
-      if (tab) void this.refreshTitle(tab);
+      if (!tab) return;
+      void this.refreshTitle(tab);
+      if (tab.zoom !== 1) void this.evaluate(tab, zoomScript(tab.zoom)).catch(() => undefined);
     });
     this.cdp.on("Security.visibleSecurityStateChanged", (params, sessionId) => {
       const tab = this.tabBySession(sessionId);
@@ -511,6 +519,12 @@ export class BrowserEngine implements Engine {
         return;
       case "file-chooser":
         this.expectChosenFiles(message.chooserId, message.files);
+        return;
+      case "find":
+      case "find-stop":
+      case "zoom":
+      case "reader":
+        await this.pageTool(tab, message);
         return;
     }
   }
@@ -798,6 +812,8 @@ export class BrowserEngine implements Engine {
       security: "neutral",
       error: null,
       lastNavigateError: "",
+      zoom: 1,
+      reader: false,
       screencasting: false,
       inFlight: new Map(),
     };
@@ -924,7 +940,63 @@ export class BrowserEngine implements Engine {
         canGoForward: tab.canGoForward,
         security: tab.security,
         error: tab.error,
+        zoom: tab.zoom,
+        reader: tab.reader,
       }));
+  }
+
+  private async evaluate(tab: Tab, expression: string): Promise<unknown> {
+    const { result } = await this.cdp.send<{ result: { value?: unknown } }>(
+      "Runtime.evaluate",
+      { expression, returnByValue: true },
+      tab.sessionId,
+    );
+    return result.value;
+  }
+
+  /** Find in page, zoom and reader view: Brawzer's tools, run inside the page. */
+  private async pageTool(
+    tab: Tab,
+    message: Extract<RelayMessage, { type: "find" | "find-stop" | "zoom" | "reader" }>,
+  ): Promise<void> {
+    switch (message.type) {
+      case "find": {
+        const value = await this.evaluate(
+          tab,
+          findScript(message.text, message.forward, message.caseSensitive),
+        ).catch(() => null);
+        const found =
+          typeof value === "string"
+            ? (JSON.parse(value) as { matches: number; active: number })
+            : { matches: 0, active: 0 };
+        this.viewer?.send({ type: "find-result", tabId: tab.id, text: message.text, ...found });
+        return;
+      }
+      case "find-stop":
+        await this.evaluate(tab, FIND_STOP_SCRIPT).catch(() => undefined);
+        return;
+      case "zoom":
+        tab.zoom = message.factor;
+        await this.evaluate(tab, zoomScript(message.factor)).catch(() => undefined);
+        this.queueSnapshot();
+        return;
+      case "reader": {
+        if (!message.on) {
+          // The page itself is gone (replaced by the reading layout): open it afresh.
+          if (tab.reader) await this.cdp.send("Page.navigate", { url: tab.url }, tab.sessionId);
+          return;
+        }
+        const value = await this.evaluate(tab, this.options.readerScript).catch(() => null);
+        const ok = typeof value === "string" && (JSON.parse(value) as { ok: boolean }).ok;
+        if (ok) {
+          tab.reader = true;
+          this.queueSnapshot();
+        } else {
+          this.viewer?.send({ type: "reader-unavailable", tabId: tab.id });
+        }
+        return;
+      }
+    }
   }
 
   /** Brawzer's own reason for a refused tunnel, when the proxy noted one for that address. */

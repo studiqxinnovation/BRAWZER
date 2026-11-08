@@ -22,6 +22,8 @@ export interface EngineOptions {
    * engine reports as failed then gets Brawzer's own reason as its code.
    */
   refusalFor: (url: string) => string | null;
+  /** The reader view script (Mozilla's Readability plus Brawzer's layout), ready to evaluate. */
+  readerScript: string;
 }
 
 /** Remembers the proxy's refusals briefly, keyed by `host:port`, for the engines' error pages. */

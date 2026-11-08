@@ -87,6 +87,40 @@ test.describe("browser", () => {
     await expect(failed).toBeHidden();
     await expect(tab(page, "Brawzer test site")).toBeVisible();
 
+    // Find in page: Brawzer's bar, the engine's count.
+    await clickPage(page, 400, 500);
+    await page.keyboard.press("Alt+KeyF");
+    const findBox = page.getByRole("textbox", { name: "Find in page" });
+    await expect(findBox).toBeFocused();
+    await findBox.fill("second");
+    await expect(page.getByRole("search", { name: "Find in page" })).toContainText("1 of 1");
+    expect(await wcagViolations(page)).toEqual([]);
+    await findBox.press("Escape");
+    await expect(findBox).toBeHidden();
+
+    // Zoom shows in the address bar and resets from there.
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Zoom in" }).click();
+    const zoomBadge = page.getByRole("button", { name: "Zoom 110%, reset" });
+    await expect(zoomBadge).toBeVisible();
+    await zoomBadge.click();
+    await expect(zoomBadge).toBeHidden();
+
+    // Reader view on an article, and back.
+    await address.fill("http://testsite.invalid/article");
+    await address.press("Enter");
+    await expect(tab(page, "Aurora forecast")).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Reader view" }).click();
+    const readerBadge = page.getByRole("button", { name: "Reader" });
+    await expect(readerBadge).toBeVisible({ timeout: 15_000 });
+    expect(await wcagViolations(page)).toEqual([]);
+    await readerBadge.click();
+    await expect(readerBadge).toBeHidden({ timeout: 15_000 });
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible();
+
     // A click inside the page follows a link; Back returns.
     await clickPage(page, 100, 60);
     await expect(tab(page, "Second page")).toBeVisible();

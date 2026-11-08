@@ -6,6 +6,7 @@ import { Button } from "@brawzer/ui/components/button";
 import {
   Menu,
   MenuContent,
+  MenuGroup,
   MenuGroupLabel,
   MenuItem,
   MenuSeparator,
@@ -23,6 +24,8 @@ import { cn } from "@brawzer/ui/lib/cn";
 import {
   ArrowLeft,
   ArrowRight,
+  BookOpenText,
+  ChevronUp,
   Check,
   ChevronDown,
   CircleAlert,
@@ -39,16 +42,20 @@ import {
   Printer,
   RotateCw,
   Search,
+  SearchX,
   ShieldAlert,
   ShieldCheck,
   Square,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
-import { type RefObject, type SubmitEvent } from "react";
+import { type RefObject, type SubmitEvent, useEffect, useRef } from "react";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { formatBytes } from "@/lib/drive";
 import { describeNavigationError } from "@/lib/browser/errors";
 import { hostOf } from "@/lib/browser/input";
+import { zoomLabel } from "@/lib/browser/zoom";
 import { initialOf, profileColorShades } from "@/lib/profiles";
 
 /** A stable colour for a site, from its host name, for the tab's initial. */
@@ -180,6 +187,8 @@ export function AddressBar({
   onFocus,
   onBlur,
   onEscape,
+  onResetZoom,
+  onLeaveReader,
 }: {
   tab: TabState | null;
   value: string;
@@ -190,6 +199,8 @@ export function AddressBar({
   onFocus: () => void;
   onBlur: () => void;
   onEscape: () => void;
+  onResetZoom?: () => void;
+  onLeaveReader?: () => void;
 }) {
   const host = tab ? hostOf(tab.url) : "";
   const shownPath = (() => {
@@ -252,8 +263,122 @@ export function AddressBar({
             if (event.key === "Escape") onEscape();
           }}
         />
+        {tab?.reader && (
+          <Tooltip content="Reader view: the article without the rest of the page. Click to leave.">
+            <button
+              type="button"
+              className="flex h-7 shrink-0 items-center gap-1 rounded-md bg-accent-soft px-2 text-caption font-medium text-accent-ink hover:bg-hover"
+              onClick={onLeaveReader}
+            >
+              <BookOpenText aria-hidden="true" className="size-3.5" />
+              Reader
+            </button>
+          </Tooltip>
+        )}
+        {tab && Math.abs(tab.zoom - 1) > 0.001 && (
+          <Tooltip content="Zoom. Click to reset.">
+            <button
+              type="button"
+              className="flex h-7 shrink-0 items-center rounded-md bg-hover px-2 text-caption font-medium text-ink-secondary hover:text-ink"
+              aria-label={`Zoom ${zoomLabel(tab.zoom)}, reset`}
+              onClick={onResetZoom}
+            >
+              {zoomLabel(tab.zoom)}
+            </button>
+          </Tooltip>
+        )}
       </div>
     </form>
+  );
+}
+
+/** Find in page: Brawzer's bar under the address, asking the engine for each match. */
+export function FindBar({
+  text,
+  result,
+  onChange,
+  onStep,
+  onClose,
+}: {
+  text: string;
+  result: { matches: number; active: number } | null;
+  onChange: (text: string) => void;
+  onStep: (forward: boolean) => void;
+  onClose: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+  const nothing = text !== "" && result !== null && result.matches === 0;
+  return (
+    <div
+      role="search"
+      aria-label="Find in page"
+      className="flex items-center gap-2 border-b border-line bg-surface-raised px-3 py-1.5"
+    >
+      <label htmlFor="browser-find" className="sr-only">
+        Find in page
+      </label>
+      <input
+        ref={inputRef}
+        id="browser-find"
+        type="text"
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="Find in page"
+        className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-canvas px-3 text-callout text-ink outline-none focus:border-accent sm:max-w-80"
+        value={text}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onStep(!event.shiftKey);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+          }
+        }}
+      />
+      <span
+        aria-live="polite"
+        className={cn("min-w-16 text-footnote", nothing ? "text-danger" : "text-ink-secondary")}
+      >
+        {text === "" || result === null
+          ? ""
+          : result.matches === 0
+            ? "No matches"
+            : `${String(result.active)} of ${String(result.matches)}`}
+      </span>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Previous match"
+        disabled={!result || result.matches === 0}
+        onClick={() => {
+          onStep(false);
+        }}
+      >
+        <ChevronUp aria-hidden="true" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Next match"
+        disabled={!result || result.matches === 0}
+        onClick={() => {
+          onStep(true);
+        }}
+      >
+        <ChevronDown aria-hidden="true" />
+      </Button>
+      <Button variant="ghost" size="icon-sm" aria-label="Close find" onClick={onClose}>
+        <X aria-hidden="true" />
+      </Button>
+    </div>
   );
 }
 
@@ -294,13 +419,15 @@ export function ProfileChip({ profile, onEnd }: { profile: Profile | null; onEnd
         <ChevronDown aria-hidden="true" className="size-3.5 text-ink-tertiary" />
       </MenuTrigger>
       <MenuContent align="end">
-        <MenuGroupLabel>
-          {profile
-            ? profile.keepData
-              ? "Cookies and history are kept in this profile"
-              : "This profile keeps nothing between sessions"
-            : "A temporary session: nothing is kept"}
-        </MenuGroupLabel>
+        <MenuGroup>
+          <MenuGroupLabel>
+            {profile
+              ? profile.keepData
+                ? "Cookies and history are kept in this profile"
+                : "This profile keeps nothing between sessions"
+              : "A temporary session: nothing is kept"}
+          </MenuGroupLabel>
+        </MenuGroup>
         <MenuSeparator />
         <MenuItem icon={<LogOut />} tone="danger" onClick={onEnd}>
           End session
@@ -428,8 +555,13 @@ export function DownloadsButton({
 export function MoreMenu({
   canPrint,
   coarsePointer,
+  zoom,
+  reader,
   onNewTab,
   onPrint,
+  onFind,
+  onZoom,
+  onReader,
   onFullScreen,
   onKeyboard,
   onShortcuts,
@@ -437,8 +569,13 @@ export function MoreMenu({
 }: {
   canPrint: boolean;
   coarsePointer: boolean;
+  zoom: number;
+  reader: boolean;
   onNewTab: () => void;
   onPrint: () => void;
+  onFind: () => void;
+  onZoom: (direction: 1 | -1 | 0) => void;
+  onReader: () => void;
   onFullScreen: () => void;
   onKeyboard: () => void;
   onShortcuts: () => void;
@@ -460,6 +597,48 @@ export function MoreMenu({
         <MenuItem icon={<Printer />} disabled={!canPrint} onClick={onPrint}>
           Save page as PDF in Drive
         </MenuItem>
+        <MenuItem icon={<Search />} disabled={!canPrint} onClick={onFind}>
+          Find in page
+        </MenuItem>
+        <MenuItem
+          icon={reader ? <SearchX /> : <BookOpenText />}
+          disabled={!canPrint}
+          onClick={onReader}
+        >
+          {reader ? "Leave reader view" : "Reader view"}
+        </MenuItem>
+        <MenuSeparator />
+        <MenuGroup>
+          <MenuGroupLabel>Zoom · {zoomLabel(zoom)}</MenuGroupLabel>
+        </MenuGroup>
+        <MenuItem
+          icon={<ZoomIn />}
+          disabled={!canPrint}
+          onClick={() => {
+            onZoom(1);
+          }}
+        >
+          Zoom in
+        </MenuItem>
+        <MenuItem
+          icon={<ZoomOut />}
+          disabled={!canPrint}
+          onClick={() => {
+            onZoom(-1);
+          }}
+        >
+          Zoom out
+        </MenuItem>
+        <MenuItem
+          icon={<RotateCw />}
+          disabled={!canPrint || Math.abs(zoom - 1) < 0.001}
+          onClick={() => {
+            onZoom(0);
+          }}
+        >
+          Reset zoom
+        </MenuItem>
+        <MenuSeparator />
         <MenuItem icon={<Maximize2 />} onClick={onFullScreen}>
           Full screen
         </MenuItem>

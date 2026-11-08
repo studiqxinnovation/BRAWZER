@@ -9,9 +9,9 @@ plan already named. They are built in value order, one commit each, on the
 | --- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | 10  | Isolation checks as a CI job                               | **Done** 2026-11-08: `apps/api/test/isolation.integration.test.ts`; found and closed a DNS path (ADR 0014) |
 | 1   | Brawzer-drawn error pages                                  | Next                                                                                                       |
-| 2   | Bookmarks and history as Brawzer records                   |                                                                                                            |
-| 5   | Find in page, zoom, reader mode                            |                                                                                                            |
-| 4   | Clipboard with intent                                      |                                                                                                            |
+| 2   | Bookmarks and history as Brawzer records                   | Not built: work on it was stopped on 2026-11-08 and is not resumed; idea 3 (which built on it) waits too   |
+| 5   | Find in page, zoom, reader mode                            | **Done** 2026-11-08: both engines, from the menu and Alt shortcuts                                         |
+| 4   | Clipboard with intent                                      | Next                                                                                                       |
 | 9   | Private-address browsing through a saved proxy, on purpose |                                                                                                            |
 | 8   | Per-account destination allow-lists and block-lists        |                                                                                                            |
 | 11  | Passkey-only phone approval                                |                                                                                                            |
@@ -72,3 +72,27 @@ that address gets Brawzer's own code instead: `BRAWZER_REFUSED_ADDRESS`
 engine's own services) or `BRAWZER_REFUSED_UNRESOLVED` (no such name, with
 "Search for it"). Checked in the browser integration journeys (both engines)
 and the e2e journey, with the accessibility audit.
+
+## 5. Find in page, zoom, reader view
+
+Three tools people reach for, drawn by Brawzer and run inside the page by
+either engine through one set of scripts (`apps/runtime-agent/src/page-tools.ts`):
+
+- **Find in page** (Alt+F, or the menu): a bar under the address; each
+  keystroke asks the engine for the first match and Enter or the arrows step
+  through them, with "3 of 14" from the engine's count. Matches are found in
+  the page's visible text nodes, selected and scrolled into view; closing the
+  bar clears the selection.
+- **Zoom** (Alt+plus, Alt+minus, Alt+0, or the menu): layout zoom on the
+  page's root element along the usual steps (50% to 300%), kept per tab and
+  re-applied as the tab loads pages; the address bar shows the percentage,
+  and clicking it resets.
+- **Reader view** (Alt+Shift+R, or the menu): Mozilla's Readability (0.6.0,
+  Apache-2.0, via the catalog) extracts the article from a copy of the
+  document inside the page, and Brawzer's own reading layout replaces the
+  page: scripts, frames, forms, styles and inline handlers never make it
+  across. A page without an article says so; leaving reader view reloads the
+  page. The tab reports `zoom` and `reader` in its state.
+
+Checked in both integration journeys (the test site gained an article page)
+and the e2e journey.

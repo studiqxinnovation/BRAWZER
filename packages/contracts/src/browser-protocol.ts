@@ -97,6 +97,18 @@ const baseClientMessages = [
   }),
   /** Save the tab as a PDF in Drive. */
   z.object({ type: z.literal("print"), tabId: tabIdSchema }),
+  /** Find in page: the next (or previous) match of `text`; answered with `find-result`. */
+  z.object({
+    type: z.literal("find"),
+    tabId: tabIdSchema,
+    text: z.string().min(1).max(256),
+    forward: z.boolean().default(true),
+    caseSensitive: z.boolean().default(false),
+  }),
+  z.object({ type: z.literal("find-stop"), tabId: tabIdSchema }),
+  z.object({ type: z.literal("zoom"), tabId: tabIdSchema, factor: z.number().min(0.25).max(5) }),
+  /** Reader view on or off; `reader` on the tab says what happened. */
+  z.object({ type: z.literal("reader"), tabId: tabIdSchema, on: z.boolean() }),
   z.object({ type: z.literal("ping") }),
 ] as const;
 
@@ -155,7 +167,13 @@ export const tabStateSchema = z.object({
   canGoForward: z.boolean(),
   security: tabSecuritySchema,
   error: navigationErrorSchema.nullable(),
+  /** Layout zoom, 1 being none; kept per tab and re-applied as the tab loads pages. */
+  zoom: z.number().min(0.25).max(5),
+  /** Brawzer's reader view is showing in place of the page. */
+  reader: z.boolean(),
 });
+
+export const ZOOM_LIMITS = { min: 0.25, max: 5 } as const;
 
 export const dialogKinds = ["alert", "confirm", "prompt", "beforeunload"] as const;
 
@@ -242,6 +260,16 @@ export const agentMessageSchema = z.discriminatedUnion("type", [
     code: z.enum(["unauthorized", "replaced", "ended", "engine_failed", "bad_message"]),
     message: z.string().max(512),
   }),
+  z.object({
+    type: z.literal("find-result"),
+    tabId: tabIdSchema,
+    text: z.string().max(256),
+    matches: z.number().int().min(0),
+    /** 1-based; 0 when nothing matched. */
+    active: z.number().int().min(0),
+  }),
+  /** Reader view was asked for and the page has no article to read. */
+  z.object({ type: z.literal("reader-unavailable"), tabId: tabIdSchema }),
   z.object({ type: z.literal("pong") }),
 ]);
 

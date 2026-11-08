@@ -100,6 +100,19 @@ function handleTestSiteRequest(req: http.IncomingMessage, res: http.ServerRespon
     case "/second":
       send(200, page("Second page", "<h1>Second page</h1>"));
       return;
+    case "/article": {
+      const paragraphs = Array.from(
+        { length: 8 },
+        (_value, index) =>
+          `<p>Paragraph ${String(index + 1)} of the test article. The northern lights appear when charged particles from the sun meet the gases of the upper atmosphere, and the colours depend on which gas is struck and how high up. Green is the most common, red the rarest, and the display is brightest a few hours either side of midnight.</p>`,
+      ).join("");
+      send(
+        200,
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Aurora forecast</title></head>
+<body><nav><a href="/">Home</a> · <a href="/second">Second</a></nav><main><article><h1>Aurora forecast</h1><p class="byline">By the test site</p>${paragraphs}</article></main><footer>Footer text</footer></body></html>`,
+      );
+      return;
+    }
     case "/search": {
       const q = url.searchParams.get("q") ?? "";
       send(200, page(`Results for ${q}`, `<h1>Results for ${escapeHtml(q)}</h1>`));

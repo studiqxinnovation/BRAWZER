@@ -194,6 +194,9 @@ catalogs:
     '@fastify/websocket':
       specifier: 11.3.4
       version: 11.3.4
+    '@mozilla/readability':
+      specifier: 0.6.0
+      version: 0.6.0
     '@nestjs/cli':
       specifier: 12.0.11
       version: 12.0.11
@@ -567,6 +570,9 @@ importers:
       '@brawzer/net-policy':
         specifier: workspace:*
         version: link:../../packages/net-policy
+      '@mozilla/readability':
+        specifier: 'catalog:'
+        version: 0.6.0
       ws:
         specifier: 'catalog:'
         version: 8.22.0
@@ -2052,6 +2058,10 @@ packages:
 
   '@microsoft/tsdoc@0.17.1':
     resolution: {integrity: sha512-VHyYyyoH63jFoO3shpw9Zfijk5v/9p/VrClW35z0/q6ooK7sSmxpzOkS4iZPxs3vO4XtBW4H38HRAKkAMIK7DA==}
+
+  '@mozilla/readability@0.6.0':
+    resolution: {integrity: sha512-juG5VWh4qAivzTAeMzvY9xs9HY5rAcr2E4I7tiSSCokRFi7XIZCAu92ZkSTsIj1OPceCifL3cpfteP3pDT9/QQ==}
+    engines: {node: '>=14.0.0'}
 
   '@napi-rs/wasm-runtime@1.2.6':
     resolution: {integrity: sha512-mRyDmEw9/fCDXCGfL1sbgIw/GUK0PVxRW4YwgPN61F3LQ+fSyoBFarJVzgGyhF6kRzEQZ0FejDqm4WLXSeqQmw==}
@@ -6702,6 +6712,8 @@ snapshots:
   '@lukeed/ms@2.0.2': {}
 
   '@microsoft/tsdoc@0.17.1': {}
+
+  '@mozilla/readability@0.6.0': {}
 
   '@napi-rs/wasm-runtime@1.2.6(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:

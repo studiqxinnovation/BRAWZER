@@ -18,6 +18,7 @@ catalog:
   "@axe-core/playwright": 4.14.0
   "@base-ui/react": 1.9.0
   "@eslint/js": 9.39.5
+  "@mozilla/readability": 0.6.0
   "@fastify/cookie": 11.1.5
   "@fastify/helmet": 13.2.0
   "@fastify/multipart": 10.1.6

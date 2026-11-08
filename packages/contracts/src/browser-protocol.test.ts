@@ -68,6 +68,8 @@ describe("agent messages", () => {
           canGoForward: false,
           security: "secure",
           error: null,
+          zoom: 1,
+          reader: false,
         },
       ],
     });

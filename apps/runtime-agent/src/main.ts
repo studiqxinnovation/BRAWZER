@@ -4,7 +4,10 @@ import { STREAM_CLOSE_CODES } from "@brawzer/contracts";
 import { BEE_HOME_HOST, BEE_HOME_PORT, BEE_HOME_URL, createBeeHome } from "./bee.ts";
 import { type LaunchedChromium, launchChromium } from "./chromium.ts";
 import { readConfig } from "./config.ts";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { type Engine, RefusalLog } from "./engine-types.ts";
+import { readerScript } from "./page-tools.ts";
 import { BrowserEngine } from "./engine.ts";
 import { type LaunchedFirefox, launchFirefox } from "./firefox.ts";
 import { FirefoxEngine } from "./firefox-engine.ts";
@@ -46,6 +49,11 @@ if (config.testSite) {
 }
 
 const refusals = new RefusalLog();
+// Reader view runs Mozilla's Readability inside the page; its source is read once.
+const readabilitySource = readFileSync(
+  createRequire(import.meta.url).resolve("@mozilla/readability/Readability.js"),
+  "utf8",
+);
 const proxy = createFilteringProxy({
   overrides,
   egress: config.egress ?? undefined,
@@ -109,6 +117,7 @@ const lifecycle: AgentLifecycle = {
       maxFileBytes: config.maxFileBytes,
       homeUrl: BEE_HOME_URL,
       refusalFor: (url: string) => refusals.codeFor(url),
+      readerScript: readerScript(readabilitySource),
     };
     const onGone = (error: Error) => {
       // The engine left on its own (crash, kill): the session is over.

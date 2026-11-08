@@ -19,6 +19,7 @@ import type { BidiConnection } from "./bidi.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
+import { FIND_STOP_SCRIPT, findScript, zoomScript } from "./page-tools.ts";
 
 /** Firefox's own error page, `about:neterror?e=<code>&u=<address>`, as the failure it stands for. */
 function errorPageOf(url: string): NavigationError | null {
@@ -40,6 +41,10 @@ interface Tab {
   security: TabSecurity;
   /** Firefox is showing its own error page for this address. */
   error: NavigationError | null;
+  /** Brawzer's layout zoom for this tab, re-applied as pages load. */
+  zoom: number;
+  /** Brawzer's reader view is showing in place of the page. */
+  reader: boolean;
 }
 
 interface Transfer {
@@ -216,6 +221,7 @@ export class FirefoxEngine implements Engine {
       const tab = this.tabs.get(info.context);
       if (!tab) return;
       tab.loading = true;
+      tab.reader = false;
       // Firefox shows a failure as a navigation of its own to about:neterror;
       // the address bar keeps the address that failed.
       const failure = this.explained(errorPageOf(info.url));
@@ -274,6 +280,7 @@ export class FirefoxEngine implements Engine {
         if (tab.error && tab.error.url !== info.url) tab.error = null;
       }
       void this.refreshTitle(tab);
+      if (tab.zoom !== 1) void this.evaluate(tab, zoomScript(tab.zoom)).catch(() => undefined);
       this.lastFrameHash = "";
     });
     this.bidi.on("browsingContext.userPromptOpened", (params) => {
@@ -530,6 +537,49 @@ export class FirefoxEngine implements Engine {
       case "file-chooser":
         this.expectChosenFiles(message.chooserId, message.files);
         return;
+      case "find": {
+        const value = await this.evaluate(
+          tab,
+          findScript(message.text, message.forward, message.caseSensitive),
+        ).catch(() => null);
+        const found =
+          typeof value === "string"
+            ? (JSON.parse(value) as { matches: number; active: number })
+            : { matches: 0, active: 0 };
+        this.viewer?.send({ type: "find-result", tabId: tab.id, text: message.text, ...found });
+        this.lastFrameHash = "";
+        return;
+      }
+      case "find-stop":
+        await this.evaluate(tab, FIND_STOP_SCRIPT).catch(() => undefined);
+        return;
+      case "zoom":
+        tab.zoom = message.factor;
+        await this.evaluate(tab, zoomScript(message.factor)).catch(() => undefined);
+        this.lastFrameHash = "";
+        this.queueSnapshot();
+        return;
+      case "reader": {
+        if (!message.on) {
+          // The page itself is gone (replaced by the reading layout): open it afresh.
+          if (tab.reader) {
+            await this.bidi
+              .send("browsingContext.navigate", { context: tab.id, url: tab.url, wait: "none" })
+              .catch(() => undefined);
+          }
+          return;
+        }
+        const value = await this.evaluate(tab, this.options.readerScript).catch(() => null);
+        const ok = typeof value === "string" && (JSON.parse(value) as { ok: boolean }).ok;
+        if (ok) {
+          tab.reader = true;
+          this.lastFrameHash = "";
+          this.queueSnapshot();
+        } else {
+          this.viewer?.send({ type: "reader-unavailable", tabId: tab.id });
+        }
+        return;
+      }
     }
   }
 
@@ -641,6 +691,8 @@ export class FirefoxEngine implements Engine {
       canGoForward: false,
       security: securityOf(url),
       error: null,
+      zoom: 1,
+      reader: false,
     };
     this.tabs.set(id, tab);
     this.order.push(id);
@@ -805,6 +857,8 @@ export class FirefoxEngine implements Engine {
         canGoForward: tab.canGoForward,
         security: tab.security,
         error: tab.error,
+        zoom: tab.zoom,
+        reader: tab.reader,
       }));
   }
 

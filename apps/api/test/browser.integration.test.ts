@@ -265,6 +265,43 @@ describe("cloud browser sessions", () => {
       "error cleared",
     );
 
+    // Brawzer's page tools run inside the page: find reports its count and
+    // place, zoom is kept on the tab, reader view replaces an article page.
+    viewer.send({ type: "find", tabId: tab!.id, text: "second", forward: true });
+    await viewer.until(
+      () =>
+        viewer.messages.some(
+          (m) =>
+            m.type === "find-result" && m.text === "second" && m.matches >= 1 && m.active === 1,
+        ),
+      "find result",
+    );
+    viewer.send({ type: "find-stop", tabId: tab!.id });
+    viewer.send({ type: "zoom", tabId: tab!.id, factor: 1.5 });
+    await viewer.until(() => viewer.activeTab()?.zoom === 1.5, "zoom applied");
+    viewer.send({ type: "reader", tabId: tab!.id, on: true });
+    await viewer.until(
+      () => viewer.messages.some((m) => m.type === "reader-unavailable"),
+      "no article on the home page",
+    );
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/article" });
+    await viewer.until(
+      () => viewer.activeTab()?.title === "Aurora forecast" && !viewer.activeTab()?.loading,
+      "article page",
+    );
+    expect(viewer.activeTab()?.zoom).toBe(1.5);
+    viewer.send({ type: "reader", tabId: tab!.id, on: true });
+    await viewer.until(() => viewer.activeTab()?.reader === true, "reader view");
+    viewer.send({ type: "reader", tabId: tab!.id, on: false });
+    await viewer.until(
+      () => viewer.activeTab()?.reader === false && viewer.activeTab()?.title === "Aurora forecast",
+      "reader view left",
+    );
+    viewer.send({ type: "zoom", tabId: tab!.id, factor: 1 });
+    await viewer.until(() => viewer.activeTab()?.zoom === 1, "zoom reset");
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
+    await viewer.until(() => viewer.activeTab()?.title === "Brawzer test site", "home again");
+
     // A click on the "Second page" box (fixed at 40,40 → 320,96).
     const click = (kind: "down" | "up") =>
       viewer.send({
@@ -808,6 +845,31 @@ describe("Firefox, the second engine", () => {
     );
     await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
     expect(viewer.activeTab()?.error).toBeNull();
+
+    // Find, zoom and reader view work the same way on Firefox.
+    viewer.send({ type: "find", tabId: tab.id, text: "second", forward: true });
+    await viewer.until(
+      () =>
+        viewer.messages.some(
+          (m) =>
+            m.type === "find-result" && m.text === "second" && m.matches >= 1 && m.active === 1,
+        ),
+      "firefox find result",
+    );
+    viewer.send({ type: "find-stop", tabId: tab.id });
+    viewer.send({ type: "zoom", tabId: tab.id, factor: 1.25 });
+    await viewer.until(() => viewer.activeTab()?.zoom === 1.25, "firefox zoom");
+    await openPage(viewer, tab.id, "http://testsite.invalid/article", "Aurora forecast");
+    viewer.send({ type: "reader", tabId: tab.id, on: true });
+    await viewer.until(() => viewer.activeTab()?.reader === true, "firefox reader view");
+    viewer.send({ type: "reader", tabId: tab.id, on: false });
+    await viewer.until(
+      () => viewer.activeTab()?.reader === false && !viewer.activeTab()?.loading,
+      "firefox reader view left",
+    );
+    viewer.send({ type: "zoom", tabId: tab.id, factor: 1 });
+    await viewer.until(() => viewer.activeTab()?.zoom === 1, "firefox zoom reset");
+    await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
     await viewer.until(() => viewer.frames.length > 0, "a frame");
     expect(viewer.frames[0]).toMatchObject({ tabId: tab.id, width: 800, height: 600 });
 
