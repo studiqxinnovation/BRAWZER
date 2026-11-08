@@ -4,6 +4,8 @@ import { SESSION_COOKIE_NAMES } from "@/lib/session-cookie";
 
 const development = process.env.NODE_ENV !== "production";
 const https = (process.env.NEXT_PUBLIC_SITE_URL ?? "").startsWith("https://");
+// Only set when the stream's wss:// origin differs from the site's (see .env.example).
+const streamOrigin = process.env.NEXT_PUBLIC_STREAM_ORIGIN;
 
 function isSignedInArea(pathname: string): boolean {
   return pathname === "/app" || pathname.startsWith("/app/");
@@ -28,7 +30,7 @@ export function proxy(request: NextRequest) {
 
   if (!needsStrictCsp(pathname)) return NextResponse.next();
 
-  const policy = strictContentSecurityPolicy(generateNonce(), { development, https });
+  const policy = strictContentSecurityPolicy(generateNonce(), { development, https, streamOrigin });
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("content-security-policy", policy);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
