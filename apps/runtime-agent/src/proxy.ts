@@ -10,11 +10,20 @@ import { isObviouslyLocal, isPublicAddress, parseHost } from "@brawzer/net-polic
  * connection goes to the checked address, never to a name that could be
  * re-resolved to something private (DNS rebinding).
  */
+/** Development only: a name served by a local site instead of the internet. */
+export interface ProxyOverride {
+  host: string;
+  /** Where plain connections go. */
+  port: number;
+  /** Where connections to port 443 (CONNECT tunnels) go, if the site speaks TLS. */
+  tlsPort?: number;
+}
+
 export interface ProxyOptions {
   /** Every address a name resolves to; the default asks the system resolver. */
   resolve?: (name: string) => Promise<string[]>;
   /** Development only: names served by a local test site instead of the internet. */
-  overrides?: ReadonlyMap<string, { host: string; port: number }>;
+  overrides?: ReadonlyMap<string, ProxyOverride>;
   /** Called with the refused host (no path or query). */
   onRefused?: (host: string) => void;
 }
@@ -44,7 +53,10 @@ export async function decide(
   options: ProxyOptions = {},
 ): Promise<Decision> {
   const override = options.overrides?.get(host.toLowerCase());
-  if (override) return { address: override.host, port: override.port };
+  if (override) {
+    const target = port === 443 ? (override.tlsPort ?? override.port) : override.port;
+    return { address: override.host, port: target };
+  }
   if (!Number.isInteger(port) || port < 1 || port > 65_535) return { refused: "address" };
   const parsed = parseHost(host);
   if (!parsed) return { refused: "address" };

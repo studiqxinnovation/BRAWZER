@@ -174,6 +174,15 @@ describe("cloud browser sessions", () => {
     const tab = viewer.activeTab();
     expect(tab).toBeDefined();
 
+    // The test site over HTTPS: the proxy's CONNECT tunnel, with the engine
+    // trusting the site's own certificate and nothing else.
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "https://testsite.invalid/second" });
+    await viewer.until(
+      () => viewer.activeTab()?.title === "Second page" && !viewer.activeTab()?.loading,
+      "test site over https",
+    );
+    expect(viewer.activeTab()).toMatchObject({ url: "https://testsite.invalid/second" });
+
     // The test site, through the filtering proxy.
     viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
     await viewer.until(() => viewer.activeTab()?.title === "Brawzer test site", "test site title");

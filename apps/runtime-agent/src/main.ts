@@ -5,15 +5,32 @@ import { BrowserEngine } from "./engine.ts";
 import { log } from "./log.ts";
 import { createFilteringProxy } from "./proxy.ts";
 import { createAgentServer } from "./server.ts";
-import { createTestSite, TEST_SITE_HOST } from "./test-site.ts";
+import type { ProxyOverride } from "./proxy.ts";
+import {
+  createTestSite,
+  generateTestSiteCertificate,
+  TEST_SITE_HOST,
+  TEST_SITE_PORTS,
+} from "./test-site.ts";
 
 const config = readConfig(process.env);
 
-const overrides = new Map<string, { host: string; port: number }>();
+const overrides = new Map<string, ProxyOverride>();
+const trustedSpkiHashes: string[] = [];
 if (config.testSite) {
+  const certificate = await generateTestSiteCertificate(config.scratchDir);
   const site = createTestSite();
-  await new Promise<void>((resolve) => site.listen(8090, "127.0.0.1", resolve));
-  overrides.set(TEST_SITE_HOST, { host: "127.0.0.1", port: 8090 });
+  const secureSite = createTestSite(certificate);
+  await Promise.all([
+    new Promise<void>((resolve) => site.listen(TEST_SITE_PORTS.http, "127.0.0.1", resolve)),
+    new Promise<void>((resolve) => secureSite.listen(TEST_SITE_PORTS.https, "127.0.0.1", resolve)),
+  ]);
+  overrides.set(TEST_SITE_HOST, {
+    host: "127.0.0.1",
+    port: TEST_SITE_PORTS.http,
+    tlsPort: TEST_SITE_PORTS.https,
+  });
+  trustedSpkiHashes.push(certificate.spkiHash);
   log("info", "test site enabled", { host: TEST_SITE_HOST });
 }
 
@@ -28,6 +45,7 @@ const chromium = launchChromium({
   scratchDir: config.scratchDir,
   proxyPort: config.proxyPort,
   viewport: config.initialViewport,
+  trustedSpkiHashes,
 });
 const engine = new BrowserEngine(chromium.cdp, config.initialViewport);
 const server = createAgentServer(engine, config.sessionSecret) as ReturnType<

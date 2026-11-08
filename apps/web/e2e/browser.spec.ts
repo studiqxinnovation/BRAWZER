@@ -49,11 +49,16 @@ test.describe("browser", () => {
       .not.toBe("0");
     expect(await wcagViolations(page)).toEqual([]);
 
-    // The address bar opens the test site served inside the runtime.
+    // A bare host opens over HTTPS: the test site served inside the runtime.
     const address = page.getByRole("textbox", { name: "Address or search" });
-    await address.fill("http://testsite.invalid/");
+    await address.fill("testsite.invalid");
     await address.press("Enter");
     await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByLabel("Not secure")).toBeHidden();
+
+    // Plain HTTP is marked as such.
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
     await expect(page.getByLabel("Not secure")).toBeVisible();
 
     // A click inside the page follows a link; Back returns.

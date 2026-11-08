@@ -115,7 +115,7 @@ export const envSchema = z.object({
   BROWSER_STREAM_URL: z
     .url({ protocol: /^wss?$/, error: "must be a ws:// or wss:// URL" })
     .optional(),
-  /** Serves http://testsite.invalid/ inside each runtime for the browser tests. Development and tests only. */
+  /** Serves testsite.invalid (HTTP and HTTPS) inside each runtime for the browser tests. Development and tests only. */
   BROWSER_TEST_SITE: z.stringbool().default(false),
   BUILD_SHA: z
     .string()

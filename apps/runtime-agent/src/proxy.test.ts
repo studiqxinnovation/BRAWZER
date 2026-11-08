@@ -47,8 +47,19 @@ describe("decide", () => {
   });
 
   it("routes overridden names to the local test site only when configured", async () => {
-    const overrides = new Map([["testsite.invalid", { host: "127.0.0.1", port: 8090 }]]);
+    const overrides = new Map([
+      ["testsite.invalid", { host: "127.0.0.1", port: 8090, tlsPort: 8091 }],
+    ]);
     expect(await decide("testsite.invalid", 80, { resolve, overrides })).toEqual({
+      address: "127.0.0.1",
+      port: 8090,
+    });
+    // Port 443 reaches the site's TLS listener; any other port the plain one.
+    expect(await decide("testsite.invalid", 443, { resolve, overrides })).toEqual({
+      address: "127.0.0.1",
+      port: 8091,
+    });
+    expect(await decide("testsite.invalid", 8443, { resolve, overrides })).toEqual({
       address: "127.0.0.1",
       port: 8090,
     });

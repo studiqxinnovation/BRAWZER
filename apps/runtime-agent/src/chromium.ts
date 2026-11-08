@@ -10,6 +10,11 @@ export interface LaunchOptions {
   scratchDir: string;
   proxyPort: number;
   viewport: { width: number; height: number };
+  /**
+   * Public keys whose certificate errors are ignored: only the test site's,
+   * in development and tests. Every other certificate is checked as usual.
+   */
+  trustedSpkiHashes?: string[];
 }
 
 export interface LaunchedChromium {
@@ -57,6 +62,9 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
     "--password-store=basic",
     "--lang=en-US",
     "--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication,InterestFeedContentSuggestions,CertificateTransparencyComponentUpdater,AccountConsistency,DialMediaRouteProvider",
+    ...(options.trustedSpkiHashes?.length
+      ? [`--ignore-certificate-errors-spki-list=${options.trustedSpkiHashes.join(",")}`]
+      : []),
     "about:blank",
   ];
 
