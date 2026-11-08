@@ -1,7 +1,7 @@
 # Phase 3 plan: the cloud browser
 
 - **Status:** Accepted 2026-11-07 under the standing instruction to build every phase; decisions taken as recommended (table at the end).
-- **Progress:** 3.1 done (results in ADR 0006). Of 3.2, only the shared address rules (`packages/net-policy`) are built; the runtime agent, image, orchestrator, gateway and workspace are not.
+- **Progress:** Built 2026-11-08: 3.1 (ADR 0006), 3.2 runtime agent and image, 3.3 orchestrator, 3.4 sessions, tickets and relay, 3.5 Browser workspace, 3.6 [review](../reviews/phase-3.md). Isolation details in [ADR 0012](../adr/0012-cloud-browser-runtime-isolation.md). Two deviations from the plan below are recorded in the decisions table (6 and 7).
 - **Date:** 2026-11-07
 - **Builds on:** Phase 2 ([review](../reviews/phase-2.md)), [ADR 0006](../adr/0006-browser-streaming.md) (streaming), [ADR 0010](../adr/0010-proxy-tests-and-ssrf.md) (address rules).
 
@@ -83,13 +83,15 @@ abuse, resource exhaustion), performance notes, and `docs/reviews/phase-3.md`.
 
 ## Decisions
 
-| #   | Decision                              | Taken as                                                           |
-| --- | ------------------------------------- | ------------------------------------------------------------------ |
-| 1   | Streaming method for Phase 3          | CDP screencast (ADR 0006, 3a); WebRTC and Firefox later            |
-| 2   | Engine package in the image           | Debian's Chromium package, updated with the image                  |
-| 3   | Live sessions per account (temporary) | 1                                                                  |
-| 4   | Session limits                        | 15 minutes without a viewer ends a session; 4 hours at most        |
-| 5   | Where the services run in development | Containers on the local Docker engine; services as local processes |
+| #   | Decision                                | Taken as                                                                                                                                                                                                                                                                                                                                                                           |
+| --- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Streaming method for Phase 3            | CDP screencast (ADR 0006, 3a); WebRTC and Firefox later                                                                                                                                                                                                                                                                                                                            |
+| 2   | Engine package in the image             | Debian's Chromium package, updated with the image                                                                                                                                                                                                                                                                                                                                  |
+| 3   | Live sessions per account (temporary)   | 1                                                                                                                                                                                                                                                                                                                                                                                  |
+| 4   | Session limits                          | 15 minutes without a viewer ends a session; 4 hours at most                                                                                                                                                                                                                                                                                                                        |
+| 5   | Where the services run in development   | Containers on the local Docker engine; services as local processes                                                                                                                                                                                                                                                                                                                 |
+| 6   | Where the orchestrator and gateway live | Modules of the API (`apps/api/src/browser`) rather than `apps/orchestrator` and `apps/gateway`: one process in development, no internal token between API and orchestrator, and the relay sits where the session and ticket checks are. The module boundaries (`OrchestratorService`, `StreamGateway`) are kept so Phase 7 can split them into services without changing the API.  |
+| 7   | How the engine is attached              | Pages are attached one by one as the engine reports them (`Target.attachToTarget`), because new headless Chromium 156 does not auto-attach its tabs at the browser level. Setup therefore runs a few milliseconds after a page starts; the refusals that matter are enforced by the managed policy file and the browser-level download setting, which don't depend on that timing. |
 
 ## Risks
 

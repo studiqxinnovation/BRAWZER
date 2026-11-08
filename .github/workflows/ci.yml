@@ -42,6 +42,9 @@ jobs:
       - name: Start PostgreSQL, Valkey, Mailpit and OpenBao
         run: pnpm infra:up
       - run: pnpm db:migrate
+      # The cloud browser tests start real runtime containers from this image.
+      - name: Build the cloud browser runtime image
+        run: pnpm runtime:build
       - run: pnpm test:integration
 
   e2e:
@@ -57,6 +60,8 @@ jobs:
       - name: Start PostgreSQL, Valkey, Mailpit and OpenBao
         run: pnpm infra:up
       - run: pnpm db:migrate
+      - name: Build the cloud browser runtime image
+        run: pnpm runtime:build
       - name: Install Chromium for Playwright
         run: pnpm --filter @brawzer/web exec playwright install --with-deps chromium
       # Browser tests run against production builds: next dev compiles
@@ -93,10 +98,13 @@ jobs:
           docker build -f apps/web/Dockerfile -t brawzer-web:ci
           --build-arg NEXT_PUBLIC_SITE_URL=https://brawzer.example
           --build-arg API_INTERNAL_URL=http://api:4100 .
-      - name: Both images run as a non-root user
+      - name: Build the cloud browser runtime image
+        run: docker build -f apps/runtime-agent/Dockerfile -t brawzer-runtime:ci .
+      - name: Every image runs as a non-root user
         run: |
           test "$(docker image inspect brawzer-api:ci --format '{{.Config.User}}')" = node
           test "$(docker image inspect brawzer-web:ci --format '{{.Config.User}}')" = node
+          test "$(docker image inspect brawzer-runtime:ci --format '{{.Config.User}}')" = browser
 
   audit:
     name: Dependency audit

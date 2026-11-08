@@ -25,7 +25,7 @@ exposure; it cannot remove these risks:
 Brawzer's marketing and interface must never claim to be "100% invisible",
 "zero footprint" or "immune to malware".
 
-## Controls in place today (Phases 1, 2 and 4)
+## Controls in place today (Phases 1 to 4)
 
 ### Web app
 
@@ -170,6 +170,16 @@ A database lock ensures only one API instance runs it at a time.
 - **Names and limits.** File and folder names are one path segment without control or direction-override characters. Limits (100 MiB per file, 2 GiB and 2,000 files per account, 500 folders) are enforced while streaming and under an account lock, so parallel uploads can't exceed them. Uploads, tickets and content fetches are rate-limited.
 - **Deletion is immediate** and removes the stored object; deleting a folder removes everything below it; deleting the account removes every object. The data download lists files' paths, sizes, types and states, never keys or object names.
 
+### Cloud browser (Phase 3, [ADR 0012](adr/0012-cloud-browser-runtime-isolation.md))
+
+- **One hardened container per session.** Read-only root, size-limited `noexec` tmpfs, no capabilities, `no-new-privileges`, memory, CPU and process limits, a dedicated network where containers can't see each other, and a seccomp profile that keeps Chromium's own namespace sandbox on (renderers run in their own user, PID and network namespaces behind an empty chroot). The runtime refuses to start unsandboxed.
+- **No way into the engine.** Chromium has no debugging port; the agent drives it over a pipe. The agent accepts one connection, authenticated with a per-session secret that the API keeps sealed by the key service.
+- **Pages can't reach Brawzer's network or the host.** Every page connection goes through a filtering proxy inside the container (forced by policy and flag, loopback included, QUIC off, WebRTC limited to proxied connections) that resolves names itself and applies ADR 0010's address rules to every resolved address, then connects to the checked address, which defeats DNS rebinding. Refused requests get a "Blocked by Brawzer" page.
+- **Refusals are the engine's.** A managed policy file blocks `file:` and internal schemes, all downloads, printing, extensions, password and payment autofill, camera, microphone, location, sensors, USB, serial, HID, Bluetooth and local-file access, and turns off component updates, variations, sign-in, safe-browsing lookups and crash reporting. The agent also denies downloads at the DevTools level and intercepts file choosers; the Browser page explains each refusal.
+- **Streams need tickets.** 256-bit single-use tickets, 60 seconds, stored hashed, bound to the account, the sign-in and the session, presented as the first WebSocket message rather than in the URL. The relay checks the page's origin, validates every message against the shared schema (the agent validates again), caps message sizes, closes after repeated bad messages, and ends the stream when the session ends, when the sign-in that started it ends, or within 10 seconds of either stopping being valid. One viewer per session.
+- **Sessions are bounded.** One live session per account, rate limits on starting and on tickets, 16 tabs (popup storms are closed before they run), 15 minutes without a viewer or 4 hours at most, orphaned containers removed when the API starts, nothing persisted: the container is destroyed with every tab, cookie and page.
+- **Only pixels and page state leave the container.** The security history records that a session started or ended and why, never what was browsed; data downloads list sessions, not pages.
+
 ### Local infrastructure
 
 - **Network exposure:** services bind to `127.0.0.1` only.
@@ -183,7 +193,7 @@ A database lock ensures only one API instance runs it at a time.
 - **CI:** every GitHub Action is pinned to a full commit SHA, the workflow token is read-only, checkout keeps no credentials, and pnpm comes from npm at the pinned version. CI fails on high or critical advisories.
 - **Images:** base images are pinned by digest; the API and web images run as an unprivileged user and are built from the lockfile ([DEPLOYMENT.md](DEPLOYMENT.md)).
 
-## Remaining risks (reviewed in milestones 1.6, 2.8 and 4.5)
+## Remaining risks (reviewed in milestones 1.6, 2.8, 4.5 and 3.6)
 
 The Phase 1 and Phase 2 security reviews ([phase 1](reviews/phase-1.md),
 [phase 2](reviews/phase-2.md)) closed most earlier gaps. These remain,
@@ -202,6 +212,10 @@ deliberately:
 - **New-device detection can be imitated.** The key comes from the self-reported user agent and the network prefix, so someone who copies both looks like a known device. It informs; it never blocks a sign-in.
 - **Proxy tests run inside the API.** The address rules are the only barrier between a test and Brawzer's own network until Phase 5 moves tests and browsing traffic into an isolated egress service, which is required before launch ([ADR 0010](adr/0010-proxy-tests-and-ssrf.md)).
 - **Deletion is immediate.** By decision there's no grace period, so a stolen session that can pass "confirm it's you" could delete the account.
+- **Containers share the host kernel.** Chromium's sandbox, the capability drop and the seccomp profile reduce the escape surface; gVisor or micro-VMs are evaluated before production (Phase 7).
+- **The cloud browser can reach any public address.** The in-container proxy enforces the address rules, not an allow-list; Phase 5 adds egress controls and routes traffic through saved proxies. The engine's remaining first-start background requests go through the same proxy and carry no user data.
+- **The Docker socket is root-equivalent.** The API process that starts runtime containers must be trusted on that machine; the orchestrator is split out before production (Phase 7).
+- **One API instance.** Revocation events that cut streams are in-process and each instance runs its own reaper; several instances need shared infrastructure (Phase 7).
 - **Development differences.** On localhost, `Clear-Site-Data` omits `"cookies"` (all localhost apps share cookies), and cookies are not `Secure`.
 
 ## Planned controls
@@ -209,7 +223,7 @@ deliberately:
 | When | Control                                                                                                                                                                                                        |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 2    | Phone sign-in by QR code for computers without Bluetooth (approved, not scheduled)                                                                                                                             |
-| 3    | One isolated container per session, Chromium sandbox on, 60-second single-use stream tickets, gateway-enforced revocation and idle lock                                                                        |
+| 3b   | WebRTC streaming with TURN, sound, Firefox; stronger isolation (gVisor or micro-VMs) evaluated in Phase 7                                                                                                      |
 | 4    | Encryption at rest per profile, download scanning, signed short-lived export links                                                                                                                             |
 | 5    | Isolated egress service for proxy tests and browsing traffic, private and metadata address blocking at the network level, WebRTC and DNS leak prevention, "confirm it's you" before changing a profile's proxy |
 | 7    | Independent penetration test, isolation testing, incident response runbook                                                                                                                                     |
