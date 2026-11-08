@@ -30,6 +30,8 @@ export const healthResponseSchema = z.object({
       storage: dependencyCheckSchema,
       /** The malware scanner that every Drive upload goes through. */
       scanner: dependencyCheckSchema,
+      /** The container engine that runs cloud browsers, with the runtime image present. */
+      runtime: dependencyCheckSchema,
     })
     .optional(),
 });

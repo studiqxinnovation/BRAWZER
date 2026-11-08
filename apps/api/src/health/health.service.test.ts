@@ -20,6 +20,7 @@ const prodConfig = parseConfig(
     VAULT_ADDR: "https://vault.internal:8200",
     VAULT_TOKEN: "not-a-real-token",
     PROXY_TEST_URL: "https://echo.brawzer.example/ip",
+    BROWSER_STREAM_URL: "wss://brawzer.example",
   },
   "1.0.0",
 );
@@ -29,6 +30,7 @@ const redisUp = { ping: () => Promise.resolve("PONG" as const) };
 const down = { ping: () => Promise.reject(new Error("ECONNREFUSED")) };
 const storeUp = { ping: () => Promise.resolve() };
 const scannerUp = { ping: () => Promise.resolve() };
+const runtimeUp = { ping: () => Promise.resolve() };
 
 describe("probe", () => {
   it("reports latency when the check succeeds", async () => {
@@ -58,6 +60,7 @@ describe("HealthService", () => {
       devConfig,
       storeUp,
       scannerUp,
+      runtimeUp,
     ).check();
     expect(report.status).toBe("ok");
     expect(report.checks?.database.status).toBe("up");
@@ -66,13 +69,27 @@ describe("HealthService", () => {
   });
 
   it("is degraded when the database is unreachable", async () => {
-    const report = await new HealthService(down, redisUp, devConfig, storeUp, scannerUp).check();
+    const report = await new HealthService(
+      down,
+      redisUp,
+      devConfig,
+      storeUp,
+      scannerUp,
+      runtimeUp,
+    ).check();
     expect(report.status).toBe("degraded");
     expect(report.checks?.database).toEqual({ status: "down", latencyMs: null });
   });
 
   it("is degraded when Redis is unreachable", async () => {
-    const report = await new HealthService(databaseUp, down, devConfig, storeUp, scannerUp).check();
+    const report = await new HealthService(
+      databaseUp,
+      down,
+      devConfig,
+      storeUp,
+      scannerUp,
+      runtimeUp,
+    ).check();
     expect(report.status).toBe("degraded");
     expect(report.checks?.redis.status).toBe("down");
   });
@@ -84,6 +101,7 @@ describe("HealthService", () => {
       prodConfig,
       storeUp,
       scannerUp,
+      runtimeUp,
     ).check();
     expect(report).not.toHaveProperty("checks");
     expect(report.environment).toBe("production");
@@ -96,6 +114,7 @@ describe("HealthService", () => {
       devConfig,
       storeUp,
       scannerUp,
+      runtimeUp,
     ).check();
     expect(healthy.checks?.storage.status).toBe("up");
     expect(healthy.checks?.scanner.status).toBe("up");
@@ -105,6 +124,7 @@ describe("HealthService", () => {
       devConfig,
       down,
       scannerUp,
+      runtimeUp,
     ).check();
     expect(noStore.status).toBe("degraded");
     expect(noStore.checks?.storage).toEqual({ status: "down", latencyMs: null });
@@ -114,8 +134,19 @@ describe("HealthService", () => {
       devConfig,
       storeUp,
       down,
+      runtimeUp,
     ).check();
     expect(noScanner.status).toBe("degraded");
     expect(noScanner.checks?.scanner.status).toBe("down");
+    const noRuntime = await new HealthService(
+      databaseUp,
+      redisUp,
+      devConfig,
+      storeUp,
+      scannerUp,
+      down,
+    ).check();
+    expect(noRuntime.status).toBe("degraded");
+    expect(noRuntime.checks?.runtime.status).toBe("down");
   });
 });

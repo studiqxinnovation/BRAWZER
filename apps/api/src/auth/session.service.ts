@@ -21,6 +21,7 @@ import {
 } from "@brawzer/db";
 // Brings in the request.cookies / reply.setCookie type augmentation.
 import type {} from "@fastify/cookie";
+import { EventEmitter } from "node:events";
 import { Inject, Injectable } from "@nestjs/common";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { RequestMeta } from "../common/request-meta.js";
@@ -67,10 +68,46 @@ export type RevocationReason =
 
 @Injectable()
 export class SessionService {
+  private readonly revocations = new EventEmitter();
+
   constructor(
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
-  ) {}
+  ) {
+    this.revocations.setMaxListeners(0);
+  }
+
+  /** Called with each session id this instance revokes (any reason). */
+  onRevoked(listener: (sessionId: string) => void): void {
+    this.revocations.on("revoked", listener);
+  }
+
+  private announceRevoked(ids: readonly { id: string }[]): void {
+    for (const { id } of ids) this.revocations.emit("revoked", id);
+  }
+
+  /** Still signed in: not revoked, not expired, not idle for too long. Doesn't count as activity. */
+  async isActive(sessionId: string): Promise<boolean> {
+    const now = new Date();
+    const [row] = await this.database.db
+      .select({
+        persistent: schema.authSessions.persistent,
+        lastSeenAt: schema.authSessions.lastSeenAt,
+      })
+      .from(schema.authSessions)
+      .where(
+        and(
+          eq(schema.authSessions.id, sessionId),
+          isNull(schema.authSessions.revokedAt),
+          gt(schema.authSessions.expiresAt, now),
+        ),
+      )
+      .limit(1);
+    if (!row) return false;
+    return (
+      now.getTime() - row.lastSeenAt.getTime() <= sessionLifetime(row.persistent).idleSeconds * 1000
+    );
+  }
 
   /** `__Host-brawzer_session` over HTTPS; `brawzer_session` on plain-HTTP localhost. */
   get cookieName(): string {
@@ -190,16 +227,18 @@ export class SessionService {
   }
 
   async revoke(sessionId: string, reason: RevocationReason): Promise<void> {
-    await this.database.db
+    const revoked = await this.database.db
       .update(schema.authSessions)
       .set({ revokedAt: new Date(), revokedReason: reason })
-      .where(and(eq(schema.authSessions.id, sessionId), isNull(schema.authSessions.revokedAt)));
+      .where(and(eq(schema.authSessions.id, sessionId), isNull(schema.authSessions.revokedAt)))
+      .returning({ id: schema.authSessions.id });
+    this.announceRevoked(revoked);
   }
 
   /** Ends the session a token belongs to, if any. */
   async revokeByToken(token: string | undefined, reason: RevocationReason): Promise<void> {
     if (!isWellFormedToken(token)) return;
-    await this.database.db
+    const revoked = await this.database.db
       .update(schema.authSessions)
       .set({ revokedAt: new Date(), revokedReason: reason })
       .where(
@@ -207,7 +246,9 @@ export class SessionService {
           eq(schema.authSessions.tokenHash, hashToken(token)),
           isNull(schema.authSessions.revokedAt),
         ),
-      );
+      )
+      .returning({ id: schema.authSessions.id });
+    this.announceRevoked(revoked);
   }
 
   /**
@@ -231,6 +272,7 @@ export class SessionService {
         ),
       )
       .returning({ id: schema.authSessions.id });
+    this.announceRevoked(revoked);
     return revoked.length;
   }
 
@@ -248,6 +290,7 @@ export class SessionService {
         ),
       )
       .returning({ id: schema.authSessions.id });
+    this.announceRevoked(revoked);
     return revoked.length === 1;
   }
 

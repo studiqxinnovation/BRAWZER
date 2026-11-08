@@ -71,8 +71,9 @@ export async function createHarness(options: { ipPrefix: string; env?: NodeJS.Pr
     url: config.databaseUrl,
     applicationName: "brawzer-api-tests",
   });
+  // BRAWZER_TEST_LOG=debug (or another level) shows the API's logs while debugging a test.
   const app: NestFastifyApplication = await createApp(config, {
-    logger: pino({ level: "silent" }),
+    logger: pino({ level: process.env.BRAWZER_TEST_LOG ?? "silent" }),
   });
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
@@ -201,12 +202,24 @@ export async function createHarness(options: { ipPrefix: string; env?: NodeJS.Pr
     );
   }
 
+  let baseUrl: string | undefined;
+  /** Starts listening on a random local port (for WebSocket tests) and returns the base URL. */
+  async function listen(): Promise<string> {
+    if (baseUrl) return baseUrl;
+    await app.listen(0, "127.0.0.1");
+    const address = app.getHttpAdapter().getInstance().server.address();
+    if (!address || typeof address === "string") throw new Error("No listening address");
+    baseUrl = `http://127.0.0.1:${String(address.port)}`;
+    return baseUrl;
+  }
+
   return {
     app,
     config,
     database,
     origin,
     browser,
+    listen,
     waitForEmail,
     emailsTo,
     tokenIn,

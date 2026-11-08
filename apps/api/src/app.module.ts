@@ -3,6 +3,7 @@ import { AccountModule } from "./account/account.module.js";
 import { ProfilesModule } from "./profiles/profiles.module.js";
 import { ProxiesModule } from "./proxies/proxies.module.js";
 import { AuthModule } from "./auth/auth.module.js";
+import { BrowserModule } from "./browser/browser.module.js";
 import { ConfigModule } from "./config/config.module.js";
 import { CryptoModule } from "./crypto/crypto.module.js";
 import { DriveModule } from "./drive/drive.module.js";
@@ -27,6 +28,7 @@ export class AppModule {
         ProfilesModule,
         ProxiesModule,
         DriveModule,
+        BrowserModule,
         MaintenanceModule,
       ],
     };

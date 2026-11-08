@@ -3,6 +3,7 @@ import { sessionCookieName } from "@brawzer/contracts";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
+import websocket from "@fastify/websocket";
 import {
   StandardSchemaSerializerInterceptor,
   StandardSchemaValidationPipe,
@@ -15,6 +16,7 @@ import { LogController } from "fastify";
 import type { Logger } from "pino";
 import { AppModule } from "./app.module.js";
 import { SESSION_AUTH } from "./auth/auth.controller.js";
+import { StreamGateway } from "./browser/stream-gateway.js";
 import { ApiExceptionFilter, errorBody } from "./common/api-exception.filter.js";
 import { isAllowedOrigin, isUnsafeMethod } from "./common/request-meta.js";
 import type { AppConfig } from "./config/env.js";
@@ -89,6 +91,14 @@ export async function createApp(
   });
 
   const fastify = app.getHttpAdapter().getInstance();
+
+  // The cloud browser stream: a WebSocket outside Nest's routing, relayed to
+  // the session's runtime by the gateway (see browser/stream-gateway.ts).
+  await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
+  const gateway = app.get(StreamGateway);
+  fastify.get("/api/v1/browser/sessions/:id/stream", { websocket: true }, (socket, request) => {
+    gateway.handle(socket, request);
+  });
 
   // Cross-site request forgery: a state-changing request must come from one
   // of Brawzer's own pages. Future webhook routes (billing) will authenticate

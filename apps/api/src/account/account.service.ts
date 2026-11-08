@@ -2,6 +2,7 @@ import type { AccountExport } from "@brawzer/contracts";
 import { and, type DatabaseHandle, eq, ne, schema } from "@brawzer/db";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { BreachedPasswordCheck } from "../auth/breached-passwords.js";
+import { BrowserService } from "../browser/browser.service.js";
 import { EmailTokenService } from "../auth/email-token.service.js";
 import { assertAcceptablePassword, hashPassword } from "../auth/password.js";
 import { MfaService } from "../auth/mfa/mfa.service.js";
@@ -44,6 +45,7 @@ export class AccountService {
     @Inject(ProfilesService) private readonly profiles: ProfilesService,
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
     @Inject(DriveService) private readonly drive: DriveService,
+    @Inject(BrowserService) private readonly browser: BrowserService,
     @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
   ) {}
 
@@ -201,7 +203,8 @@ export class AccountService {
         details: ["email: Type your email address exactly as it is shown."],
       });
     }
-    // Drive's objects aren't rows: list them first, remove them once the rows are gone.
+    // Containers and Drive objects aren't rows: stop and list them first.
+    await this.browser.endAllForUser(user.id, "account_deleted");
     const objectKeys = await this.drive.objectKeysOf(user.id);
     await this.database.db.delete(schema.users).where(eq(schema.users.id, user.id));
     await this.drive.removeAllObjects(objectKeys);
@@ -212,15 +215,17 @@ export class AccountService {
   /** Everything Brawzer holds about the account, except secrets. */
   async export(auth: AuthContext, meta: RequestMeta): Promise<AccountExport> {
     const { user, session } = auth;
-    const [passkeys, mfa, devices, history, profiles, proxies, drive] = await Promise.all([
-      this.passkeys.list(user.id),
-      this.mfa.status(user.id),
-      this.sessions.listActive(auth),
-      this.history.all(user.id),
-      this.profiles.list(user.id),
-      this.proxies.forExport(user.id),
-      this.drive.forExport(user.id),
-    ]);
+    const [passkeys, mfa, devices, history, profiles, proxies, drive, browserSessions] =
+      await Promise.all([
+        this.passkeys.list(user.id),
+        this.mfa.status(user.id),
+        this.sessions.listActive(auth),
+        this.history.all(user.id),
+        this.profiles.list(user.id),
+        this.proxies.forExport(user.id),
+        this.drive.forExport(user.id),
+        this.browser.forExport(user.id),
+      ]);
     await this.events.record({
       type: "data.exported",
       userId: user.id,
@@ -258,6 +263,7 @@ export class AccountService {
       })),
       proxies,
       drive,
+      browserSessions,
     };
   }
 }

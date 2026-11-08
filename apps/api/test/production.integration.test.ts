@@ -25,6 +25,7 @@ const config = parseConfig({
   VAULT_ADDR: process.env.VAULT_ADDR,
   VAULT_TOKEN: process.env.VAULT_TOKEN,
   PROXY_TEST_URL: "https://echo.brawzer.example/ip",
+  BROWSER_STREAM_URL: "wss://brawzer.example",
 });
 
 let app: NestFastifyApplication;
@@ -113,6 +114,7 @@ describe("production configuration", () => {
       VAULT_ADDR: process.env.VAULT_ADDR,
       VAULT_TOKEN: process.env.VAULT_TOKEN,
       PROXY_TEST_URL: "https://echo.brawzer.example/ip",
+      BROWSER_STREAM_URL: "wss://brawzer.example",
     });
     expect(defaults.breachedPasswordCheck).toBe(true);
     expect(defaults.rateLimitScale).toBe(1);

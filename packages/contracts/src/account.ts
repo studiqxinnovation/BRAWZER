@@ -90,6 +90,15 @@ export const accountExportSchema = z.object({
       }),
     ),
   }),
+  /** Cloud browser sessions: when they ran and why they ended. Never what was browsed. */
+  browserSessions: z.array(
+    z.object({
+      engine: z.string(),
+      startedAt: z.iso.datetime(),
+      endedAt: z.iso.datetime().nullable(),
+      endReason: z.string().nullable(),
+    }),
+  ),
 });
 
 export const recommendationSchema = z.object({
