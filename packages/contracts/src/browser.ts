@@ -19,6 +19,8 @@ export const browserSessionEndReasons = [
   "runtime_failed",
   /** The account was deleted. */
   "account_deleted",
+  /** An administrator ended it from the Admin page (Phase 8, idea 22). */
+  "admin",
 ] as const;
 export const browserSessionEndReasonSchema = z.enum(browserSessionEndReasons);
 
@@ -88,3 +90,35 @@ export type BrowserSession = z.infer<typeof browserSessionSchema>;
 export type BrowserOverview = z.infer<typeof browserOverviewSchema>;
 export type StartBrowserSessionRequest = z.infer<typeof startBrowserSessionRequestSchema>;
 export type StreamTicket = z.infer<typeof streamTicketSchema>;
+
+/** What the Admin page shows of the cloud browser (Phase 8, idea 22). Never what a session browses. */
+export const adminRuntimeSchema = z.object({
+  hosts: z.array(
+    z.object({
+      name: z.string(),
+      healthy: z.boolean(),
+      live: z.number().int().nonnegative(),
+      capacity: z.number().int().positive(),
+    }),
+  ),
+  warmPool: z.object({
+    size: z.number().int().nonnegative(),
+    waiting: z.number().int().nonnegative(),
+  }),
+  sessions: z.array(
+    z.object({
+      id: z.uuid(),
+      email: z.string(),
+      engine: browserEngineSchema,
+      status: browserSessionStatusSchema,
+      host: z.string(),
+      createdAt: z.iso.datetime(),
+      lastViewedAt: z.iso.datetime().nullable(),
+      expiresAt: z.iso.datetime(),
+      throughProxy: z.boolean(),
+      extensions: z.number().int().nonnegative(),
+    }),
+  ),
+});
+
+export type AdminRuntime = z.infer<typeof adminRuntimeSchema>;

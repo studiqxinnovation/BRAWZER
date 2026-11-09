@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { randomBytes } from "node:crypto";
 import {
+  type AdminRuntime,
   extensionsFor,
   BROWSER_LIMITS,
   type BrowserOverview,
@@ -462,6 +463,67 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       .update(schema.browserSessions)
       .set({ lastViewedAt: new Date() })
       .where(eq(schema.browserSessions.id, id));
+  }
+
+  /** The Admin page's view: hosts, the warm pool and every live session (Phase 8, idea 22). */
+  async adminRuntime(): Promise<AdminRuntime> {
+    const rows = await this.database.db
+      .select({
+        id: schema.browserSessions.id,
+        email: schema.users.email,
+        engine: schema.browserSessions.engine,
+        status: schema.browserSessions.status,
+        host: schema.browserSessions.runtimeHost,
+        createdAt: schema.browserSessions.createdAt,
+        lastViewedAt: schema.browserSessions.lastViewedAt,
+        proxyId: schema.browserSessions.proxyId,
+        extensions: schema.profiles.extensions,
+      })
+      .from(schema.browserSessions)
+      .innerJoin(schema.users, eq(schema.users.id, schema.browserSessions.userId))
+      .leftJoin(schema.profiles, eq(schema.profiles.id, schema.browserSessions.profileId))
+      .where(inArray(schema.browserSessions.status, [...LIVE]))
+      .orderBy(desc(schema.browserSessions.createdAt));
+    const sessions = rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      engine: row.engine,
+      status: row.status,
+      host: this.hosts.byName(row.host).name,
+      createdAt: row.createdAt.toISOString(),
+      lastViewedAt: row.lastViewedAt?.toISOString() ?? null,
+      expiresAt: new Date(
+        row.createdAt.getTime() + BROWSER_LIMITS.maxHours * 3_600_000,
+      ).toISOString(),
+      throughProxy: row.proxyId !== null,
+      extensions: row.extensions?.length ?? 0,
+    }));
+    const hosts = await Promise.all(
+      this.hosts.all().map(async (host) => ({
+        name: host.name,
+        healthy: await this.hosts.healthy(host),
+        live: sessions.filter((session) => session.host === host.name).length,
+        capacity: host.capacity,
+      })),
+    );
+    return {
+      hosts,
+      warmPool: { size: this.pool.size, waiting: this.pool.waiting },
+      sessions,
+    };
+  }
+
+  /** Ends any live session, for an administrator; recorded in that account's history. */
+  async endByAdmin(id: string): Promise<void> {
+    const [row] = await this.database.db
+      .select()
+      .from(schema.browserSessions)
+      .where(eq(schema.browserSessions.id, id))
+      .limit(1);
+    if (!row) throw notFound();
+    if (row.status === "ended") return;
+    logger.log(`Session ${row.id} ended by an administrator`);
+    await this.endSession(row, "admin", null);
   }
 
   async endForAuthSession(authSessionId: string, reason: BrowserSessionEndReason): Promise<void> {

@@ -23,8 +23,8 @@ plan already named. They are built in value order, one commit each, on the
 | 18  | Image rebuild on upstream advisories                       | Next                                                                                                       |
 | 20  | Usage emails and in-app nudges                             | **Done** 2026-11-09: hourly emails at 80% and 100%, warnings on Home                                       |
 | 21  | Trials and promotion codes                                 | **Done** 2026-11-09: `trialDays` per plan, once per account; promotion codes at checkout                   |
-| 22  | Admin: sessions and runtime view                           | Next                                                                                                       |
-| 23  | An operator CLI                                            |                                                                                                            |
+| 22  | Admin: sessions and runtime view                           | **Done** 2026-11-09: hosts, warm pool, live sessions, end one                                              |
+| 23  | An operator CLI                                            | Next                                                                                                       |
 | 24  | Load test for the stream                                   |                                                                                                            |
 | 3   | Session hand-off between devices                           |                                                                                                            |
 | 6   | Pop-out work mode                                          |                                                                                                            |
@@ -294,3 +294,16 @@ nothing before the trial ends. Promotion codes were already accepted at
 checkout; they are made in Stripe's dashboard, and no code or price appears
 in Brawzer. Checked in the billing integration test (the trial in the first
 checkout, none in a checkout after a cancelled subscription).
+
+## 22. Admin: sessions and runtime view
+
+The Admin page gained a Cloud browser section: each runtime host with its
+health and live sessions against its capacity, the warm pool's waiting pairs
+on this instance, and every live session with its account, engine, host,
+start time, whether it goes through a proxy and how many extensions it
+runs; never what it browses. An administrator can end a session, which
+ends as a sign-out would (profile data saved, containers removed) with the
+new end reason `admin`, shown in the owner's security history as "ended by
+Brawzer's administrators". Both routes sit behind the administrator and
+confirm-it's-you guards. Checked in an integration test (403 for others,
+the session listed, ended, gone, and named in the owner's history).

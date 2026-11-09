@@ -1,4 +1,6 @@
 import {
+  type AdminRuntime,
+  adminRuntimeSchema,
   type RewrapResult,
   rewrapResultSchema,
   type AdminAccount,
@@ -9,6 +11,7 @@ import {
   adminSetPlanRequestSchema,
 } from "@brawzer/contracts";
 import {
+  Delete,
   HttpCode,
   HttpStatus,
   Post,
@@ -41,6 +44,7 @@ import type { AuthContext } from "../auth/session.service.js";
 import { requestMeta } from "../common/request-meta.js";
 import { AdminGuard } from "./admin.guard.js";
 import { AdminService } from "./admin.service.js";
+import { BrowserService } from "../browser/browser.service.js";
 import { RewrapService } from "../maintenance/rewrap.js";
 
 const idSchema = z.uuid({ error: "That isn’t a valid ID." });
@@ -55,7 +59,31 @@ export class AdminController {
   constructor(
     @Inject(AdminService) private readonly admin: AdminService,
     @Inject(RewrapService) private readonly rewrap: RewrapService,
+    @Inject(BrowserService) private readonly browser: BrowserService,
   ) {}
+
+  @Get("runtime")
+  @SerializeOptions({ schema: adminRuntimeSchema })
+  @ApiOperation({
+    summary: "The cloud browser's hosts, warm pool and live sessions",
+    description: "Who has a session, where and since when; never what it browses.",
+  })
+  @ApiOkResponse({ standardSchema: adminRuntimeSchema })
+  runtime(): Promise<AdminRuntime> {
+    return this.browser.adminRuntime();
+  }
+
+  @Delete("sessions/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: "End a cloud browser session",
+    description:
+      "Ends it as its owner's sign-out would: profile data is saved, the containers go, and the owner's security history says an administrator ended it.",
+  })
+  @ApiNotFoundResponse({ description: "No such session." })
+  async endSession(@Param("id", { schema: idSchema }) id: string): Promise<void> {
+    await this.browser.endByAdmin(id);
+  }
 
   @Post("maintenance/rewrap")
   @HttpCode(HttpStatus.OK)

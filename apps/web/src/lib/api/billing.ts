@@ -1,4 +1,5 @@
 import {
+  adminRuntimeSchema,
   adminAccountListSchema,
   adminAccountSchema,
   type AdminSetPlanRequest,
@@ -40,3 +41,8 @@ export const setAccountPlan = (id: string, body: AdminSetPlanRequest) =>
     body,
     schema: adminAccountSchema,
   });
+
+export const fetchAdminRuntime = () => apiRequest("/admin/runtime", { schema: adminRuntimeSchema });
+
+export const endSessionAsAdmin = (id: string) =>
+  apiRequest<undefined>(`/admin/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });

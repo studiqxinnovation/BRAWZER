@@ -211,6 +211,11 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
           return { title: "Cloud browser session ended with the sign-out", tone: "neutral" };
         case "runtime_failed":
           return { title: "Cloud browser session stopped unexpectedly", tone: "warning" };
+        case "admin":
+          return {
+            title: "Cloud browser session ended by Brawzer’s administrators",
+            tone: "warning",
+          };
         default:
           return { title: "Cloud browser session ended", tone: "neutral" };
       }
