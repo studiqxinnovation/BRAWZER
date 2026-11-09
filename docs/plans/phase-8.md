@@ -27,8 +27,8 @@ plan already named. They are built in value order, one commit each, on the
 | 23  | An operator CLI                                            | **Done** 2026-11-09: `pnpm brawzer`, `node dist/cli/main.js` in production                                 |
 | 24  | Load test for the stream                                   | **Done** 2026-11-09: `infra/bench/stream-load.mjs`; bandwidth, not CPU, sets capacity                      |
 | 3   | Session hand-off between devices                           |                                                                                                            |
-| 6   | Pop-out work mode                                          | Next                                                                                                       |
-| 12  | Report a page                                              |                                                                                                            |
+| 6   | Pop-out work mode                                          | **Done** 2026-11-08: “Open in its own window”, and bringing a session back                                 |
+| 12  | Report a page                                              | Next                                                                                                       |
 | 19  | Team accounts                                              |                                                                                                            |
 | 7   | Sound, then WebRTC (Phase 3b)                              | **Sound done** 2026-11-08 (ADR 0006 addendum); WebRTC video still later                                    |
 
@@ -349,3 +349,18 @@ viewer instead of queueing; adapting JPEG quality to the viewer's link is
 the next lever if hosts or viewers are short of bandwidth. Firefox's BiDi
 screenshots run at about 12 frames a second and use more memory, as ADR
 0017 expected. An idle page sends next to nothing.
+
+## 6. Pop-out work mode
+
+"Open in its own window" in the "…" menu opens the session in a window with
+nothing but the browser's chrome (a `(window)` route group outside the app's
+navigation, keeping the signed-in rules: idle sign-out and confirm-it's-you).
+The window takes the stream, since a session has one viewer at a time.
+
+That surfaced a real fault: a page whose stream another window or tab took
+said "Session over" and that the profile's data had been saved, though the
+session was running on. It now says "This session is open in another
+window", with "Bring it back here", which takes the stream back; the pop-out
+then says the same and offers to close itself. A blocked pop-up is
+explained. Checked in the browser e2e journey (pop out, frames in the
+window, the main page's message and accessibility, bring it back).

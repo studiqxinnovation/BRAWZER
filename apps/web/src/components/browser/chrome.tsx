@@ -37,6 +37,7 @@ import {
   Keyboard,
   Lock,
   LockOpen,
+  AppWindow,
   LogOut,
   Maximize2,
   Plus,
@@ -571,6 +572,8 @@ export function MoreMenu({
   onKeyboard,
   onShortcuts,
   onEnd,
+  onPopOut,
+  onCloseWindow,
 }: {
   canPrint: boolean;
   coarsePointer: boolean;
@@ -587,6 +590,10 @@ export function MoreMenu({
   onKeyboard: () => void;
   onShortcuts: () => void;
   onEnd: () => void;
+  /** In the app: open this session in a window of its own. */
+  onPopOut?: (() => void) | undefined;
+  /** In that window: close it (the session keeps running). */
+  onCloseWindow?: (() => void) | undefined;
 }) {
   return (
     <Menu>
@@ -655,6 +662,16 @@ export function MoreMenu({
         <MenuItem icon={<Maximize2 />} onClick={onFullScreen}>
           Full screen
         </MenuItem>
+        {onPopOut && (
+          <MenuItem icon={<AppWindow />} onClick={onPopOut}>
+            Open in its own window
+          </MenuItem>
+        )}
+        {onCloseWindow && (
+          <MenuItem icon={<AppWindow />} onClick={onCloseWindow}>
+            Close this window
+          </MenuItem>
+        )}
         {coarsePointer ? (
           <MenuItem icon={<Keyboard />} onClick={onKeyboard}>
             Type into the page

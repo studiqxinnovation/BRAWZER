@@ -212,6 +212,23 @@ test.describe("browser", () => {
     await picker.getByRole("button", { name: "Cancel" }).click();
     await expect(picker).toBeHidden();
 
+    // Its own window: the pop-out takes the stream, this page says so and can take it back.
+    const popupOpened = page.waitForEvent("popup");
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Open in its own window" }).click();
+    const popup = await popupOpened;
+    const popupViewport = popup.getByTestId("browser-viewport");
+    await expect(popupViewport).toBeVisible({ timeout: 30_000 });
+    await expect
+      .poll(() => popupViewport.getAttribute("data-frames"), { timeout: 30_000 })
+      .not.toBe("0");
+    await expect(page.getByText("This session is open in another window")).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "Bring it back here" }).click();
+    await expect(viewport).toBeVisible({ timeout: 30_000 });
+    await expect(popup.getByText("This session is open in another window")).toBeVisible();
+    await popup.close();
+
     // Tabs.
     await page.getByRole("button", { name: "New tab" }).click();
     await expect(page.getByRole("tab")).toHaveCount(2);

@@ -10,6 +10,7 @@ import {
   type FrameHeader,
   type Profile,
   type RefusedAction,
+  STREAM_CLOSE_CODES,
   type TabState,
   type TransferMessage,
   type Viewport,
@@ -63,7 +64,9 @@ type Phase =
   | { kind: "starting" }
   | { kind: "connecting"; session: BrowserSession }
   | { kind: "live"; session: BrowserSession }
-  | { kind: "ended"; message: string };
+  | { kind: "ended"; message: string }
+  /** Another window or tab took the stream; the session runs on there. */
+  | { kind: "elsewhere"; session: BrowserSession };
 
 const REFUSALS: Record<RefusedAction, { title: string; description: string }> = {
   download: {
@@ -160,7 +163,10 @@ export function BrowserWorkspace({
   initial,
   profiles,
   proxies,
+  mode = "page",
 }: {
+  /** "window": the pop-out, with nothing around it but the browser's own chrome. */
+  mode?: "page" | "window";
   initial: BrowserOverview;
   profiles: readonly Profile[];
   /** The account's saved proxies, for naming the one a session uses. */
@@ -256,6 +262,13 @@ export function BrowserWorkspace({
       if (event.kind === "closed") {
         const current = phaseRef.current;
         if (current.kind !== "live" && current.kind !== "connecting") return;
+        // Another window took it: the session runs on there, and can be brought back.
+        if (event.code === STREAM_CLOSE_CODES.replaced) {
+          setPhase({ kind: "elsewhere", session: current.session });
+          setDialog(null);
+          setChooser(null);
+          return;
+        }
         const { message, retry } = describeClose(event.code);
         if (retry && attempts.current < RECONNECT_ATTEMPTS) {
           attempts.current += 1;
@@ -356,7 +369,13 @@ export function BrowserWorkspace({
         return;
       }
       case "error":
-        if (message.code === "replaced" || message.code === "ended") {
+        if (message.code === "replaced") {
+          setPhase((current) =>
+            current.kind === "live" || current.kind === "connecting"
+              ? { kind: "elsewhere", session: current.session }
+              : current,
+          );
+        } else if (message.code === "ended") {
           setPhase({ kind: "ended", message: message.message });
         }
         return;
@@ -618,6 +637,22 @@ export function BrowserWorkspace({
     viewportRef.current?.focus();
   }
 
+  /** The session in a window of its own; it takes the stream, and this page says so. */
+  function popOut() {
+    const opened = window.open(
+      "/app/browser/window",
+      "brawzer-browser",
+      "popup=yes,width=1280,height=860",
+    );
+    if (!opened) {
+      toast.add({
+        title: "The window was blocked",
+        description: "Allow pop-ups for Brawzer in this browser, then try again.",
+        type: "error",
+      });
+    }
+  }
+
   async function fullScreen() {
     const container = containerRef.current;
     if (!container) return;
@@ -643,6 +678,41 @@ export function BrowserWorkspace({
         error={startError}
         onStart={(profileId) => void start(profileId)}
       />
+    );
+  }
+
+  if (phase.kind === "elsewhere") {
+    const elsewhere = phase.session;
+    return (
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-5 py-8 sm:px-8 sm:py-12">
+        <h1 className="text-title-1 text-ink">Browser</h1>
+        <FormMessage tone="info" title="This session is open in another window">
+          One window shows a session at a time. It keeps running there, with its tabs as they are.
+        </FormMessage>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={() => {
+              attempts.current = 0;
+              void connect(elsewhere);
+            }}
+          >
+            Bring it back here
+          </Button>
+          {mode === "window" && (
+            <Button
+              variant="secondary"
+              size="lg"
+              onClick={() => {
+                window.close();
+              }}
+            >
+              Close this window
+            </Button>
+          )}
+        </div>
+      </div>
     );
   }
 
@@ -783,6 +853,14 @@ export function BrowserWorkspace({
           onShortcuts={() => {
             setShortcutsOpen(true);
           }}
+          onPopOut={mode === "page" ? popOut : undefined}
+          onCloseWindow={
+            mode === "window"
+              ? () => {
+                  window.close();
+                }
+              : undefined
+          }
           onEnd={() => {
             setConfirmEnd(true);
           }}
