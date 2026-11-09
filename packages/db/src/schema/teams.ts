@@ -33,7 +33,9 @@ export const teamMembers = pgTable(
   (table) => [
     primaryKey({ columns: [table.teamId, table.userId] }),
     uniqueIndex("team_members_user_unique").on(table.userId),
-    uniqueIndex("team_members_one_owner").on(table.teamId).where(sql`role = 'owner'`),
+    uniqueIndex("team_members_one_owner")
+      .on(table.teamId)
+      .where(sql`role = 'owner'`),
   ],
 );
 

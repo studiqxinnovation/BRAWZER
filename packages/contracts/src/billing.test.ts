@@ -39,6 +39,7 @@ describe("usage warnings", () => {
     driveFolders: 10,
     browsingMinutesPerMonth: 600,
     liveSessions: 1,
+    teamMembers: 3,
   };
   const usage = {
     profiles: 3,

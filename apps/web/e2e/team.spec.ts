@@ -81,13 +81,11 @@ test.describe("team", () => {
     await page.goto("/app/drive");
     await page.getByRole("link", { name: `${teamName}’s Drive` }).click();
     await expect(page.getByText("Nothing in the team’s Drive yet")).toBeVisible();
-    await page
-      .getByTestId("drive-file-input")
-      .setInputFiles({
-        name: "team-plan.txt",
-        mimeType: "text/plain",
-        buffer: Buffer.from("Q4\n"),
-      });
+    await page.getByTestId("drive-file-input").setInputFiles({
+      name: "team-plan.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Q4\n"),
+    });
     const ownerFiles = page.getByRole("list", { name: "Files and folders" });
     await expect(ownerFiles).toContainText("team-plan.txt", { timeout: 15_000 });
     await memberPage.goto("/app/drive?space=team");
