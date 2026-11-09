@@ -29,8 +29,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import { endBrowserSession, requestStreamTicket, startBrowserSession } from "@/lib/api/browser";
+import { uploadDriveFile } from "@/lib/api/drive";
 import { displayUrl, hostOf, resolveTyped, searchUrl } from "@/lib/browser/input";
 import { nextZoom } from "@/lib/browser/zoom";
+import { encodeCanvas, screenshotName } from "@/lib/browser/picture";
 import { AudioPlayer } from "@/lib/browser/audio";
 import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/stream";
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
@@ -56,6 +58,7 @@ import {
   ShortcutsDialog,
 } from "./dialogs";
 import { type ChooserRequest, DrivePicker } from "./drive-picker";
+import { ReportPageDialog, type ReportTarget } from "./report-dialog";
 import { StartPanel } from "./start-panel";
 import { BrowserViewport, type Shortcut, type ViewportHandle } from "./viewport";
 
@@ -224,6 +227,7 @@ export function BrowserWorkspace({
   const [address, setAddress] = useState<string | null>(null);
   const [ending, setEnding] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [report, setReport] = useState<ReportTarget | null>(null);
   const [firstFrame, setFirstFrame] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   /** The profile of the session that ran last, for what the end message says. */
@@ -638,6 +642,44 @@ export function BrowserWorkspace({
   }
 
   /** The session in a window of its own; it takes the stream, and this page says so. */
+  /** The page as drawn here, as a PNG in Drive's top folder; the server never makes one. */
+  async function saveScreenshot() {
+    const canvas = viewportRef.current?.canvas() ?? null;
+    const blob = canvas ? await encodeCanvas(canvas, "image/png", 1, canvas.width) : null;
+    if (!blob) {
+      toast.add({ title: "There’s nothing to save yet", type: "error" });
+      return;
+    }
+    const name = screenshotName(hostOf(activeTab?.url ?? ""), new Date());
+    const saved = await uploadDriveFile(new File([blob], name, { type: "image/png" }), null, () => {
+      // A screenshot is small: no progress to show.
+    }).result;
+    if (saved.ok) {
+      toast.add({ title: "Screenshot saved in Drive", description: name, type: "success" });
+    } else if (saved.status === 401) {
+      leaveSignedInArea("expired");
+    } else {
+      toast.add({
+        title: "The screenshot wasn’t saved",
+        description: saved.error.message,
+        type: "error",
+      });
+    }
+  }
+
+  function openReport() {
+    if (phase.kind !== "live") return;
+    const tab = activeTab;
+    const url = tab && !isStartPage(tab.url) ? (tab.error?.url ?? tab.url) : null;
+    setReport({
+      sessionId: phase.session.id,
+      url,
+      title: url !== null && tab?.title ? tab.title : null,
+      // An empty code means the engine named none.
+      errorCode: tab?.error && tab.error.code !== "" ? tab.error.code : null,
+    });
+  }
+
   function popOut() {
     const opened = window.open(
       "/app/browser/window",
@@ -864,6 +906,8 @@ export function BrowserWorkspace({
           onEnd={() => {
             setConfirmEnd(true);
           }}
+          onScreenshot={() => void saveScreenshot()}
+          onReport={openReport}
         />
       </div>
 
@@ -922,6 +966,7 @@ export function BrowserWorkspace({
               const host = hostOf(activeTab.error?.url ?? activeTab.url);
               navigate(searchUrl(host || displayUrl(activeTab.url)));
             }}
+            onReport={openReport}
           />
         )}
         {(!live || !firstFrame) && (
@@ -991,6 +1036,14 @@ export function BrowserWorkspace({
             });
           }
           setChooser(null);
+          viewportRef.current?.focus();
+        }}
+      />
+      <ReportPageDialog
+        target={report}
+        canvas={() => viewportRef.current?.canvas() ?? null}
+        onClose={() => {
+          setReport(null);
           viewportRef.current?.focus();
         }}
       />

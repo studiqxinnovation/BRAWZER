@@ -43,6 +43,7 @@ export const securityEventTypes = [
   "browser.file_sent",
   "browser.clipboard_copied",
   "browser.clipboard_pasted",
+  "browser.page_reported",
   "profile.data_cleared",
   "billing.subscription_started",
   "billing.subscription_changed",
@@ -74,6 +75,8 @@ export const securityEventSchema = z.object({
     kind: z.string().optional(),
     /** For plan changes: the plan's code. */
     plan: z.string().optional(),
+    /** For a reported page: whether a picture went with it. */
+    picture: z.boolean().optional(),
   }),
 });
 

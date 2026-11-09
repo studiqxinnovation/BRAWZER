@@ -1,3 +1,4 @@
+import { CLOSED_REPORT_DAYS, REPORT_PICTURE_DAYS } from "@brawzer/contracts";
 import type { DatabaseHandle } from "@brawzer/db";
 import {
   Inject,
@@ -23,6 +24,9 @@ export const RETENTION = {
   usedLinkDays: 7,
   unconfirmedAccountDays: 30,
   knownDeviceDays: 90,
+  /** A reported page's picture (Phase 8, idea 12), when nobody closed the report sooner. */
+  reportPictureDays: REPORT_PICTURE_DAYS,
+  closedReportDays: CLOSED_REPORT_DAYS,
 } as const;
 
 /** Session-level advisory lock, so only one API instance runs the job at a time. */
@@ -35,14 +39,17 @@ export interface RetentionResult {
   challenges: number;
   knownDevices: number;
   unconfirmedAccounts: number;
+  reportPictures: number;
+  reports: number;
 }
 
 const logger = new Logger("Retention");
 
 /**
  * Deletes data Brawzer no longer needs: security history past its retention
- * period, sessions and email links that ended long ago, and sign-ups that
- * were never confirmed (possibly someone else's address).
+ * period, sessions and email links that ended long ago, sign-ups that were
+ * never confirmed (possibly someone else's address), and reported pages'
+ * pictures and old closed reports.
  */
 @Injectable()
 export class RetentionService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -139,6 +146,14 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
              )`,
           [before(RETENTION.unconfirmedAccountDays), now],
         );
+        const pictures = await client.query(
+          `update page_reports set picture = null
+           where picture is not null and (closed_at is not null or created_at < $1)`,
+          [before(RETENTION.reportPictureDays)],
+        );
+        const reports = await client.query("delete from page_reports where closed_at < $1", [
+          before(RETENTION.closedReportDays),
+        ]);
         return {
           securityEvents: events.rowCount ?? 0,
           sessions: sessions.rowCount ?? 0,
@@ -146,6 +161,8 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
           challenges: challenges.rowCount ?? 0,
           knownDevices: devices.rowCount ?? 0,
           unconfirmedAccounts: accounts.rowCount ?? 0,
+          reportPictures: pictures.rowCount ?? 0,
+          reports: reports.rowCount ?? 0,
         };
       } finally {
         await client.query("select pg_advisory_unlock($1)", [LOCK_KEY]);

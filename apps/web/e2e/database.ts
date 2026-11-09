@@ -27,3 +27,12 @@ export async function expireIdentityConfirmation(email: string): Promise<void> {
     [email],
   );
 }
+
+/**
+ * Makes an account an administrator. An installation names its own with
+ * ADMIN_EMAILS when they sign up; the shared dev server can't be told test
+ * addresses ahead of time.
+ */
+export async function makeAdministrator(email: string): Promise<void> {
+  await database().query("update users set role = 'admin' where email = $1", [email]);
+}

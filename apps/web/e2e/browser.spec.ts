@@ -200,6 +200,26 @@ test.describe("browser", () => {
     expect(await wcagViolations(page)).toEqual([]);
     await page.keyboard.press("Escape");
 
+    // A screenshot, made from what this page shows, goes to Drive.
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Save a screenshot in Drive" }).click();
+    await expect(page.getByText("Screenshot saved in Drive")).toBeVisible({ timeout: 30_000 });
+
+    // A report carries only what the person includes, and they see the picture before it goes.
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Report a problem with this page" }).click();
+    const reportDialog = page.getByRole("dialog", { name: "Report a problem with this page" });
+    await expect(reportDialog.getByText("testsite.invalid")).toBeVisible();
+    await reportDialog
+      .getByRole("textbox", { name: "What went wrong?" })
+      .fill("The second button does nothing.");
+    await reportDialog.getByRole("checkbox", { name: /Attach a picture/ }).click();
+    await expect(reportDialog.getByRole("img", { name: /What will be sent/ })).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+    await reportDialog.getByRole("button", { name: "Send report" }).click();
+    await expect(page.getByText("Report sent")).toBeVisible();
+    await expect(reportDialog).toBeHidden();
+
     // A website asking for a file is offered Drive, never this computer.
     await clickPage(page, 100, 380);
     const picker = page.getByRole("dialog", { name: "testsite.invalid asks for a file" });
@@ -258,6 +278,7 @@ test.describe("browser", () => {
         "browser.session_ended",
         "browser.clipboard_copied",
         "browser.clipboard_pasted",
+        "browser.page_reported",
       ]),
     );
   });

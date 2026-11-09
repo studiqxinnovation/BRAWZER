@@ -19,6 +19,8 @@ export interface ViewportHandle {
   focus(): void;
   /** Opens the on-screen keyboard on touch devices. */
   focusKeyboard(): void;
+  /** What the page shows now, as drawn here; null before the first frame. */
+  canvas(): HTMLCanvasElement | null;
 }
 
 /** Brawzer's own shortcuts, handled by the workspace rather than sent to the page. */
@@ -172,6 +174,10 @@ export function BrowserViewport({
       },
       focusKeyboard() {
         keyboardRef.current?.focus();
+      },
+      canvas() {
+        const canvas = canvasRef.current;
+        return canvas && readyRef.current && canvas.width > 0 ? canvas : null;
       },
     }),
     [drawNext, onDrawn],

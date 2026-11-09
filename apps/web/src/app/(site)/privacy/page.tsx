@@ -37,6 +37,12 @@ export default function PrivacyPage() {
                 Billing details, handled by a payment provider once paid plans exist. [Provider to
                 be confirmed]
               </li>
+              <li>
+                Reports you send about a page: what you write, and the page’s address and a picture
+                of it only if you include them. Brawzer’s administrators read them to fix what went
+                wrong. A picture is deleted when the report is closed, or after 30 days; a closed
+                report after 90 days.
+              </li>
             </ul>
           ),
         },

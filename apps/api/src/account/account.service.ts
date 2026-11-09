@@ -20,6 +20,7 @@ import { SecurityEventsService } from "../security-events/security-events.js";
 import { ProfilesService } from "../profiles/profiles.service.js";
 import { ProxiesService } from "../proxies/proxies.service.js";
 import { SiteRulesService } from "../site-rules/site-rules.service.js";
+import { ReportsService } from "../reports/reports.service.js";
 import { SecurityHistoryService } from "../security/security.service.js";
 
 const logger = new Logger("Account");
@@ -47,6 +48,7 @@ export class AccountService {
     @Inject(ProfilesService) private readonly profiles: ProfilesService,
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
     @Inject(SiteRulesService) private readonly siteRules: SiteRulesService,
+    @Inject(ReportsService) private readonly reports: ReportsService,
     @Inject(DriveService) private readonly drive: DriveService,
     @Inject(BrowserService) private readonly browser: BrowserService,
     @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
@@ -223,18 +225,29 @@ export class AccountService {
   /** Everything Brawzer holds about the account, except secrets. */
   async export(auth: AuthContext, meta: RequestMeta): Promise<AccountExport> {
     const { user, session } = auth;
-    const [passkeys, mfa, devices, history, profiles, proxies, drive, browserSessions, siteRules] =
-      await Promise.all([
-        this.passkeys.list(user.id),
-        this.mfa.status(user.id),
-        this.sessions.listActive(auth),
-        this.history.all(user.id),
-        this.profiles.list(user.id),
-        this.proxies.forExport(user.id),
-        this.drive.forExport(user.id),
-        this.browser.forExport(user.id),
-        this.siteRules.forExport(user.id),
-      ]);
+    const [
+      passkeys,
+      mfa,
+      devices,
+      history,
+      profiles,
+      proxies,
+      drive,
+      browserSessions,
+      siteRules,
+      pageReports,
+    ] = await Promise.all([
+      this.passkeys.list(user.id),
+      this.mfa.status(user.id),
+      this.sessions.listActive(auth),
+      this.history.all(user.id),
+      this.profiles.list(user.id),
+      this.proxies.forExport(user.id),
+      this.drive.forExport(user.id),
+      this.browser.forExport(user.id),
+      this.siteRules.forExport(user.id),
+      this.reports.forExport(user.id),
+    ]);
     await this.events.record({
       type: "data.exported",
       userId: user.id,
@@ -273,6 +286,7 @@ export class AccountService {
       })),
       proxies,
       siteRules,
+      pageReports,
       drive,
       browserSessions,
     };

@@ -155,6 +155,7 @@ export const securityEventType = pgEnum("security_event_type", [
   "browser.file_sent",
   "browser.clipboard_copied",
   "browser.clipboard_pasted",
+  "browser.page_reported",
   "profile.data_cleared",
   "billing.subscription_started",
   "billing.subscription_changed",

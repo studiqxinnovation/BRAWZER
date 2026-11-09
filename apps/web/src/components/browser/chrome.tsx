@@ -25,6 +25,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpenText,
+  Camera,
   ChevronUp,
   ClipboardPaste,
   Check,
@@ -34,6 +35,7 @@ import {
   Download,
   Ellipsis,
   FileText,
+  Flag,
   Keyboard,
   Lock,
   LockOpen,
@@ -572,6 +574,8 @@ export function MoreMenu({
   onKeyboard,
   onShortcuts,
   onEnd,
+  onScreenshot,
+  onReport,
   onPopOut,
   onCloseWindow,
 }: {
@@ -590,6 +594,8 @@ export function MoreMenu({
   onKeyboard: () => void;
   onShortcuts: () => void;
   onEnd: () => void;
+  onScreenshot: () => void;
+  onReport: () => void;
   /** In the app: open this session in a window of its own. */
   onPopOut?: (() => void) | undefined;
   /** In that window: close it (the session keeps running). */
@@ -610,6 +616,9 @@ export function MoreMenu({
         </MenuItem>
         <MenuItem icon={<Printer />} disabled={!canPrint} onClick={onPrint}>
           Save page as PDF in Drive
+        </MenuItem>
+        <MenuItem icon={<Camera />} disabled={!canPrint} onClick={onScreenshot}>
+          Save a screenshot in Drive
         </MenuItem>
         <MenuItem icon={<Search />} disabled={!canPrint} onClick={onFind}>
           Find in page
@@ -681,6 +690,9 @@ export function MoreMenu({
             Keyboard shortcuts
           </MenuItem>
         )}
+        <MenuItem icon={<Flag />} onClick={onReport}>
+          Report a problem with this page
+        </MenuItem>
         <MenuSeparator />
         <MenuItem icon={<LogOut />} tone="danger" onClick={onEnd}>
           End session
@@ -814,11 +826,13 @@ export function NavigationErrorPage({
   onRetry,
   onCopy,
   onSearch,
+  onReport,
 }: {
   tab: TabState;
   onRetry: () => void;
   onCopy: () => void;
   onSearch: () => void;
+  onReport: () => void;
 }) {
   if (!tab.error) return null;
   const text = describeNavigationError(tab.error.code, tab.error.url);
@@ -857,6 +871,12 @@ export function NavigationErrorPage({
             <Button variant="secondary" onClick={onSearch}>
               <Search aria-hidden="true" />
               Search for it
+            </Button>
+          )}
+          {text.kind === "blocked" && (
+            <Button variant="ghost" onClick={onReport}>
+              <Flag aria-hidden="true" />
+              Report it
             </Button>
           )}
         </div>

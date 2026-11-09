@@ -82,6 +82,17 @@ export const accountExportSchema = z.object({
   siteRules: z.array(
     z.object({ kind: z.enum(["allow", "block"]), host: z.string(), createdAt: z.iso.datetime() }),
   ),
+  /** Pages reported to Brawzer's team; a picture is listed, not repeated here. */
+  pageReports: z.array(
+    z.object({
+      kind: z.enum(["broken", "blocked", "other"]),
+      message: z.string(),
+      url: z.string().nullable(),
+      createdAt: z.iso.datetime(),
+      closedAt: z.iso.datetime().nullable(),
+      hasPicture: z.boolean(),
+    }),
+  ),
   /** Drive's records only; the files themselves are saved from Drive. */
   drive: z.object({
     folders: z.array(z.object({ path: z.string(), createdAt: z.iso.datetime() })),

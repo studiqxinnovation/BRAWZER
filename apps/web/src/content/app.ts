@@ -185,6 +185,13 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
         title: `${String(details.chars ?? 0)} characters copied from the cloud browser to a computer’s clipboard`,
         tone: "neutral",
       };
+    case "browser.page_reported":
+      return {
+        title: details.picture
+          ? "A page was reported to Brawzer, with a picture of it"
+          : "A page was reported to Brawzer",
+        tone: "neutral",
+      };
     case "browser.clipboard_pasted":
       return {
         title: `${String(details.chars ?? 0)} characters pasted from a computer’s clipboard into the cloud browser`,

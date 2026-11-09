@@ -19,6 +19,10 @@ function detailsOf(metadata: Record<string, string | number | boolean>): Securit
   if (typeof metadata.persistent === "boolean") details.persistent = metadata.persistent;
   if (typeof metadata.reason === "string") details.reason = metadata.reason;
   if (typeof metadata.count === "number") details.count = metadata.count;
+  if (typeof metadata.chars === "number") details.chars = metadata.chars;
+  if (typeof metadata.kind === "string") details.kind = metadata.kind;
+  if (typeof metadata.plan === "string") details.plan = metadata.plan;
+  if (typeof metadata.picture === "boolean") details.picture = metadata.picture;
   return details;
 }
 

@@ -18,6 +18,7 @@ const SEALED_COLUMNS = [
   { table: "drive_files", key: "id", column: "wrapped_key" },
   { table: "profiles", key: "id", column: "data_wrapped_key" },
   { table: "browser_sessions", key: "id", column: "agent_secret" },
+  { table: "page_reports", key: "id", column: "picture" },
 ] as const;
 
 export interface RewrapResult {

@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { AdminAccounts } from "@/components/admin/admin-accounts";
+import { AdminReports } from "@/components/admin/admin-reports";
 import { AdminRuntimeView } from "@/components/admin/admin-runtime";
 import {
   PageContainer,
@@ -33,6 +34,10 @@ async function Accounts() {
         <SectionHeading id="admin-runtime">Cloud browser</SectionHeading>
         <AdminRuntimeView />
       </section>
+      <section aria-labelledby="admin-reports" className="flex flex-col gap-4">
+        <SectionHeading id="admin-reports">Reported pages</SectionHeading>
+        <AdminReports />
+      </section>
     </div>
   );
 }
@@ -42,9 +47,9 @@ export default function AdminPage() {
     <PageContainer>
       <PageHeader title="Admin">
         <p>
-          Accounts on this installation and their plans, and the cloud browser’s hosts and live
-          sessions. Every action asks you to confirm it’s you and is recorded in the account’s
-          security history.
+          Accounts on this installation and their plans, the cloud browser’s hosts and live
+          sessions, and pages people reported. Every action asks you to confirm it’s you; changes to
+          an account are recorded in its security history.
         </p>
       </PageHeader>
       <Suspense fallback={<Skeleton className="h-40 w-full rounded-xl" />}>
