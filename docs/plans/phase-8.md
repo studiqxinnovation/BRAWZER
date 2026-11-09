@@ -5,32 +5,32 @@ Twenty-four additions proposed after Phase 7 and accepted as a set on
 plan already named. They are built in value order, one commit each, on the
 `phase-8-finishing` branch, and this page tracks them.
 
-| #   | Idea                                                       | Status                                                                                                              |
-| --- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| 10  | Isolation checks as a CI job                               | **Done** 2026-11-08: `apps/api/test/isolation.integration.test.ts`; found and closed a DNS path (ADR 0014)          |
-| 1   | Brawzer-drawn error pages                                  | **Done** 2026-11-08: drawn by Brawzer over the viewport, both engines, with Brawzer's refusal codes                 |
-| 2   | Bookmarks and history as Brawzer records                   | Not built: work on it was stopped on 2026-11-08 and is not resumed; idea 3 (which built on it) waits too            |
-| 5   | Find in page, zoom, reader mode                            | **Done** 2026-11-08: both engines, from the menu and Alt shortcuts                                                  |
-| 4   | Clipboard with intent                                      | **Done** 2026-11-08: deliberate copy and paste, text only, each use recorded                                        |
-| 9   | Private-address browsing through a saved proxy, on purpose | **Done** 2026-11-08: a per-profile switch, off by default, loopback still refused                                   |
-| 8   | Per-account destination allow-lists and block-lists        | **Done** 2026-11-08: Site rules page; applied by the egress before anything else                                    |
-| 11  | Passkey-only phone approval                                | **Done** 2026-11-08: approving needs a passkey whenever the account has one                                         |
-| 13  | A key re-wrap job                                          | **Done** 2026-11-08: on the maintenance cadence and from the Admin API                                              |
-| 14  | Warm pool                                                  | **Done** 2026-11-08: `BROWSER_WARM_POOL` pairs waiting per API instance                                             |
-| 15  | A scheduler across runtime hosts                           | **Done** 2026-11-08: `RUNTIME_HOSTS`, the host with the most room, remembered per session                           |
-| 16  | Relay back-pressure for downloads                          | **Done** 2026-11-08: a bounded buffer per transfer; the agent pauses while Drive catches up                         |
-| 17  | Metrics                                                    | **Done** 2026-11-08: `GET /api/metrics`, Prometheus text, behind a token                                            |
-| 18  | Image rebuild on upstream advisories                       | **Done** 2026-11-08: a daily check against Debian starts the release workflow                                       |
-| 20  | Usage emails and in-app nudges                             | **Done** 2026-11-09: hourly emails at 80% and 100%, warnings on Home                                                |
-| 21  | Trials and promotion codes                                 | **Done** 2026-11-09: `trialDays` per plan, once per account; promotion codes at checkout                            |
-| 22  | Admin: sessions and runtime view                           | **Done** 2026-11-09: hosts, warm pool, live sessions, end one                                                       |
-| 23  | An operator CLI                                            | **Done** 2026-11-09: `pnpm brawzer`, `node dist/cli/main.js` in production                                          |
-| 24  | Load test for the stream                                   | **Done** 2026-11-09: `infra/bench/stream-load.mjs`; bandwidth, not CPU, sets capacity                               |
-| 3   | Session hand-off between devices                           | Waits on idea 2                                                                                                     |
-| 6   | Pop-out work mode                                          | **Done** 2026-11-08: “Open in its own window”, and bringing a session back                                          |
-| 12  | Report a page                                              | **Done** 2026-11-08: a note to the administrators, the address and a picture only if included; screenshots in Drive |
-| 19  | Team accounts                                              | Next                                                                                                                |
-| 7   | Sound, then WebRTC (Phase 3b)                              | **Sound done** 2026-11-08 (ADR 0006 addendum); WebRTC video still later                                             |
+| #   | Idea                                                       | Status                                                                                                                    |
+| --- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 10  | Isolation checks as a CI job                               | **Done** 2026-11-08: `apps/api/test/isolation.integration.test.ts`; found and closed a DNS path (ADR 0014)                |
+| 1   | Brawzer-drawn error pages                                  | **Done** 2026-11-08: drawn by Brawzer over the viewport, both engines, with Brawzer's refusal codes                       |
+| 2   | Bookmarks and history as Brawzer records                   | Not built: work on it was stopped on 2026-11-08 and is not resumed; idea 3 (which built on it) waits too                  |
+| 5   | Find in page, zoom, reader mode                            | **Done** 2026-11-08: both engines, from the menu and Alt shortcuts                                                        |
+| 4   | Clipboard with intent                                      | **Done** 2026-11-08: deliberate copy and paste, text only, each use recorded                                              |
+| 9   | Private-address browsing through a saved proxy, on purpose | **Done** 2026-11-08: a per-profile switch, off by default, loopback still refused                                         |
+| 8   | Per-account destination allow-lists and block-lists        | **Done** 2026-11-08: Site rules page; applied by the egress before anything else                                          |
+| 11  | Passkey-only phone approval                                | **Done** 2026-11-08: approving needs a passkey whenever the account has one                                               |
+| 13  | A key re-wrap job                                          | **Done** 2026-11-08: on the maintenance cadence and from the Admin API                                                    |
+| 14  | Warm pool                                                  | **Done** 2026-11-08: `BROWSER_WARM_POOL` pairs waiting per API instance                                                   |
+| 15  | A scheduler across runtime hosts                           | **Done** 2026-11-08: `RUNTIME_HOSTS`, the host with the most room, remembered per session                                 |
+| 16  | Relay back-pressure for downloads                          | **Done** 2026-11-08: a bounded buffer per transfer; the agent pauses while Drive catches up                               |
+| 17  | Metrics                                                    | **Done** 2026-11-08: `GET /api/metrics`, Prometheus text, behind a token                                                  |
+| 18  | Image rebuild on upstream advisories                       | **Done** 2026-11-08: a daily check against Debian starts the release workflow                                             |
+| 20  | Usage emails and in-app nudges                             | **Done** 2026-11-09: hourly emails at 80% and 100%, warnings on Home                                                      |
+| 21  | Trials and promotion codes                                 | **Done** 2026-11-09: `trialDays` per plan, once per account; promotion codes at checkout                                  |
+| 22  | Admin: sessions and runtime view                           | **Done** 2026-11-09: hosts, warm pool, live sessions, end one                                                             |
+| 23  | An operator CLI                                            | **Done** 2026-11-09: `pnpm brawzer`, `node dist/cli/main.js` in production                                                |
+| 24  | Load test for the stream                                   | **Done** 2026-11-09: `infra/bench/stream-load.mjs`; bandwidth, not CPU, sets capacity                                     |
+| 3   | Session hand-off between devices                           | Waits on idea 2                                                                                                           |
+| 6   | Pop-out work mode                                          | **Done** 2026-11-08: “Open in its own window”, and bringing a session back                                                |
+| 12  | Report a page                                              | **Done** 2026-11-08: a note to the administrators, the address and a picture only if included; screenshots in Drive       |
+| 19  | Team accounts                                              | **In progress** 2026-11-08: teams, invitations, roles and the owner's plan done; shared proxies and Drive next (ADR 0019) |
+| 7   | Sound, then WebRTC (Phase 3b)                              | **Sound done** 2026-11-08 (ADR 0006 addendum); WebRTC video still later                                                   |
 
 ## 10. Isolation checks as a CI job
 

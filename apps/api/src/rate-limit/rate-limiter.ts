@@ -37,6 +37,7 @@ export const RATE_LIMITS = {
   phonePollsPerIp: { name: "phone-poll-ip", limit: 600, windowSeconds: 15 * 60 },
   phoneApprovalsPerAccount: { name: "phone-approve", limit: 20, windowSeconds: 15 * 60 },
   pageReportsPerAccount: { name: "page-report", limit: 10, windowSeconds: 60 * 60 },
+  teamInvitationsPerAccount: { name: "team-invite", limit: 30, windowSeconds: 60 * 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {

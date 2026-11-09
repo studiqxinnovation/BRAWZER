@@ -12,6 +12,7 @@ import {
   Puzzle,
   ShieldCheck,
   ShieldEllipsis,
+  Users,
 } from "lucide-react";
 import type { Route } from "next";
 
@@ -50,7 +51,10 @@ export const appNav: readonly AppNavGroup[] = [
     ],
   },
   {
-    items: [{ href: "/app/account", label: "Account", icon: CircleUserRound, status: "available" }],
+    items: [
+      { href: "/app/team", label: "Team", icon: Users, status: "available" },
+      { href: "/app/account", label: "Account", icon: CircleUserRound, status: "available" },
+    ],
   },
 ];
 
@@ -183,6 +187,37 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
     case "browser.clipboard_copied":
       return {
         title: `${String(details.chars ?? 0)} characters copied from the cloud browser to a computer’s clipboard`,
+        tone: "neutral",
+      };
+    case "team.created":
+      return { title: `Team started: ${details.team ?? "a team"}`, tone: "neutral" };
+    case "team.joined":
+      return { title: `Joined ${details.team ?? "a team"}`, tone: "neutral" };
+    case "team.left":
+      return { title: `Left ${details.team ?? "the team"}`, tone: "neutral" };
+    case "team.member_removed":
+      return {
+        title: `Removed from ${details.team ?? "the team"} by its owner or an admin`,
+        tone: "warning",
+      };
+    case "team.role_changed":
+      return {
+        title: `Made ${details.role === "admin" ? "an admin" : "a member"} of ${details.team ?? "the team"}`,
+        tone: "neutral",
+      };
+    case "team.ownership_transferred":
+      return {
+        title:
+          details.role === "owner"
+            ? `Became the owner of ${details.team ?? "the team"}`
+            : `Handed ${details.team ?? "the team"} to another member`,
+        tone: "neutral",
+      };
+    case "team.deleted":
+      return { title: `${details.team ?? "The team"} was deleted`, tone: "neutral" };
+    case "team.invitation_sent":
+      return {
+        title: `Invited someone to ${details.team ?? "the team"} as ${details.role === "admin" ? "an admin" : "a member"}`,
         tone: "neutral",
       };
     case "browser.page_reported":

@@ -16,6 +16,7 @@ import {
   newDeviceSignInMessage,
   phoneSignInMessage,
   usageNoticeMessage,
+  teamInvitationMessage,
   passkeyAddedMessage,
   passkeyRemovedMessage,
   passwordChangedMessage,
@@ -130,6 +131,11 @@ export class EmailService {
     limit: string,
   ): void {
     this.dispatch(to, usageNoticeMessage(kind, percent, used, limit, this.link("/app/account")));
+  }
+
+  /** To an invited address: the Team page, where the verified account with it can join. */
+  sendTeamInvitation(to: string, team: string, invitedBy: string): void {
+    this.dispatch(to, teamInvitationMessage(team, invitedBy, this.link("/app/team")));
   }
 
   sendPhoneSignIn(to: string, device: string | null, ip: string | null): void {

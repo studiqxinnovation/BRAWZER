@@ -82,6 +82,14 @@ export const accountExportSchema = z.object({
   siteRules: z.array(
     z.object({ kind: z.enum(["allow", "block"]), host: z.string(), createdAt: z.iso.datetime() }),
   ),
+  /** The team the account is in, if any (Phase 8, idea 19). */
+  team: z
+    .object({
+      name: z.string(),
+      role: z.enum(["owner", "admin", "member"]),
+      joinedAt: z.iso.datetime(),
+    })
+    .nullable(),
   /** Pages reported to Brawzer's team; a picture is listed, not repeated here. */
   pageReports: z.array(
     z.object({

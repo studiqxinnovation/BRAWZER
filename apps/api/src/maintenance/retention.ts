@@ -41,6 +41,7 @@ export interface RetentionResult {
   unconfirmedAccounts: number;
   reportPictures: number;
   reports: number;
+  teamInvitations: number;
 }
 
 const logger = new Logger("Retention");
@@ -49,7 +50,7 @@ const logger = new Logger("Retention");
  * Deletes data Brawzer no longer needs: security history past its retention
  * period, sessions and email links that ended long ago, sign-ups that were
  * never confirmed (possibly someone else's address), and reported pages'
- * pictures and old closed reports.
+ * pictures and old closed reports, and team invitations nobody took up.
  */
 @Injectable()
 export class RetentionService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -154,6 +155,10 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
         const reports = await client.query("delete from page_reports where closed_at < $1", [
           before(RETENTION.closedReportDays),
         ]);
+        const invitations = await client.query(
+          "delete from team_invitations where expires_at < $1",
+          [now],
+        );
         return {
           securityEvents: events.rowCount ?? 0,
           sessions: sessions.rowCount ?? 0,
@@ -163,6 +168,7 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
           unconfirmedAccounts: accounts.rowCount ?? 0,
           reportPictures: pictures.rowCount ?? 0,
           reports: reports.rowCount ?? 0,
+          teamInvitations: invitations.rowCount ?? 0,
         };
       } finally {
         await client.query("select pg_advisory_unlock($1)", [LOCK_KEY]);

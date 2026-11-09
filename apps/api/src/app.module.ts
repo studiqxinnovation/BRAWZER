@@ -4,6 +4,7 @@ import { ProfilesModule } from "./profiles/profiles.module.js";
 import { ProxiesModule } from "./proxies/proxies.module.js";
 import { SiteRulesModule } from "./site-rules/site-rules.module.js";
 import { ReportsModule } from "./reports/reports.module.js";
+import { TeamsModule } from "./teams/teams.module.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { AdminModule } from "./admin/admin.module.js";
 import { BillingModule } from "./billing/billing.module.js";
@@ -35,6 +36,7 @@ export class AppModule {
         ProxiesModule,
         SiteRulesModule,
         ReportsModule,
+        TeamsModule,
         DriveModule,
         BrowserModule,
         BillingModule,

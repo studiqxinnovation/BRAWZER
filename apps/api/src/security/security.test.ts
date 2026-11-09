@@ -7,6 +7,7 @@ import {
   proxyKinds,
   proxyProtocols,
   pageReportKinds,
+  teamRoles,
   proxyRotations,
   securityEventTypes,
 } from "@brawzer/contracts";
@@ -34,5 +35,6 @@ describe("enums shared by the database and the contracts", () => {
 
   it("list the same page report kinds", () => {
     expect([...schema.pageReportKind.enumValues]).toEqual([...pageReportKinds]);
+    expect([...schema.teamRole.enumValues]).toEqual([...teamRoles]);
   });
 });

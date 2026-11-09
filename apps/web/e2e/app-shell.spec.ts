@@ -30,6 +30,7 @@ const appPages = [
   { path: "/app/shield", heading: "Shield" },
   { path: "/app/site-rules", heading: "Site rules" },
   { path: "/app/sessions", heading: "Sessions" },
+  { path: "/app/team", heading: "Team" },
   { path: "/app/account", heading: "Account" },
 ] as const;
 

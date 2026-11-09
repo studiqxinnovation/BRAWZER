@@ -51,6 +51,14 @@ export const securityEventTypes = [
   "admin.plan_changed",
   "phone_sign_in.approved",
   "sign_in.new_device",
+  "team.created",
+  "team.joined",
+  "team.left",
+  "team.member_removed",
+  "team.role_changed",
+  "team.ownership_transferred",
+  "team.deleted",
+  "team.invitation_sent",
 ] as const;
 
 export const securityEventTypeSchema = z.enum(securityEventTypes);
@@ -75,6 +83,9 @@ export const securityEventSchema = z.object({
     kind: z.string().optional(),
     /** For plan changes: the plan's code. */
     plan: z.string().optional(),
+    /** For team events: the team's name, and a role given. */
+    team: z.string().optional(),
+    role: z.string().optional(),
     /** For a reported page: whether a picture went with it. */
     picture: z.boolean().optional(),
   }),

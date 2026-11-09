@@ -163,6 +163,14 @@ export const securityEventType = pgEnum("security_event_type", [
   "admin.plan_changed",
   "phone_sign_in.approved",
   "sign_in.new_device",
+  "team.created",
+  "team.joined",
+  "team.left",
+  "team.member_removed",
+  "team.role_changed",
+  "team.ownership_transferred",
+  "team.deleted",
+  "team.invitation_sent",
 ]);
 
 /**

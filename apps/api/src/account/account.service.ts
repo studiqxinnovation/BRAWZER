@@ -21,6 +21,7 @@ import { ProfilesService } from "../profiles/profiles.service.js";
 import { ProxiesService } from "../proxies/proxies.service.js";
 import { SiteRulesService } from "../site-rules/site-rules.service.js";
 import { ReportsService } from "../reports/reports.service.js";
+import { TeamsService } from "../teams/teams.service.js";
 import { SecurityHistoryService } from "../security/security.service.js";
 
 const logger = new Logger("Account");
@@ -49,6 +50,7 @@ export class AccountService {
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
     @Inject(SiteRulesService) private readonly siteRules: SiteRulesService,
     @Inject(ReportsService) private readonly reports: ReportsService,
+    @Inject(TeamsService) private readonly teams: TeamsService,
     @Inject(DriveService) private readonly drive: DriveService,
     @Inject(BrowserService) private readonly browser: BrowserService,
     @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
@@ -209,6 +211,8 @@ export class AccountService {
         details: ["email: Type your email address exactly as it is shown."],
       });
     }
+    // A team it owns with others must be handed over first; one it owns alone goes with it.
+    const teamObjectKeys = await this.teams.beforeAccountDeletion(user.id);
     // Containers and Drive objects aren't rows: stop and list them first.
     await this.browser.endAllForUser(user.id, "account_deleted");
     const [objectKeys, profileObjectKeys] = await Promise.all([
@@ -218,6 +222,7 @@ export class AccountService {
     await this.database.db.delete(schema.users).where(eq(schema.users.id, user.id));
     await this.drive.removeAllObjects(objectKeys);
     await this.profileData.removeObjects(profileObjectKeys);
+    await this.teams.removeObjects(teamObjectKeys);
     this.email.sendAccountDeleted(user.email);
     logger.log(`Account ${user.id} deleted by its owner`);
   }
@@ -236,6 +241,7 @@ export class AccountService {
       browserSessions,
       siteRules,
       pageReports,
+      team,
     ] = await Promise.all([
       this.passkeys.list(user.id),
       this.mfa.status(user.id),
@@ -247,6 +253,7 @@ export class AccountService {
       this.browser.forExport(user.id),
       this.siteRules.forExport(user.id),
       this.reports.forExport(user.id),
+      this.teams.forExport(user.id),
     ]);
     await this.events.record({
       type: "data.exported",
@@ -287,6 +294,7 @@ export class AccountService {
       proxies,
       siteRules,
       pageReports,
+      team,
       drive,
       browserSessions,
     };

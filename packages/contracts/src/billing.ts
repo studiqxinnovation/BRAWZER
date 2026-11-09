@@ -3,6 +3,7 @@ import { BROWSER_LIMITS } from "./browser.ts";
 import { DRIVE_LIMITS } from "./drive.ts";
 import { MAX_PROFILES } from "./profiles.ts";
 import { MAX_PROXIES } from "./proxies.ts";
+import { TEAM_LIMITS } from "./teams.ts";
 
 /**
  * Plans (Phase 6, ADR 0015). What a plan allows is a set of limits; the
@@ -19,6 +20,8 @@ export const planLimitsSchema = z.object({
   /** Null: no monthly cap. */
   browsingMinutesPerMonth: z.number().int().positive().nullable(),
   liveSessions: z.number().int().positive(),
+  /** People a team on this plan can have, its owner included; 1 means no team (Phase 8, idea 19). */
+  teamMembers: z.number().int().positive().max(500).default(TEAM_LIMITS.defaultMembers),
 });
 
 export const planCodeSchema = z
@@ -36,6 +39,7 @@ export const FREE_PLAN_LIMITS = {
   driveFolders: DRIVE_LIMITS.maxFolders,
   browsingMinutesPerMonth: null,
   liveSessions: BROWSER_LIMITS.liveSessions,
+  teamMembers: TEAM_LIMITS.defaultMembers,
 } as const satisfies z.infer<typeof planLimitsSchema>;
 
 /** A price as Stripe states it; shown only when it comes from there. */
@@ -100,6 +104,8 @@ export const billingOverviewSchema = z.object({
   billing: z.enum(["available", "unavailable"]),
   /** True until the account has had a subscription: a plan's trial is offered once. */
   trialEligible: z.boolean(),
+  /** Set when the plan comes from a team the person belongs to but doesn't own. */
+  team: z.object({ name: z.string(), owner: z.string() }).nullable(),
 });
 
 export const publicPlansSchema = z.object({ plans: z.array(planSchema) });

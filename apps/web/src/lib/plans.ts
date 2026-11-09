@@ -59,6 +59,12 @@ export function describeLimits(
       ratio: ratio(usage?.browsingMinutesThisMonth, limits.browsingMinutesPerMonth),
     },
     {
+      label: "Team size",
+      used: null,
+      allowed: limits.teamMembers < 2 ? "No team" : `${String(limits.teamMembers)} people`,
+      ratio: null,
+    },
+    {
       label: "Browser sessions at once",
       used: null,
       allowed: String(limits.liveSessions),

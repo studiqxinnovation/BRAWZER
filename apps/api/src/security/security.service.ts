@@ -23,6 +23,8 @@ function detailsOf(metadata: Record<string, string | number | boolean>): Securit
   if (typeof metadata.kind === "string") details.kind = metadata.kind;
   if (typeof metadata.plan === "string") details.plan = metadata.plan;
   if (typeof metadata.picture === "boolean") details.picture = metadata.picture;
+  if (typeof metadata.team === "string") details.team = metadata.team;
+  if (typeof metadata.role === "string") details.role = metadata.role;
   return details;
 }
 

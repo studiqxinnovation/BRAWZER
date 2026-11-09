@@ -81,14 +81,59 @@ export class BillingService {
 
   // ── Limits, for every other module ──────────────────────────────────
 
-  /** The limits the account's plan allows. */
+  /**
+   * The plan in force for an account: its own, or its team owner's when it
+   * is in a team (Phase 8, idea 19), and that owner, when it isn't the account.
+   */
+  private async planCodeFor(
+    userId: string,
+  ): Promise<{ code: string; team: { name: string; owner: string } | null }> {
+    const result = await this.database.pool.query<{
+      own: string;
+      owner_plan: string | null;
+      owner_id: string | null;
+      owner_email: string | null;
+      team_name: string | null;
+    }>(
+      `select u.plan_code as own, o.plan_code as owner_plan, o.id as owner_id,
+              o.email as owner_email, t.name as team_name
+       from users u
+       left join team_members m on m.user_id = u.id
+       left join teams t on t.id = m.team_id
+       left join team_members om on om.team_id = m.team_id and om.role = 'owner'
+       left join users o on o.id = om.user_id
+       where u.id = $1`,
+      [userId],
+    );
+    const row = result.rows[0];
+    if (!row) return { code: FREE_PLAN_CODE, team: null };
+    if (row.owner_id && row.owner_id !== userId && row.owner_plan !== null) {
+      return {
+        code: row.owner_plan,
+        team: { name: row.team_name ?? "", owner: row.owner_email ?? "" },
+      };
+    }
+    return { code: row.own, team: null };
+  }
+
+  /** The limits the account's plan allows (its team owner's plan, in a team). */
   async limitsFor(userId: string): Promise<PlanLimits> {
+    return this.catalogue.limits((await this.planCodeFor(userId)).code);
+  }
+
+  /** The plan in force, described, without asking Stripe for prices. */
+  async planOf(userId: string): Promise<Plan> {
+    return this.catalogue.describe((await this.planCodeFor(userId)).code);
+  }
+
+  /** Whether the account pays for a subscription of its own (a team member must not). */
+  async hasOwnSubscription(userId: string): Promise<boolean> {
     const [row] = await this.database.db
-      .select({ planCode: schema.users.planCode })
-      .from(schema.users)
-      .where(eq(schema.users.id, userId))
+      .select({ status: schema.subscriptions.status })
+      .from(schema.subscriptions)
+      .where(eq(schema.subscriptions.userId, userId))
       .limit(1);
-    return this.catalogue.limits(row?.planCode ?? FREE_PLAN_CODE);
+    return row !== undefined && PAID_STATUSES.has(row.status);
   }
 
   /** Cloud browser minutes in the current calendar month (UTC), live sessions counted to now. */
@@ -156,9 +201,11 @@ export class BillingService {
       .limit(1);
     const prices = await this.prices();
     const plans = await this.publicPlans(prices);
-    const code = user?.planCode ?? FREE_PLAN_CODE;
+    const inForce = await this.planCodeFor(userId);
+    const code = inForce.team ? inForce.code : (user?.planCode ?? FREE_PLAN_CODE);
     return {
       plan: this.describe(code, prices),
+      team: inForce.team,
       source: source.success ? source.data : "free",
       usage: await this.usage(userId),
       subscription: subscription ? toSubscription(subscription) : null,
@@ -219,6 +266,13 @@ export class BillingService {
     auth: { user: { id: string; email: string }; session: { id: string } },
     planCode: string,
   ): Promise<string> {
+    if ((await this.planCodeFor(auth.user.id)).team) {
+      throw new ApiException(
+        "conflict",
+        409,
+        "Your plan comes from your team. Leave the team to choose a plan of your own.",
+      );
+    }
     if (!this.stripe) throw notAvailable();
     const plan = this.catalogue.definition(planCode);
     if (!plan) throw new ApiException("not_found", 404, "That plan doesn’t exist.");

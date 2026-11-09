@@ -380,3 +380,17 @@ export function usageNoticeMessage(
         : "Brawzer sends this once at 80% and once at 100%, and again only after you’ve made room.",
   });
 }
+
+export function teamInvitationMessage(team: string, invitedBy: string, url: string): EmailContent {
+  return compose(`${invitedBy} invited you to the team “${team}” on Brawzer`, {
+    preheader: `Join “${team}” from your Team page.`,
+    heading: `Join “${team}” on Brawzer`,
+    paragraphs: [
+      `${invitedBy} invited you to their team “${team}”. In a team you use the owner’s plan, and share its proxies and its Drive space; your own profiles and files stay yours.`,
+      "Sign in to Brawzer with this email address and open the Team page to join or decline. If you don’t have an account yet, create one with this address first. The invitation lasts 7 days.",
+    ],
+    action: { label: "Open the Team page", url },
+    footnote:
+      "If you don’t know who this is, ignore this email. Nothing happens unless you join from your own account.",
+  });
+}

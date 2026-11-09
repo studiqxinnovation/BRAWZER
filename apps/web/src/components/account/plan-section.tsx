@@ -49,8 +49,18 @@ export function PlanSection({ overview }: { overview: BillingOverview }) {
             {formatPrice(overview.plan.price)}
           </span>
         )}
-        {sourceLabel && <Badge tone="neutral">{sourceLabel}</Badge>}
+        {overview.team ? (
+          <Badge tone="neutral">From your team</Badge>
+        ) : (
+          sourceLabel && <Badge tone="neutral">{sourceLabel}</Badge>
+        )}
       </div>
+      {overview.team && (
+        <p className="text-footnote text-ink-secondary">
+          You’re in {overview.team.name}, so you use its owner’s plan ({overview.team.owner} pays
+          for it). Leave the team on the Team page to choose a plan of your own.
+        </p>
+      )}
       {overview.subscription && overview.source === "stripe" && (
         <p className="text-footnote text-ink-secondary">
           {overview.subscription.cancelAtPeriodEnd
@@ -91,7 +101,7 @@ export function PlanSection({ overview }: { overview: BillingOverview }) {
           </div>
         ))}
       </dl>
-      {overview.billing === "unavailable" ? (
+      {overview.team ? null : overview.billing === "unavailable" ? (
         <FormMessage tone="info" title="Paid plans aren’t set up on this installation yet">
           Everyone is on the free plan. When plans are offered, they appear here with their prices,
           and payment goes through Stripe.

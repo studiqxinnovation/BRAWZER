@@ -11,3 +11,4 @@ export * from "./billing.ts";
 export * from "./site-rules.ts";
 export * from "./usage.ts";
 export * from "./reports.ts";
+export * from "./teams.ts";
