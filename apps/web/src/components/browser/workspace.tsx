@@ -242,6 +242,8 @@ export function BrowserWorkspace({
   const addressRef = useRef<HTMLInputElement>(null);
   const viewport = useRef<Viewport>({ width: 1280, height: 800 });
   const attempts = useRef(0);
+  /** Set while this page ends the session itself: the server's own notice then says less. */
+  const endingRef = useRef(false);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   // Stream events are handled outside React's render cycle: read the latest tabs from a ref.
@@ -266,6 +268,8 @@ export function BrowserWorkspace({
       if (event.kind === "closed") {
         const current = phaseRef.current;
         if (current.kind !== "live" && current.kind !== "connecting") return;
+        // Ending it from here: end() says so once the session is saved and gone.
+        if (endingRef.current) return;
         // Another window took it: the session runs on there, and can be brought back.
         if (event.code === STREAM_CLOSE_CODES.replaced) {
           setPhase({ kind: "elsewhere", session: current.session });
@@ -379,7 +383,7 @@ export function BrowserWorkspace({
               ? { kind: "elsewhere", session: current.session }
               : current,
           );
-        } else if (message.code === "ended") {
+        } else if (message.code === "ended" && !endingRef.current) {
           setPhase({ kind: "ended", message: message.message });
         }
         return;
@@ -428,7 +432,9 @@ export function BrowserWorkspace({
     const current = phaseRef.current;
     if (current.kind !== "live" && current.kind !== "connecting") return;
     setEnding(true);
+    endingRef.current = true;
     const result = await endBrowserSession(current.session.id);
+    endingRef.current = false;
     setEnding(false);
     setConfirmEnd(false);
     if (!result.ok && result.status !== 404) {

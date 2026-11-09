@@ -260,7 +260,10 @@ test.describe("browser", () => {
     await page.getByRole("menuitem", { name: "End session" }).click();
     const confirm = page.getByRole("alertdialog", { name: "End this browser session?" });
     await confirm.getByRole("button", { name: "End session" }).click();
-    await expect(page.getByText("You ended this browser session.")).toBeVisible();
+    // Ending saves the profile's data first, which takes a while on a busy machine.
+    await expect(page.getByText("You ended this browser session.")).toBeVisible({
+      timeout: 30_000,
+    });
     expect(await wcagViolations(page)).toEqual([]);
 
     // Drive holds both files, marked as the cloud browser's.

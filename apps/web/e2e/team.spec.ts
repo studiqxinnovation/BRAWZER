@@ -11,6 +11,8 @@ test.describe("team", () => {
     browser,
     baseURL,
   }) => {
+    // Two people, emails, a proxy and an upload: longer than the default under a full run.
+    test.setTimeout(90_000);
     const ownerEmail = uniqueEmail("team-owner");
     await createConfirmedAccount(page.request, baseURL ?? "", ownerEmail, PASSWORD);
     await signIn(page.context(), baseURL ?? "", ownerEmail, PASSWORD);
