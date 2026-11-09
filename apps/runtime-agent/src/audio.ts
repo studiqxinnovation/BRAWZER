@@ -75,8 +75,12 @@ export class SessionAudio {
       },
     );
     child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (line: string) => {
-      log("warn", "pulseaudio", { line: line.trim().slice(0, 300) });
+    child.stderr.on("data", (text: string) => {
+      for (const line of text.split("\n")) {
+        // There is no system bus in the container, and PulseAudio says so; that is expected.
+        if (line.trim() === "" || /system bus|dbus/i.test(line)) continue;
+        log("warn", "pulseaudio", { line: line.trim().slice(0, 300) });
+      }
     });
     child.on("error", (error) => {
       log("warn", "pulseaudio could not start", { message: error.message });

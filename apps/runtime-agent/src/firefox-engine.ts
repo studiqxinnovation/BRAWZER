@@ -157,6 +157,7 @@ export class FirefoxEngine implements Engine {
   private lastFrameHash = "";
   private snapshotQueued = false;
   private titleTimer: NodeJS.Timeout | null = null;
+  private readonly loadedExtensions: string[] = [];
   private readonly transfers = new Map<string, Transfer>();
   private readonly handoverQueue: string[] = [];
   private handingOver = false;
@@ -280,6 +281,10 @@ export class FirefoxEngine implements Engine {
         tab.security = securityOf(info.url);
         if (tab.error && tab.error.url !== info.url) tab.error = null;
       }
+      // Always said: the title may already have been read during the load, so
+      // the refresh below can find nothing new, and the viewer must still hear
+      // that loading is over.
+      this.queueSnapshot();
       void this.refreshTitle(tab);
       if (tab.zoom !== 1) void this.evaluate(tab, zoomScript(tab.zoom)).catch(() => undefined);
       this.lastFrameHash = "";
@@ -372,10 +377,36 @@ export class FirefoxEngine implements Engine {
     if (this.tabs.size === 0) await this.createTab();
     const first = this.order[0];
     if (first) await this.activate(first);
+    await this.installAndTidy();
     this.bidi.onClose(() => {
       this.ready = false;
     });
     this.ready = true;
+  }
+
+  /**
+   * Installs the profile's extensions once the first tab exists, then closes
+   * the tabs they open while being installed (welcome and help pages): every
+   * session installs afresh, so those would otherwise open every time.
+   */
+  private async installAndTidy(): Promise<void> {
+    if (this.options.extensions.length === 0) return;
+    const before = new Set(this.order);
+    await this.installExtensions();
+    if (this.loadedExtensions.length === 0) return;
+    const closed = new Set<string>();
+    const until = Date.now() + 2_000;
+    while (Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      for (const id of [...this.order]) {
+        if (before.has(id) || closed.has(id)) continue;
+        closed.add(id);
+        log("info", "closed a tab an extension opened on install");
+        await this.bidi.send("browsingContext.close", { context: id }).catch(() => undefined);
+      }
+    }
+    const first = [...before].find((id) => this.tabs.has(id));
+    if (first && this.activeId !== first) await this.activate(first);
   }
 
   attachViewer(viewer: Viewer, viewport: Viewport): void {
@@ -388,6 +419,7 @@ export class FirefoxEngine implements Engine {
         engine: { name: "firefox", version: this.version.slice(0, 64) },
         tabs: this.snapshot(),
         activeTabId: this.activeId ?? this.order[0] ?? "",
+        extensions: this.loadedExtensions,
       });
       this.lastFrameHash = "";
       void this.streamFrames();
@@ -785,6 +817,24 @@ export class FirefoxEngine implements Engine {
     this.lastFrameHash = "";
     await this.bidi.send("browsingContext.activate", { context: id }).catch(() => undefined);
     this.queueSnapshot();
+  }
+
+  /** The catalogue builds chosen for this session, installed over BiDi (ADR 0018). */
+  private async installExtensions(): Promise<void> {
+    for (const extension of this.options.extensions) {
+      try {
+        await this.bidi.send("webExtension.install", {
+          extensionData: { type: "path", path: extension.path },
+        });
+        this.loadedExtensions.push(extension.slug);
+        log("info", "extension loaded", { slug: extension.slug });
+      } catch (error) {
+        log("warn", "extension not loaded", {
+          slug: extension.slug,
+          message: error instanceof Error ? error.message : "",
+        });
+      }
+    }
   }
 
   private async evaluate(tab: Tab, expression: string): Promise<unknown> {

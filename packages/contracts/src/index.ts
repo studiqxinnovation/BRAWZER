@@ -12,3 +12,4 @@ export * from "./proxies.ts";
 export * from "./security.ts";
 export * from "./billing.ts";
 export * from "./site-rules.ts";
+export * from "./extensions.ts";

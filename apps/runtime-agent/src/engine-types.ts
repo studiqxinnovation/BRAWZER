@@ -24,6 +24,14 @@ export interface EngineOptions {
   refusalFor: (url: string) => string | null;
   /** The reader view script (Mozilla's Readability plus Brawzer's layout), ready to evaluate. */
   readerScript: string;
+  /** Catalogue extensions to install for this session, with where their builds are in the image. */
+  extensions: readonly InstallableExtension[];
+}
+
+export interface InstallableExtension {
+  slug: string;
+  /** Chromium: the unpacked directory. Firefox: the signed xpi. */
+  path: string;
 }
 
 /** Remembers the proxy's refusals briefly, keyed by `host:port`, for the engines' error pages. */

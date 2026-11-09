@@ -4,6 +4,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -59,6 +60,8 @@ export const profiles = pgTable(
      * by default; loopback stays refused either way (Phase 8, idea 9).
      */
     privateThroughProxy: boolean().notNull().default(false),
+    /** Catalogue extensions (slugs) installed into the profile's sessions (ADR 0018). */
+    extensions: jsonb().$type<string[]>().notNull().default([]),
     dataObjectKey: text().unique("profiles_data_object_key_unique"),
     dataWrappedKey: text(),
     /** Size of the saved data as stored (compressed, before encryption). */

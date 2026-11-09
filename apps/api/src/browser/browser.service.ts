@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { randomBytes } from "node:crypto";
 import {
+  extensionsFor,
   BROWSER_LIMITS,
   type BrowserOverview,
   type BrowserSession,
@@ -237,7 +238,15 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     const siteRules = await this.siteRules.forEgress(userId);
     const engine = profile?.engine ?? "bee";
     const privateViaUpstream = upstream !== null && profile?.privateThroughProxy === true;
-    const pair = upstream === null && siteRules === null ? await this.pool.claim(engine) : null;
+    // Only the catalogue entries this engine runs (ADR 0018); a waiting pair has none,
+    // so it serves plain sessions only.
+    const extensions = (profile?.extensions ?? []).filter((slug) =>
+      extensionsFor(engine).some((entry) => entry.slug === slug),
+    );
+    const pair =
+      upstream === null && siteRules === null && extensions.length === 0
+        ? await this.pool.claim(engine)
+        : null;
     const secretForAgent = pair?.secret ?? secret;
 
     let row: BrowserSessionRow;
@@ -340,6 +349,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
               // Only with a proxy: the proxy reaches the private addresses, never Brawzer.
               privateViaUpstream,
               siteRules,
+              extensions,
             },
           );
     } catch (error) {

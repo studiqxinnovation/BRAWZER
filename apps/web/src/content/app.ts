@@ -38,7 +38,7 @@ export const appNav: readonly AppNavGroup[] = [
       { href: "/app/profiles", label: "Profiles", icon: Layers, status: "available" },
       { href: "/app/drive", label: "Drive", icon: HardDriveDownload, status: "available" },
       { href: "/app/proxy", label: "Proxy", icon: Globe, status: "available" },
-      { href: "/app/extensions", label: "Extensions", icon: Puzzle, status: "planned" },
+      { href: "/app/extensions", label: "Extensions", icon: Puzzle, status: "available" },
     ],
   },
   {
@@ -70,18 +70,8 @@ export interface PlannedModule {
   requires: readonly string[];
 }
 
-export const plannedModules = {
-  extensions: {
-    title: "Extensions",
-    lede: "Supported browser extensions, installed separately for each profile.",
-    milestone: "Phase 4",
-    plans: [
-      "Install extensions from a reviewed list into a single profile.",
-      "Extensions run in the cloud browser, never on the computer you’re using.",
-    ],
-    requires: ["A reviewed extension catalogue", "Extension installs into a profile's kept data"],
-  },
-} as const satisfies Record<string, PlannedModule>;
+/** Every module is built; the shape stays for the next one that isn't. */
+export const plannedModules: Readonly<Record<string, PlannedModule>> = {};
 
 export type EventTone = "neutral" | "success" | "warning";
 

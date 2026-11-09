@@ -84,9 +84,11 @@ export class OrchestratorService {
     profileData: Readable | null = null,
     upstream: ProxyTarget | null = null,
     engine: "bee" | "firefox" = "bee",
-    options: { privateViaUpstream: boolean; siteRules?: SiteRulesForEgress | null } = {
-      privateViaUpstream: false,
-    },
+    options: {
+      privateViaUpstream: boolean;
+      siteRules?: SiteRulesForEgress | null;
+      extensions?: readonly string[];
+    } = { privateViaUpstream: false },
   ): Promise<StartedRuntime> {
     const pair = await this.createPair(host, sessionId, secret, upstream, engine, options);
     return this.launch(pair, secret, profileData);
@@ -103,7 +105,11 @@ export class OrchestratorService {
     secret: string,
     upstream: ProxyTarget | null,
     engine: "bee" | "firefox",
-    options: { privateViaUpstream: boolean; siteRules?: SiteRulesForEgress | null },
+    options: {
+      privateViaUpstream: boolean;
+      siteRules?: SiteRulesForEgress | null;
+      extensions?: readonly string[];
+    },
     extraLabels: Record<string, string> = {},
   ): Promise<RuntimePair> {
     const { browser } = this.config;
@@ -153,6 +159,9 @@ export class OrchestratorService {
           `BRAWZER_EGRESS_PROXY=127.0.0.1:${String(EGRESS_PROXY_PORT)}`,
           `BRAWZER_ENGINE=${engine}`,
           ...(options.privateViaUpstream ? ["BRAWZER_PRIVATE_VIA_EGRESS=true"] : []),
+          ...(options.extensions?.length
+            ? [`BRAWZER_EXTENSIONS=${options.extensions.join(",")}`]
+            : []),
           ...(browser.testSite ? ["BRAWZER_TEST_SITE=true"] : []),
         ],
         labels: { "brawzer.managed": "true", [SESSION_LABEL]: sessionId, ...extraLabels },

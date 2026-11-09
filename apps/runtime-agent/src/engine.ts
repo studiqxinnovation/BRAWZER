@@ -166,6 +166,7 @@ export class BrowserEngine implements Engine {
   private readonly choosers = new Map<string, Chooser>();
   private titleTimer: NodeJS.Timeout | null = null;
   private userAgent = "";
+  private readonly loadedExtensions: string[] = [];
 
   constructor(
     private readonly cdp: CdpConnection,
@@ -370,7 +371,33 @@ export class BrowserEngine implements Engine {
     while (this.activeId === null && Date.now() < deadline + 5_000) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
+    await this.installAndTidy();
     this.ready = true;
+  }
+
+  /**
+   * Installs the profile's extensions once the first tab exists, then closes
+   * the tabs they open while being installed (welcome and help pages): every
+   * session installs afresh, so those would otherwise open every time.
+   */
+  private async installAndTidy(): Promise<void> {
+    if (this.options.extensions.length === 0) return;
+    const before = new Set(this.order);
+    await this.installExtensions();
+    if (this.loadedExtensions.length === 0) return;
+    const closed = new Set<string>();
+    const until = Date.now() + 2_000;
+    while (Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      for (const id of [...this.order]) {
+        if (before.has(id) || closed.has(id)) continue;
+        closed.add(id);
+        log("info", "closed a tab an extension opened on install");
+        await this.cdp.send("Target.closeTarget", { targetId: id }).catch(() => undefined);
+      }
+    }
+    const first = [...before].find((id) => this.tabs.has(id));
+    if (first && this.activeId !== first) await this.activate(first);
   }
 
   attachViewer(viewer: Viewer, viewport: Viewport): void {
@@ -383,6 +410,7 @@ export class BrowserEngine implements Engine {
         engine: { name: "bee", version: this.version.slice(0, 64) },
         tabs: this.snapshot(),
         activeTabId: this.activeId ?? this.order[0] ?? "",
+        extensions: this.loadedExtensions,
       });
       void this.syncScreencasts();
       void this.handOver();
@@ -959,6 +987,22 @@ export class BrowserEngine implements Engine {
         zoom: tab.zoom,
         reader: tab.reader,
       }));
+  }
+
+  /** The catalogue builds chosen for this session, loaded unpacked over the pipe (ADR 0018). */
+  private async installExtensions(): Promise<void> {
+    for (const extension of this.options.extensions) {
+      try {
+        await this.cdp.send("Extensions.loadUnpacked", { path: extension.path });
+        this.loadedExtensions.push(extension.slug);
+        log("info", "extension loaded", { slug: extension.slug });
+      } catch (error) {
+        log("warn", "extension not loaded", {
+          slug: extension.slug,
+          message: error instanceof Error ? error.message : "",
+        });
+      }
+    }
   }
 
   private async evaluate(tab: Tab, expression: string): Promise<unknown> {

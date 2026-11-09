@@ -227,6 +227,8 @@ export const agentMessageSchema = z.discriminatedUnion("type", [
     }),
     tabs: z.array(tabStateSchema),
     activeTabId: tabIdSchema,
+    /** Catalogue extensions the engine loaded for this session (slugs). */
+    extensions: z.array(z.string().max(64)).max(32).default([]),
   }),
   z.object({
     type: z.literal("tabs"),

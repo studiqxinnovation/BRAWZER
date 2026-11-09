@@ -247,3 +247,20 @@ Stripe webhooks by result, warm pairs waiting, when maintenance last ran,
 and the running version. Nothing names a person, an address or a page.
 Checked in the registry's unit test and an integration test with and
 without the token.
+
+## Also built: sound, and extensions
+
+Asked for directly on 2026-11-08, from the two "Development state" notes
+still in the app.
+
+- **Sound** (the Browser page): a PulseAudio server per session, captured
+  and streamed beside the frames, played on the page with a speaker control
+  in the status bar ([ADR 0006](../adr/0006-browser-streaming.md), addendum).
+  The 3b spike's audio finding turned out to be the probe's own mistake.
+- **Extensions** (the Extensions page): a reviewed catalogue of
+  open-source extensions pinned by version and hash, fetched into the
+  runtime image at build, chosen per profile and installed by the agent at
+  session start ([ADR 0018](../adr/0018-extensions-from-a-catalogue.md)).
+  Building it found and fixed a race in the Firefox engine: a load event
+  that arrived after the title was read never told the viewer the page
+  had finished.

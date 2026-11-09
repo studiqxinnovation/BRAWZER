@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "extensions" jsonb DEFAULT '[]'::jsonb NOT NULL;

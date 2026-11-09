@@ -472,6 +472,9 @@ export function ProfilesManager({
                     {engineLabels[profile.engine]}
                     {profile.proxyId && proxyNames.has(profile.proxyId)
                       ? ` · Proxy: ${proxyNames.get(profile.proxyId) ?? ""}${profile.privateThroughProxy ? " · Private addresses through the proxy" : ""}`
+                      : ""}
+                    {profile.extensions.length > 0
+                      ? ` · ${String(profile.extensions.length)} extension${profile.extensions.length === 1 ? "" : "s"}`
                       : ""}{" "}
                     · Created <LocalDate iso={profile.createdAt} />
                   </p>

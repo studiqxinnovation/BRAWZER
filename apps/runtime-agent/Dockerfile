@@ -21,6 +21,9 @@ COPY packages/net-policy packages/net-policy
 COPY apps/runtime-agent apps/runtime-agent
 RUN pnpm --filter "@brawzer/runtime-agent..." run build \
   && pnpm --filter @brawzer/runtime-agent deploy --prod /out
+# The extension catalogue (ADR 0018): each build fetched and checked against its pinned hash.
+RUN apt-get update -qq && apt-get install -y --no-install-recommends unzip >/dev/null && rm -rf /var/lib/apt/lists/* \
+  && cd apps/runtime-agent && node scripts/fetch-extensions.mjs /out-extensions /opt/brawzer/extensions
 
 FROM ${NODE_IMAGE} AS runtime
 # Debian's Chromium (the base of Bee, Brawzer's own browser) and Firefox ESR
@@ -35,6 +38,7 @@ RUN apt-get update \
 # Managed policies: enforced by the engine itself, whatever a page does.
 COPY apps/runtime-agent/policies.json /etc/chromium/policies/managed/brawzer.json
 COPY apps/runtime-agent/policies-firefox.json /usr/lib/firefox-esr/distribution/policies.json
+COPY --from=build /out-extensions /opt/brawzer/extensions
 WORKDIR /app
 COPY --from=build /out/package.json ./package.json
 COPY --from=build /out/dist ./dist

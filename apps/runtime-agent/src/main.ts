@@ -4,9 +4,9 @@ import { STREAM_CLOSE_CODES } from "@brawzer/contracts";
 import { BEE_HOME_HOST, BEE_HOME_PORT, BEE_HOME_URL, createBeeHome } from "./bee.ts";
 import { type LaunchedChromium, launchChromium } from "./chromium.ts";
 import { readConfig } from "./config.ts";
-import { readFileSync } from "node:fs";
+import { cpSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { type Engine, RefusalLog } from "./engine-types.ts";
+import { type Engine, type InstallableExtension, RefusalLog } from "./engine-types.ts";
 import { readerScript } from "./page-tools.ts";
 import { SessionAudio } from "./audio.ts";
 import { BrowserEngine } from "./engine.ts";
@@ -52,6 +52,49 @@ if (config.testSite) {
 // Sound: the session's own audio server, started before either engine.
 const audio = new SessionAudio(config.scratchDir);
 const soundReady = await audio.start();
+
+/** The catalogue index the image was built with: which builds exist, for which engine. */
+function installableExtensions(engine: "bee" | "firefox"): InstallableExtension[] {
+  if (config.extensions.length === 0) return [];
+  let index: Record<string, Record<string, { path: string }>>;
+  try {
+    index = JSON.parse(
+      readFileSync(path.join(config.extensionsDir, "index.json"), "utf8"),
+    ) as typeof index;
+  } catch (error) {
+    log("warn", "no extension catalogue in this image", {
+      message: error instanceof Error ? error.message : "",
+    });
+    return [];
+  }
+  const found: InstallableExtension[] = [];
+  for (const slug of config.extensions) {
+    const build = index[slug]?.[engine];
+    if (!build) {
+      log("warn", "extension not in the catalogue for this engine", { slug, engine });
+      continue;
+    }
+    if (engine === "firefox") {
+      found.push({ slug, path: build.path });
+      continue;
+    }
+    // Chromium writes an unpacked extension's indexed rules into its own
+    // directory, and the image is read-only: each session loads a copy from
+    // its scratch space. The path is the same every session, so the
+    // extension's id, and what it keeps in the profile, stay the same.
+    const copy = path.join(config.scratchDir, "extensions", slug);
+    try {
+      cpSync(build.path, copy, { recursive: true });
+      found.push({ slug, path: copy });
+    } catch (error) {
+      log("warn", "extension could not be copied", {
+        slug,
+        message: error instanceof Error ? error.message : "",
+      });
+    }
+  }
+  return found;
+}
 
 const refusals = new RefusalLog();
 // Reader view runs Mozilla's Readability inside the page; its source is read once.
@@ -124,6 +167,7 @@ const lifecycle: AgentLifecycle = {
       homeUrl: BEE_HOME_URL,
       refusalFor: (url: string) => refusals.codeFor(url),
       readerScript: readerScript(readabilitySource),
+      extensions: installableExtensions(config.engine),
     };
     const onGone = (error: Error) => {
       // The engine left on its own (crash, kill): the session is over.

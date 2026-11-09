@@ -263,10 +263,11 @@ export class AccountService {
         lastActiveAt,
       })),
       securityHistory: history,
-      profiles: profiles.map(({ name, color, engine, createdAt, updatedAt }) => ({
+      profiles: profiles.map(({ name, color, engine, extensions, createdAt, updatedAt }) => ({
         name,
         color,
         engine,
+        extensions,
         createdAt,
         updatedAt,
       })),

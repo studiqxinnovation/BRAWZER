@@ -92,6 +92,30 @@ describe("creating profiles", () => {
     });
   });
 
+  it("installs catalogue extensions into a profile, each once, from the catalogue only", async () => {
+    const client = h.browser();
+    await h.signUp(client, h.uniqueEmail("profiles-extensions"));
+    const profile = profileListSchema.parse((await client.get("/profiles")).json()).profiles[0]!;
+    expect(profile.extensions).toEqual([]);
+    const set = await client.patch(`/profiles/${profile.id}`, {
+      extensions: ["dark-reader", "ubo-lite"],
+    });
+    expect(set.statusCode, set.body).toBe(200);
+    expect(profileSchema.parse(set.json()).extensions).toEqual(["dark-reader", "ubo-lite"]);
+    expect(
+      (await client.patch(`/profiles/${profile.id}`, { extensions: ["nope"] })).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await client.patch(`/profiles/${profile.id}`, {
+          extensions: ["dark-reader", "dark-reader"],
+        })
+      ).statusCode,
+    ).toBe(400);
+    const cleared = await client.patch(`/profiles/${profile.id}`, { extensions: [] });
+    expect(profileSchema.parse(cleared.json()).extensions).toEqual([]);
+  });
+
   it("validates the name, colour and engine", async () => {
     const { client } = await account("profiles-validate");
     const cases: [object, string][] = [

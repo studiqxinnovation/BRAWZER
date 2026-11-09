@@ -938,6 +938,14 @@ describe("Firefox, the second engine", () => {
     expect(created.statusCode, created.body).toBe(201);
     const profile = profileSchema.parse(created.json());
     expect(profile.engine).toBe("firefox");
+    // The whole catalogue runs on Firefox; the agent installs it at start.
+    expect(
+      (
+        await client.patch(`/profiles/${profile.id}`, {
+          extensions: ["ubo-lite", "ublock-origin", "dark-reader"],
+        })
+      ).statusCode,
+    ).toBe(200);
     const upload = await client.upload("/drive/files", {
       name: "notes.txt",
       content: Buffer.from("hello drive"),
@@ -948,6 +956,11 @@ describe("Firefox, the second engine", () => {
     expect(session.engine).toBe("firefox");
     const welcome = viewer.messages.find((m) => m.type === "welcome");
     expect(welcome?.type === "welcome" && welcome.engine.name).toBe("firefox");
+    expect(welcome?.type === "welcome" && welcome.extensions).toEqual([
+      "ubo-lite",
+      "ublock-origin",
+      "dark-reader",
+    ]);
 
     // HTTP and HTTPS through the proxy, with frames arriving.
     await openPage(viewer, tab.id, "https://testsite.invalid/second", "Second page");
@@ -1104,4 +1117,28 @@ describe("Firefox, the second engine", () => {
       "notes.txt",
     ]);
   }, 180_000);
+});
+
+describe("extensions on Bee", () => {
+  it("loads a profile's catalogue extensions over the pipe and says which", async () => {
+    const { client } = await account("browser-extensions");
+    const profile = profileListSchema.parse((await client.get("/profiles")).json()).profiles[0]!;
+    // uBlock Origin itself is Firefox-only: it is kept on the profile and left out on Bee.
+    const set = await client.patch(`/profiles/${profile.id}`, {
+      extensions: ["ubo-lite", "ublock-origin", "dark-reader"],
+    });
+    expect(set.statusCode, set.body).toBe(200);
+    const { session, viewer } = await openSession(client, profile.id);
+    const welcome = viewer.messages.find((m) => m.type === "welcome");
+    expect(welcome?.type === "welcome" && welcome.extensions).toEqual(["ubo-lite", "dark-reader"]);
+    const runtime = await h.database.pool.query<{ container_id: string }>(
+      "select container_id from browser_sessions where id = $1",
+      [session.id],
+    );
+    const env = (await fetchDocker(`/containers/${runtime.rows[0]?.container_id ?? ""}/json`))
+      .Config.Env;
+    expect(env).toContain("BRAWZER_EXTENSIONS=ubo-lite,dark-reader");
+    viewer.close();
+    expect((await client.delete(`/browser/sessions/${session.id}`)).statusCode).toBe(204);
+  }, 90_000);
 });

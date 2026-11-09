@@ -10,7 +10,8 @@
     "chrome-search://*",
     "devtools://*",
     "javascript://*",
-    "ftp://*"
+    "ftp://*",
+    "https://chromewebstore.google.com/*"
   ],
   "DownloadRestrictions": 0,
   "PromptForDownloadLocation": false,
@@ -39,7 +40,6 @@
   "DefaultBrowserSettingEnabled": false,
   "SyncDisabled": true,
   "BrowserSignin": 0,
-  "ExtensionInstallBlocklist": ["*"],
   "TranslateEnabled": false,
   "SpellCheckServiceEnabled": false,
   "AlternateErrorPagesEnabled": false,
@@ -51,5 +51,12 @@
   "ChromeVariations": 2,
   "SigninAllowed": false,
   "CloudReportingEnabled": false,
-  "FeedbackSurveysEnabled": false
+  "FeedbackSurveysEnabled": false,
+  "ExtensionSettings": {
+    "*": {
+      "installation_mode": "allowed",
+      "install_sources": [],
+      "blocked_install_message": "Brawzer installs extensions from its own catalogue only."
+    }
+  }
 }

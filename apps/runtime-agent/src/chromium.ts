@@ -55,7 +55,8 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
     "--disable-background-networking",
     "--disable-component-update",
     "--disable-default-apps",
-    "--disable-extensions",
+    // Extensions come from Brawzer's catalogue only, loaded by the agent over the pipe.
+    "--enable-unsafe-extension-debugging",
     "--disable-breakpad",
     "--disable-domain-reliability",
     "--no-service-autorun",

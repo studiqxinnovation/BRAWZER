@@ -59,6 +59,7 @@ export const accountExportSchema = z.object({
       name: z.string(),
       color: profileColorSchema,
       engine: browserEngineSchema,
+      extensions: z.array(z.string()),
       createdAt: z.iso.datetime(),
       updatedAt: z.iso.datetime(),
     }),

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { extensionListSchema } from "./extensions.ts";
 
 /**
  * The colours a profile can have. The web app gives each a shade that keeps
@@ -71,6 +72,8 @@ export const profileSchema = z.object({
    * Off by default. Without a proxy it has no effect.
    */
   privateThroughProxy: z.boolean(),
+  /** Catalogue extensions installed into this profile's sessions (slugs). */
+  extensions: z.array(z.string()),
   /** The saved browsing data, if any: how much (compressed) and when it was last saved. */
   data: z
     .object({
@@ -101,6 +104,7 @@ export const updateProfileRequestSchema = z
     proxyId: z.uuid({ error: "Choose one of your proxies." }).nullable().optional(),
     keepData: z.boolean().optional(),
     privateThroughProxy: z.boolean().optional(),
+    extensions: extensionListSchema.optional(),
   })
   .refine(
     (value) =>
@@ -108,7 +112,8 @@ export const updateProfileRequestSchema = z
       value.color !== undefined ||
       value.proxyId !== undefined ||
       value.keepData !== undefined ||
-      value.privateThroughProxy !== undefined,
+      value.privateThroughProxy !== undefined ||
+      value.extensions !== undefined,
     { error: "Change the name, colour, proxy or what is kept." },
   );
 
