@@ -8,6 +8,7 @@ import { RedisModule } from "../redis/redis.module.js";
 import { ScanningModule } from "../scanning/scanning.module.js";
 import { SecurityEventsModule } from "../security-events/security-events.js";
 import { StorageModule } from "../storage/storage.module.js";
+import { TeamsModule } from "../teams/teams.module.js";
 import { DriveController } from "./drive.controller.js";
 import { DriveService } from "./drive.service.js";
 import { DownloadTickets } from "./tickets.js";
@@ -23,6 +24,7 @@ import { DownloadTickets } from "./tickets.js";
     RateLimitModule,
     SecurityEventsModule,
     BillingModule,
+    TeamsModule,
   ],
   controllers: [DriveController],
   providers: [DriveService, DownloadTickets],

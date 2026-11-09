@@ -1,6 +1,11 @@
 "use client";
 
-import { type DriveFile, type DriveFolder, MAX_CHOSEN_FILES } from "@brawzer/contracts";
+import {
+  type DriveFile,
+  type DriveFolder,
+  type DriveSpace,
+  MAX_CHOSEN_FILES,
+} from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
 import { Checkbox } from "@brawzer/ui/components/checkbox";
 import {
@@ -46,6 +51,10 @@ export function DrivePicker({
 }) {
   const [query, setQuery] = useState("");
   const [folderId, setFolderId] = useState<string | null>(null);
+  const [space, setSpace] = useState<DriveSpace>("personal");
+  // The person's team, whose shared Drive can be chosen from too (ADR 0019); kept between
+  // listings so the switch doesn't flicker while one loads.
+  const [team, setTeam] = useState<string | null>(null);
   // Listings are keyed by what they answer, so a stale one reads as loading.
   const [listing, setListing] = useState<Listing>({
     key: "",
@@ -56,7 +65,7 @@ export function DrivePicker({
   const [chosen, setChosen] = useState<string[]>([]);
   const open = request !== null;
   const searching = query.trim() !== "";
-  const key = `${request?.chooserId ?? ""}:${folderId ?? ""}:${query.trim()}`;
+  const key = `${request?.chooserId ?? ""}:${space}:${folderId ?? ""}:${query.trim()}`;
   const current = listing.key === key ? listing : null;
   const files = current?.files ?? null;
   const error = current?.error ?? null;
@@ -69,11 +78,13 @@ export function DrivePicker({
     const timer = setTimeout(
       () => {
         void Promise.all([
-          fetchDriveOverview(),
-          listDriveFiles(searching ? { q: query.trim() } : { folderId }),
+          fetchDriveOverview(space),
+          listDriveFiles(searching ? { q: query.trim(), space } : { folderId, space }),
         ]).then(([overview, list]) => {
           if (cancelled) return;
           const failure = !overview.ok ? overview.error : !list.ok ? list.error : null;
+          const teamName = overview.ok ? (overview.data.team?.name ?? null) : null;
+          setTeam(teamName);
           setListing({
             key,
             folders: overview.ok ? overview.data.folders : [],
@@ -88,13 +99,14 @@ export function DrivePicker({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, query, folderId, searching, key]);
+  }, [open, query, folderId, space, searching, key]);
 
   function close(fileIds: string[]) {
     onAnswer(fileIds);
     setChosen([]);
     setQuery("");
     setFolderId(null);
+    setSpace("personal");
   }
 
   function toggle(id: string) {
@@ -123,6 +135,30 @@ export function DrivePicker({
           Choose from Drive. Nothing on this computer is reachable from the cloud browser.
         </DialogDescription>
         <div className="mt-4 flex flex-col gap-3">
+          {team && (
+            <div role="group" aria-label="Which Drive" className="flex flex-wrap gap-2">
+              {(
+                [
+                  { value: "personal", label: "My Drive" },
+                  { value: "team", label: `${team}’s Drive` },
+                ] as const
+              ).map((option) => (
+                <Button
+                  key={option.value}
+                  size="sm"
+                  variant={option.value === space ? "primary" : "secondary"}
+                  aria-pressed={option.value === space}
+                  onClick={() => {
+                    setSpace(option.value);
+                    setFolderId(null);
+                    setChosen([]);
+                  }}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          )}
           <Input
             type="search"
             name="q"

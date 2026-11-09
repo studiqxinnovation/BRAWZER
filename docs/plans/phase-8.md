@@ -5,32 +5,32 @@ Twenty-four additions proposed after Phase 7 and accepted as a set on
 plan already named. They are built in value order, one commit each, on the
 `phase-8-finishing` branch, and this page tracks them.
 
-| #   | Idea                                                       | Status                                                                                                                            |
-| --- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 10  | Isolation checks as a CI job                               | **Done** 2026-11-08: `apps/api/test/isolation.integration.test.ts`; found and closed a DNS path (ADR 0014)                        |
-| 1   | Brawzer-drawn error pages                                  | **Done** 2026-11-08: drawn by Brawzer over the viewport, both engines, with Brawzer's refusal codes                               |
-| 2   | Bookmarks and history as Brawzer records                   | Not built: work on it was stopped on 2026-11-08 and is not resumed; idea 3 (which built on it) waits too                          |
-| 5   | Find in page, zoom, reader mode                            | **Done** 2026-11-08: both engines, from the menu and Alt shortcuts                                                                |
-| 4   | Clipboard with intent                                      | **Done** 2026-11-08: deliberate copy and paste, text only, each use recorded                                                      |
-| 9   | Private-address browsing through a saved proxy, on purpose | **Done** 2026-11-08: a per-profile switch, off by default, loopback still refused                                                 |
-| 8   | Per-account destination allow-lists and block-lists        | **Done** 2026-11-08: Site rules page; applied by the egress before anything else                                                  |
-| 11  | Passkey-only phone approval                                | **Done** 2026-11-08: approving needs a passkey whenever the account has one                                                       |
-| 13  | A key re-wrap job                                          | **Done** 2026-11-08: on the maintenance cadence and from the Admin API                                                            |
-| 14  | Warm pool                                                  | **Done** 2026-11-08: `BROWSER_WARM_POOL` pairs waiting per API instance                                                           |
-| 15  | A scheduler across runtime hosts                           | **Done** 2026-11-08: `RUNTIME_HOSTS`, the host with the most room, remembered per session                                         |
-| 16  | Relay back-pressure for downloads                          | **Done** 2026-11-08: a bounded buffer per transfer; the agent pauses while Drive catches up                                       |
-| 17  | Metrics                                                    | **Done** 2026-11-08: `GET /api/metrics`, Prometheus text, behind a token                                                          |
-| 18  | Image rebuild on upstream advisories                       | **Done** 2026-11-08: a daily check against Debian starts the release workflow                                                     |
-| 20  | Usage emails and in-app nudges                             | **Done** 2026-11-09: hourly emails at 80% and 100%, warnings on Home                                                              |
-| 21  | Trials and promotion codes                                 | **Done** 2026-11-09: `trialDays` per plan, once per account; promotion codes at checkout                                          |
-| 22  | Admin: sessions and runtime view                           | **Done** 2026-11-09: hosts, warm pool, live sessions, end one                                                                     |
-| 23  | An operator CLI                                            | **Done** 2026-11-09: `pnpm brawzer`, `node dist/cli/main.js` in production                                                        |
-| 24  | Load test for the stream                                   | **Done** 2026-11-09: `infra/bench/stream-load.mjs`; bandwidth, not CPU, sets capacity                                             |
-| 3   | Session hand-off between devices                           | Waits on idea 2                                                                                                                   |
-| 6   | Pop-out work mode                                          | **Done** 2026-11-08: “Open in its own window”, and bringing a session back                                                        |
-| 12  | Report a page                                              | **Done** 2026-11-08: a note to the administrators, the address and a picture only if included; screenshots in Drive               |
-| 19  | Team accounts                                              | **In progress** 2026-11-08: teams, invitations, roles, the owner's plan and shared proxies done; the shared Drive next (ADR 0019) |
-| 7   | Sound, then WebRTC (Phase 3b)                              | **Sound done** 2026-11-08 (ADR 0006 addendum); WebRTC video still later                                                           |
+| #   | Idea                                                       | Status                                                                                                               |
+| --- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 10  | Isolation checks as a CI job                               | **Done** 2026-11-08: `apps/api/test/isolation.integration.test.ts`; found and closed a DNS path (ADR 0014)           |
+| 1   | Brawzer-drawn error pages                                  | **Done** 2026-11-08: drawn by Brawzer over the viewport, both engines, with Brawzer's refusal codes                  |
+| 2   | Bookmarks and history as Brawzer records                   | Not built: work on it was stopped on 2026-11-08 and is not resumed; idea 3 (which built on it) waits too             |
+| 5   | Find in page, zoom, reader mode                            | **Done** 2026-11-08: both engines, from the menu and Alt shortcuts                                                   |
+| 4   | Clipboard with intent                                      | **Done** 2026-11-08: deliberate copy and paste, text only, each use recorded                                         |
+| 9   | Private-address browsing through a saved proxy, on purpose | **Done** 2026-11-08: a per-profile switch, off by default, loopback still refused                                    |
+| 8   | Per-account destination allow-lists and block-lists        | **Done** 2026-11-08: Site rules page; applied by the egress before anything else                                     |
+| 11  | Passkey-only phone approval                                | **Done** 2026-11-08: approving needs a passkey whenever the account has one                                          |
+| 13  | A key re-wrap job                                          | **Done** 2026-11-08: on the maintenance cadence and from the Admin API                                               |
+| 14  | Warm pool                                                  | **Done** 2026-11-08: `BROWSER_WARM_POOL` pairs waiting per API instance                                              |
+| 15  | A scheduler across runtime hosts                           | **Done** 2026-11-08: `RUNTIME_HOSTS`, the host with the most room, remembered per session                            |
+| 16  | Relay back-pressure for downloads                          | **Done** 2026-11-08: a bounded buffer per transfer; the agent pauses while Drive catches up                          |
+| 17  | Metrics                                                    | **Done** 2026-11-08: `GET /api/metrics`, Prometheus text, behind a token                                             |
+| 18  | Image rebuild on upstream advisories                       | **Done** 2026-11-08: a daily check against Debian starts the release workflow                                        |
+| 20  | Usage emails and in-app nudges                             | **Done** 2026-11-09: hourly emails at 80% and 100%, warnings on Home                                                 |
+| 21  | Trials and promotion codes                                 | **Done** 2026-11-09: `trialDays` per plan, once per account; promotion codes at checkout                             |
+| 22  | Admin: sessions and runtime view                           | **Done** 2026-11-09: hosts, warm pool, live sessions, end one                                                        |
+| 23  | An operator CLI                                            | **Done** 2026-11-09: `pnpm brawzer`, `node dist/cli/main.js` in production                                           |
+| 24  | Load test for the stream                                   | **Done** 2026-11-09: `infra/bench/stream-load.mjs`; bandwidth, not CPU, sets capacity                                |
+| 3   | Session hand-off between devices                           | Waits on idea 2                                                                                                      |
+| 6   | Pop-out work mode                                          | **Done** 2026-11-08: “Open in its own window”, and bringing a session back                                           |
+| 12  | Report a page                                              | **Done** 2026-11-08: a note to the administrators, the address and a picture only if included; screenshots in Drive  |
+| 19  | Team accounts                                              | **Done** 2026-11-08: teams on the owner's plan, invitations by address, shared proxies and a shared Drive (ADR 0019) |
+| 7   | Sound, then WebRTC (Phase 3b)                              | **Sound done** 2026-11-08 (ADR 0006 addendum); WebRTC video still later                                              |
 
 ## 10. Isolation checks as a CI job
 
@@ -415,3 +415,54 @@ administrators only, closing, retention, the rate limit, the export), the
 browser e2e journey (screenshot, report with a picture, accessibility) and
 `apps/web/e2e/admin.spec.ts` (an administrator reads, opens the picture and
 closes a report).
+
+## 19. Team accounts
+
+ADR 0019 records the design; it was built in three parts.
+
+**Teams, invitations and the owner's plan.** A Team page (in the
+navigation) starts a team, which its starter owns and pays for, and invites
+people by email address as admins or members. The invitation is a row: the
+verified account with that address sees it on its own Team page and joins
+or declines there, so the email itself carries nothing usable. Invitations
+last 7 days, hold a seat while they wait, and are deleted by the retention
+job when they expire. Every member uses the owner's plan, because
+`limitsFor`, which every module asks, answers with it (usage emails too). A
+plan's new `teamMembers` limit sets the team's size: 3 on the free plan and
+on any configured plan that doesn't say, so teams work on an installation
+without paid plans. A member can't buy a plan of their own, and someone
+paying for one can't join until it ends. The owner changes roles, removes
+anyone, hands the team over (the new owner then pays) or deletes it, the
+last two after confirming it's them; admins invite and remove members. An
+owner can't delete their account while others are in the team.
+
+**The team's proxies.** The owner and admins keep a list of proxies on the
+Proxy page that every member can choose for their own profiles without
+seeing a password. Credentials are sealed to the team, so they survive the
+person who added them leaving.
+
+**The team's Drive.** The Drive page and the cloud browser's file picker
+switch between "My Drive" and the team's Drive. Everyone in the team opens,
+adds, renames and moves files there; deleting is for whoever added a file,
+the owner and admins, and the page offers it only to them. The team's
+space has the owner's plan's Drive limits, counted separately from anyone's
+own Drive, and its files' keys are bound to the team.
+
+Leaving or being removed hands what the person added (proxies, files,
+folders) to the owner, takes their profiles off the team's proxies and ends
+a cloud browser session of theirs that browses through one. Deleting the
+team deletes its proxies and its Drive, objects included, and nothing
+anyone owns. Each change is in the security history of the person it
+concerns, without anyone else's device or address; the data download names
+the team.
+
+Building it showed that usage emails took each account's own plan even in
+a team; they now take the owner's.
+
+Checked by `apps/api/test/teams.integration.test.ts` (invitations, seats,
+roles, the plan, subscriptions, hand-over, deletion, account deletion,
+proxies, the Drive space), a real session through a team proxy ended by
+leaving in the browser integration test, and `apps/web/e2e/team.spec.ts`
+(start, invite, join, the plan on the Account page, a team proxy, the
+team's Drive, roles, removal, deletion, accessibility on desktop and
+phone).

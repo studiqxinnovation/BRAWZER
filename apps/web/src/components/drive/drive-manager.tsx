@@ -1,6 +1,6 @@
 "use client";
 
-import type { DriveFile, DriveFolder, DriveUsage } from "@brawzer/contracts";
+import type { DriveFile, DriveFolder, DriveSpace, DriveUsage } from "@brawzer/contracts";
 import { Badge } from "@brawzer/ui/components/badge";
 import { Button } from "@brawzer/ui/components/button";
 import { EmptyState } from "@brawzer/ui/components/empty-state";
@@ -34,7 +34,7 @@ import {
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type SubmitEvent, useState } from "react";
+import { createContext, type SubmitEvent, useContext, useState } from "react";
 import { Panel } from "@/components/app-shell/page";
 import type { ApiResult } from "@/lib/api/client";
 import { createFolder, deleteFile, deleteFolder, updateFile, updateFolder } from "@/lib/api/drive";
@@ -53,8 +53,28 @@ import { PreviewDialog } from "./preview-dialog";
 import { SaveToComputerDialog } from "./save-to-computer";
 import { UploadButton, UploadList, useUploads } from "./uploads";
 
-const folderHref = (folderId: string | null) =>
-  folderId ? ({ pathname: "/app/drive", query: { folder: folderId } } as const) : "/app/drive";
+/** Which Drive the page shows; links, searches and new things stay in it. */
+const SpaceContext = createContext<DriveSpace>("personal");
+
+function useFolderHref() {
+  const space = useContext(SpaceContext);
+  return (folderId: string | null) => ({
+    pathname: "/app/drive" as const,
+    query: {
+      ...(folderId ? { folder: folderId } : {}),
+      ...(space === "team" ? { space: "team" } : {}),
+    },
+  });
+}
+
+/** The page's own address for a search, in the current space. */
+function searchHref(space: DriveSpace, q: string): Route {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (space === "team") params.set("space", "team");
+  const search = params.toString();
+  return search ? `/app/drive?${search}` : "/app/drive";
+}
 
 function FileIcon({ file }: { file: DriveFile }) {
   const className = "size-4 shrink-0 text-ink-tertiary";
@@ -140,66 +160,73 @@ function FileRow({
           </p>
         )}
       </div>
-      <Menu>
-        <MenuTrigger
-          render={<Button variant="ghost" size="sm" aria-label={`Actions for ${file.name}`} />}
-        >
-          <Ellipsis aria-hidden="true" />
-        </MenuTrigger>
-        <MenuContent align="end">
-          {kind && (
-            <MenuItem
-              icon={<Eye />}
-              onClick={() => {
-                setAction("preview");
-              }}
-            >
-              Preview
-            </MenuItem>
-          )}
-          {!quarantined && (
-            <MenuItem
-              icon={<Download />}
-              onClick={() => {
-                setAction("save");
-              }}
-            >
-              Save to this computer…
-            </MenuItem>
-          )}
-          {!quarantined && (
-            <>
-              <MenuSeparator />
-              <MenuItem
-                icon={<Pencil />}
-                onClick={() => {
-                  setAction("rename");
-                }}
-              >
-                Rename
-              </MenuItem>
-              <MenuItem
-                icon={<FolderInput />}
-                onClick={() => {
-                  setAction("move");
-                }}
-              >
-                Move…
-              </MenuItem>
-              <MenuSeparator />
-            </>
-          )}
-          <MenuItem
-            icon={<Trash2 />}
-            tone="danger"
-            onClick={() => {
-              setAction("delete");
-            }}
+      {/* A quarantined file someone else added in the team's Drive has nothing to offer. */}
+      {(!quarantined || file.canDelete) && (
+        <Menu>
+          <MenuTrigger
+            render={<Button variant="ghost" size="sm" aria-label={`Actions for ${file.name}`} />}
           >
-            Delete
-          </MenuItem>
-        </MenuContent>
-      </Menu>
+            <Ellipsis aria-hidden="true" />
+          </MenuTrigger>
+          <MenuContent align="end">
+            {kind && (
+              <MenuItem
+                icon={<Eye />}
+                onClick={() => {
+                  setAction("preview");
+                }}
+              >
+                Preview
+              </MenuItem>
+            )}
+            {!quarantined && (
+              <MenuItem
+                icon={<Download />}
+                onClick={() => {
+                  setAction("save");
+                }}
+              >
+                Save to this computer…
+              </MenuItem>
+            )}
+            {!quarantined && (
+              <>
+                <MenuSeparator />
+                <MenuItem
+                  icon={<Pencil />}
+                  onClick={() => {
+                    setAction("rename");
+                  }}
+                >
+                  Rename
+                </MenuItem>
+                <MenuItem
+                  icon={<FolderInput />}
+                  onClick={() => {
+                    setAction("move");
+                  }}
+                >
+                  Move…
+                </MenuItem>
+              </>
+            )}
+            {file.canDelete && (
+              <>
+                {!quarantined && <MenuSeparator />}
+                <MenuItem
+                  icon={<Trash2 />}
+                  tone="danger"
+                  onClick={() => {
+                    setAction("delete");
+                  }}
+                >
+                  Delete
+                </MenuItem>
+              </>
+            )}
+          </MenuContent>
+        </Menu>
+      )}
 
       {kind && <PreviewDialog file={file} open={action === "preview"} onOpenChange={close} />}
       <SaveToComputerDialog
@@ -252,6 +279,7 @@ function FolderRow({
   folders: readonly DriveFolder[];
   onChanged: (message: string) => void;
 }) {
+  const folderHref = useFolderHref();
   const [action, setAction] = useState<FolderAction>(null);
   const close = (open: boolean) => {
     if (!open) setAction(null);
@@ -299,16 +327,20 @@ function FolderRow({
           >
             Move…
           </MenuItem>
-          <MenuSeparator />
-          <MenuItem
-            icon={<Trash2 />}
-            tone="danger"
-            onClick={() => {
-              setAction("delete");
-            }}
-          >
-            Delete
-          </MenuItem>
+          {folder.canDelete && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                icon={<Trash2 />}
+                tone="danger"
+                onClick={() => {
+                  setAction("delete");
+                }}
+              >
+                Delete
+              </MenuItem>
+            </>
+          )}
         </MenuContent>
       </Menu>
       <NameDialog
@@ -352,6 +384,7 @@ function Breadcrumbs({
   folders: readonly DriveFolder[];
   currentFolderId: string | null;
 }) {
+  const folderHref = useFolderHref();
   const path = folderPath(folders, currentFolderId);
   const crumbs = [{ id: null as string | null, name: "Drive" }, ...path];
   return (
@@ -416,13 +449,12 @@ function StorageMeter({ usage }: { usage: DriveUsage }) {
 
 function SearchForm({ query }: { query: string }) {
   const router = useRouter();
+  const space = useContext(SpaceContext);
   function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = new FormData(event.currentTarget).get("q");
     const q = typeof value === "string" ? value.trim() : "";
-    router.push(
-      q ? (`/app/drive?${new URLSearchParams({ q }).toString()}` as Route) : "/app/drive",
-    );
+    router.push(searchHref(space, q));
   }
   return (
     <form method="post" role="search" onSubmit={handleSubmit} className="flex items-center gap-2">
@@ -444,7 +476,7 @@ function SearchForm({ query }: { query: string }) {
         />
       </div>
       {query && (
-        <Button variant="ghost" size="sm" render={<Link href="/app/drive" />}>
+        <Button variant="ghost" size="sm" render={<Link href={searchHref(space, "")} />}>
           <X aria-hidden="true" />
           Clear
         </Button>
@@ -462,6 +494,8 @@ export function DriveManager({
   query,
   sharedComputer,
   renderedAt,
+  space = "personal",
+  team = null,
 }: {
   folders: readonly DriveFolder[];
   files: readonly DriveFile[];
@@ -470,11 +504,14 @@ export function DriveManager({
   query: string;
   sharedComputer: boolean;
   renderedAt: number;
+  space?: DriveSpace;
+  /** The person's team, whose shared Drive they can switch to (ADR 0019). */
+  team?: { name: string } | null;
 }) {
   const router = useRouter();
   const toast = useToast();
   const [newFolder, setNewFolder] = useState(false);
-  const { uploads, start, dismiss, clearFinished } = useUploads(currentFolderId, usage);
+  const { uploads, start, dismiss, clearFinished } = useUploads(currentFolderId, usage, space);
   const searching = query !== "";
   const subfolders = searching ? [] : childFolders(folders, currentFolderId);
   const empty = subfolders.length === 0 && files.length === 0;
@@ -486,101 +523,131 @@ export function DriveManager({
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        {searching ? (
-          <p className="text-callout text-ink-secondary">
-            {files.length === 0
-              ? `No files match “${query}”`
-              : `${String(files.length)} ${files.length === 1 ? "file matches" : "files match"} “${query}”`}
-          </p>
-        ) : (
-          <Breadcrumbs folders={folders} currentFolderId={currentFolderId} />
+    <SpaceContext value={space}>
+      <div className="flex flex-col gap-5">
+        {team && (
+          <nav aria-label="Which Drive" className="flex flex-wrap gap-2">
+            {(
+              [
+                { value: "personal", label: "My Drive" },
+                { value: "team", label: `${team.name}’s Drive` },
+              ] as const
+            ).map((option) => (
+              <Button
+                key={option.value}
+                variant={option.value === space ? "primary" : "secondary"}
+                size="sm"
+                aria-current={option.value === space ? "page" : undefined}
+                render={<Link href={searchHref(option.value, "")} />}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </nav>
         )}
-        <SearchForm query={query} />
-      </div>
-
-      {!searching && (
-        <div className="flex flex-wrap items-center gap-2">
-          <UploadButton onFiles={start} disabled={full} />
-          <Button
-            variant="secondary"
-            disabled={usage.folderCount >= usage.folderLimit}
-            onClick={() => {
-              setNewFolder(true);
-            }}
-          >
-            <FolderPlus aria-hidden="true" />
-            New folder
-          </Button>
-          {full && (
-            <p className="text-footnote text-ink-secondary">
-              Drive is full. Delete some files to upload more.
+        {space === "team" && (
+          <p className="text-footnote text-ink-secondary">
+            Shared with everyone in {team?.name ?? "the team"}: they can open, add and organise
+            what’s here. Deleting is for whoever added it, the owner and admins.
+          </p>
+        )}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          {searching ? (
+            <p className="text-callout text-ink-secondary">
+              {files.length === 0
+                ? `No files match “${query}”`
+                : `${String(files.length)} ${files.length === 1 ? "file matches" : "files match"} “${query}”`}
             </p>
+          ) : (
+            <Breadcrumbs folders={folders} currentFolderId={currentFolderId} />
           )}
+          <SearchForm query={query} />
         </div>
-      )}
 
-      <UploadList uploads={uploads} onDismiss={dismiss} onClearFinished={clearFinished} />
+        {!searching && (
+          <div className="flex flex-wrap items-center gap-2">
+            <UploadButton onFiles={start} disabled={full} />
+            <Button
+              variant="secondary"
+              disabled={usage.folderCount >= usage.folderLimit}
+              onClick={() => {
+                setNewFolder(true);
+              }}
+            >
+              <FolderPlus aria-hidden="true" />
+              New folder
+            </Button>
+            {full && (
+              <p className="text-footnote text-ink-secondary">
+                Drive is full. Delete some files to upload more.
+              </p>
+            )}
+          </div>
+        )}
 
-      {empty ? (
-        <Panel>
-          <EmptyState
-            icon={searching ? <Search /> : <HardDriveDownload />}
-            title={
-              searching
-                ? "Nothing found"
-                : currentFolderId
-                  ? "This folder is empty"
-                  : "Nothing in Drive yet"
-            }
-            description={
-              searching
-                ? "Try a different word. Search looks at file names, not their contents."
-                : "Upload a file from this device to carry it to your next computer. Everything is scanned for malware and stored encrypted."
-            }
-          />
-        </Panel>
-      ) : (
-        <Panel>
-          <ul
-            aria-label={searching ? "Search results" : "Files and folders"}
-            className="divide-y divide-line"
-          >
-            {subfolders.map((folder) => (
-              <FolderRow key={folder.id} folder={folder} folders={folders} onChanged={changed} />
-            ))}
-            {files.map((file) => (
-              <FileRow
-                key={file.id}
-                file={file}
-                folders={folders}
-                showLocation={searching}
-                sharedComputer={sharedComputer}
-                renderedAt={renderedAt}
-                onChanged={changed}
-              />
-            ))}
-          </ul>
-        </Panel>
-      )}
+        <UploadList uploads={uploads} onDismiss={dismiss} onClearFinished={clearFinished} />
 
-      <StorageMeter usage={usage} />
+        {empty ? (
+          <Panel>
+            <EmptyState
+              icon={searching ? <Search /> : <HardDriveDownload />}
+              title={
+                searching
+                  ? "Nothing found"
+                  : currentFolderId
+                    ? "This folder is empty"
+                    : space === "team"
+                      ? "Nothing in the team’s Drive yet"
+                      : "Nothing in Drive yet"
+              }
+              description={
+                searching
+                  ? "Try a different word. Search looks at file names, not their contents."
+                  : "Upload a file from this device to carry it to your next computer. Everything is scanned for malware and stored encrypted."
+              }
+            />
+          </Panel>
+        ) : (
+          <Panel>
+            <ul
+              aria-label={searching ? "Search results" : "Files and folders"}
+              className="divide-y divide-line"
+            >
+              {subfolders.map((folder) => (
+                <FolderRow key={folder.id} folder={folder} folders={folders} onChanged={changed} />
+              ))}
+              {files.map((file) => (
+                <FileRow
+                  key={file.id}
+                  file={file}
+                  folders={folders}
+                  showLocation={searching}
+                  sharedComputer={sharedComputer}
+                  renderedAt={renderedAt}
+                  onChanged={changed}
+                />
+              ))}
+            </ul>
+          </Panel>
+        )}
 
-      <NameDialog
-        open={newFolder}
-        onOpenChange={setNewFolder}
-        title="New folder"
-        description={`Created in ${describePath(folders, currentFolderId)}.`}
-        label="Name"
-        submitLabel="Create folder"
-        onSubmit={(name) =>
-          createFolder({ name, parentId: currentFolderId }).then((result) => {
-            if (result.ok) changed(`Created “${name}”`);
-            return result;
-          })
-        }
-      />
-    </div>
+        <StorageMeter usage={usage} />
+
+        <NameDialog
+          open={newFolder}
+          onOpenChange={setNewFolder}
+          title="New folder"
+          description={`Created in ${describePath(folders, currentFolderId)}.`}
+          label="Name"
+          submitLabel="Create folder"
+          onSubmit={(name) =>
+            createFolder({ name, parentId: currentFolderId, space }).then((result) => {
+              if (result.ok) changed(`Created “${name}”`);
+              return result;
+            })
+          }
+        />
+      </div>
+    </SpaceContext>
   );
 }

@@ -7,19 +7,24 @@ import {
   driveOverviewSchema,
   driveFileSchema,
   driveFolderSchema,
+  type DriveSpace,
   type UpdateFileRequest,
   type UpdateFolderRequest,
 } from "@brawzer/contracts";
 import { type ApiFailure, type ApiResult, apiRequest } from "./client";
 
 /** Every folder and the usage. */
-export const fetchDriveOverview = () => apiRequest("/drive", { schema: driveOverviewSchema });
+export const fetchDriveOverview = (space: DriveSpace = "personal") =>
+  apiRequest(space === "team" ? "/drive?space=team" : "/drive", { schema: driveOverviewSchema });
 
 /** One folder's files (the top level without `folderId`), or a search everywhere with `q`. */
-export const listDriveFiles = (query: { folderId?: string | null; q?: string } = {}) => {
+export const listDriveFiles = (
+  query: { folderId?: string | null; q?: string; space?: DriveSpace } = {},
+) => {
   const params = new URLSearchParams();
   if (query.q) params.set("q", query.q);
   else if (query.folderId) params.set("folderId", query.folderId);
+  if (query.space === "team") params.set("space", "team");
   const search = params.toString();
   return apiRequest(`/drive/files${search ? `?${search}` : ""}`, { schema: driveFileListSchema });
 };
@@ -81,10 +86,14 @@ export function uploadDriveFile(
   file: File,
   folderId: string | null,
   onProgress: (fraction: number) => void,
+  space: DriveSpace = "personal",
 ): UploadHandle {
   const request = new XMLHttpRequest();
   const result = new Promise<ApiResult<DriveFile>>((resolve) => {
-    const query = folderId ? `?${new URLSearchParams({ folderId }).toString()}` : "";
+    const params = new URLSearchParams();
+    if (folderId) params.set("folderId", folderId);
+    else if (space === "team") params.set("space", "team");
+    const query = params.size > 0 ? `?${params.toString()}` : "";
     request.open("POST", `/api/v1/drive/files${query}`);
     request.setRequestHeader("accept", "application/json");
     request.responseType = "text";

@@ -77,6 +77,31 @@ test.describe("team", () => {
     await expect(memberPage.getByText("Shared by your team")).toBeVisible();
     expect(await wcagViolations(memberPage)).toEqual([]);
 
+    // The team's Drive: the owner adds a file, the member opens it and can't delete it.
+    await page.goto("/app/drive");
+    await page.getByRole("link", { name: `${teamName}’s Drive` }).click();
+    await expect(page.getByText("Nothing in the team’s Drive yet")).toBeVisible();
+    await page
+      .getByTestId("drive-file-input")
+      .setInputFiles({
+        name: "team-plan.txt",
+        mimeType: "text/plain",
+        buffer: Buffer.from("Q4\n"),
+      });
+    const ownerFiles = page.getByRole("list", { name: "Files and folders" });
+    await expect(ownerFiles).toContainText("team-plan.txt", { timeout: 15_000 });
+    await memberPage.goto("/app/drive?space=team");
+    const memberFiles = memberPage.getByRole("list", { name: "Files and folders" });
+    await expect(memberFiles).toContainText("team-plan.txt");
+    expect(await wcagViolations(memberPage)).toEqual([]);
+    await memberFiles.getByRole("button", { name: "Actions for team-plan.txt" }).click();
+    await expect(memberPage.getByRole("menuitem", { name: "Preview" })).toBeVisible();
+    await expect(memberPage.getByRole("menuitem", { name: "Delete" })).toHaveCount(0);
+    await memberPage.keyboard.press("Escape");
+    // Their own Drive doesn't hold it.
+    await memberPage.getByRole("link", { name: "My Drive" }).click();
+    await expect(memberPage.getByText("Nothing in Drive yet")).toBeVisible();
+
     // The owner sees them, makes them an admin, then removes them.
     await page.goto("/app/team");
     await expect(members).toContainText(memberEmail);

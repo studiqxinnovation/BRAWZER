@@ -176,6 +176,13 @@
       "when": 1794188030238,
       "tag": "0024_lovely_spirit",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794188545184,
+      "tag": "0025_wooden_skullbuster",
+      "breakpoints": true
     }
   ]
 }

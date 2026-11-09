@@ -47,11 +47,18 @@ export const driveNameSchema = z
   .refine((value) => !/[/\\]/.test(value), { error: "A name can’t contain slashes." })
   .refine((value) => value !== "." && value !== "..", { error: "That isn’t a usable name." });
 
+/** Whose Drive: the person's own, or their team's shared space (Phase 8, idea 19). */
+export const driveSpaces = ["personal", "team"] as const;
+export const driveSpaceSchema = z.enum(driveSpaces, { error: "Choose personal or team." });
+export type DriveSpace = z.infer<typeof driveSpaceSchema>;
+
 export const driveFolderSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   /** Null at the top level. */
   parentId: z.uuid().nullable(),
+  /** In a team's space: whether the signed-in person may delete it (who made it, owner, admins). */
+  canDelete: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -70,6 +77,8 @@ export const driveFileSchema = z.object({
   /** Clean and of a type the browser can show. */
   previewable: z.boolean(),
   source: driveFileSourceSchema,
+  /** In a team's space: whether the signed-in person may delete it (who added it, owner, admins). */
+  canDelete: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -88,6 +97,13 @@ export const driveUsageSchema = z.object({
 export const driveOverviewSchema = z.object({
   folders: z.array(driveFolderSchema),
   usage: driveUsageSchema,
+  space: driveSpaceSchema,
+  /** The person's team, whose space they can switch to; null outside a team. */
+  team: z.object({ name: z.string() }).nullable(),
+});
+
+export const driveSpaceQuerySchema = z.object({
+  space: driveSpaceSchema.default("personal"),
 });
 
 export const driveFileListSchema = z.object({
@@ -98,11 +114,15 @@ export const driveFileListSchema = z.object({
 export const driveFileQuerySchema = z.object({
   folderId: z.uuid({ error: "That isn’t a folder ID." }).optional(),
   q: z.string().trim().max(100, "Use at most 100 characters.").optional(),
+  /** For the top level and searches; a folder belongs to its own space. */
+  space: driveSpaceSchema.default("personal"),
 });
 
 export const createFolderRequestSchema = z.object({
   name: driveNameSchema,
   parentId: z.uuid({ error: "That isn’t a folder ID." }).nullable().optional(),
+  /** Where a top-level folder goes; a subfolder goes where its parent is. */
+  space: driveSpaceSchema.default("personal"),
 });
 
 export const updateFolderRequestSchema = z

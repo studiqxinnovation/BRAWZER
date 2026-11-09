@@ -174,7 +174,7 @@ export class BillingService {
           files: count(),
         })
         .from(schema.driveFiles)
-        .where(eq(schema.driveFiles.userId, userId)),
+        .where(and(eq(schema.driveFiles.userId, userId), isNull(schema.driveFiles.teamId))),
       this.browsingMinutesThisMonth(userId),
     ]);
     return {

@@ -1,6 +1,11 @@
 import {
   accountExportSchema,
   billingOverviewSchema,
+  downloadTicketSchema,
+  driveFileListSchema,
+  driveFileSchema,
+  driveFolderSchema,
+  driveOverviewSchema,
   profileListSchema,
   proxyListSchema,
   proxySchema,
@@ -9,6 +14,8 @@ import {
 } from "@brawzer/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ProxiesService } from "../src/proxies/proxies.service.js";
+import type { ObjectStore } from "../src/storage/object-store.js";
+import { OBJECT_STORE } from "../src/storage/storage.module.js";
 import { createHarness, type Harness, type TestBrowser } from "./support/harness.js";
 
 let h: Harness;
@@ -338,6 +345,138 @@ describe("team accounts", () => {
     // Deleting the team deletes its proxies.
     ok(await owner.client.delete("/team"));
     expect(proxyListSchema.parse((await owner.client.get("/proxies")).json()).proxies).toEqual([]);
+  });
+
+  it("shares a Drive space: everyone adds and opens, deleting is for who added it and admins", async () => {
+    const owner = await person("drive-owner");
+    ok(await owner.client.post("/team", { name: "Drive crew" }));
+    const join = async (tag: string) => {
+      const someone = await person(tag);
+      ok(await owner.client.post("/team/invitations", { email: someone.email, role: "member" }));
+      const invitation = (await team(someone.client)).invitations[0]?.id ?? "";
+      ok(await someone.client.post(`/team/invitations/${invitation}/join`, {}));
+      return someone;
+    };
+    const writer = await join("drive-writer");
+    const reader = await join("drive-reader");
+    const outsider = await person("drive-outsider");
+
+    // The team's space starts empty and says whose it is.
+    const empty = driveOverviewSchema.parse((await writer.client.get("/drive?space=team")).json());
+    expect(empty).toMatchObject({ space: "team", team: { name: "Drive crew" }, folders: [] });
+    expect(
+      driveOverviewSchema.parse((await outsider.client.get("/drive?space=team")).json()).space,
+    ).toBe("personal");
+
+    // A member makes a folder and adds a file to it.
+    const folder = await writer.client.post("/drive/folders", { name: "Shared", space: "team" });
+    expect(folder.statusCode, folder.body).toBe(201);
+    const shared = driveFolderSchema.parse(folder.json());
+    const content = Buffer.from("team notes, version 1\n");
+    const added = await writer.client.upload(`/drive/files?folderId=${shared.id}`, {
+      name: "notes.txt",
+      content,
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    const file = driveFileSchema.parse(added.json());
+    expect(file.canDelete).toBe(true);
+    // A file at the top of the team's space, and one of the writer's own with the same name.
+    const top = await writer.client.upload("/drive/files?space=team", {
+      name: "plan.txt",
+      content,
+    });
+    expect(top.statusCode, top.body).toBe(201);
+    expect(
+      (await writer.client.upload("/drive/files", { name: "plan.txt", content })).statusCode,
+    ).toBe(201);
+
+    // Everyone in the team sees and opens them; only whoever added it and admins delete.
+    const seen = driveFileListSchema.parse(
+      (await reader.client.get(`/drive/files?folderId=${shared.id}`)).json(),
+    ).files;
+    expect(seen.map((entry) => [entry.name, entry.canDelete])).toEqual([["notes.txt", false]]);
+    const preview = await reader.client.get(`/drive/files/${file.id}/preview`);
+    expect(preview.statusCode).toBe(200);
+    expect(preview.body).toBe(content.toString());
+    expect((await reader.client.delete(`/drive/files/${file.id}`)).statusCode).toBe(403);
+    expect((await reader.client.delete(`/drive/folders/${shared.id}`)).statusCode).toBe(403);
+    expect(
+      driveFileListSchema.parse(
+        (await owner.client.get(`/drive/files?folderId=${shared.id}`)).json(),
+      ).files[0]?.canDelete,
+    ).toBe(true);
+    // A member renames; nobody outside sees anything.
+    expect(
+      (await reader.client.patch(`/drive/files/${file.id}`, { name: "notes-v1.txt" })).statusCode,
+    ).toBe(200);
+    expect((await outsider.client.get(`/drive/files/${file.id}/preview`)).statusCode).toBe(404);
+    expect((await outsider.client.post(`/drive/files/${file.id}/download-ticket`)).statusCode).toBe(
+      404,
+    );
+    expect(
+      driveFileListSchema.parse(
+        (await outsider.client.get(`/drive/files?folderId=${shared.id}`)).json(),
+      ).files,
+    ).toEqual([]);
+    // A file can't be moved between spaces.
+    const own = driveFolderSchema.parse(
+      (await writer.client.post("/drive/folders", { name: "Mine" })).json(),
+    );
+    expect(
+      (await writer.client.patch(`/drive/files/${file.id}`, { folderId: own.id })).statusCode,
+    ).toBe(404);
+
+    // The team's space has its own usage; the writer's own Drive counts only their own file.
+    const usage = driveOverviewSchema.parse(
+      (await owner.client.get("/drive?space=team")).json(),
+    ).usage;
+    expect(usage).toMatchObject({ fileCount: 2, folderCount: 1 });
+    expect(
+      billingOverviewSchema.parse((await writer.client.get("/billing")).json()).usage.driveFiles,
+    ).toBe(1);
+    expect(
+      accountExportSchema
+        .parse((await writer.client.get("/account/export")).json())
+        .drive.files.map((entry) => entry.path),
+    ).toEqual(["/plan.txt"]);
+
+    // The key is the team's, so the file outlives the writer's membership.
+    const stored = await h.database.pool.query<{ object_key: string; team_id: string }>(
+      "select object_key, team_id from drive_files where id = $1",
+      [file.id],
+    );
+    expect(stored.rows[0]?.object_key).toMatch(/^drive\/teams\//);
+    ok(await writer.client.post("/team/leave", {}));
+    expect((await writer.client.get(`/drive/files/${file.id}/preview`)).statusCode).toBe(404);
+    const ticket = await reader.client.post(`/drive/files/${file.id}/download-ticket`);
+    expect(ticket.statusCode, ticket.body).toBe(200);
+    const download = await h
+      .browser()
+      .get(downloadTicketSchema.parse(ticket.json()).url.replace("/api/v1", ""));
+    expect(download.statusCode).toBe(200);
+    expect(download.body).toBe(content.toString());
+    const handed = await h.database.pool.query<{ email: string }>(
+      "select u.email from drive_files f join users u on u.id = f.user_id where f.id = $1",
+      [file.id],
+    );
+    expect(handed.rows[0]?.email).toBe(owner.email);
+
+    // Deleting the team deletes its space, objects included; the writer's own file stays.
+    const objectKey = stored.rows[0]?.object_key ?? "";
+    const store = h.app.get<ObjectStore>(OBJECT_STORE);
+    expect(await store.get(objectKey)).not.toBeNull();
+    ok(await owner.client.delete("/team"));
+    expect(await store.get(objectKey)).toBeNull();
+    const left = await h.database.pool.query<{ count: number }>(
+      "select count(*)::int as count from drive_files where team_id = $1",
+      [stored.rows[0]?.team_id ?? ""],
+    );
+    expect(left.rows[0]?.count).toBe(0);
+    expect(
+      driveFileListSchema
+        .parse((await writer.client.get("/drive/files")).json())
+        .files.map((entry) => entry.name),
+    ).toEqual(["plan.txt"]);
   });
 
   it("deletes a team its owner leaves alone with their account, and refuses a team on a one-person plan", async () => {

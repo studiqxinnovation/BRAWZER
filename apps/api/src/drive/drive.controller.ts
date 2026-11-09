@@ -12,6 +12,8 @@ import {
   driveFolderSchema,
   type DriveOverview,
   driveOverviewSchema,
+  driveSpaceQuerySchema,
+  driveSpaceSchema,
   updateFileRequestSchema,
   updateFolderRequestSchema,
 } from "@brawzer/contracts";
@@ -64,6 +66,8 @@ import { DriveService, type OpenedFile } from "./drive.service.js";
 const idSchema = z.uuid({ error: "That isn’t a valid ID." });
 const uploadQuerySchema = z.object({
   folderId: z.uuid({ error: "That isn’t a folder ID." }).optional(),
+  /** Where a file without a folder goes: the person's own Drive or their team's. */
+  space: driveSpaceSchema.default("personal"),
 });
 
 /**
@@ -101,13 +105,20 @@ export class DriveController {
   @ApiCookieAuth(SESSION_AUTH)
   @ApiUnauthorizedResponse({ description: "No valid session." })
   @SerializeOptions({ schema: driveOverviewSchema })
-  @ApiOperation({ summary: "Folders and storage usage" })
+  @ApiOperation({
+    summary: "Folders and storage usage",
+    description:
+      "`space=team` gives the team's shared Drive, with the team's usage against its owner's plan.",
+  })
   @ApiOkResponse({
-    description: "Every folder and the account's usage.",
+    description: "Every folder of the space and its usage.",
     standardSchema: driveOverviewSchema,
   })
-  overview(@CurrentAuth() auth: AuthContext): Promise<DriveOverview> {
-    return this.drive.overview(auth.user.id);
+  overview(
+    @Query({ schema: driveSpaceQuerySchema }) query: z.output<typeof driveSpaceQuerySchema>,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<DriveOverview> {
+    return this.drive.overview(auth.user.id, query.space);
   }
 
   @Get("files")
@@ -127,6 +138,7 @@ export class DriveController {
       files: await this.drive.listFiles(auth.user.id, {
         folderId: query.folderId ?? null,
         q: query.q === "" ? undefined : query.q,
+        space: query.space,
       }),
     };
   }
@@ -169,6 +181,7 @@ export class DriveController {
       query.folderId ?? null,
       { filename: part.filename, stream: part.file },
       requestMeta(request),
+      query.space,
     );
   }
 
@@ -281,7 +294,11 @@ export class DriveController {
     @Body({ schema: createFolderRequestSchema }) body: z.output<typeof createFolderRequestSchema>,
     @CurrentAuth() auth: AuthContext,
   ): Promise<DriveFolder> {
-    return this.drive.createFolder(auth, { name: body.name, parentId: body.parentId ?? null });
+    return this.drive.createFolder(auth, {
+      name: body.name,
+      parentId: body.parentId ?? null,
+      space: body.space,
+    });
   }
 
   @Patch("folders/:id")

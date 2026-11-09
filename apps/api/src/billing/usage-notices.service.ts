@@ -124,7 +124,8 @@ export class UsageNoticesService implements OnApplicationBootstrap, OnApplicatio
           minutes: string;
         }>(
           `with drive as (
-             select user_id, sum(size) as bytes, count(*) as files from drive_files group by user_id
+             select user_id, sum(size) as bytes, count(*) as files from drive_files
+             where team_id is null group by user_id
            ), browsing as (
              select user_id,
                     sum(extract(epoch from (coalesce(ended_at, $2) - greatest(started_at, $1)))) / 60 as minutes
@@ -132,12 +133,16 @@ export class UsageNoticesService implements OnApplicationBootstrap, OnApplicatio
              where started_at is not null and coalesce(ended_at, $2) >= $1
              group by user_id
            )
-           select u.id, u.email, u.plan_code,
+           select u.id, u.email, coalesce(o.plan_code, u.plan_code) as plan_code,
                   coalesce(d.bytes, 0) as drive_bytes, coalesce(d.files, 0) as drive_files,
                   coalesce(b.minutes, 0) as minutes
            from users u
            left join drive d on d.user_id = u.id
            left join browsing b on b.user_id = u.id
+           -- In a team, the owner's plan applies (ADR 0019).
+           left join team_members m on m.user_id = u.id
+           left join team_members om on om.team_id = m.team_id and om.role = 'owner'
+           left join users o on o.id = om.user_id
            where u.email_verified_at is not null and (d.user_id is not null or b.user_id is not null)`,
           [monthStart, now],
         );

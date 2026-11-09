@@ -5,8 +5,10 @@ import {
   type DriveFileSource,
   type DriveFolder,
   type DriveOverview,
+  type DriveSpace,
   type DriveUsage,
   isPreviewable,
+  type TeamRole,
 } from "@brawzer/contracts";
 import {
   and,
@@ -19,10 +21,11 @@ import {
   ilike,
   inArray,
   isNull,
+  or,
   schema,
   sql,
 } from "@brawzer/db";
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { AuthContext } from "../auth/session.service.js";
 import { lockAccount } from "../common/account-lock.js";
 import { ApiException } from "../common/api-exception.js";
@@ -41,6 +44,7 @@ import { SecurityEventsService } from "../security-events/security-events.js";
 import { createDecryptStream, generateFileKey } from "../storage/encrypted-chunks.js";
 import type { ObjectStore } from "../storage/object-store.js";
 import { OBJECT_STORE } from "../storage/storage.module.js";
+import { TeamsService } from "../teams/teams.service.js";
 import { numberedName, sanitizeFilename } from "./content-type.js";
 import { DownloadTickets } from "./tickets.js";
 import { FileTooLargeError, storeUpload } from "./upload.js";
@@ -67,26 +71,59 @@ const quarantined = () =>
     "This file was quarantined because the malware scan found a threat. It can be deleted, but not opened or saved.",
   );
 
-/** Files' keys are sealed for one account and one object (ADR 0011). */
-const keyContext = (userId: string, objectId: string) => `drive-file:${userId}:${objectId}`;
+const cannotDelete = () =>
+  new ApiException(
+    "forbidden",
+    403,
+    "In the team’s Drive, only whoever added it, the owner and admins can delete it.",
+  );
 
-const objectKeyFor = (userId: string, objectId: string) => `drive/${userId}/${objectId}`;
+const notInTeam = () => new ApiException("not_found", 404, "You aren’t in a team.");
+
+/**
+ * Whose rows a request works on: one person's own Drive, or their team's
+ * shared space (ADR 0019), with who is asking and their role there.
+ */
+export type DriveScope =
+  | { kind: "personal"; userId: string }
+  | { kind: "team"; teamId: string; userId: string; role: TeamRole };
+
+/**
+ * Files' keys are sealed for one owner and one object (ADR 0011): a person's
+ * own file to the person, a team's file to the team, so it stays readable
+ * whoever added it.
+ */
+const keyContext = (row: { userId: string; teamId: string | null }, objectId: string) =>
+  row.teamId === null
+    ? `drive-file:${row.userId}:${objectId}`
+    : `drive-file:team:${row.teamId}:${objectId}`;
+
+const objectKeyFor = (scope: DriveScope, objectId: string) =>
+  scope.kind === "team"
+    ? `drive/teams/${scope.teamId}/${objectId}`
+    : `drive/${scope.userId}/${objectId}`;
 const objectIdOf = (objectKey: string) => objectKey.slice(objectKey.lastIndexOf("/") + 1);
 
 /** `%`, `_` and `\` mean something in LIKE patterns. */
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, "\\$&");
 
-function toFolder(row: DriveFolderRow): DriveFolder {
+/** In someone's own Drive everything is theirs; in a team's, who added it, the owner and admins. */
+function mayDelete(scope: DriveScope, row: { userId: string }): boolean {
+  return scope.kind === "personal" || row.userId === scope.userId || scope.role !== "member";
+}
+
+function toFolder(row: DriveFolderRow, scope: DriveScope): DriveFolder {
   return {
     id: row.id,
     name: row.name,
     parentId: row.parentId,
+    canDelete: mayDelete(scope, row),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-function toFile(row: DriveFileRow): DriveFile {
+function toFile(row: DriveFileRow, scope: DriveScope): DriveFile {
   return {
     id: row.id,
     name: row.name,
@@ -97,10 +134,26 @@ function toFile(row: DriveFileRow): DriveFile {
     threat: row.threat,
     previewable: row.status === "clean" && isPreviewable(row.contentType),
     source: row.source,
+    canDelete: mayDelete(scope, row),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
+
+const filesIn = (scope: DriveScope) =>
+  scope.kind === "team"
+    ? eq(schema.driveFiles.teamId, scope.teamId)
+    : and(eq(schema.driveFiles.userId, scope.userId), isNull(schema.driveFiles.teamId));
+
+const foldersIn = (scope: DriveScope) =>
+  scope.kind === "team"
+    ? eq(schema.driveFolders.teamId, scope.teamId)
+    : and(eq(schema.driveFolders.userId, scope.userId), isNull(schema.driveFolders.teamId));
+
+const sameSpace = (scope: DriveScope, row: { userId: string; teamId: string | null }) =>
+  scope.kind === "team"
+    ? row.teamId === scope.teamId
+    : row.teamId === null && row.userId === scope.userId;
 
 export interface UploadInput {
   /** As the browser sent it; cleaned up here. */
@@ -119,11 +172,12 @@ export interface OpenedFile {
 }
 
 /**
- * Brawzer Drive: folders and files that stay with the account. Content lives
- * encrypted in the object store (ADR 0011); only records live here.
+ * Brawzer Drive: folders and files that stay with the account, and a team's
+ * shared space (ADR 0019). Content lives encrypted in the object store (ADR
+ * 0011); only records live here.
  */
 @Injectable()
-export class DriveService {
+export class DriveService implements OnModuleInit {
   constructor(
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(SECRET_BOX) private readonly box: SecretBox,
@@ -134,37 +188,119 @@ export class DriveService {
     @Inject(DownloadTickets) private readonly tickets: DownloadTickets,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(BillingService) private readonly billing: BillingService,
+    @Inject(TeamsService) private readonly teams: TeamsService,
   ) {}
+
+  /**
+   * What someone added to a team's space stays with the team when they
+   * leave (handed to the owner); a deleted team takes its space with it.
+   */
+  onModuleInit(): void {
+    this.teams.register({
+      memberLeft: async (tx, teamId, userId, ownerId) => {
+        await tx
+          .update(schema.driveFiles)
+          .set({ userId: ownerId })
+          .where(and(eq(schema.driveFiles.teamId, teamId), eq(schema.driveFiles.userId, userId)));
+        await tx
+          .update(schema.driveFolders)
+          .set({ userId: ownerId })
+          .where(
+            and(eq(schema.driveFolders.teamId, teamId), eq(schema.driveFolders.userId, userId)),
+          );
+        return undefined;
+      },
+      teamDeleting: async (tx, teamId) => {
+        const files = await tx
+          .select({ objectKey: schema.driveFiles.objectKey })
+          .from(schema.driveFiles)
+          .where(eq(schema.driveFiles.teamId, teamId));
+        const objectKeys = files.map((file) => file.objectKey);
+        return objectKeys.length > 0 ? () => this.removeObjects(objectKeys) : undefined;
+      },
+    });
+  }
+
+  // ── Spaces ─────────────────────────────────────────────────────────────
+
+  /** The space a request names; a team's needs the person to be in one. */
+  async scopeFor(userId: string, space: DriveSpace): Promise<DriveScope> {
+    if (space === "personal") return { kind: "personal", userId };
+    const membership = await this.teams.membership(userId);
+    if (!membership) throw notInTeam();
+    return { kind: "team", teamId: membership.teamId, userId, role: membership.role };
+  }
+
+  /** The space a row is in, if the person may see it; null otherwise. */
+  private async scopeOfRow(
+    userId: string,
+    row: { userId: string; teamId: string | null },
+  ): Promise<DriveScope | null> {
+    if (row.teamId === null) return row.userId === userId ? { kind: "personal", userId } : null;
+    const membership = await this.teams.membership(userId);
+    if (membership?.teamId !== row.teamId) return null;
+    return { kind: "team", teamId: row.teamId, userId, role: membership.role };
+  }
+
+  /** A change counted against a space's limits waits for others to the same space. */
+  private async lockScope(tx: DatabaseExecutor, scope: DriveScope): Promise<void> {
+    if (scope.kind === "personal") {
+      await lockAccount(tx, scope.userId);
+      return;
+    }
+    await tx
+      .select({ id: schema.teams.id })
+      .from(schema.teams)
+      .where(eq(schema.teams.id, scope.teamId))
+      .for("update");
+  }
 
   // ── Reading ────────────────────────────────────────────────────────────
 
-  async overview(userId: string): Promise<DriveOverview> {
-    const [folders, usage] = await Promise.all([this.listFolders(userId), this.usage(userId)]);
-    return { folders, usage };
+  /** A read of a team's space by someone no longer in one shows their own Drive instead. */
+  async overview(userId: string, wanted: DriveSpace = "personal"): Promise<DriveOverview> {
+    const membership = await this.teams.membership(userId);
+    const space: DriveSpace = wanted === "team" && membership ? "team" : "personal";
+    const scope = await this.scopeFor(userId, space);
+    const [folders, usage, team] = await Promise.all([
+      this.listFolders(scope),
+      this.usage(scope),
+      membership
+        ? this.database.db
+            .select({ name: schema.teams.name })
+            .from(schema.teams)
+            .where(eq(schema.teams.id, membership.teamId))
+        : Promise.resolve([]),
+    ]);
+    return { folders, usage, space, team: team[0] ? { name: team[0].name } : null };
   }
 
-  async listFolders(userId: string): Promise<DriveFolder[]> {
+  async listFolders(scope: DriveScope): Promise<DriveFolder[]> {
     const rows = await this.database.db
       .select()
       .from(schema.driveFolders)
-      .where(eq(schema.driveFolders.userId, userId))
+      .where(foldersIn(scope))
       .orderBy(asc(sql`lower(${schema.driveFolders.name})`));
-    return rows.map(toFolder);
+    return rows.map((row) => toFolder(row, scope));
   }
 
-  async usage(userId: string, executor: DatabaseExecutor = this.database.db): Promise<DriveUsage> {
+  /** What a space holds, against the plan in force (in a team, the owner's). */
+  async usage(
+    scope: DriveScope,
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<DriveUsage> {
     const [files] = await executor
       .select({
         count: sql<number>`count(*)::int`,
         bytes: sql<string>`coalesce(sum(${schema.driveFiles.size}), 0)::bigint`,
       })
       .from(schema.driveFiles)
-      .where(eq(schema.driveFiles.userId, userId));
+      .where(filesIn(scope));
     const [folders] = await executor
       .select({ count: sql<number>`count(*)::int` })
       .from(schema.driveFolders)
-      .where(eq(schema.driveFolders.userId, userId));
-    const limits = await this.billing.limitsFor(userId);
+      .where(foldersIn(scope));
+    const limits = await this.billing.limitsFor(scope.userId);
     return {
       usedBytes: files ? Number(files.bytes) : 0,
       limitBytes: limits.driveBytes,
@@ -176,18 +312,25 @@ export class DriveService {
     };
   }
 
-  /** The files in one folder (null: the top level), or every file matching `q`. */
+  /** The files in one folder (null: the top level), or every file matching `q`, in a space. */
   async listFiles(
     userId: string,
-    query: { folderId: string | null; q?: string | undefined },
+    query: { folderId: string | null; q?: string | undefined; space?: DriveSpace },
   ): Promise<DriveFile[]> {
+    let scope: DriveScope;
+    if (query.folderId && !query.q) {
+      // A folder that isn't there (or isn't theirs) simply holds nothing, as it always has.
+      const found = await this.findFolder(userId, query.folderId).catch(() => null);
+      if (!found) return [];
+      scope = found.scope;
+    } else {
+      const team = query.space === "team" && (await this.teams.membership(userId)) !== null;
+      scope = await this.scopeFor(userId, team ? "team" : "personal");
+    }
     const where = query.q
-      ? and(
-          eq(schema.driveFiles.userId, userId),
-          ilike(schema.driveFiles.name, `%${escapeLike(query.q)}%`),
-        )
+      ? and(filesIn(scope), ilike(schema.driveFiles.name, `%${escapeLike(query.q)}%`))
       : and(
-          eq(schema.driveFiles.userId, userId),
+          filesIn(scope),
           query.folderId
             ? eq(schema.driveFiles.folderId, query.folderId)
             : isNull(schema.driveFiles.folderId),
@@ -197,43 +340,58 @@ export class DriveService {
       .from(schema.driveFiles)
       .where(where)
       .orderBy(asc(sql`lower(${schema.driveFiles.name})`));
-    return rows.map(toFile);
+    return rows.map((row) => toFile(row, scope));
   }
 
-  private async findFile(userId: string, id: string): Promise<DriveFileRow> {
+  /** A file the person may see: their own, or their team's. */
+  private async findFile(
+    userId: string,
+    id: string,
+  ): Promise<{ row: DriveFileRow; scope: DriveScope }> {
     const [row] = await this.database.db
       .select()
       .from(schema.driveFiles)
-      .where(and(eq(schema.driveFiles.id, id), eq(schema.driveFiles.userId, userId)))
+      .where(eq(schema.driveFiles.id, id))
       .limit(1);
-    if (!row) throw fileNotFound();
-    return row;
+    const scope = row ? await this.scopeOfRow(userId, row) : null;
+    if (!row || !scope) throw fileNotFound();
+    return { row, scope };
   }
 
   private async findFolder(
     userId: string,
     id: string,
     executor: DatabaseExecutor = this.database.db,
-  ): Promise<DriveFolderRow> {
+  ): Promise<{ row: DriveFolderRow; scope: DriveScope }> {
     const [row] = await executor
       .select()
       .from(schema.driveFolders)
-      .where(and(eq(schema.driveFolders.id, id), eq(schema.driveFolders.userId, userId)))
+      .where(eq(schema.driveFolders.id, id))
       .limit(1);
-    if (!row) throw folderNotFound();
+    const scope = row ? await this.scopeOfRow(userId, row) : null;
+    if (!row || !scope) throw folderNotFound();
+    return { row, scope };
+  }
+
+  /** A folder in the given space, for a move or a new item inside it. */
+  private async folderIn(
+    scope: DriveScope,
+    id: string,
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<DriveFolderRow> {
+    const { row } = await this.findFolder(scope.userId, id, executor);
+    if (!sameSpace(scope, row)) throw folderNotFound();
     return row;
   }
 
-  /** The folder and everything below it. */
+  /** The folder and everything below it (the folder is already the person's to see). */
   private async descendantFolderIds(
     executor: DatabaseExecutor,
-    userId: string,
     folderId: string,
   ): Promise<string[]> {
     const result = await executor.execute<{ id: string }>(sql`
       with recursive tree as (
-        select id from ${schema.driveFolders}
-          where id = ${folderId} and user_id = ${userId}
+        select id from ${schema.driveFolders} where id = ${folderId}
         union all
         select f.id from ${schema.driveFolders} f join tree on f.parent_id = tree.id
       )
@@ -246,25 +404,35 @@ export class DriveService {
 
   async createFolder(
     auth: AuthContext,
-    input: { name: string; parentId: string | null },
+    input: { name: string; parentId: string | null; space?: DriveSpace },
   ): Promise<DriveFolder> {
     const userId = auth.user.id;
+    const scope = input.parentId
+      ? (await this.findFolder(userId, input.parentId)).scope
+      : await this.scopeFor(userId, input.space ?? "personal");
     let row: DriveFolderRow;
     try {
       row = await this.database.db.transaction(async (tx) => {
-        await lockAccount(tx, userId);
-        if (input.parentId) await this.findFolder(userId, input.parentId, tx);
-        const usage = await this.usage(userId, tx);
+        await this.lockScope(tx, scope);
+        if (input.parentId) await this.folderIn(scope, input.parentId, tx);
+        const usage = await this.usage(scope, tx);
         if (usage.folderCount >= usage.folderLimit) {
           throw new ApiException(
             "limit_reached",
             409,
-            `Your plan allows ${String(usage.folderLimit)} folders. Delete one, or move to a plan with more.`,
+            scope.kind === "team"
+              ? `The team’s plan allows ${String(usage.folderLimit)} folders in its Drive. Delete one first.`
+              : `Your plan allows ${String(usage.folderLimit)} folders. Delete one, or move to a plan with more.`,
           );
         }
         const [inserted] = await tx
           .insert(schema.driveFolders)
-          .values({ userId, name: input.name, parentId: input.parentId })
+          .values({
+            userId,
+            teamId: scope.kind === "team" ? scope.teamId : null,
+            name: input.name,
+            parentId: input.parentId,
+          })
           .returning();
         if (!inserted) throw new Error("Folder insert returned nothing");
         return inserted;
@@ -273,7 +441,7 @@ export class DriveService {
       if (isUniqueViolation(error)) throw folderNameTaken();
       throw error;
     }
-    return toFolder(row);
+    return toFolder(row, scope);
   }
 
   async updateFolder(
@@ -282,7 +450,7 @@ export class DriveService {
     input: { name?: string | undefined; parentId?: string | null | undefined },
   ): Promise<DriveFolder> {
     const userId = auth.user.id;
-    const current = await this.findFolder(userId, id);
+    const { row: current, scope } = await this.findFolder(userId, id);
     if (
       input.parentId !== undefined &&
       input.parentId !== null &&
@@ -293,8 +461,8 @@ export class DriveService {
           details: ["parentId: A folder can’t be moved into itself."],
         });
       }
-      await this.findFolder(userId, input.parentId);
-      const below = await this.descendantFolderIds(this.database.db, userId, id);
+      await this.folderIn(scope, input.parentId);
+      const below = await this.descendantFolderIds(this.database.db, id);
       if (below.includes(input.parentId)) {
         throw new ApiException(
           "validation_failed",
@@ -313,31 +481,28 @@ export class DriveService {
           ...(input.parentId === undefined ? {} : { parentId: input.parentId }),
           updatedAt: new Date(),
         })
-        .where(and(eq(schema.driveFolders.id, id), eq(schema.driveFolders.userId, userId)))
+        .where(eq(schema.driveFolders.id, current.id))
         .returning();
     } catch (error) {
       if (isUniqueViolation(error)) throw folderNameTaken();
       throw error;
     }
     if (!row) throw folderNotFound();
-    return toFolder(row);
+    return toFolder(row, scope);
   }
 
   /** Deletes the folder, its folders and their files; the objects go too. */
   async deleteFolder(auth: AuthContext, id: string, meta: RequestMeta): Promise<void> {
     const userId = auth.user.id;
     const objectKeys = await this.database.db.transaction(async (tx) => {
-      await this.findFolder(userId, id, tx);
-      const folderIds = await this.descendantFolderIds(tx, userId, id);
+      const { row, scope } = await this.findFolder(userId, id, tx);
+      if (!mayDelete(scope, row)) throw cannotDelete();
+      const folderIds = await this.descendantFolderIds(tx, id);
       const files = await tx
         .select({ objectKey: schema.driveFiles.objectKey })
         .from(schema.driveFiles)
-        .where(
-          and(eq(schema.driveFiles.userId, userId), inArray(schema.driveFiles.folderId, folderIds)),
-        );
-      await tx
-        .delete(schema.driveFolders)
-        .where(and(eq(schema.driveFolders.id, id), eq(schema.driveFolders.userId, userId)));
+        .where(and(filesIn(scope), inArray(schema.driveFiles.folderId, folderIds)));
+      await tx.delete(schema.driveFolders).where(eq(schema.driveFolders.id, row.id));
       return files.map((file) => file.objectKey);
     });
     await this.removeObjects(objectKeys);
@@ -355,7 +520,7 @@ export class DriveService {
   /** A name no other file in the folder has, adding " (2)", " (3)"… if needed. */
   private async freeName(
     tx: DatabaseExecutor,
-    userId: string,
+    scope: DriveScope,
     folderId: string | null,
     wanted: string,
   ): Promise<string> {
@@ -364,7 +529,7 @@ export class DriveService {
       .from(schema.driveFiles)
       .where(
         and(
-          eq(schema.driveFiles.userId, userId),
+          filesIn(scope),
           folderId ? eq(schema.driveFiles.folderId, folderId) : isNull(schema.driveFiles.folderId),
         ),
       );
@@ -379,26 +544,30 @@ export class DriveService {
 
   /**
    * Scans and stores the upload as it streams, then records it. An infected
-   * file is kept in quarantine: visible and deletable, never openable.
+   * file is kept in quarantine: visible and deletable, never openable. A
+   * file goes where its folder is, or to the top of `space`.
    */
   async upload(
     auth: { user: { id: string }; session: { id: string } },
     folderId: string | null,
     input: UploadInput,
     meta: RequestMeta,
+    space: DriveSpace = "personal",
   ): Promise<DriveFile> {
     const userId = auth.user.id;
     await this.limiter.enforce(RATE_LIMITS.driveUploadsPerAccount, userId);
-    if (folderId) await this.findFolder(userId, folderId);
+    const scope = folderId
+      ? (await this.findFolder(userId, folderId)).scope
+      : await this.scopeFor(userId, space);
     const name = sanitizeFilename(input.filename);
 
     // Cheap checks first, so a full Drive doesn't receive a whole file for nothing.
-    const before = await this.usage(userId);
-    if (before.fileCount >= before.fileLimit) throw this.tooManyFiles(before.fileLimit);
-    if (before.usedBytes >= before.limitBytes) throw this.driveFull(before.limitBytes);
+    const before = await this.usage(scope);
+    if (before.fileCount >= before.fileLimit) throw this.tooManyFiles(before.fileLimit, scope);
+    if (before.usedBytes >= before.limitBytes) throw this.driveFull(before.limitBytes, scope);
 
     const objectId = randomUUID();
-    const objectKey = objectKeyFor(userId, objectId);
+    const objectKey = objectKeyFor(scope, objectId);
     const key = generateFileKey();
     let stored;
     try {
@@ -432,23 +601,33 @@ export class DriveService {
       }
       throw error;
     }
-    const wrappedKey = await this.box.seal(key.toString("base64"), keyContext(userId, objectId));
+    const teamId = scope.kind === "team" ? scope.teamId : null;
+    const wrappedKey = await this.box.seal(
+      key.toString("base64"),
+      keyContext({ userId, teamId }, objectId),
+    );
     key.fill(0);
 
     let row: DriveFileRow;
     try {
       row = await this.database.db.transaction(async (tx) => {
-        await lockAccount(tx, userId);
-        const usage = await this.usage(userId, tx);
-        if (usage.fileCount >= usage.fileLimit) throw this.tooManyFiles(usage.fileLimit);
+        await this.lockScope(tx, scope);
+        // The folder may have gone, or the person left the team, while the file arrived.
+        if (folderId) await this.folderIn(scope, folderId, tx);
+        if (scope.kind === "team" && (await this.teams.membership(userId, tx))?.teamId !== teamId) {
+          throw notInTeam();
+        }
+        const usage = await this.usage(scope, tx);
+        if (usage.fileCount >= usage.fileLimit) throw this.tooManyFiles(usage.fileLimit, scope);
         if (usage.usedBytes + stored.size > usage.limitBytes)
-          throw this.driveFull(usage.limitBytes);
+          throw this.driveFull(usage.limitBytes, scope);
         const [inserted] = await tx
           .insert(schema.driveFiles)
           .values({
             userId,
+            teamId,
             folderId,
-            name: await this.freeName(tx, userId, folderId, name),
+            name: await this.freeName(tx, scope, folderId, name),
             size: stored.size,
             contentType: stored.contentType,
             status: stored.verdict.verdict,
@@ -479,10 +658,10 @@ export class DriveService {
       meta,
       ...(fromBrowser ? { metadata: { kind: input.kind ?? "download" } } : {}),
     });
-    return toFile(row);
+    return toFile(row, scope);
   }
 
-  /** The folder with that name at the top level, created if it's missing. */
+  /** The folder with that name at the top of the person's own Drive, created if it's missing. */
   async ensureFolder(userId: string, name: string): Promise<string> {
     const [existing] = await this.database.db
       .select({ id: schema.driveFolders.id })
@@ -490,6 +669,7 @@ export class DriveService {
       .where(
         and(
           eq(schema.driveFolders.userId, userId),
+          isNull(schema.driveFolders.teamId),
           isNull(schema.driveFolders.parentId),
           sql`lower(${schema.driveFolders.name}) = lower(${name})`,
         ),
@@ -511,17 +691,23 @@ export class DriveService {
   }
 
   /**
-   * Clean files of the account, by id, for handing to a page in the cloud
-   * browser. Unknown, foreign and quarantined ids are left out.
+   * Clean files the person may see (their own, or their team's), by id, for
+   * handing to a page in the cloud browser. Unknown, foreign and quarantined
+   * ids are left out.
    */
   async openForBrowser(userId: string, ids: readonly string[]): Promise<OpenedFile[]> {
     if (ids.length === 0) return [];
+    const membership = await this.teams.membership(userId);
+    const personal: DriveScope = { kind: "personal", userId };
+    const team: DriveScope | null = membership
+      ? { kind: "team", teamId: membership.teamId, userId, role: membership.role }
+      : null;
     const rows = await this.database.db
       .select()
       .from(schema.driveFiles)
       .where(
         and(
-          eq(schema.driveFiles.userId, userId),
+          team ? or(filesIn(personal), filesIn(team)) : filesIn(personal),
           inArray(schema.driveFiles.id, [...ids]),
           eq(schema.driveFiles.status, "clean"),
         ),
@@ -530,24 +716,28 @@ export class DriveService {
     const opened: OpenedFile[] = [];
     for (const id of ids) {
       const row = byId.get(id);
-      if (row) opened.push(await this.openRow(row));
+      if (row) opened.push(await this.openRow(row, row.teamId && team ? team : personal));
     }
     return opened;
   }
 
-  private tooManyFiles(limit: number) {
+  private tooManyFiles(limit: number, scope: DriveScope) {
     return new ApiException(
       "limit_reached",
       409,
-      `Your plan's Drive holds up to ${String(limit)} files. Delete some files to make room, or move to a plan with more.`,
+      scope.kind === "team"
+        ? `The team’s Drive holds up to ${String(limit)} files. Delete some files to make room.`
+        : `Your plan's Drive holds up to ${String(limit)} files. Delete some files to make room, or move to a plan with more.`,
     );
   }
 
-  private driveFull(limitBytes: number) {
+  private driveFull(limitBytes: number, scope: DriveScope) {
     return new ApiException(
       "limit_reached",
       409,
-      `Your plan's Drive holds up to ${formatBytes(limitBytes)}. Delete some files to make room, or move to a plan with more.`,
+      scope.kind === "team"
+        ? `The team’s Drive holds up to ${formatBytes(limitBytes)}. Delete some files to make room.`
+        : `Your plan's Drive holds up to ${formatBytes(limitBytes)}. Delete some files to make room, or move to a plan with more.`,
     );
   }
 
@@ -557,8 +747,8 @@ export class DriveService {
     input: { name?: string | undefined; folderId?: string | null | undefined },
   ): Promise<DriveFile> {
     const userId = auth.user.id;
-    await this.findFile(userId, id);
-    if (input.folderId) await this.findFolder(userId, input.folderId);
+    const { row: current, scope } = await this.findFile(userId, id);
+    if (input.folderId) await this.folderIn(scope, input.folderId);
     let row: DriveFileRow | undefined;
     try {
       [row] = await this.database.db
@@ -568,24 +758,26 @@ export class DriveService {
           ...(input.folderId === undefined ? {} : { folderId: input.folderId }),
           updatedAt: new Date(),
         })
-        .where(and(eq(schema.driveFiles.id, id), eq(schema.driveFiles.userId, userId)))
+        .where(eq(schema.driveFiles.id, current.id))
         .returning();
     } catch (error) {
       if (isUniqueViolation(error)) throw fileNameTaken();
       throw error;
     }
     if (!row) throw fileNotFound();
-    return toFile(row);
+    return toFile(row, scope);
   }
 
   async deleteFile(auth: AuthContext, id: string, meta: RequestMeta): Promise<void> {
     const userId = auth.user.id;
+    const { row, scope } = await this.findFile(userId, id);
+    if (!mayDelete(scope, row)) throw cannotDelete();
     const deleted = await this.database.db
       .delete(schema.driveFiles)
-      .where(and(eq(schema.driveFiles.id, id), eq(schema.driveFiles.userId, userId)))
+      .where(eq(schema.driveFiles.id, row.id))
       .returning({ objectKey: schema.driveFiles.objectKey });
     if (deleted.length === 0) throw fileNotFound();
-    await this.removeObjects(deleted.map((row) => row.objectKey));
+    await this.removeObjects(deleted.map((entry) => entry.objectKey));
     await this.events.record({
       type: "drive.file_deleted",
       userId,
@@ -609,11 +801,11 @@ export class DriveService {
 
   // ── Content ────────────────────────────────────────────────────────────
 
-  private async openRow(row: DriveFileRow): Promise<OpenedFile> {
+  private async openRow(row: DriveFileRow, scope: DriveScope): Promise<OpenedFile> {
     if (row.status !== "clean") throw quarantined();
     const objectId = objectIdOf(row.objectKey);
     const key = Buffer.from(
-      await this.box.open(row.wrappedKey, keyContext(row.userId, objectId)),
+      await this.box.open(row.wrappedKey, keyContext(row, objectId)),
       "base64",
     );
     const object = await this.store.get(row.objectKey);
@@ -623,12 +815,12 @@ export class DriveService {
     }
     const body = createDecryptStream(key, objectId);
     object.on("error", (error) => body.destroy(error));
-    return { file: toFile(row), body: object.pipe(body) };
+    return { file: toFile(row, scope), body: object.pipe(body) };
   }
 
   /** For showing a clean, previewable file in the browser. */
   async openForPreview(userId: string, id: string): Promise<OpenedFile> {
-    const row = await this.findFile(userId, id);
+    const { row, scope } = await this.findFile(userId, id);
     if (row.status === "clean" && !isPreviewable(row.contentType)) {
       throw new ApiException(
         "unsupported_media_type",
@@ -636,7 +828,7 @@ export class DriveService {
         "This type of file can’t be shown here. Save it to a computer to open it.",
       );
     }
-    return this.openRow(row);
+    return this.openRow(row, scope);
   }
 
   /** A single-use ticket to save the file to a computer. Logged in the security history. */
@@ -647,7 +839,7 @@ export class DriveService {
   ): Promise<{ url: string; expiresAt: string }> {
     const userId = auth.user.id;
     await this.limiter.enforce(RATE_LIMITS.driveTicketsPerAccount, userId);
-    const row = await this.findFile(userId, id);
+    const { row } = await this.findFile(userId, id);
     if (row.status !== "clean") throw quarantined();
     const { ticket, expiresAt } = await this.tickets.issue(userId, row.id);
     await this.events.record({
@@ -663,7 +855,7 @@ export class DriveService {
     };
   }
 
-  /** Redeems a ticket and opens the file it was issued for. */
+  /** Redeems a ticket and opens the file it was issued for, if the person may still see it. */
   async openWithTicket(id: string, ticket: string): Promise<OpenedFile> {
     const userId = await this.tickets.redeem(ticket, id);
     if (!userId) {
@@ -673,20 +865,21 @@ export class DriveService {
         "This download link has expired or was already used. Go back to Drive and save the file again.",
       );
     }
-    const row = await this.findFile(userId, id);
-    return this.openRow(row);
+    const { row, scope } = await this.findFile(userId, id);
+    return this.openRow(row, scope);
   }
 
   // ── Account ────────────────────────────────────────────────────────────
 
-  /** For "download your data": where things are, not what's in them. */
+  /** For "download your data": where the person's own things are, not what's in them. */
   async forExport(userId: string) {
+    const scope: DriveScope = { kind: "personal", userId };
     const [folders, files] = await Promise.all([
-      this.listFolders(userId),
+      this.listFolders(scope),
       this.database.db
         .select()
         .from(schema.driveFiles)
-        .where(eq(schema.driveFiles.userId, userId))
+        .where(filesIn(scope))
         .orderBy(asc(schema.driveFiles.createdAt)),
     ]);
     const byId = new Map(folders.map((folder) => [folder.id, folder]));
@@ -715,10 +908,11 @@ export class DriveService {
     };
   }
 
-  /** The object keys of everything the account has in the store. */
+  /** The object keys of everything the account has in its own Drive in the store. */
   async objectKeysOf(userId: string): Promise<string[]> {
     const keys: string[] = [];
-    for await (const key of this.store.listKeys(objectKeyFor(userId, ""))) keys.push(key);
+    for await (const key of this.store.listKeys(objectKeyFor({ kind: "personal", userId }, "")))
+      keys.push(key);
     return keys;
   }
 

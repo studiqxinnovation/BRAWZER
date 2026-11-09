@@ -21,15 +21,14 @@ async function Contents({ searchParams }: Pick<PageProps<"/app/drive">, "searchP
   const rawFolder = typeof params.folder === "string" ? params.folder : null;
   const folderId = rawFolder && folderIdSchema.safeParse(rawFolder).success ? rawFolder : null;
   const query = typeof params.q === "string" ? params.q.trim().slice(0, 100) : "";
-  const search = query
-    ? `?${new URLSearchParams({ q: query }).toString()}`
-    : folderId
-      ? `?${new URLSearchParams({ folderId }).toString()}`
-      : "";
+  const space = params.space === "team" ? "team" : "personal";
+  const fileParams = new URLSearchParams(query ? { q: query } : folderId ? { folderId } : {});
+  if (space === "team") fileParams.set("space", "team");
+  const search = fileParams.size > 0 ? `?${fileParams.toString()}` : "";
 
   const [state, overview, files] = await Promise.all([
     getSession(),
-    serverGet("/drive", driveOverviewSchema),
+    serverGet(space === "team" ? "/drive?space=team" : "/drive", driveOverviewSchema),
     serverGet(`/drive/files${search}`, driveFileListSchema),
   ]);
   if (
@@ -75,6 +74,8 @@ async function Contents({ searchParams }: Pick<PageProps<"/app/drive">, "searchP
       query={query}
       sharedComputer={!state.data.session.persistent}
       renderedAt={files.receivedAt}
+      space={overview.data.space}
+      team={overview.data.team}
     />
   );
 }
@@ -85,7 +86,8 @@ export default function DrivePage({ searchParams }: PageProps<"/app/drive">) {
       <PageHeader title="Drive">
         <p>
           Files that stay with your account, not the computer. Everything is scanned for malware and
-          stored encrypted; saving a file to a computer is a deliberate step.
+          stored encrypted; saving a file to a computer is a deliberate step. In a team, its shared
+          Drive is here too.
         </p>
       </PageHeader>
       <div className="flex flex-col gap-10">
