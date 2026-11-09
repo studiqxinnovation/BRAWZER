@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { users } from "./auth.ts";
 import { id, timestamptz } from "./columns.ts";
+import { teams } from "./teams.ts";
 
 /** These three must match @brawzer/contracts (a test in the API enforces this). */
 export const proxyProtocol = pgEnum("proxy_protocol", [
@@ -49,10 +50,13 @@ export const proxies = pgTable(
   "proxies",
   {
     id: id(),
+    /** Who added it; for a team's proxy, handed to the owner when that person leaves. */
     userId: uuid()
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    /** Trimmed; unique per account, ignoring case. */
+    /** Set when the proxy belongs to a team rather than to `userId` (ADR 0019). */
+    teamId: uuid().references(() => teams.id, { onDelete: "cascade" }),
+    /** Trimmed; unique per account (or per team), ignoring case. */
     name: text().notNull(),
     protocol: proxyProtocol().notNull(),
     /** Lower-cased host name or IP address (IPv6 without brackets). */
@@ -66,8 +70,12 @@ export const proxies = pgTable(
     updatedAt: timestamptz().notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("proxies_user_name_unique").on(table.userId, sql`lower(${table.name})`),
+    uniqueIndex("proxies_owner_name_unique").on(
+      sql`coalesce(${table.teamId}, ${table.userId})`,
+      sql`lower(${table.name})`,
+    ),
     index("proxies_user_idx").on(table.userId),
+    index("proxies_team_idx").on(table.teamId),
     check("proxies_port_range", sql`${table.port} between 1 and 65535`),
   ],
 );

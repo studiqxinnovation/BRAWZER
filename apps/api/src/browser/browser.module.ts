@@ -11,6 +11,7 @@ import { SiteRulesModule } from "../site-rules/site-rules.module.js";
 import { RateLimitModule } from "../rate-limit/rate-limiter.js";
 import { RedisModule } from "../redis/redis.module.js";
 import { SecurityEventsModule } from "../security-events/security-events.js";
+import { TeamsModule } from "../teams/teams.module.js";
 import { BrowserController } from "./browser.controller.js";
 import { BrowserService } from "./browser.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
@@ -37,6 +38,7 @@ import { WarmPoolService } from "./warm-pool.service.js";
     ProxiesModule,
     SiteRulesModule,
     BillingModule,
+    TeamsModule,
   ],
   controllers: [BrowserController],
   providers: [OrchestratorService, WarmPoolService, StreamTickets, BrowserService, StreamGateway],

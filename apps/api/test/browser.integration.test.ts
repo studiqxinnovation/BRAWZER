@@ -868,6 +868,53 @@ describe("the egress (ADR 0014)", () => {
     await client.delete(`/browser/sessions/${again.session.id}`);
   }, 120_000);
 
+  it("browses through a team's proxy, and ends the session when its person leaves the team", async () => {
+    const owner = await account("browser-team-owner");
+    expect((await owner.client.post("/team", { name: "Browsing crew" })).statusCode).toBe(200);
+    const member = await account("browser-team-member");
+    expect(
+      (await owner.client.post("/team/invitations", { email: member.email, role: "member" }))
+        .statusCode,
+    ).toBe(200);
+    const invitation = (await member.client.get("/team")).json<{ invitations: { id: string }[] }>()
+      .invitations[0]?.id;
+    expect(
+      (await member.client.post(`/team/invitations/${invitation ?? ""}/join`, {})).statusCode,
+    ).toBe(200);
+
+    const socks = await answeringSocks5Proxy({ username: "crew", password: "team-pass-123" });
+    servers.push(socks);
+    const added = await owner.client.post("/proxies", {
+      name: "Crew exit",
+      protocol: "socks5",
+      host: "127.0.0.1",
+      port: socks.port,
+      credentials: { username: "crew", password: "team-pass-123" },
+      team: true,
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    const proxyId = added.json<{ id: string }>().id;
+    const profile = profileListSchema.parse((await member.client.get("/profiles")).json())
+      .profiles[0]!;
+    expect((await member.client.patch(`/profiles/${profile.id}`, { proxyId })).statusCode).toBe(
+      200,
+    );
+
+    const { session, viewer, tab } = await openSession(member.client, profile.id);
+    expect(session.proxyId).toBe(proxyId);
+    await openPage(viewer, tab.id, "http://crew.example/", "Through the proxy: crew.example");
+    expect(socks.requests).toContain("crew.example:80");
+
+    // Leaving the team ends the session: the proxy is no longer theirs.
+    expect((await member.client.post("/team/leave", {})).statusCode).toBe(200);
+    await viewer.until(() => viewer.closeCode !== null, "closed after leaving the team");
+    expect((await member.client.get("/browser")).json<{ session: unknown }>().session).toBeNull();
+    const ended = (await member.client.get("/security/events"))
+      .json<{ events: { type: string; details: { reason?: string } }[] }>()
+      .events.find((event) => event.type === "browser.session_ended");
+    expect(ended?.details.reason).toBe("team_left");
+  }, 120_000);
+
   it("asks the owner to confirm it's them before a profile's proxy changes", async () => {
     const { client, email } = await account("browser-proxy-stepup");
     const proxy = await client.post("/proxies", {

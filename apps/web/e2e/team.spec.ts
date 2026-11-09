@@ -60,8 +60,25 @@ test.describe("team", () => {
     await expect(memberPage.getByText("From your team")).toBeVisible();
     await expect(memberPage.getByText(`${ownerEmail} pays for it`)).toBeVisible();
 
+    // The owner adds a team proxy; the member sees it and can't change it.
+    await page.goto("/app/proxy");
+    await page.getByRole("button", { name: "Add team proxy" }).click();
+    const add = page.getByRole("dialog", { name: "Add a team proxy" });
+    await add.getByRole("textbox", { name: "Name", exact: true }).fill("Team exit");
+    await add.getByRole("textbox", { name: "Host", exact: true }).fill("proxy.example.com");
+    await add.getByRole("textbox", { name: "Port", exact: true }).fill("1080");
+    await add.getByRole("button", { name: "Add proxy" }).click();
+    await expect(add).toBeHidden();
+    await expect(page.getByRole("list", { name: "Team proxies" })).toContainText("Team exit");
+    await memberPage.goto("/app/proxy");
+    const shared = memberPage.getByRole("list", { name: "Team proxies" });
+    await expect(shared).toContainText("Team exit");
+    await expect(shared.getByRole("button", { name: "Edit Team exit" })).toHaveCount(0);
+    await expect(memberPage.getByText("Shared by your team")).toBeVisible();
+    expect(await wcagViolations(memberPage)).toEqual([]);
+
     // The owner sees them, makes them an admin, then removes them.
-    await page.reload();
+    await page.goto("/app/team");
     await expect(members).toContainText(memberEmail);
     await page.getByRole("button", { name: `Make admin ${memberEmail}` }).click();
     await expect(page.getByText(`${memberEmail} is an admin now`)).toBeVisible();

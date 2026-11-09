@@ -17,6 +17,7 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
   schema,
   sql,
   type SubscriptionRow,
@@ -166,7 +167,7 @@ export class BillingService {
       this.database.db
         .select({ count: count() })
         .from(schema.proxies)
-        .where(eq(schema.proxies.userId, userId)),
+        .where(and(eq(schema.proxies.userId, userId), isNull(schema.proxies.teamId))),
       this.database.db
         .select({
           bytes: sql<string | number>`coalesce(sum(${schema.driveFiles.size}), 0)`,

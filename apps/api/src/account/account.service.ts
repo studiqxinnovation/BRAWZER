@@ -212,7 +212,7 @@ export class AccountService {
       });
     }
     // A team it owns with others must be handed over first; one it owns alone goes with it.
-    const teamObjectKeys = await this.teams.beforeAccountDeletion(user.id);
+    await this.teams.beforeAccountDeletion(user.id);
     // Containers and Drive objects aren't rows: stop and list them first.
     await this.browser.endAllForUser(user.id, "account_deleted");
     const [objectKeys, profileObjectKeys] = await Promise.all([
@@ -222,7 +222,6 @@ export class AccountService {
     await this.database.db.delete(schema.users).where(eq(schema.users.id, user.id));
     await this.drive.removeAllObjects(objectKeys);
     await this.profileData.removeObjects(profileObjectKeys);
-    await this.teams.removeObjects(teamObjectKeys);
     this.email.sendAccountDeleted(user.email);
     logger.log(`Account ${user.id} deleted by its owner`);
   }

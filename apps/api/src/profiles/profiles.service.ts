@@ -146,11 +146,19 @@ export class ProfilesService {
     },
   ): Promise<Profile> {
     if (input.proxyId) {
-      // Only the account's own proxies can be assigned.
+      // Only the account's own proxies, or its team's (ADR 0019), can be assigned.
       const [proxy] = await this.database.db
         .select({ id: schema.proxies.id })
         .from(schema.proxies)
-        .where(and(eq(schema.proxies.id, input.proxyId), eq(schema.proxies.userId, userId)))
+        .where(
+          and(
+            eq(schema.proxies.id, input.proxyId),
+            sql`(
+              (${schema.proxies.userId} = ${userId} and ${schema.proxies.teamId} is null)
+              or ${schema.proxies.teamId} = (select team_id from team_members where user_id = ${userId})
+            )`,
+          ),
+        )
         .limit(1);
       if (!proxy) throw proxyMissing();
     }

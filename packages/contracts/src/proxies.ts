@@ -77,6 +77,8 @@ export const createProxyRequestSchema = z.object({
   kind: proxyKindSchema.default("unspecified"),
   rotation: proxyRotationSchema.default("unknown"),
   credentials: proxyCredentialsSchema.optional(),
+  /** Add it to the team's list instead of the person's own (the team's owner or admins). */
+  team: z.boolean().default(false),
 });
 
 export const updateProxyRequestSchema = z
@@ -121,8 +123,10 @@ export const proxySchema = z.object({
   /** Whether a username and password are saved. They are never returned. */
   hasCredentials: z.boolean(),
   lastTest: proxyTestResultSchema.nullable(),
-  /** Profiles that use this proxy. */
+  /** Profiles of the signed-in person that use this proxy. */
   usedBy: z.array(z.object({ id: z.uuid(), name: z.string() })),
+  /** The team's proxy rather than the person's own (Phase 8, idea 19). */
+  team: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -130,6 +134,8 @@ export const proxySchema = z.object({
 export const proxyListSchema = z.object({
   proxies: z.array(proxySchema),
   limit: z.number().int().positive(),
+  /** The person's team, if any: its proxies are listed too; `manage` when they may change them. */
+  team: z.object({ name: z.string(), manage: z.boolean() }).nullable(),
 });
 
 export type ProxyProtocol = z.infer<typeof proxyProtocolSchema>;

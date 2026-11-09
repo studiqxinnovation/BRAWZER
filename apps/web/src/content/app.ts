@@ -258,6 +258,11 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
             title: "Cloud browser session ended by Brawzer’s administrators",
             tone: "warning",
           };
+        case "team_left":
+          return {
+            title: "Cloud browser session ended: it used a team proxy you no longer have",
+            tone: "neutral",
+          };
         default:
           return { title: "Cloud browser session ended", tone: "neutral" };
       }

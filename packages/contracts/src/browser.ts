@@ -21,6 +21,8 @@ export const browserSessionEndReasons = [
   "account_deleted",
   /** An administrator ended it from the Admin page (Phase 8, idea 22). */
   "admin",
+  /** It browsed through the team's proxy, and its owner left the team or the team went (ADR 0019). */
+  "team_left",
 ] as const;
 export const browserSessionEndReasonSchema = z.enum(browserSessionEndReasons);
 

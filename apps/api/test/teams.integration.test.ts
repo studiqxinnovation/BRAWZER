@@ -1,10 +1,14 @@
 import {
   accountExportSchema,
   billingOverviewSchema,
+  profileListSchema,
+  proxyListSchema,
+  proxySchema,
   type TeamOverview,
   teamOverviewSchema,
 } from "@brawzer/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ProxiesService } from "../src/proxies/proxies.service.js";
 import { createHarness, type Harness, type TestBrowser } from "./support/harness.js";
 
 let h: Harness;
@@ -232,6 +236,108 @@ describe("team accounts", () => {
     );
     const ownerAfter = billingOverviewSchema.parse((await owner.client.get("/billing")).json());
     expect(ownerAfter.plan.code).toBe("team");
+  });
+
+  it("shares the team's proxies: admins manage them, members use them, leaving lets go", async () => {
+    const owner = await person("proxy-owner");
+    ok(await owner.client.post("/team", { name: "Proxy crew" }));
+    const join = async (role: "admin" | "member") => {
+      const someone = await person(`proxy-${role}`);
+      ok(await owner.client.post("/team/invitations", { email: someone.email, role }));
+      const invitation = (await team(someone.client)).invitations[0]?.id ?? "";
+      ok(await someone.client.post(`/team/invitations/${invitation}/join`, {}));
+      return someone;
+    };
+    const admin = await join("admin");
+    const member = await join("member");
+
+    // An admin adds one with credentials; a member can't.
+    const body = {
+      name: "Office exit",
+      protocol: "socks5",
+      host: "proxy.example.com",
+      port: 1080,
+      credentials: { username: "crew", password: "s3cret-pass" },
+      team: true,
+    };
+    expect((await member.client.post("/proxies", body)).statusCode).toBe(403);
+    const created = await admin.client.post("/proxies", body);
+    expect(created.statusCode, created.body).toBe(201);
+    const shared = proxySchema.parse(created.json());
+    expect(shared.team).toBe(true);
+    expect(created.body).not.toContain("s3cret-pass");
+    // Names are unique per owner: the team's list and a person's own don't clash.
+    expect((await admin.client.post("/proxies", body)).statusCode).toBe(409);
+    expect(
+      (await admin.client.post("/proxies", { ...body, team: false, credentials: undefined }))
+        .statusCode,
+    ).toBe(201);
+
+    // Every member sees it; only the owner and admins may change it.
+    const seen = proxyListSchema.parse((await member.client.get("/proxies")).json());
+    expect(seen.team).toEqual({ name: "Proxy crew", manage: false });
+    expect(seen.proxies.map((proxy) => [proxy.name, proxy.team])).toEqual([["Office exit", true]]);
+    expect((await member.client.patch(`/proxies/${shared.id}`, { name: "Mine" })).statusCode).toBe(
+      403,
+    );
+    expect((await member.client.delete(`/proxies/${shared.id}`)).statusCode).toBe(403);
+    expect(proxyListSchema.parse((await owner.client.get("/proxies")).json()).team?.manage).toBe(
+      true,
+    );
+    const outsider = await person("proxy-outsider");
+    expect((await outsider.client.delete(`/proxies/${shared.id}`)).statusCode).toBe(404);
+
+    // A member uses it for their own profile.
+    const [profile] = profileListSchema.parse(
+      (await member.client.get("/profiles")).json(),
+    ).profiles;
+    const assigned = await member.client.patch(`/profiles/${profile?.id ?? ""}`, {
+      proxyId: shared.id,
+    });
+    expect(assigned.statusCode, assigned.body).toBe(200);
+    const [outsiderProfile] = profileListSchema.parse(
+      (await outsider.client.get("/profiles")).json(),
+    ).profiles;
+    expect(
+      (
+        await outsider.client.patch(`/profiles/${outsiderProfile?.id ?? ""}`, {
+          proxyId: shared.id,
+        })
+      ).statusCode,
+    ).toBe(400);
+    const proxies = h.app.get(ProxiesService);
+    const memberId =
+      ok(await owner.client.get("/team")).team?.members.find(
+        (entry) => entry.email === member.email,
+      )?.userId ?? "";
+    expect((await proxies.forEgress(memberId, shared.id))?.credentials).toEqual({
+      username: "crew",
+      password: "s3cret-pass",
+    });
+
+    // The admin who added it leaves: it stays the team's, credentials still readable.
+    ok(await admin.client.post("/team/leave", {}));
+    const ownerId =
+      ok(await owner.client.get("/team")).team?.members.find((entry) => entry.role === "owner")
+        ?.userId ?? "";
+    expect((await proxies.forEgress(ownerId, shared.id))?.credentials?.username).toBe("crew");
+    expect(
+      proxyListSchema
+        .parse((await admin.client.get("/proxies")).json())
+        .proxies.map((proxy) => proxy.name),
+    ).toEqual(["Office exit"]);
+
+    // The member is removed: their profile lets go of it and they no longer see it.
+    ok(await owner.client.delete(`/team/members/${memberId}`));
+    const [after] = profileListSchema.parse((await member.client.get("/profiles")).json()).profiles;
+    expect(after?.proxyId).toBeNull();
+    expect(await proxies.forEgress(memberId, shared.id)).toBeNull();
+    const memberView = proxyListSchema.parse((await member.client.get("/proxies")).json());
+    expect(memberView).toMatchObject({ proxies: [], team: null });
+
+    // Deleting the team deletes its proxies.
+    ok(await owner.client.delete("/team"));
+    expect(proxyListSchema.parse((await owner.client.get("/proxies")).json()).proxies).toEqual([]);
   });
 
   it("deletes a team its owner leaves alone with their account, and refuses a team on a one-person plan", async () => {

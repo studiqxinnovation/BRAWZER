@@ -14,6 +14,7 @@ import {
   and,
   type BrowserSessionRow,
   count,
+  type DatabaseExecutor,
   type DatabaseHandle,
   desc,
   eq,
@@ -28,6 +29,7 @@ import {
   Logger,
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
+  type OnModuleInit,
 } from "@nestjs/common";
 import type { Redis } from "ioredis";
 import { SessionService } from "../auth/session.service.js";
@@ -52,6 +54,7 @@ import { RuntimeHostsService } from "../egress/runtime-hosts.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 import { MetricsService } from "../metrics/metrics.service.js";
+import { type AfterCommit, TeamsService } from "../teams/teams.service.js";
 
 const logger = new Logger("Browser");
 const LIVE = ["starting", "running"] as const;
@@ -83,7 +86,7 @@ export interface ViewerAccess {
  * fails. In-process events tell the relay when viewers must be cut off.
  */
 @Injectable()
-export class BrowserService implements OnApplicationBootstrap, OnApplicationShutdown {
+export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnApplicationShutdown {
   /** `ended` (session id): the relay closes its viewers. */
   readonly events = new EventEmitter();
   private timer: NodeJS.Timeout | undefined;
@@ -108,7 +111,39 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     @Inject(MetricsService) private readonly metrics: MetricsService,
     @Inject(BillingService) private readonly billing: BillingService,
     @Inject(REDIS) private readonly redis: Pick<Redis, "publish" | "set">,
+    @Inject(TeamsService) private readonly teams: TeamsService,
   ) {}
+
+  /**
+   * A session browsing through a team's proxy ends when its person leaves the
+   * team or the team goes: the proxy is no longer theirs to use (ADR 0019).
+   */
+  onModuleInit(): void {
+    const throughTeamProxy = async (
+      tx: DatabaseExecutor,
+      teamId: string,
+      userId: string | null,
+    ): Promise<AfterCommit | undefined> => {
+      const rows = await tx
+        .select()
+        .from(schema.browserSessions)
+        .where(
+          and(
+            inArray(schema.browserSessions.status, [...LIVE]),
+            sql`${schema.browserSessions.proxyId} in (select id from proxies where team_id = ${teamId})`,
+            ...(userId ? [eq(schema.browserSessions.userId, userId)] : []),
+          ),
+        );
+      if (rows.length === 0) return undefined;
+      return async () => {
+        for (const row of rows) await this.endSession(row, "team_left", null);
+      };
+    };
+    this.teams.register({
+      memberLeft: (tx, teamId, userId) => throughTeamProxy(tx, teamId, userId),
+      teamDeleting: (tx, teamId) => throughTeamProxy(tx, teamId, null),
+    });
+  }
 
   onApplicationBootstrap(): void {
     // A sign-in that ends takes its cloud browser with it.

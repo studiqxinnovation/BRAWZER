@@ -169,6 +169,13 @@
       "when": 1794187291754,
       "tag": "0023_equal_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794188030238,
+      "tag": "0024_lovely_spirit",
+      "breakpoints": true
     }
   ]
 }

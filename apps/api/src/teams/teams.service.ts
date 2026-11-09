@@ -42,13 +42,20 @@ export interface Membership {
   role: TeamRole;
 }
 
+/** Work to do once the change that asked for it is committed. */
+export type AfterCommit = () => Promise<void>;
+
 /** What other modules do when someone leaves a team or the team goes (ADR 0019). */
 export interface TeamExitHook {
-  /** `userId` left `teamId` (or was removed); its owner is `ownerId`. */
-  memberLeft(tx: DatabaseExecutor, teamId: string, userId: string, ownerId: string): Promise<void>;
-  /** The team is about to be deleted: object keys to remove once it is. */
-  teamDeleting(tx: DatabaseExecutor, teamId: string): Promise<string[]>;
-  removeObjects(objectKeys: readonly string[]): Promise<void>;
+  /** Inside the change: `userId` leaves `teamId` (or is removed); its owner is `ownerId`. */
+  memberLeft?(
+    tx: DatabaseExecutor,
+    teamId: string,
+    userId: string,
+    ownerId: string,
+  ): Promise<AfterCommit | undefined>;
+  /** Inside the change, before the team's rows go. */
+  teamDeleting?(tx: DatabaseExecutor, teamId: string): Promise<AfterCommit | undefined>;
 }
 
 /**
@@ -433,6 +440,7 @@ export class TeamsService {
 
   async remove(auth: AuthContext, userId: string, meta: RequestMeta): Promise<TeamOverview> {
     if (userId === auth.user.id) throw conflict("Leave the team instead.");
+    const after: AfterCommit[] = [];
     const team = await this.database.db.transaction(async (tx) => {
       const mine = await this.lockMine(tx, auth.user.id, ["owner", "admin"], "owner or admins");
       const [target] = await tx
@@ -444,19 +452,22 @@ export class TeamsService {
       if (!target) throw new ApiException("not_found", 404, "That person isn’t in the team.");
       if (target.role === "owner") throw conflict("The owner can’t be removed.");
       if (mine.role === "admin" && target.role === "admin") throw notAllowed("owner");
-      await this.depart(tx, mine.teamId, userId);
+      await this.depart(tx, mine.teamId, userId, after);
       return mine.name;
     });
+    await this.runAfter(after);
     await this.record(auth, meta, "team.member_removed", { team }, userId);
     return this.overview(auth);
   }
 
   async leave(auth: AuthContext, meta: RequestMeta): Promise<TeamOverview> {
+    const after: AfterCommit[] = [];
     const team = await this.database.db.transaction(async (tx) => {
       const mine = await this.lockMine(tx, auth.user.id, ["admin", "member"], "admins and members");
-      await this.depart(tx, mine.teamId, auth.user.id);
+      await this.depart(tx, mine.teamId, auth.user.id, after);
       return mine.name;
     });
+    await this.runAfter(after);
     await this.record(auth, meta, "team.left", { team });
     return this.overview(auth);
   }
@@ -502,11 +513,12 @@ export class TeamsService {
 
   /** Deletes the team and what it shares; every member keeps their own things. */
   async delete(auth: AuthContext, meta: RequestMeta): Promise<TeamOverview> {
-    const { name, objectKeys, members } = await this.database.db.transaction(async (tx) => {
+    const after: AfterCommit[] = [];
+    const { name, members } = await this.database.db.transaction(async (tx) => {
       const mine = await this.lockMine(tx, auth.user.id, ["owner"], "owner");
-      return this.deleteLocked(tx, mine.teamId, mine.name);
+      return this.deleteLocked(tx, mine.teamId, mine.name, after);
     });
-    await Promise.all(this.hooks.map((hook) => hook.removeObjects(objectKeys)));
+    await this.runAfter(after);
     await this.record(auth, meta, "team.deleted", { team: name });
     for (const userId of members) {
       if (userId !== auth.user.id)
@@ -515,34 +527,55 @@ export class TeamsService {
     return this.overview(auth);
   }
 
-  private async deleteLocked(tx: DatabaseExecutor, teamId: string, name: string) {
+  private async deleteLocked(
+    tx: DatabaseExecutor,
+    teamId: string,
+    name: string,
+    after: AfterCommit[],
+  ) {
     const members = await tx
       .select({ userId: schema.teamMembers.userId })
       .from(schema.teamMembers)
       .where(eq(schema.teamMembers.teamId, teamId));
-    const objectKeys: string[] = [];
-    for (const hook of this.hooks) objectKeys.push(...(await hook.teamDeleting(tx, teamId)));
+    for (const hook of this.hooks) {
+      const work = await hook.teamDeleting?.(tx, teamId);
+      if (work) after.push(work);
+    }
     await tx.delete(schema.teams).where(eq(schema.teams.id, teamId));
-    return { name, objectKeys, members: members.map((member) => member.userId) };
+    return { name, members: members.map((member) => member.userId) };
+  }
+
+  /** Each module's follow-up; one failing doesn't stop the others. */
+  private async runAfter(after: readonly AfterCommit[]): Promise<void> {
+    for (const work of after) {
+      try {
+        await work();
+      } catch (error) {
+        logger.error(
+          `Follow-up after a team change failed: ${error instanceof Error ? error.message : "unknown"}`,
+        );
+      }
+    }
   }
 
   /**
    * Before an account is deleted: refused while it owns a team with other
    * members; a team it owns alone goes with it, and a team it is in keeps
-   * what it shared. Returns object keys to remove once the account is gone.
+   * what it shared.
    */
-  async beforeAccountDeletion(userId: string): Promise<string[]> {
-    return this.database.db.transaction(async (tx) => {
+  async beforeAccountDeletion(userId: string): Promise<void> {
+    const after: AfterCommit[] = [];
+    await this.database.db.transaction(async (tx) => {
       const membership = await this.membership(userId, tx);
-      if (!membership) return [];
+      if (!membership) return;
       await tx
         .select({ id: schema.teams.id })
         .from(schema.teams)
         .where(eq(schema.teams.id, membership.teamId))
         .for("update");
       if (membership.role !== "owner") {
-        await this.depart(tx, membership.teamId, userId);
-        return [];
+        await this.depart(tx, membership.teamId, userId, after);
+        return;
       }
       const others = await tx
         .select({ userId: schema.teamMembers.userId })
@@ -563,17 +596,22 @@ export class TeamsService {
         .select({ name: schema.teams.name })
         .from(schema.teams)
         .where(eq(schema.teams.id, membership.teamId));
-      return (await this.deleteLocked(tx, membership.teamId, team?.name ?? "")).objectKeys;
+      await this.deleteLocked(tx, membership.teamId, team?.name ?? "", after);
     });
+    await this.runAfter(after);
   }
 
-  async removeObjects(objectKeys: readonly string[]): Promise<void> {
-    await Promise.all(this.hooks.map((hook) => hook.removeObjects(objectKeys)));
-  }
-
-  private async depart(tx: DatabaseExecutor, teamId: string, userId: string): Promise<void> {
+  private async depart(
+    tx: DatabaseExecutor,
+    teamId: string,
+    userId: string,
+    after: AfterCommit[],
+  ): Promise<void> {
     const owner = await this.ownerOf(teamId, tx);
-    for (const hook of this.hooks) await hook.memberLeft(tx, teamId, userId, owner);
+    for (const hook of this.hooks) {
+      const work = await hook.memberLeft?.(tx, teamId, userId, owner);
+      if (work) after.push(work);
+    }
     await tx
       .delete(schema.teamMembers)
       .where(and(eq(schema.teamMembers.teamId, teamId), eq(schema.teamMembers.userId, userId)));

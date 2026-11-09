@@ -17,6 +17,7 @@ async function Proxies() {
     <ProxiesManager
       proxies={list.data.proxies}
       limit={list.data.limit}
+      team={list.data.team}
       renderedAt={list.receivedAt}
       sharedComputer={!state.data.session.persistent}
     />

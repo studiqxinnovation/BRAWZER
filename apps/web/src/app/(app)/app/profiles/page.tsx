@@ -21,7 +21,10 @@ async function Profiles() {
     <ProfilesManager
       profiles={result.data.profiles}
       limit={result.data.limit}
-      proxies={proxies.data.proxies.map(({ id, name }) => ({ id, name }))}
+      proxies={proxies.data.proxies.map(({ id, name, team }) => ({
+        id,
+        name: team ? `${name} (team)` : name,
+      }))}
     />
   );
 }
