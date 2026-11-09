@@ -26,6 +26,7 @@
     "infra:status": "docker compose --project-directory . -f infra/compose/compose.yaml ps",
     "infra:logs": "docker compose --project-directory . -f infra/compose/compose.yaml logs --follow",
     "runtime:build": "docker build -f apps/runtime-agent/Dockerfile -t brawzer-runtime:dev . && docker build -f apps/egress/Dockerfile -t brawzer-egress:dev .",
+    "brawzer": "pnpm --filter @brawzer/api run build >/dev/null && pnpm --filter @brawzer/api run cli",
     "db:generate": "pnpm --filter @brawzer/db run db:generate",
     "db:migrate": "pnpm --filter @brawzer/db run db:migrate"
   },

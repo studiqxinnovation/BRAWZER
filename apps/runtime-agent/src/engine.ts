@@ -1021,10 +1021,16 @@ export class BrowserEngine implements Engine {
   ): Promise<void> {
     switch (message.type) {
       case "find": {
-        const value = await this.evaluate(
-          tab,
-          findScript(message.text, message.forward, message.caseSensitive),
-        ).catch(() => null);
+        // A page still settling (a navigation committing, no body yet) can fail the
+        // search; it is tried again briefly before "no matches" is said.
+        let value: unknown = null;
+        for (let attempt = 0; attempt < 5 && typeof value !== "string"; attempt++) {
+          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 200));
+          value = await this.evaluate(
+            tab,
+            findScript(message.text, message.forward, message.caseSensitive),
+          ).catch(() => null);
+        }
         const found =
           typeof value === "string"
             ? (JSON.parse(value) as { matches: number; active: number })

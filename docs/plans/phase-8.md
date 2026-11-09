@@ -24,8 +24,8 @@ plan already named. They are built in value order, one commit each, on the
 | 20  | Usage emails and in-app nudges                             | **Done** 2026-11-09: hourly emails at 80% and 100%, warnings on Home                                       |
 | 21  | Trials and promotion codes                                 | **Done** 2026-11-09: `trialDays` per plan, once per account; promotion codes at checkout                   |
 | 22  | Admin: sessions and runtime view                           | **Done** 2026-11-09: hosts, warm pool, live sessions, end one                                              |
-| 23  | An operator CLI                                            | Next                                                                                                       |
-| 24  | Load test for the stream                                   |                                                                                                            |
+| 23  | An operator CLI                                            | **Done** 2026-11-09: `pnpm brawzer`, `node dist/cli/main.js` in production                                 |
+| 24  | Load test for the stream                                   | Next                                                                                                       |
 | 3   | Session hand-off between devices                           |                                                                                                            |
 | 6   | Pop-out work mode                                          |                                                                                                            |
 | 12  | Report a page                                              |                                                                                                            |
@@ -307,3 +307,15 @@ new end reason `admin`, shown in the owner's security history as "ended by
 Brawzer's administrators". Both routes sit behind the administrator and
 confirm-it's-you guards. Checked in an integration test (403 for others,
 the session listed, ended, gone, and named in the owner's history).
+
+## 23. An operator CLI
+
+The runbook's application steps, one command each, run in the API's own
+process context with its configuration (`apps/api/src/cli`): live sessions
+and hosts, ending a session, finding an account, granting a plan with a
+reason (recorded in the owner's history like the Admin page's), re-wrapping
+secrets, sending due usage emails, and retention. In production it runs
+inside the API container (`node dist/cli/main.js`); locally
+`pnpm brawzer <command>`. It starts no warm pool of its own. Certificates
+stay a shell script. Checked in an integration test that drives the same
+command function against the test app.

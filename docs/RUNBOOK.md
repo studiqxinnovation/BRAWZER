@@ -57,6 +57,27 @@ it returns), and session ends are only cut on the instance that ended them
 
 ## Routine operations
 
+### The operator CLI
+
+Each runbook step that touches the application has one command, run with the
+API's own configuration: in production
+`docker compose exec api node dist/cli/main.js <command>`, locally
+`pnpm brawzer <command>`.
+
+| Command                           | Does                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------- |
+| `sessions`                        | Runtime hosts (reachable, load), the warm pool, every live session     |
+| `end-session <id>`                | Ends a session as the Admin page would; the owner's history says so    |
+| `find-account <text>`             | Accounts whose email contains the text, with plan and role             |
+| `grant-plan <email> <plan> <why>` | Sets a plan by hand with a reason; `free` hands control back to Stripe |
+| `rewrap`                          | Re-wraps every secret under the current encryption key                 |
+| `usage-notices`                   | Sends due usage emails now                                             |
+| `retention`                       | Deletes expired data now                                               |
+
+Exit codes: 0 done, 1 failed (or another instance holds the job's lock), 2
+not understood. Certificates for a runtime host stay a script:
+`infra/production/runtime-host/make-certs.sh`.
+
 ### Rolling a release
 
 1. Tag `vX.Y.Z`; the release workflow pushes the four images. Note the digests it prints.

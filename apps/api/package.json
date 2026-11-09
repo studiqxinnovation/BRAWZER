@@ -8,6 +8,7 @@
     "dev": "nest start --watch --preserveWatchOutput",
     "build": "nest build",
     "start": "node dist/main.js",
+    "cli": "node --env-file-if-exists=../../.env dist/cli/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts"

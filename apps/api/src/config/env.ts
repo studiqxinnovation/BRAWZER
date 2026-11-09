@@ -136,6 +136,8 @@ export const envSchema = z.object({
   BROWSER_MAX_LIVE_SESSIONS: z.coerce.number().int().min(1).max(100_000).default(200),
   /** Container pairs kept waiting so a session without a proxy starts at once (Phase 8, idea 14). */
   BROWSER_WARM_POOL: z.coerce.number().int().min(0).max(10).default(0),
+  /** "cli" for the operator CLI's process: it serves nothing and reconciles nothing at boot. */
+  BRAWZER_ROLE: z.enum(["server", "cli"]).default("server"),
   /** The runtime image (apps/runtime-agent/Dockerfile). */
   BROWSER_RUNTIME_IMAGE: z.string().min(1).default("brawzer-runtime:dev"),
   /** The Docker network runtime containers join; created if missing. */
@@ -305,6 +307,8 @@ export interface AppConfig {
   /** Lower-cased addresses of administrators. */
   readonly adminEmails: readonly string[];
   readonly metricsToken: string | null;
+  /** The API server, or the operator CLI (Phase 8, idea 23). */
+  readonly role: "server" | "cli";
   readonly proxyTests: {
     readonly runner: "egress" | "inline";
     /** The fixed destination of every proxy test. */
@@ -577,6 +581,7 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
     }),
     adminEmails,
     metricsToken: values.METRICS_TOKEN ?? null,
+    role: values.BRAWZER_ROLE,
     storage: Object.freeze({
       endpoint: values.STORAGE_ENDPOINT,
       region: values.STORAGE_REGION,

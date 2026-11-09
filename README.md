@@ -118,6 +118,7 @@ Run from the repository root.
 | `pnpm db:generate`                 | Create a migration from schema changes                         |
 | `pnpm db:migrate`                  | Apply pending migrations                                       |
 | `pnpm runtime:build`               | Build the cloud browser runtime image (`brawzer-runtime:dev`)  |
+| `pnpm brawzer <command>`           | Operator commands (sessions, plans, jobs); see the runbook     |
 
 The first end-to-end run needs a browser: `pnpm --filter @brawzer/web exec playwright install chromium`.
 

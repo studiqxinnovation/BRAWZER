@@ -115,9 +115,12 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     this.sessions.onRevoked((authSessionId) => {
       void this.endForAuthSession(authSessionId, "signed_out").catch(() => undefined);
     });
-    void this.reconcile().catch((error: unknown) => {
-      logger.warn(`Reconciling runtimes failed: ${error instanceof Error ? error.message : ""}`);
-    });
+    // An operator's CLI process leaves the containers to the servers.
+    if (this.config.role === "server") {
+      void this.reconcile().catch((error: unknown) => {
+        logger.warn(`Reconciling runtimes failed: ${error instanceof Error ? error.message : ""}`);
+      });
+    }
     this.metrics.gauge(
       "brawzer_sessions_live",
       "Live sessions (starting or running), by runtime host.",

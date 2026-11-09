@@ -389,7 +389,8 @@ export class BillingService {
 
   /** Sets the plan by hand; `free` with source `free` hands control back to Stripe. */
   async setPlanByAdmin(
-    actor: { user: { id: string }; session: { id: string } },
+    /** Null for an operator at the command line, who has no sign-in. */
+    actor: { user: { id: string }; session: { id: string } } | null,
     userId: string,
     planCode: string,
     reason: string,
@@ -413,7 +414,7 @@ export class BillingService {
     await this.events.record({
       type: "admin.plan_changed",
       userId,
-      sessionId: actor.session.id,
+      sessionId: actor?.session.id ?? null,
       meta,
       metadata: { plan: effective, reason },
     });
