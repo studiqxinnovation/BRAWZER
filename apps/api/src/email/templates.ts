@@ -338,3 +338,45 @@ export function phoneSignInMessage(
     footnote: "Brawzer sends this every time a sign-in is approved from a phone.",
   });
 }
+
+/** Usage at or near a plan's limit (Phase 8, idea 20). `used` and `limit` arrive worded. */
+export function usageNoticeMessage(
+  kind: "browsing" | "storage" | "files",
+  percent: number,
+  used: string,
+  limit: string,
+  url: string,
+): EmailContent {
+  const reached = percent >= 100;
+  const what =
+    kind === "browsing"
+      ? "this month’s cloud browser hours"
+      : kind === "storage"
+        ? "your Drive storage"
+        : "the number of files your Drive holds";
+  const subject = reached
+    ? `You’ve reached ${kind === "browsing" ? "this month’s browsing hours" : kind === "storage" ? "your Drive storage limit" : "your Drive file limit"}`
+    : `You’ve used ${String(percent)}% of ${what}`;
+  const consequence =
+    kind === "browsing"
+      ? reached
+        ? "New cloud browser sessions can’t start until the hours reset on the 1st (UTC). A session already running isn’t interrupted."
+        : "When they run out, new cloud browser sessions can’t start until the 1st (UTC)."
+      : reached
+        ? "New uploads and downloads into Drive are refused until there is room. Nothing already stored is touched."
+        : "When it’s full, new uploads and downloads into Drive are refused until there is room.";
+  return compose(subject, {
+    preheader: `${used} of ${limit}.`,
+    heading: subject,
+    paragraphs: [
+      `You’ve used ${used} of ${limit}${kind === "browsing" ? " this month" : ""}.`,
+      consequence,
+      "Your plan, its limits and what you’ve used are on the Account page, where a plan with more room can be chosen when one is offered.",
+    ],
+    action: { label: "See your plan", url },
+    footnote:
+      kind === "browsing"
+        ? "Brawzer sends this once at 80% and once at 100% of each month’s hours."
+        : "Brawzer sends this once at 80% and once at 100%, and again only after you’ve made room.",
+  });
+}

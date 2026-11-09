@@ -28,8 +28,8 @@ export function PrelaunchBanner() {
       <Container className="flex items-center justify-center gap-2.5 py-2 text-center text-footnote text-ink-secondary">
         <StatusDot tone="warning" className="hidden sm:inline-flex" />
         <p>
-          <span className="font-medium text-ink">In development.</span> The Brawzer cloud browser
-          isn’t available yet. This site describes how it’s being built.
+          <span className="font-medium text-ink">In development.</span> Brawzer isn’t open to the
+          public yet. This site describes what’s built and how it works.
         </p>
       </Container>
     </div>

@@ -24,3 +24,41 @@ describe("plans", () => {
     ).toBe(false);
   });
 });
+
+describe("usage warnings", () => {
+  const limits = {
+    profiles: 3,
+    proxies: 5,
+    driveBytes: 1000,
+    driveFiles: 10,
+    driveFolders: 10,
+    browsingMinutesPerMonth: 600,
+    liveSessions: 1,
+  };
+  const usage = {
+    profiles: 3,
+    proxies: 5,
+    driveBytes: 0,
+    driveFiles: 0,
+    browsingMinutesThisMonth: 0,
+  };
+
+  it("speaks from 80% of a limit, and only of what has one", async () => {
+    const { usageWarnings } = await import("./billing.ts");
+    expect(usageWarnings(limits, usage)).toEqual([]);
+    expect(usageWarnings(limits, { ...usage, browsingMinutesThisMonth: 479 })).toEqual([]);
+    expect(usageWarnings(limits, { ...usage, browsingMinutesThisMonth: 480 })).toEqual([
+      { kind: "browsing", used: 480, limit: 600, percent: 80 },
+    ]);
+    expect(
+      usageWarnings(
+        { ...limits, browsingMinutesPerMonth: null },
+        { ...usage, browsingMinutesThisMonth: 9999 },
+      ),
+    ).toEqual([]);
+    expect(usageWarnings(limits, { ...usage, driveBytes: 1200, driveFiles: 9 })).toEqual([
+      { kind: "storage", used: 1200, limit: 1000, percent: 120 },
+      { kind: "files", used: 9, limit: 10, percent: 90 },
+    ]);
+  });
+});

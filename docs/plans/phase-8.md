@@ -21,8 +21,8 @@ plan already named. They are built in value order, one commit each, on the
 | 16  | Relay back-pressure for downloads                          | **Done** 2026-11-08: a bounded buffer per transfer; the agent pauses while Drive catches up                |
 | 17  | Metrics                                                    | **Done** 2026-11-08: `GET /api/metrics`, Prometheus text, behind a token                                   |
 | 18  | Image rebuild on upstream advisories                       | Next                                                                                                       |
-| 20  | Usage emails and in-app nudges                             |                                                                                                            |
-| 21  | Trials and promotion codes                                 |                                                                                                            |
+| 20  | Usage emails and in-app nudges                             | **Done** 2026-11-09: hourly emails at 80% and 100%, warnings on Home                                       |
+| 21  | Trials and promotion codes                                 | Next                                                                                                       |
 | 22  | Admin: sessions and runtime view                           |                                                                                                            |
 | 23  | An operator CLI                                            |                                                                                                            |
 | 24  | Load test for the stream                                   |                                                                                                            |
@@ -264,3 +264,20 @@ still in the app.
   Building it found and fixed a race in the Firefox engine: a load event
   that arrived after the title was read never told the viewer the page
   had finished.
+
+## 20. Usage emails and in-app nudges
+
+One rule decides when usage deserves a word (`usageWarnings` in
+`@brawzer/contracts`): 80% or more of this month's browsing hours on a plan
+that caps them, of Drive storage, or of Drive's file limit. Profiles and
+proxies aren't in it: their limits only stop the next one being added, and
+say so then. An hourly job, one instance at a time, emails at 80% and at
+100%, each once: per month for hours, per crossing for Drive (the record
+goes when usage falls back under 80%, so filling up again is news again).
+Home shows the same warnings with a link to the plan, and its stale
+"cloud browser isn't available" note became a card that starts the browser
+or returns to a running session; the Profiles page's stale extensions note
+became a pointer to the Extensions page. Checked in the rule's unit test,
+an integration test that crosses each line and checks every email is sent
+once, and the navigation e2e. Usage emails are service messages about the
+account, like the security ones; there is no setting to turn them off.

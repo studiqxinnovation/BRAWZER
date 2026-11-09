@@ -1,9 +1,10 @@
 import { profileListSchema, proxyListSchema } from "@brawzer/contracts";
-import { DevState } from "@brawzer/ui/components/dev-state";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 import { PageContainer, PageHeader, Unavailable } from "@/components/app-shell/page";
+import { textLinkClassName } from "@/components/auth/auth-ui";
 import { ProfilesManager } from "@/components/profiles/profiles-manager";
 import { serverGet, signInAgain } from "@/lib/server-api";
 
@@ -38,15 +39,13 @@ export default function ProfilesPage() {
         <Suspense fallback={<Skeleton className="h-40 w-full rounded-xl" />}>
           <Profiles />
         </Suspense>
-        <DevState
-          title="Extensions aren’t available in profiles yet"
-          milestone="Phase 4"
-          requires={["A reviewed extension catalogue, and installs into a profile’s kept data"]}
-        >
-          Today, a profile opens in the cloud browser with its own cookies, history, sign-ins and
-          site data, saved encrypted between sessions (or starting clean every time, if you prefer),
-          and browses through its proxy.
-        </DevState>
+        <p className="text-footnote text-ink-secondary">
+          Extensions for each profile are chosen on the{" "}
+          <Link href="/app/extensions" className={textLinkClassName}>
+            Extensions
+          </Link>{" "}
+          page.
+        </p>
       </div>
     </PageContainer>
   );

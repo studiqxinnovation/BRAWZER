@@ -148,6 +148,13 @@
       "when": 1794182758743,
       "tag": "0020_shiny_queen_noir",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794184285464,
+      "tag": "0021_youthful_warlock",
+      "breakpoints": true
     }
   ]
 }

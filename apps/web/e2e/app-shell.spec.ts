@@ -44,6 +44,13 @@ test.describe("navigation", () => {
     await page.goto("/app");
     const nav = page.getByRole("navigation", { name: "Main" });
     await expect(nav.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+    // Home opens the cloud browser; no development notes are left on it.
+    await expect(page.getByRole("heading", { name: "Cloud browser" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Start browsing" })).toHaveAttribute(
+      "href",
+      "/app/browser",
+    );
+    await expect(page.getByRole("note", { name: /Development state/ })).toHaveCount(0);
 
     await nav.getByRole("link", { name: "Sessions" }).click();
     await expect(page).toHaveURL(/\/app\/sessions$/);

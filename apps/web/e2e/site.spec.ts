@@ -40,7 +40,7 @@ test.describe("public website", () => {
   test("says plainly that Brawzer is still in development", async ({ page }) => {
     await page.goto("/");
     await expect(
-      page.getByText("The Brawzer cloud browser isn’t available yet.", { exact: false }),
+      page.getByText("Brawzer isn’t open to the public yet.", { exact: false }),
     ).toBeVisible();
   });
 

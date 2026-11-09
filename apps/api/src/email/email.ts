@@ -15,6 +15,7 @@ import {
   mfaEnabledMessage,
   newDeviceSignInMessage,
   phoneSignInMessage,
+  usageNoticeMessage,
   passkeyAddedMessage,
   passkeyRemovedMessage,
   passwordChangedMessage,
@@ -119,6 +120,16 @@ export class EmailService {
 
   sendNewDeviceSignIn(to: string, device: string, ip: string | null): void {
     this.dispatch(to, newDeviceSignInMessage(device, ip, this.now(), this.link("/app/sessions")));
+  }
+
+  sendUsageNotice(
+    to: string,
+    kind: "browsing" | "storage" | "files",
+    percent: number,
+    used: string,
+    limit: string,
+  ): void {
+    this.dispatch(to, usageNoticeMessage(kind, percent, used, limit, this.link("/app/account")));
   }
 
   sendPhoneSignIn(to: string, device: string | null, ip: string | null): void {

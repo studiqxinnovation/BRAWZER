@@ -175,3 +175,37 @@ export type AdminAccountSummary = z.infer<typeof adminAccountSummarySchema>;
 export type AdminAccount = z.infer<typeof adminAccountSchema>;
 export type AdminAccountList = z.infer<typeof adminAccountListSchema>;
 export type AdminSetPlanRequest = z.infer<typeof adminSetPlanRequestSchema>;
+
+/** At this share of a limit, Brawzer says so (Phase 8, idea 20). */
+export const USAGE_WARNING_PERCENT = 80;
+
+export type UsageWarningKind = "browsing" | "storage" | "files";
+
+export interface UsageWarning {
+  kind: UsageWarningKind;
+  used: number;
+  limit: number;
+  /** Whole percent, 100 or more when the limit is reached. */
+  percent: number;
+}
+
+/**
+ * The limits a person is close to or at: browsing hours this month (only on
+ * plans with a monthly cap), Drive storage and the number of Drive files.
+ * Counts of profiles and proxies aren't here: their limits only stop the
+ * next one being added, and say so then.
+ */
+export function usageWarnings(limits: PlanLimits, usage: Usage): UsageWarning[] {
+  const candidates: [UsageWarningKind, number, number | null][] = [
+    ["browsing", usage.browsingMinutesThisMonth, limits.browsingMinutesPerMonth],
+    ["storage", usage.driveBytes, limits.driveBytes],
+    ["files", usage.driveFiles, limits.driveFiles],
+  ];
+  const warnings: UsageWarning[] = [];
+  for (const [kind, used, limit] of candidates) {
+    if (limit === null || limit <= 0) continue;
+    const percent = Math.floor((used / limit) * 100);
+    if (percent >= USAGE_WARNING_PERCENT) warnings.push({ kind, used, limit, percent });
+  }
+  return warnings;
+}
