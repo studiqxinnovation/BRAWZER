@@ -34,6 +34,12 @@ export default function PrivacyPage() {
                 only to provide the service to you.
               </li>
               <li>
+                Each profile’s history, bookmarks and open tabs, encrypted with that profile’s own
+                key so only you can read them. History is kept only for profiles that keep their
+                data; you can switch it off, forget a page or clear it, and pages not visited for 90
+                days are forgotten.
+              </li>
+              <li>
                 Billing details, handled by a payment provider once paid plans exist. [Provider to
                 be confirmed]
               </li>

@@ -152,6 +152,8 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
       return { title: "Profile created", tone: "neutral" };
     case "profile.deleted":
       return { title: "Profile deleted", tone: "neutral" };
+    case "profile.history_cleared":
+      return { title: "A profile’s history was cleared", tone: "neutral" };
     case "profile.data_cleared":
       return { title: "A profile’s browsing data was cleared", tone: "neutral" };
     case "billing.subscription_started":
@@ -257,6 +259,11 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
           return {
             title: "Cloud browser session ended by Brawzer’s administrators",
             tone: "warning",
+          };
+        case "handed_off":
+          return {
+            title: "Cloud browser session ended to continue on another device",
+            tone: "neutral",
           };
         case "team_left":
           return {

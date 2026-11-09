@@ -286,6 +286,109 @@ test.describe("browser", () => {
     );
   });
 
+  test("keeps history and bookmarks, and continues a session on another device", async ({
+    page,
+    browser,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The streamed page is driven with a mouse; one run covers it.");
+    test.setTimeout(150_000);
+    const email = await signedIn(page, baseURL, "browser-history");
+    await page.getByRole("button", { name: "Start browsing" }).click();
+    await expect(page.getByTestId("browser-viewport")).toBeVisible({ timeout: 60_000 });
+    const address = page.getByRole("textbox", { name: "Address or search" });
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+
+    // The star bookmarks the page in the session's profile.
+    await page.getByRole("button", { name: "Bookmark this page" }).click();
+    await expect(page.getByText("Bookmarked")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove bookmark" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await address.fill("http://testsite.invalid/second");
+    await address.press("Enter");
+    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "Bookmark this page" })).toBeVisible();
+
+    // History and bookmarks, across sessions, open in the cloud.
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "History and bookmarks" }).click();
+    const panel = page.getByRole("dialog", { name: "History and bookmarks" });
+    await expect(panel.getByRole("list", { name: "Bookmarks" })).toContainText("Brawzer test site");
+    await expect(panel.getByRole("list", { name: "History" })).toContainText("Second page", {
+      timeout: 15_000,
+    });
+    expect(await wcagViolations(page)).toEqual([]);
+    await panel
+      .getByRole("list", { name: "Bookmarks" })
+      .getByRole("button", { name: /Brawzer test site/ })
+      .click();
+    await expect(panel).toBeHidden();
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+
+    // Continue on another device: the session ends here, its tabs wait.
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Continue on another device" }).click();
+    const handOff = page.getByRole("alertdialog", { name: "Continue on another device?" });
+    await handOff.getByRole("button", { name: "End and continue elsewhere" }).click();
+    await expect(page.getByText("You handed this session off.")).toBeVisible({ timeout: 30_000 });
+
+    const other = await browser.newContext({ baseURL });
+    await signIn(other, baseURL ?? "", email, PASSWORD);
+    const phone = await other.newPage();
+    await phone.goto("/app/browser");
+    await expect(phone.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
+    const resume = phone.getByRole("region", { name: "Continue where you left off" });
+    await expect(resume).toBeVisible({ timeout: 15_000 });
+    await expect(resume.getByRole("list", { name: "Tabs to reopen" })).toContainText(
+      "Brawzer test site",
+    );
+    expect(await wcagViolations(phone)).toEqual([]);
+    await resume.getByRole("button", { name: "Continue with 1 tab" }).click();
+    await expect(tab(phone, "Brawzer test site")).toBeVisible({ timeout: 60_000 });
+    await phone.getByRole("button", { name: "More" }).click();
+    await phone.getByRole("menuitem", { name: "End session" }).click();
+    await phone
+      .getByRole("alertdialog", { name: "End this browser session?" })
+      .getByRole("button", { name: "End session" })
+      .click();
+    await expect(phone.getByText("You ended this browser session.")).toBeVisible({
+      timeout: 30_000,
+    });
+    await other.close();
+
+    // The profile's page: search, forget one, clear the rest; bookmarks stay.
+    await page.goto("/app/profiles");
+    await page.getByRole("link", { name: "History and bookmarks of Personal" }).click();
+    await expect(
+      page.getByRole("heading", { name: "History and bookmarks", level: 1 }),
+    ).toBeVisible();
+    const history = page.getByRole("list", { name: "History" });
+    await expect(history).toContainText("Second page");
+    await expect(history).toContainText("Brawzer test site");
+    await expect(page.getByRole("list", { name: "Bookmarks" })).toContainText("Brawzer test site");
+    expect(await wcagViolations(page)).toEqual([]);
+    await page.getByRole("searchbox", { name: "Search the history" }).fill("second");
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await expect(history.getByRole("listitem")).toHaveCount(1);
+    await history.getByRole("button", { name: "Forget Second page" }).click();
+    await expect(page.getByText("Forgot “Second page”")).toBeVisible();
+    await page.getByRole("searchbox", { name: "Search the history" }).fill("");
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await expect(history).not.toContainText("Second page");
+    await page.getByRole("button", { name: "Clear history" }).click();
+    await page
+      .getByRole("alertdialog", { name: "Clear the history of “Personal”?" })
+      .getByRole("button", { name: "Clear history" })
+      .click();
+    await expect(page.getByText("No history", { exact: true })).toBeVisible();
+    await expect(page.getByRole("list", { name: "Bookmarks" })).toContainText("Brawzer test site");
+  });
+
   test("the start panel explains what the cloud browser does and doesn't do yet", async ({
     page,
     baseURL,

@@ -1,4 +1,4 @@
-import { CLOSED_REPORT_DAYS, REPORT_PICTURE_DAYS } from "@brawzer/contracts";
+import { CLOSED_REPORT_DAYS, HISTORY_LIMITS, REPORT_PICTURE_DAYS } from "@brawzer/contracts";
 import type { DatabaseHandle } from "@brawzer/db";
 import {
   Inject,
@@ -42,6 +42,8 @@ export interface RetentionResult {
   reportPictures: number;
   reports: number;
   teamInvitations: number;
+  historyEntries: number;
+  savedTabs: number;
 }
 
 const logger = new Logger("Retention");
@@ -50,7 +52,8 @@ const logger = new Logger("Retention");
  * Deletes data Brawzer no longer needs: security history past its retention
  * period, sessions and email links that ended long ago, sign-ups that were
  * never confirmed (possibly someone else's address), and reported pages'
- * pictures and old closed reports, and team invitations nobody took up.
+ * pictures and old closed reports, team invitations nobody took up, and
+ * history entries and saved tabs past their time (ADR 0020).
  */
 @Injectable()
 export class RetentionService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -159,6 +162,24 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
           "delete from team_invitations where expires_at < $1",
           [now],
         );
+        // Pages not visited in 90 days, and each profile's oldest beyond its 5000.
+        const stale = await client.query("delete from profile_history where last_visited_at < $1", [
+          before(HISTORY_LIMITS.retentionDays),
+        ]);
+        const overflow = await client.query(
+          `delete from profile_history h using (
+             select id from (
+               select id, row_number() over (partition by profile_id order by last_visited_at desc) as n
+               from profile_history
+             ) ranked where ranked.n > $1
+           ) old where h.id = old.id`,
+          [HISTORY_LIMITS.maxEntries],
+        );
+        const tabs = await client.query(
+          `update profiles set open_tabs = null, open_tabs_at = null, open_tabs_handed_off = false
+           where open_tabs_at < $1`,
+          [before(HISTORY_LIMITS.openTabsDays)],
+        );
         return {
           securityEvents: events.rowCount ?? 0,
           sessions: sessions.rowCount ?? 0,
@@ -169,6 +190,8 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
           reportPictures: pictures.rowCount ?? 0,
           reports: reports.rowCount ?? 0,
           teamInvitations: invitations.rowCount ?? 0,
+          historyEntries: (stale.rowCount ?? 0) + (overflow.rowCount ?? 0),
+          savedTabs: tabs.rowCount ?? 0,
         };
       } finally {
         await client.query("select pg_advisory_unlock($1)", [LOCK_KEY]);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { savedTabsSchema } from "./history.ts";
 import { browserEngineSchema } from "./profiles.ts";
 
 /** Must match the database enum `browser_session_status` (a test in the API enforces this). */
@@ -23,6 +24,8 @@ export const browserSessionEndReasons = [
   "admin",
   /** It browsed through the team's proxy, and its owner left the team or the team went (ADR 0019). */
   "team_left",
+  /** Its person ended it to carry on with its tabs on another device (ADR 0020). */
+  "handed_off",
 ] as const;
 export const browserSessionEndReasonSchema = z.enum(browserSessionEndReasons);
 
@@ -73,10 +76,14 @@ export const browserOverviewSchema = z.object({
   runtime: z.enum(["available", "unavailable"]),
   /** Where sessions run, as the installation names it (a city or a region), or null. */
   region: z.string().max(80).nullable(),
+  /** Tabs profiles' last sessions left open, to continue from (Phase 8, idea 3; ADR 0020). */
+  savedTabs: z.array(savedTabsSchema),
 });
 
 export const startBrowserSessionRequestSchema = z.object({
   profileId: z.uuid({ error: "Choose one of your profiles." }).optional(),
+  /** Reopen the tabs the profile's last session left open. */
+  resume: z.boolean().default(false),
 });
 
 /** Where and how to open the stream. The ticket is sent as the first message, never in the URL. */
@@ -90,7 +97,7 @@ export type BrowserSessionStatus = z.infer<typeof browserSessionStatusSchema>;
 export type BrowserSessionEndReason = z.infer<typeof browserSessionEndReasonSchema>;
 export type BrowserSession = z.infer<typeof browserSessionSchema>;
 export type BrowserOverview = z.infer<typeof browserOverviewSchema>;
-export type StartBrowserSessionRequest = z.infer<typeof startBrowserSessionRequestSchema>;
+export type StartBrowserSessionRequest = z.input<typeof startBrowserSessionRequestSchema>;
 export type StreamTicket = z.infer<typeof streamTicketSchema>;
 
 /** What the Admin page shows of the cloud browser (Phase 8, idea 22). Never what a session browses. */

@@ -3,6 +3,7 @@
 import {
   CLIPBOARD_MAX_CHARS,
   type AgentMessage,
+  type Bookmark,
   type BrowserOverview,
   type BrowserSession,
   type ClientMessageInput,
@@ -28,7 +29,13 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { endBrowserSession, requestStreamTicket, startBrowserSession } from "@/lib/api/browser";
+import {
+  endBrowserSession,
+  handOffBrowserSession,
+  requestStreamTicket,
+  startBrowserSession,
+} from "@/lib/api/browser";
+import { addBookmark, fetchBookmarks, removeBookmark } from "@/lib/api/history";
 import { uploadDriveFile } from "@/lib/api/drive";
 import { displayUrl, hostOf, resolveTyped, searchUrl } from "@/lib/browser/input";
 import { nextZoom } from "@/lib/browser/zoom";
@@ -38,6 +45,8 @@ import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/st
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
 import {
   AddressBar,
+  BookmarkStar,
+  canBookmark,
   DownloadsButton,
   FindBar,
   IsolatedBadge,
@@ -53,12 +62,14 @@ import {
 import {
   ConfirmCopyDialog,
   EndSessionDialog,
+  HandOffDialog,
   PageDialog,
   type PageDialogState,
   ShortcutsDialog,
 } from "./dialogs";
 import { type ChooserRequest, DrivePicker } from "./drive-picker";
 import { ReportPageDialog, type ReportTarget } from "./report-dialog";
+import { HistoryPanel } from "./history-panel";
 import { StartPanel } from "./start-panel";
 import { BrowserViewport, type Shortcut, type ViewportHandle } from "./viewport";
 
@@ -228,6 +239,26 @@ export function BrowserWorkspace({
   const [ending, setEnding] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [report, setReport] = useState<ReportTarget | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [confirmHandOff, setConfirmHandOff] = useState(false);
+  const [bookmarkBusy, setBookmarkBusy] = useState(false);
+  /** The live session's profile's bookmarks, for the star (ADR 0020). */
+  const [bookmarks, setBookmarks] = useState<{ profileId: string; list: Bookmark[] } | null>(null);
+  const liveProfileId =
+    phase.kind === "live" || phase.kind === "connecting" ? phase.session.profileId : null;
+  useEffect(() => {
+    if (!liveProfileId) return;
+    let cancelled = false;
+    void fetchBookmarks(liveProfileId).then((result) => {
+      if (!cancelled && result.ok) {
+        setBookmarks({ profileId: liveProfileId, list: result.data.bookmarks });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [liveProfileId]);
+  const profileBookmarks = bookmarks?.profileId === liveProfileId ? bookmarks.list : [];
   const [firstFrame, setFirstFrame] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   /** The profile of the session that ran last, for what the end message says. */
@@ -410,10 +441,10 @@ export function BrowserWorkspace({
     stream.open(ticket.data.url, ticket.data.ticket, viewport.current);
   }
 
-  async function start(profileId: string | null) {
+  async function start(profileId: string | null, resume = false) {
     setStartError(null);
     setPhase({ kind: "starting" });
-    const result = await startBrowserSession(profileId ? { profileId } : {});
+    const result = await startBrowserSession(profileId ? { profileId, resume } : {});
     if (!result.ok) {
       if (result.status === 401) {
         leaveSignedInArea("expired");
@@ -449,6 +480,84 @@ export function BrowserWorkspace({
     setPhase({ kind: "ended", message: "You ended this browser session." });
     setTabs([]);
     setDialog(null);
+  }
+
+  /** Ends here; the tabs wait for the profile's next session, on any device. */
+  async function handOff() {
+    const current = phaseRef.current;
+    if (current.kind !== "live") return;
+    setEnding(true);
+    endingRef.current = true;
+    const result = await handOffBrowserSession(current.session.id);
+    endingRef.current = false;
+    setEnding(false);
+    setConfirmHandOff(false);
+    if (!result.ok && result.status !== 404) {
+      toast.add({
+        title: "The session wasn’t handed off",
+        description: result.error.message,
+        type: "error",
+      });
+      return;
+    }
+    stream.close();
+    const name =
+      profiles.find((candidate) => candidate.id === current.session.profileId)?.name ??
+      "the profile";
+    setPhase({
+      kind: "ended",
+      message: `You handed this session off. Its tabs wait with “${name}”: on your other device, open Brawzer’s Browser page and choose Continue.`,
+    });
+    setTabs([]);
+    setDialog(null);
+  }
+
+  async function toggleBookmark() {
+    const profileId = liveProfileId;
+    const tab = activeTab;
+    if (!profileId || !tab || !canBookmark(tab.url)) return;
+    const existing = profileBookmarks.find((bookmark) => bookmark.url === tab.url);
+    setBookmarkBusy(true);
+    if (existing) {
+      const result = await removeBookmark(profileId, existing.id);
+      setBookmarkBusy(false);
+      if (result.ok || result.status === 404) {
+        setBookmarks({
+          profileId,
+          list: profileBookmarks.filter((bookmark) => bookmark.id !== existing.id),
+        });
+        toast.add({ type: "success", title: "Bookmark removed" });
+      } else {
+        toast.add({
+          type: "error",
+          title: "Couldn’t remove it",
+          description: result.error.message,
+        });
+      }
+      return;
+    }
+    const result = await addBookmark(profileId, { url: tab.url, title: tab.title.slice(0, 300) });
+    setBookmarkBusy(false);
+    if (result.ok) {
+      setBookmarks({
+        profileId,
+        list: [
+          ...profileBookmarks.filter((bookmark) => bookmark.id !== result.data.id),
+          result.data,
+        ],
+      });
+      toast.add({
+        type: "success",
+        title: "Bookmarked",
+        description: tab.title || displayUrl(tab.url),
+      });
+    } else {
+      toast.add({
+        type: "error",
+        title: "Couldn’t bookmark it",
+        description: result.error.message,
+      });
+    }
   }
 
   // Reattach to a session that was already running when the page loaded.
@@ -724,7 +833,7 @@ export function BrowserWorkspace({
         overview={initial}
         starting={phase.kind === "starting"}
         error={startError}
-        onStart={(profileId) => void start(profileId)}
+        onStart={(profileId, resume) => void start(profileId, resume)}
       />
     );
   }
@@ -856,6 +965,13 @@ export function BrowserWorkspace({
             onShortcut("reader");
           }}
         />
+        {sessionProfile && activeTab && canBookmark(activeTab.url) && (
+          <BookmarkStar
+            bookmarked={profileBookmarks.some((bookmark) => bookmark.url === activeTab.url)}
+            busy={bookmarkBusy}
+            onToggle={() => void toggleBookmark()}
+          />
+        )}
         <IsolatedBadge />
         <ProfileChip
           profile={sessionProfile}
@@ -914,6 +1030,20 @@ export function BrowserWorkspace({
           }}
           onScreenshot={() => void saveScreenshot()}
           onReport={openReport}
+          onHistory={
+            sessionProfile
+              ? () => {
+                  setHistoryOpen(true);
+                }
+              : undefined
+          }
+          onHandOff={
+            sessionProfile?.keepData
+              ? () => {
+                  setConfirmHandOff(true);
+                }
+              : undefined
+          }
         />
       </div>
 
@@ -1052,6 +1182,23 @@ export function BrowserWorkspace({
           setReport(null);
           viewportRef.current?.focus();
         }}
+      />
+      {sessionProfile && (
+        <HistoryPanel
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          profile={sessionProfile}
+          bookmarks={profileBookmarks}
+          onOpen={navigate}
+        />
+      )}
+      <HandOffDialog
+        open={confirmHandOff}
+        onOpenChange={setConfirmHandOff}
+        onConfirm={() => void handOff()}
+        busy={ending}
+        profileName={sessionProfile?.name ?? ""}
+        tabs={tabs.filter((tab) => canBookmark(tab.url)).length}
       />
       <EndSessionDialog
         open={confirmEnd}

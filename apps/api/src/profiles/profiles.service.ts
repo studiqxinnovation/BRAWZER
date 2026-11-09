@@ -18,6 +18,7 @@ import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { BillingService } from "../billing/billing.service.js";
+import { HistoryService } from "../history/history.service.js";
 import { ProfileDataService } from "./profile-data.service.js";
 
 const notFound = () => new ApiException("not_found", 404, "That profile doesn’t exist.");
@@ -41,6 +42,7 @@ export function toProfile(row: ProfileRow): Profile {
     position: row.position,
     proxyId: row.proxyId,
     keepData: row.keepData,
+    keepHistory: row.keepHistory,
     privateThroughProxy: row.privateThroughProxy,
     extensions: row.extensions,
     data:
@@ -64,6 +66,7 @@ export class ProfilesService {
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
     @Inject(ProfileDataService) private readonly data: ProfileDataService,
     @Inject(BillingService) private readonly billing: BillingService,
+    @Inject(HistoryService) private readonly history: HistoryService,
   ) {}
 
   /** The row, for the cloud browser: which data to restore and whether to save it. */
@@ -141,6 +144,7 @@ export class ProfilesService {
       color?: ProfileColor | undefined;
       proxyId?: string | null | undefined;
       keepData?: boolean | undefined;
+      keepHistory?: boolean | undefined;
       privateThroughProxy?: boolean | undefined;
       extensions?: string[] | undefined;
     },
@@ -171,6 +175,7 @@ export class ProfilesService {
           ...(input.color === undefined ? {} : { color: input.color }),
           ...(input.proxyId === undefined ? {} : { proxyId: input.proxyId }),
           ...(input.keepData === undefined ? {} : { keepData: input.keepData }),
+          ...(input.keepHistory === undefined ? {} : { keepHistory: input.keepHistory }),
           ...(input.privateThroughProxy === undefined
             ? {}
             : { privateThroughProxy: input.privateThroughProxy }),
@@ -219,6 +224,8 @@ export class ProfilesService {
     const row = await this.find(auth.user.id, id);
     if (!row) throw notFound();
     await this.data.clear(row);
+    // The history Brawzer keeps is browsing data too; bookmarks stay, as in any browser.
+    await this.history.clearFor(row.id);
     await this.events.record({
       type: "profile.data_cleared",
       userId: auth.user.id,

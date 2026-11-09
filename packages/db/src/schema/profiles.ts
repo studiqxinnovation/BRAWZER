@@ -67,6 +67,18 @@ export const profiles = pgTable(
     /** Size of the saved data as stored (compressed, before encryption). */
     dataBytes: bigint({ mode: "number" }),
     dataSavedAt: timestamptz(),
+    /** Brawzer keeps a searchable history while the profile keeps its data (ADR 0020). */
+    keepHistory: boolean().notNull().default(true),
+    /**
+     * The profile's own key for its history, bookmarks and open tabs: 32
+     * random bytes sealed by the key service, bound to the account and profile.
+     */
+    historyKey: text(),
+    /** The tabs its last session left open, encrypted with the history key (idea 3). */
+    openTabs: text(),
+    openTabsAt: timestamptz(),
+    /** Those tabs were left on purpose, to continue on another device. */
+    openTabsHandedOff: boolean().notNull().default(false),
     createdAt: timestamptz().notNull().defaultNow(),
     updatedAt: timestamptz().notNull().defaultNow(),
   },

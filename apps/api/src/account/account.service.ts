@@ -22,6 +22,7 @@ import { ProxiesService } from "../proxies/proxies.service.js";
 import { SiteRulesService } from "../site-rules/site-rules.service.js";
 import { ReportsService } from "../reports/reports.service.js";
 import { TeamsService } from "../teams/teams.service.js";
+import { HistoryService } from "../history/history.service.js";
 import { SecurityHistoryService } from "../security/security.service.js";
 
 const logger = new Logger("Account");
@@ -51,6 +52,7 @@ export class AccountService {
     @Inject(SiteRulesService) private readonly siteRules: SiteRulesService,
     @Inject(ReportsService) private readonly reports: ReportsService,
     @Inject(TeamsService) private readonly teams: TeamsService,
+    @Inject(HistoryService) private readonly browsing: HistoryService,
     @Inject(DriveService) private readonly drive: DriveService,
     @Inject(BrowserService) private readonly browser: BrowserService,
     @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
@@ -241,6 +243,7 @@ export class AccountService {
       siteRules,
       pageReports,
       team,
+      kept,
     ] = await Promise.all([
       this.passkeys.list(user.id),
       this.mfa.status(user.id),
@@ -253,6 +256,7 @@ export class AccountService {
       this.siteRules.forExport(user.id),
       this.reports.forExport(user.id),
       this.teams.forExport(user.id),
+      this.browsing.forExport(user.id),
     ]);
     await this.events.record({
       type: "data.exported",
@@ -294,6 +298,8 @@ export class AccountService {
       siteRules,
       pageReports,
       team,
+      history: kept.history,
+      bookmarks: kept.bookmarks,
       drive,
       browserSessions,
     };

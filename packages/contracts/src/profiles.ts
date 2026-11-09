@@ -66,6 +66,8 @@ export const profileSchema = z.object({
   proxyId: z.uuid().nullable(),
   /** Whether cookies, history and site data are kept between sessions. */
   keepData: z.boolean(),
+  /** Whether Brawzer keeps a searchable history for the profile (when it keeps its data; ADR 0020). */
+  keepHistory: z.boolean(),
   /**
    * With a proxy: private and internal addresses go to the proxy instead of
    * being refused, so an intranet behind one's own proxy is reachable.
@@ -103,6 +105,7 @@ export const updateProfileRequestSchema = z
     color: profileColorSchema.optional(),
     proxyId: z.uuid({ error: "Choose one of your proxies." }).nullable().optional(),
     keepData: z.boolean().optional(),
+    keepHistory: z.boolean().optional(),
     privateThroughProxy: z.boolean().optional(),
     extensions: extensionListSchema.optional(),
   })
@@ -112,6 +115,7 @@ export const updateProfileRequestSchema = z
       value.color !== undefined ||
       value.proxyId !== undefined ||
       value.keepData !== undefined ||
+      value.keepHistory !== undefined ||
       value.privateThroughProxy !== undefined ||
       value.extensions !== undefined,
     { error: "Change the name, colour, proxy or what is kept." },

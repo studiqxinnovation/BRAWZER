@@ -183,6 +183,13 @@
       "when": 1794188545184,
       "tag": "0025_wooden_skullbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794197184194,
+      "tag": "0026_strange_earthquake",
+      "breakpoints": true
     }
   ]
 }

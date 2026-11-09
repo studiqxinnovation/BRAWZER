@@ -55,6 +55,7 @@ import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 import { MetricsService } from "../metrics/metrics.service.js";
 import { type AfterCommit, TeamsService } from "../teams/teams.service.js";
+import { HistoryService } from "../history/history.service.js";
 
 const logger = new Logger("Browser");
 const LIVE = ["starting", "running"] as const;
@@ -112,6 +113,7 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
     @Inject(BillingService) private readonly billing: BillingService,
     @Inject(REDIS) private readonly redis: Pick<Redis, "publish" | "set">,
     @Inject(TeamsService) private readonly teams: TeamsService,
+    @Inject(HistoryService) private readonly history: HistoryService,
   ) {}
 
   /**
@@ -188,12 +190,17 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
   // ── Reads ─────────────────────────────────────────────────────────────
 
   async overview(userId: string): Promise<BrowserOverview> {
-    const [live, runtime] = await Promise.all([this.liveSession(userId), this.runtimeStatus()]);
+    const [live, runtime, savedTabs] = await Promise.all([
+      this.liveSession(userId),
+      this.runtimeStatus(),
+      this.history.savedTabsFor(userId),
+    ]);
     return {
       session: live ? describe(live) : null,
       limits: { idleMinutes: BROWSER_LIMITS.idleMinutes, maxHours: BROWSER_LIMITS.maxHours },
       runtime,
       region: this.config.browser.region,
+      savedTabs,
     };
   }
 
@@ -251,6 +258,7 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
     auth: { user: { id: string }; session: { id: string } },
     profileId: string | null,
     meta: RequestMeta,
+    resume = false,
   ): Promise<BrowserSession> {
     const userId = auth.user.id;
     const profile = profileId ? await this.profiles.find(userId, profileId) : undefined;
@@ -351,6 +359,8 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
           })
           .returning();
         if (!created) throw new Error("Creating a browser session returned no row");
+        // The profile's saved tabs, when asked to continue from them (ADR 0020).
+        if (profileId) await this.history.prepareSession(created.id, profileId, resume, tx);
         return created;
       });
     } catch (error) {
@@ -445,6 +455,26 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
     if (!row) throw notFound();
     if (row.status === "ended") return;
     await this.endSession(row, "user", meta);
+  }
+
+  /** Ends the session so its open tabs wait for the profile's next one, on any device. */
+  async handOff(userId: string, id: string, meta: RequestMeta): Promise<void> {
+    const [row] = await this.database.db
+      .select()
+      .from(schema.browserSessions)
+      .where(and(eq(schema.browserSessions.id, id), eq(schema.browserSessions.userId, userId)))
+      .limit(1);
+    if (!row || row.status === "ended") throw notFound();
+    const profile = row.profileId ? await this.profiles.find(userId, row.profileId) : undefined;
+    if (!profile?.keepData) {
+      throw new ApiException(
+        "conflict",
+        409,
+        "This session keeps nothing to continue from. Use a profile that keeps its data.",
+      );
+    }
+    await this.history.markHandedOff(profile.id);
+    await this.endSession(row, "handed_off", meta);
   }
 
   async issueTicket(

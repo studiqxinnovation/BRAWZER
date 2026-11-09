@@ -25,6 +25,10 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpenText,
+  Bookmark,
+  BookmarkCheck,
+  History,
+  Smartphone,
   Camera,
   ChevronUp,
   ClipboardPaste,
@@ -84,6 +88,49 @@ export function tabColor(url: string): string {
 }
 
 /** Brawzer's own start page (served inside the container) or nothing yet: shown as a new tab. */
+/** A page Brawzer can bookmark or remember: http or https, not its own start page. */
+export function canBookmark(url: string): boolean {
+  if (isStartPage(url) || url.length > 2048) return false;
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/** The star beside the address: bookmarks the page in the session's profile (ADR 0020). */
+export function BookmarkStar({
+  bookmarked,
+  busy,
+  onToggle,
+}: {
+  bookmarked: boolean;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  const label = bookmarked ? "Remove bookmark" : "Bookmark this page";
+  return (
+    <Tooltip content={label}>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="size-10 rounded-xl"
+        aria-label={label}
+        aria-pressed={bookmarked}
+        disabled={busy}
+        onClick={onToggle}
+      >
+        {bookmarked ? (
+          <BookmarkCheck aria-hidden="true" className="text-accent-ink" />
+        ) : (
+          <Bookmark aria-hidden="true" />
+        )}
+      </Button>
+    </Tooltip>
+  );
+}
+
 export function isStartPage(url: string): boolean {
   return url === "" || url === "about:blank" || hostOf(url) === "bee.invalid";
 }
@@ -576,6 +623,8 @@ export function MoreMenu({
   onEnd,
   onScreenshot,
   onReport,
+  onHistory,
+  onHandOff,
   onPopOut,
   onCloseWindow,
 }: {
@@ -596,6 +645,10 @@ export function MoreMenu({
   onEnd: () => void;
   onScreenshot: () => void;
   onReport: () => void;
+  /** With a profile: its history and bookmarks. */
+  onHistory?: (() => void) | undefined;
+  /** With a profile that keeps its data: end here, continue elsewhere. */
+  onHandOff?: (() => void) | undefined;
   /** In the app: open this session in a window of its own. */
   onPopOut?: (() => void) | undefined;
   /** In that window: close it (the session keeps running). */
@@ -614,6 +667,11 @@ export function MoreMenu({
         <MenuItem icon={<Plus />} onClick={onNewTab}>
           New tab
         </MenuItem>
+        {onHistory && (
+          <MenuItem icon={<History />} onClick={onHistory}>
+            History and bookmarks
+          </MenuItem>
+        )}
         <MenuItem icon={<Printer />} disabled={!canPrint} onClick={onPrint}>
           Save page as PDF in Drive
         </MenuItem>
@@ -679,6 +737,11 @@ export function MoreMenu({
         {onCloseWindow && (
           <MenuItem icon={<AppWindow />} onClick={onCloseWindow}>
             Close this window
+          </MenuItem>
+        )}
+        {onHandOff && (
+          <MenuItem icon={<Smartphone />} onClick={onHandOff}>
+            Continue on another device
           </MenuItem>
         )}
         {coarsePointer ? (

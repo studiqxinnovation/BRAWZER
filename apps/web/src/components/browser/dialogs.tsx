@@ -140,6 +140,43 @@ export function EndSessionDialog({
   );
 }
 
+/** Ends the session here so its tabs wait for the profile's next one, on any device (ADR 0020). */
+export function HandOffDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  busy,
+  profileName,
+  tabs,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  busy: boolean;
+  profileName: string;
+  tabs: number;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogTitle>Continue on another device?</AlertDialogTitle>
+        <AlertDialogDescription>
+          The session ends here and “{profileName}” keeps its data, as when you end it. Its{" "}
+          {tabs === 1 ? "open tab waits" : `${String(tabs)} open tabs wait`} for the profile’s next
+          session: on your other device, open Brawzer’s Browser page and choose Continue. They’re
+          offered for 7 days.
+        </AlertDialogDescription>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button variant="secondary" />}>Stay here</AlertDialogClose>
+          <Button variant="primary" loading={busy} onClick={onConfirm}>
+            End and continue elsewhere
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 /** Copying to the local clipboard is the one thing that leaves something on this computer. */
 export function ConfirmCopyDialog({
   open,

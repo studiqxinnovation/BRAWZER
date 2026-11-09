@@ -30,6 +30,8 @@ export const browserSessions = pgTable(
     profileId: uuid().references(() => profiles.id, { onDelete: "set null" }),
     /** The profile's proxy when the session started; its traffic goes through it (ADR 0014). */
     proxyId: uuid().references(() => proxies.id, { onDelete: "set null" }),
+    /** Tabs to reopen once the agent says hello: the profile's saved tabs, as stored (ADR 0020). */
+    restoreTabs: text(),
     engine: browserEngine().notNull().default("bee"),
     status: browserSessionStatus().notNull().default("starting"),
     /** The runtime container, once created. */

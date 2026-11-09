@@ -66,7 +66,9 @@ describe("the warm pool", () => {
       "select container_id from browser_sessions where id = $1",
       [session.id],
     );
-    expect(before).toContain(row.rows[0]?.container_id);
+    // Its runtime is a pooled one. Other suites' pools run on the same engine at the same time,
+    // so the label, not the list seen earlier, says so.
+    expect(await pooledContainers()).toContain(row.rows[0]?.container_id);
 
     // The session is a real one: a stream ticket is issued for it.
     expect((await client.post(`/browser/sessions/${session.id}/ticket`, {})).statusCode).toBe(200);

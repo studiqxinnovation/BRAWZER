@@ -59,6 +59,7 @@ export const securityEventTypes = [
   "team.ownership_transferred",
   "team.deleted",
   "team.invitation_sent",
+  "profile.history_cleared",
 ] as const;
 
 export const securityEventTypeSchema = z.enum(securityEventTypes);

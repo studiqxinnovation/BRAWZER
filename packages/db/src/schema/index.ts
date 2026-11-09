@@ -12,3 +12,4 @@ export * from "./site-rules.ts";
 export * from "./usage.ts";
 export * from "./reports.ts";
 export * from "./teams.ts";
+export * from "./history.ts";

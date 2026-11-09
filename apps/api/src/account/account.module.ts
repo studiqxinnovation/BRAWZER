@@ -8,6 +8,7 @@ import { ProxiesModule } from "../proxies/proxies.module.js";
 import { SiteRulesModule } from "../site-rules/site-rules.module.js";
 import { ReportsModule } from "../reports/reports.module.js";
 import { TeamsModule } from "../teams/teams.module.js";
+import { HistoryModule } from "../history/history.module.js";
 import { EmailModule } from "../email/email.js";
 import { RateLimitModule } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsModule } from "../security-events/security-events.js";
@@ -28,6 +29,7 @@ import { AccountService } from "./account.service.js";
     SiteRulesModule,
     ReportsModule,
     TeamsModule,
+    HistoryModule,
     DriveModule,
     BrowserModule,
   ],

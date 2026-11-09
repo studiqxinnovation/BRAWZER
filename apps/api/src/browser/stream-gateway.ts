@@ -35,6 +35,7 @@ import { SecurityEventsService } from "../security-events/security-events.js";
 import { BrowserService, SESSION_ENDED_CHANNEL } from "./browser.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 import { MetricsService } from "../metrics/metrics.service.js";
+import { HistoryService } from "../history/history.service.js";
 
 const logger = new Logger("StreamGateway");
 const TICKET_WAIT_MS = 5_000;
@@ -117,6 +118,7 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
     @Inject(SecurityEventsService) private readonly securityEvents: SecurityEventsService,
     @Inject(REDIS) private readonly redis: Redis,
     @Inject(MetricsService) private readonly metrics: MetricsService,
+    @Inject(HistoryService) private readonly history: HistoryService,
   ) {
     this.browser.events.on("ended", (sessionId: string) => {
       this.relays.get(sessionId)?.close(STREAM_CLOSE_CODES.ended, "ended");
@@ -222,10 +224,13 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         "Downloads that paused their agent while Drive caught up.",
       );
     });
+    // History and open tabs, for profiles that keep them (ADR 0020).
+    const observer = this.history.observe(id);
     let closed = false;
     const close = (code: number, reason: string) => {
       if (closed) return;
       closed = true;
+      void observer.close();
       clearInterval(check);
       clearInterval(touch);
       if (this.relays.get(id) === relay) this.relays.delete(id);
@@ -331,6 +336,22 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         }
         const message = agentMessageSchema.safeParse(candidate);
         if (!message.success) return;
+        if (message.data.type === "welcome" || message.data.type === "tabs") {
+          observer.tabs(message.data.tabs);
+        }
+        if (message.data.type === "welcome") {
+          // A session continuing from saved tabs reopens them once, in their order.
+          const activeTabId = message.data.activeTabId;
+          void this.history
+            .claimRestore(id)
+            .then((urls) => {
+              const [first, ...rest] = urls;
+              if (!first) return;
+              toAgent({ type: "navigate", tabId: activeTabId, url: first });
+              for (const url of rest) toAgent({ type: "new-tab", url });
+            })
+            .catch(() => undefined);
+        }
         if (message.data.type === "transfer" && message.data.state === "received") {
           this.receiveTransfer(message.data, incoming, auth, meta, toPage, pressure);
         }

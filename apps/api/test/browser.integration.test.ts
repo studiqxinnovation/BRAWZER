@@ -12,7 +12,12 @@ import {
   streamTicketSchema,
   type TabState,
 } from "@brawzer/contracts";
-import { driveFileSchema, profileListSchema, profileSchema } from "@brawzer/contracts";
+import {
+  driveFileSchema,
+  historyPageSchema,
+  profileListSchema,
+  profileSchema,
+} from "@brawzer/contracts";
 import { WebSocket } from "ws";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHarness, type Harness, type TestBrowser } from "./support/harness.js";
@@ -914,6 +919,96 @@ describe("the egress (ADR 0014)", () => {
       .events.find((event) => event.type === "browser.session_ended");
     expect(ended?.details.reason).toBe("team_left");
   }, 120_000);
+
+  it("records a profile's history from its sessions, and hands its tabs to the next one", async () => {
+    const { client } = await account("browser-history");
+    const profile = profileListSchema.parse((await client.get("/profiles")).json()).profiles[0]!;
+    const historyUrls = async () =>
+      historyPageSchema
+        .parse((await client.get(`/profiles/${profile.id}/history`)).json())
+        .entries.map((entry) => `${entry.url} ${entry.title}`);
+
+    const { session, viewer, tab } = await openSession(client, profile.id);
+    await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
+    await openPage(viewer, tab.id, "http://testsite.invalid/second", "Second page");
+    viewer.send({ type: "new-tab", url: "http://testsite.invalid/upload" });
+    await viewer.until(
+      () =>
+        viewer.tabs()?.tabs.some((entry) => entry.title === "Upload page" && !entry.loading) ??
+        false,
+      "the second tab",
+    );
+    // Visits are recorded as pages finish loading; Brawzer's start page never is.
+    await expect
+      .poll(historyUrls, { timeout: 10_000 })
+      .toEqual([
+        "http://testsite.invalid/upload Upload page",
+        "http://testsite.invalid/second Second page",
+        "http://testsite.invalid/ Brawzer test site",
+      ]);
+
+    // Handing off ends the session and keeps its tabs for the next one, on any device.
+    expect((await client.post(`/browser/sessions/${session.id}/hand-off`, {})).statusCode).toBe(
+      204,
+    );
+    await viewer.until(() => viewer.closeCode !== null, "closed by the hand-off");
+    await expect
+      .poll(
+        async () =>
+          browserOverviewSchema
+            .parse((await client.get("/browser")).json())
+            .savedTabs.map((saved) => [
+              saved.profileId,
+              saved.handedOff,
+              saved.tabs.map((entry) => entry.url),
+            ]),
+        { timeout: 10_000 },
+      )
+      .toEqual([
+        [profile.id, true, ["http://testsite.invalid/second", "http://testsite.invalid/upload"]],
+      ]);
+    const ended = (await client.get("/security/events"))
+      .json<{ events: { type: string; details: { reason?: string } }[] }>()
+      .events.find((event) => event.type === "browser.session_ended");
+    expect(ended?.details.reason).toBe("handed_off");
+
+    // The next session continues from them: the tabs reopen, in their order.
+    const resumed = await client.post("/browser/sessions", { profileId: profile.id, resume: true });
+    expect(resumed.statusCode, resumed.body).toBe(201);
+    const next = browserSessionSchema.parse(resumed.json());
+    const ticket = await ticketFor(client, next.id);
+    const again = new Viewer(
+      `${baseUrl}/api/v1/browser/sessions/${next.id}/stream`,
+      ticket.ticket,
+      h.origin,
+    );
+    await again.until(
+      () => {
+        const titles = again.tabs()?.tabs.map((entry) => (entry.loading ? "" : entry.title));
+        return titles?.join("|") === "Second page|Upload page";
+      },
+      "the reopened tabs",
+      30_000,
+    );
+    again.close();
+    expect((await client.delete(`/browser/sessions/${next.id}`)).statusCode).toBe(204);
+
+    // A temporary session keeps nothing, and has nothing to hand off.
+    const before = await historyUrls();
+    const temporary = await openSession(client);
+    await openPage(
+      temporary.viewer,
+      temporary.tab.id,
+      "http://testsite.invalid/upload",
+      "Upload page",
+    );
+    expect(
+      (await client.post(`/browser/sessions/${temporary.session.id}/hand-off`, {})).statusCode,
+    ).toBe(409);
+    temporary.viewer.close();
+    expect((await client.delete(`/browser/sessions/${temporary.session.id}`)).statusCode).toBe(204);
+    expect(await historyUrls()).toEqual(before);
+  }, 180_000);
 
   it("asks the owner to confirm it's them before a profile's proxy changes", async () => {
     const { client, email } = await account("browser-proxy-stepup");

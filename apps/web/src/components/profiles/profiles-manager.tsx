@@ -31,6 +31,7 @@ import { Select } from "@brawzer/ui/components/select";
 import { useToast } from "@brawzer/ui/components/toast";
 import { Switch } from "@brawzer/ui/components/switch";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type SubmitEvent, useRef, useState } from "react";
 import { useConfirmedRequest } from "@/components/app-shell/confirm-identity";
@@ -508,6 +509,13 @@ export function ProfilesManager({
                   <ArrowDown aria-hidden="true" />
                 </Button>
                 <EditProfile profile={profile} proxies={proxies} />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  render={<Link href={`/app/profiles/${profile.id}/history`} />}
+                >
+                  History<span className="sr-only"> and bookmarks of {profile.name}</span>
+                </Button>
                 {profile.data && <ClearProfileData profile={profile} />}
                 {profiles.length > 1 && <DeleteProfile profile={profile} />}
               </div>

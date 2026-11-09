@@ -9,7 +9,7 @@ plan already named. They are built in value order, one commit each, on the
 | --- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | 10  | Isolation checks as a CI job                               | **Done** 2026-11-08: `apps/api/test/isolation.integration.test.ts`; found and closed a DNS path (ADR 0014)           |
 | 1   | Brawzer-drawn error pages                                  | **Done** 2026-11-08: drawn by Brawzer over the viewport, both engines, with Brawzer's refusal codes                  |
-| 2   | Bookmarks and history as Brawzer records                   | Not built: work on it was stopped on 2026-11-08 and is not resumed; idea 3 (which built on it) waits too             |
+| 2   | Bookmarks and history as Brawzer records                   | **Done** 2026-11-08: per-profile history and bookmarks, encrypted, searchable, forgettable (ADR 0020)                |
 | 5   | Find in page, zoom, reader mode                            | **Done** 2026-11-08: both engines, from the menu and Alt shortcuts                                                   |
 | 4   | Clipboard with intent                                      | **Done** 2026-11-08: deliberate copy and paste, text only, each use recorded                                         |
 | 9   | Private-address browsing through a saved proxy, on purpose | **Done** 2026-11-08: a per-profile switch, off by default, loopback still refused                                    |
@@ -26,7 +26,7 @@ plan already named. They are built in value order, one commit each, on the
 | 22  | Admin: sessions and runtime view                           | **Done** 2026-11-09: hosts, warm pool, live sessions, end one                                                        |
 | 23  | An operator CLI                                            | **Done** 2026-11-09: `pnpm brawzer`, `node dist/cli/main.js` in production                                           |
 | 24  | Load test for the stream                                   | **Done** 2026-11-09: `infra/bench/stream-load.mjs`; bandwidth, not CPU, sets capacity                                |
-| 3   | Session hand-off between devices                           | Waits on idea 2                                                                                                      |
+| 3   | Session hand-off between devices                           | **Done** 2026-11-08: open tabs kept per profile; “Continue where you left off” and “Continue on another device”      |
 | 6   | Pop-out work mode                                          | **Done** 2026-11-08: “Open in its own window”, and bringing a session back                                           |
 | 12  | Report a page                                              | **Done** 2026-11-08: a note to the administrators, the address and a picture only if included; screenshots in Drive  |
 | 19  | Team accounts                                              | **Done** 2026-11-08: teams on the owner's plan, invitations by address, shared proxies and a shared Drive (ADR 0019) |
@@ -466,3 +466,38 @@ leaving in the browser integration test, and `apps/web/e2e/team.spec.ts`
 (start, invite, join, the plan on the Account page, a team proxy, the
 team's Drive, roles, removal, deletion, accessibility on desktop and
 phone).
+
+## 2 and 3. History, bookmarks, and continuing on another device
+
+ADR 0020 records the design. Work on idea 2 had stopped earlier; on
+2026-11-08 the account's owner asked for both ideas to be built, and they
+were built together, as they share their records and their key.
+
+**History and bookmarks.** Each profile keeps a history (one entry per
+page, with its visits) and bookmarks, encrypted with the profile's own key
+and found by a keyed digest of the address, so the database never holds an
+address, title or host in the clear. The stream relay records a page once a
+tab finishes loading it, only for profiles that keep their data, and never
+Brawzer's start page or a temporary session. The cloud browser has a star
+beside the address and a "History and bookmarks" panel in the "…" menu that
+searches across sessions and opens a page in the current tab. Each profile
+has a History page (from the Profiles page) to switch history off, search,
+forget one page, clear it all, and rename or remove bookmarks. Pages not
+visited for 90 days are forgotten, and each profile keeps at most 5000.
+Clearing a profile's data clears its history; bookmarks stay. The data
+download includes both; nothing else shows them.
+
+**Continuing on another device.** While a session runs, its open tabs are
+kept with the profile (encrypted the same way). The Browser page offers
+"Continue where you left off" for 7 days, with the tabs it will reopen;
+continuing reopens them, in their order, in the new session. "Continue on
+another device" in the "…" menu ends the session on purpose (end reason
+`handed_off`) and says what to do on the other device.
+
+Checked by `apps/api/test/history.integration.test.ts` (encryption at
+rest, search, forgetting, clearing, the switch, bookmarks, the data
+download, retention), a real session in the browser integration test
+(visits recorded as pages load, hand-off, the next session reopening the
+tabs, a temporary session leaving nothing), unit tests of the encryption,
+and the browser e2e journey (star, panel, hand-off to a second signed-in
+browser, the History page, accessibility).

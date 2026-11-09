@@ -82,6 +82,24 @@ export const accountExportSchema = z.object({
   siteRules: z.array(
     z.object({ kind: z.enum(["allow", "block"]), host: z.string(), createdAt: z.iso.datetime() }),
   ),
+  /** History and bookmarks Brawzer keeps for the profiles (ADR 0020), by profile name. */
+  history: z.array(
+    z.object({
+      profile: z.string(),
+      url: z.string(),
+      title: z.string(),
+      lastVisitedAt: z.iso.datetime(),
+      visits: z.number().int().positive(),
+    }),
+  ),
+  bookmarks: z.array(
+    z.object({
+      profile: z.string(),
+      url: z.string(),
+      title: z.string(),
+      createdAt: z.iso.datetime(),
+    }),
+  ),
   /** The team the account is in, if any (Phase 8, idea 19). */
   team: z
     .object({

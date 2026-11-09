@@ -171,6 +171,7 @@ export const securityEventType = pgEnum("security_event_type", [
   "team.ownership_transferred",
   "team.deleted",
   "team.invitation_sent",
+  "profile.history_cleared",
 ]);
 
 /**
