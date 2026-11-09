@@ -25,9 +25,9 @@ plan already named. They are built in value order, one commit each, on the
 | 21  | Trials and promotion codes                                 | **Done** 2026-11-09: `trialDays` per plan, once per account; promotion codes at checkout                   |
 | 22  | Admin: sessions and runtime view                           | **Done** 2026-11-09: hosts, warm pool, live sessions, end one                                              |
 | 23  | An operator CLI                                            | **Done** 2026-11-09: `pnpm brawzer`, `node dist/cli/main.js` in production                                 |
-| 24  | Load test for the stream                                   | Next                                                                                                       |
+| 24  | Load test for the stream                                   | **Done** 2026-11-09: `infra/bench/stream-load.mjs`; bandwidth, not CPU, sets capacity                      |
 | 3   | Session hand-off between devices                           |                                                                                                            |
-| 6   | Pop-out work mode                                          |                                                                                                            |
+| 6   | Pop-out work mode                                          | Next                                                                                                       |
 | 12  | Report a page                                              |                                                                                                            |
 | 19  | Team accounts                                              |                                                                                                            |
 | 7   | Sound, then WebRTC (Phase 3b)                              | **Sound done** 2026-11-08 (ADR 0006 addendum); WebRTC video still later                                    |
@@ -319,3 +319,33 @@ inside the API container (`node dist/cli/main.js`); locally
 `pnpm brawzer <command>`. It starts no warm pool of its own. Certificates
 stay a shell script. Checked in an integration test that drives the same
 command function against the test app.
+
+## 24. Load test for the stream
+
+`infra/bench/stream-load.mjs --sessions N --seconds S [--engine bee|firefox]`
+starts N runtime containers with the orchestrator's hardening (read-only
+root, no capabilities, the session seccomp profile, 2 GB and 2 CPUs each),
+opens each agent's stream as a viewer would, acknowledging every frame,
+scrolls a long test page (`/long` on the test site) in every session at once
+at 30 wheel steps a second, and reports frame rate, bandwidth, frame size,
+CPU and memory per session. It is the figure the hosting choice needs: run
+it on a candidate runtime host. Measured here on 2026-11-09, on a developer
+machine (Apple silicon, Docker Desktop with 14 CPUs and 8 GB), 1280×800:
+
+| Engine  | Sessions | Frames/s each | Bandwidth each | CPU each (of one core) | Memory each |
+| ------- | -------- | ------------- | -------------- | ---------------------- | ----------- |
+| Bee     | 1        | 32            | 16.8 Mbit/s    | 50%                    | 275 MB      |
+| Bee     | 4        | 32            | 16.7 Mbit/s    | 43%                    | 272 MB      |
+| Bee     | 8        | 32            | 16.8 Mbit/s    | 60%                    | 272 MB      |
+| Firefox | 2        | 12            | 7.1 Mbit/s     | 39%                    | 660 MB      |
+
+What it means: on this machine the frame rate held at eight sessions, and
+each Bee session needed about half a core and under 300 MB, well inside the
+2 GB and 2 CPU limits. Bandwidth is the cost that grows fastest: about
+17 Mbit/s per session while scrolling a busy page (65 KB per frame at 32
+frames a second), so 8 sessions want about 134 Mbit/s from the host and the
+viewers. Frame acknowledgements already slow a session down for a slow
+viewer instead of queueing; adapting JPEG quality to the viewer's link is
+the next lever if hosts or viewers are short of bandwidth. Firefox's BiDi
+screenshots run at about 12 frames a second and use more memory, as ADR
+0017 expected. An idle page sends next to nothing.

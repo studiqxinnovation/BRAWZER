@@ -69,3 +69,12 @@ ahead, unlocked by the person's first click or keystroke, with a speaker
 control in the status bar. About 380 kbit/s while sound plays, nothing while
 it doesn't. WebRTC video (lower latency, hardware encode) remains a later
 step; the frame stream stays the production path.
+
+## Addendum (2026-11-09): measured under load
+
+`infra/bench/stream-load.mjs` measures sessions side by side on a host. On a
+developer machine, Bee kept 32 frames a second per session from one to eight
+sessions, at about half a core and 275 MB each, sending about 17 Mbit/s per
+session while scrolling a busy page; Firefox kept about 12 frames a second.
+Bandwidth, not CPU, is what step 3a costs most: adapting JPEG quality to the
+viewer's link is the first lever, before WebRTC's encoders.

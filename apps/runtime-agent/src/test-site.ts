@@ -111,6 +111,18 @@ function handleTestSiteRequest(req: http.IncomingMessage, res: http.ServerRespon
         ),
       );
       return;
+    case "/long": {
+      // For the stream load test: a long page whose look changes all the way down.
+      const sections = Array.from({ length: 300 }, (_value, index) => {
+        const hue = (index * 37) % 360;
+        return `<section style="padding:24px 32px;background:hsl(${String(hue)} 60% 92%)"><h2 style="margin:0 0 8px">Section ${String(index + 1)}</h2><p style="margin:0">Scrolling content for the stream load test. Each section has its own colour so every scroll step changes the picture, as a real page with images and text would.</p></section>`;
+      }).join("");
+      send(
+        200,
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Long page</title></head><body style="margin:0;font:18px/1.5 sans-serif">${sections}</body></html>`,
+      );
+      return;
+    }
     case "/article": {
       const paragraphs = Array.from(
         { length: 8 },

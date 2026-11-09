@@ -118,6 +118,14 @@ Only the wrapping of each data key changes; ciphertexts stay as they are.
 
 ### Capacity
 
+Measure a candidate runtime host before sizing it:
+`node infra/bench/stream-load.mjs --sessions 8 --seconds 30` (and
+`--engine firefox`) on the host, with the runtime image pulled. It reports
+frame rate, bandwidth, CPU and memory per session while every session
+scrolls at once; on a developer machine Bee held 32 frames a second at eight
+sessions with about half a core each, and needed about 17 Mbit/s each, so
+check the host's uplink as well as its CPUs (Phase 8 page, idea 24).
+
 `BROWSER_MAX_LIVE_SESSIONS` bounds the installation; a runtime host with
 8 GB and 4 cores runs about 3 sessions comfortably (2 GB and 2 CPUs each at
 most, less in practice). `BROWSER_WARM_POOL=n` keeps `n` container pairs
