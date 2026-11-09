@@ -57,7 +57,10 @@ minutes per account), as seats on a plan do.
   owner and admins add, change, test and remove them; every member can
   choose them for their own profiles but, as with their own proxies, never
   sees the credentials. Team proxies count against the owner's plan's proxy
-  limit, separately from anyone's own.
+  limit, separately from anyone's own. Their credentials are sealed to the
+  team (`proxy-credentials:team:<team>:<proxy>`), so they stay usable when
+  whoever added them leaves, and a proxy's name is unique per owner, person
+  or team.
 - **A Drive space.** Drive rows may belong to a team. Every member lists,
   previews, downloads, uploads to and organises the team's space; deleting
   is for the person who added a file, the owner and admins. The team space
@@ -68,8 +71,9 @@ minutes per account), as seats on a plan do.
 ### Leaving keeps what was shared
 
 When someone leaves or is removed, files they added to the team's Drive
-stay with the team (credited to the owner), and their profiles stop using
-the team's proxies (set back to no proxy). Deleting a team deletes its
+stay with the team (credited to the owner), their profiles stop using the
+team's proxies (set back to no proxy), and a cloud browser session of
+theirs that browses through one ends (the end reason `team_left`). Deleting a team deletes its
 proxies and its Drive space (objects included) and nothing anyone owns. An
 owner can't delete their account while others are in the team; a team they
 own alone goes with the account.
