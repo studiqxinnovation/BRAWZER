@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { browserEngineSchema } from "./profiles.ts";
 
 /**
  * Brawzer's extension catalogue: open-source extensions reviewed by the
@@ -102,7 +101,8 @@ export const extensionListSchema = z
   .refine((slugs) => new Set(slugs).size === slugs.length, { error: "Each extension once." });
 
 /** The catalogue entries an engine can run. */
-export function extensionsFor(engine: z.infer<typeof browserEngineSchema>): CatalogueEntry[] {
+// The engine is named, not imported from profiles.ts, which imports this module.
+export function extensionsFor(engine: "bee" | "firefox"): CatalogueEntry[] {
   return EXTENSION_CATALOGUE.filter((entry) => entry[engine] !== null);
 }
 

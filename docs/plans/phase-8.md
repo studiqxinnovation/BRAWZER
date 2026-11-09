@@ -22,8 +22,8 @@ plan already named. They are built in value order, one commit each, on the
 | 17  | Metrics                                                    | **Done** 2026-11-08: `GET /api/metrics`, Prometheus text, behind a token                                   |
 | 18  | Image rebuild on upstream advisories                       | Next                                                                                                       |
 | 20  | Usage emails and in-app nudges                             | **Done** 2026-11-09: hourly emails at 80% and 100%, warnings on Home                                       |
-| 21  | Trials and promotion codes                                 | Next                                                                                                       |
-| 22  | Admin: sessions and runtime view                           |                                                                                                            |
+| 21  | Trials and promotion codes                                 | **Done** 2026-11-09: `trialDays` per plan, once per account; promotion codes at checkout                   |
+| 22  | Admin: sessions and runtime view                           | Next                                                                                                       |
 | 23  | An operator CLI                                            |                                                                                                            |
 | 24  | Load test for the stream                                   |                                                                                                            |
 | 3   | Session hand-off between devices                           |                                                                                                            |
@@ -281,3 +281,16 @@ became a pointer to the Extensions page. Checked in the rule's unit test,
 an integration test that crosses each line and checks every email is sent
 once, and the navigation e2e. Usage emails are service messages about the
 account, like the security ones; there is no setting to turn them off.
+
+## 21. Trials and promotion codes
+
+A paid plan in `BILLING_PLANS` may name `trialDays` (1 to 90). Checkout then
+asks Stripe for its own trial (`trial_period_days`), but only for an
+account's first subscription: one that has had a subscription before pays
+from day one, so a trial can't be taken twice by cancelling. The billing
+overview says whether the account is still eligible, and the Account page
+offers "Try Plus free for 14 days" then, with a line saying Stripe charges
+nothing before the trial ends. Promotion codes were already accepted at
+checkout; they are made in Stripe's dashboard, and no code or price appears
+in Brawzer. Checked in the billing integration test (the trial in the first
+checkout, none in a checkout after a cancelled subscription).

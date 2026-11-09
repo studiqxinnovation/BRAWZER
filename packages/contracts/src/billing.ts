@@ -52,6 +52,8 @@ export const planSchema = z.object({
   limits: planLimitsSchema,
   /** Null for the free plan, and for paid plans until Stripe is configured. */
   price: planPriceSchema.nullable(),
+  /** Days of free trial a first subscription to this plan starts with, or null (Phase 8, idea 21). */
+  trialDays: z.number().int().min(1).max(90).nullable(),
 });
 
 /** Where the account's plan comes from. */
@@ -96,6 +98,8 @@ export const billingOverviewSchema = z.object({
   plans: z.array(planSchema),
   /** Whether checkout and the billing portal work on this installation. */
   billing: z.enum(["available", "unavailable"]),
+  /** True until the account has had a subscription: a plan's trial is offered once. */
+  trialEligible: z.boolean(),
 });
 
 export const publicPlansSchema = z.object({ plans: z.array(planSchema) });

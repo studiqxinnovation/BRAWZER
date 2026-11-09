@@ -17,6 +17,8 @@ export const planDefinitionSchema = z.object({
   /** The Stripe Price this plan is sold as; its amount is what people see. */
   stripePriceId: z.string().regex(/^price_[A-Za-z0-9_]+$/, "must be a Stripe price id"),
   limits: planLimitsSchema,
+  /** A first subscription starts with this many free days (Stripe's own trial); none when absent. */
+  trialDays: z.number().int().min(1).max(90).optional(),
 });
 
 export type PlanDefinition = z.infer<typeof planDefinitionSchema>;
@@ -26,6 +28,7 @@ export const FREE_PLAN: Plan = {
   name: "Free",
   limits: FREE_PLAN_LIMITS,
   price: null,
+  trialDays: null,
 };
 
 /** Parses `BILLING_PLANS`; an empty value means only the free plan exists. */
@@ -82,7 +85,13 @@ export class PlanCatalogue {
   describe(code: string, price: Plan["price"] = null): Plan {
     const definition = this.byCode.get(code);
     if (!definition) return FREE_PLAN;
-    return { code: definition.code, name: definition.name, limits: definition.limits, price };
+    return {
+      code: definition.code,
+      name: definition.name,
+      limits: definition.limits,
+      price,
+      trialDays: definition.trialDays ?? null,
+    };
   }
 
   /** The plan a Stripe price belongs to. */

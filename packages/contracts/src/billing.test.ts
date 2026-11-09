@@ -5,8 +5,13 @@ describe("plans", () => {
   it("has a free plan with today's limits and no price", () => {
     expect(planLimitsSchema.safeParse(FREE_PLAN_LIMITS).success).toBe(true);
     expect(
-      planSchema.safeParse({ code: "free", name: "Free", limits: FREE_PLAN_LIMITS, price: null })
-        .success,
+      planSchema.safeParse({
+        code: "free",
+        name: "Free",
+        limits: FREE_PLAN_LIMITS,
+        price: null,
+        trialDays: null,
+      }).success,
     ).toBe(true);
     expect(FREE_PLAN_LIMITS.browsingMinutesPerMonth).toBeNull();
   });

@@ -164,6 +164,7 @@ export class BillingService {
       subscription: subscription ? toSubscription(subscription) : null,
       plans,
       billing: this.available ? "available" : "unavailable",
+      trialEligible: !subscription?.stripeSubscriptionId,
     };
   }
 
@@ -222,6 +223,13 @@ export class BillingService {
     const plan = this.catalogue.definition(planCode);
     if (!plan) throw new ApiException("not_found", 404, "That plan doesn’t exist.");
     const customerId = await this.customerFor(auth.user);
+    // A trial is for a first subscription only: an account that has had one pays from day one.
+    const [previous] = await this.database.db
+      .select({ subscriptionId: schema.subscriptions.stripeSubscriptionId })
+      .from(schema.subscriptions)
+      .where(eq(schema.subscriptions.userId, auth.user.id))
+      .limit(1);
+    const trialDays = plan.trialDays && !previous?.subscriptionId ? plan.trialDays : null;
     const session = await this.stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
@@ -230,7 +238,10 @@ export class BillingService {
       cancel_url: `${this.config.webOrigin}/app/account?billing=cancelled`,
       client_reference_id: auth.user.id,
       metadata: { userId: auth.user.id, planCode: plan.code },
-      subscription_data: { metadata: { userId: auth.user.id, planCode: plan.code } },
+      subscription_data: {
+        metadata: { userId: auth.user.id, planCode: plan.code },
+        ...(trialDays ? { trial_period_days: trialDays } : {}),
+      },
       allow_promotion_codes: true,
     });
     if (!session.url) throw new Error("Stripe returned a checkout session without a URL");

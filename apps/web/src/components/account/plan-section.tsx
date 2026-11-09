@@ -98,6 +98,13 @@ export function PlanSection({ overview }: { overview: BillingOverview }) {
         </FormMessage>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
+          {overview.trialEligible &&
+            upgrades.some((plan) => plan.code !== "free" && plan.trialDays !== null) && (
+              <p className="basis-full text-footnote text-ink-secondary">
+                A trial is free: Stripe asks for a payment method and charges nothing until it ends.
+                Cancel before then from Invoices and payment method, and nothing is charged.
+              </p>
+            )}
           {upgrades.map((plan) => (
             <Button
               key={plan.code}
@@ -112,7 +119,9 @@ export function PlanSection({ overview }: { overview: BillingOverview }) {
             >
               {plan.code === "free"
                 ? "Cancel the subscription"
-                : `Move to ${plan.name}${plan.price ? ` · ${formatPrice(plan.price)}` : ""}`}
+                : plan.trialDays && overview.trialEligible
+                  ? `Try ${plan.name} free for ${String(plan.trialDays)} days`
+                  : `Move to ${plan.name}${plan.price ? ` · ${formatPrice(plan.price)}` : ""}`}
             </Button>
           ))}
           {overview.source === "stripe" && (
