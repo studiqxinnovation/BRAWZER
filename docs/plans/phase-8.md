@@ -8,7 +8,7 @@ plan already named. They are built in value order, one commit each, on the
 | #   | Idea                                                       | Status                                                                                                     |
 | --- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | 10  | Isolation checks as a CI job                               | **Done** 2026-11-08: `apps/api/test/isolation.integration.test.ts`; found and closed a DNS path (ADR 0014) |
-| 1   | Brawzer-drawn error pages                                  | Next                                                                                                       |
+| 1   | Brawzer-drawn error pages                                  | **Done** 2026-11-08: drawn by Brawzer over the viewport, both engines, with Brawzer's refusal codes        |
 | 2   | Bookmarks and history as Brawzer records                   | Not built: work on it was stopped on 2026-11-08 and is not resumed; idea 3 (which built on it) waits too   |
 | 5   | Find in page, zoom, reader mode                            | **Done** 2026-11-08: both engines, from the menu and Alt shortcuts                                         |
 | 4   | Clipboard with intent                                      | **Done** 2026-11-08: deliberate copy and paste, text only, each use recorded                               |
@@ -20,13 +20,13 @@ plan already named. They are built in value order, one commit each, on the
 | 15  | A scheduler across runtime hosts                           | **Done** 2026-11-08: `RUNTIME_HOSTS`, the host with the most room, remembered per session                  |
 | 16  | Relay back-pressure for downloads                          | **Done** 2026-11-08: a bounded buffer per transfer; the agent pauses while Drive catches up                |
 | 17  | Metrics                                                    | **Done** 2026-11-08: `GET /api/metrics`, Prometheus text, behind a token                                   |
-| 18  | Image rebuild on upstream advisories                       | Next                                                                                                       |
+| 18  | Image rebuild on upstream advisories                       | **Done** 2026-11-08: a daily check against Debian starts the release workflow                              |
 | 20  | Usage emails and in-app nudges                             | **Done** 2026-11-09: hourly emails at 80% and 100%, warnings on Home                                       |
 | 21  | Trials and promotion codes                                 | **Done** 2026-11-09: `trialDays` per plan, once per account; promotion codes at checkout                   |
 | 22  | Admin: sessions and runtime view                           | **Done** 2026-11-09: hosts, warm pool, live sessions, end one                                              |
 | 23  | An operator CLI                                            | **Done** 2026-11-09: `pnpm brawzer`, `node dist/cli/main.js` in production                                 |
 | 24  | Load test for the stream                                   | **Done** 2026-11-09: `infra/bench/stream-load.mjs`; bandwidth, not CPU, sets capacity                      |
-| 3   | Session hand-off between devices                           |                                                                                                            |
+| 3   | Session hand-off between devices                           | Waits on idea 2                                                                                            |
 | 6   | Pop-out work mode                                          | **Done** 2026-11-08: “Open in its own window”, and bringing a session back                                 |
 | 12  | Report a page                                              | Next                                                                                                       |
 | 19  | Team accounts                                              |                                                                                                            |
@@ -247,6 +247,20 @@ Stripe webhooks by result, warm pairs waiting, when maintenance last ran,
 and the running version. Nothing names a person, an address or a page.
 Checked in the registry's unit test and an integration test with and
 without the token.
+
+## 18. Image rebuild on upstream advisories
+
+The runtime image takes both engines from Debian's archive (`chromium` and
+`firefox-esr`), and the release workflow rebuilt
+it each Monday, so an engine security release could wait up to a week. The
+"Engine watch" workflow (`.github/workflows/engine-watch.yml`) runs daily:
+it pulls the `nightly` runtime image and asks the image's own package
+manager, with the security archive in its sources, for the installed and
+the candidate version of each engine. When either is behind, it starts the
+release workflow, so the release reaches `nightly` within a day. The
+comparison is `infra/scripts/engine-versions.mjs`, which runs locally too
+and exits 3 when a rebuild is due. Rolling the new images onto hosts stays
+an operator's step (the runbook's "Weekly rebuilds").
 
 ## Also built: sound, and extensions
 

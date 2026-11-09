@@ -92,6 +92,12 @@ security updates (Node, Debian's Chromium, nftables) reach the images. Roll
 them like a release when the changes matter (the Chromium version is in the
 image's `docker image inspect` labels and in each session's status bar).
 
+Between Mondays, the "Engine watch" workflow checks each day whether Debian
+ships a newer `chromium` or `firefox-esr` than `nightly` holds and, if so,
+starts the release workflow at once. To check by hand:
+`node infra/scripts/engine-versions.mjs ghcr.io/<owner>/brawzer-runtime:nightly`
+(exit 3 means a rebuild is due).
+
 ### Rotating the engine certificates
 
 1. `make-certs.sh <host>` on a safe machine; install the server files on the runtime host and restart its engine (sessions survive an engine restart; the API reconnects).
