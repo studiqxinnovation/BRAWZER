@@ -1,14 +1,17 @@
 import { connection } from "next/server";
+import { securityOverviewSchema } from "@brawzer/contracts";
 import { Logo } from "@brawzer/ui/brand";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AccountPanel, AccountPanelSkeleton } from "@/components/app-shell/account-panel";
+import { CommandPalette } from "@/components/app-shell/command-palette";
 import { ConfirmIdentityProvider } from "@/components/app-shell/confirm-identity";
 import { MobileNav } from "@/components/app-shell/mobile-nav";
 import { AppNav } from "@/components/app-shell/nav";
 import { SessionKeeperLoader } from "@/components/app-shell/session-keeper-loader";
 import { SignOutButton } from "@/components/app-shell/sign-out-button";
 import { SkipLink } from "@/components/site/site-chrome";
+import { serverGet } from "@/lib/server-api";
 import { getSession } from "@/lib/session";
 
 /**
@@ -24,6 +27,12 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const admin = getSession().then(
     (session) => session.kind === "ok" && session.data.account.role === "admin",
   );
+  // Shield's count of things to do, beside it in the navigation; nothing if it can't be read.
+  const counts = {
+    "/app/shield": serverGet("/security/overview", securityOverviewSchema).then((result) =>
+      result.kind === "ok" ? result.data.recommendations.length : 0,
+    ),
+  };
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
       <SkipLink />
@@ -35,7 +44,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           </Link>
         </div>
         <div className="flex-1 overflow-y-auto px-3 pb-4">
-          <AppNav label="Main" admin={admin} />
+          <AppNav label="Main" admin={admin} counts={counts} />
         </div>
         <div className="flex flex-col gap-1 border-t border-line p-3">
           <Suspense fallback={<AccountPanelSkeleton />}>
@@ -49,6 +58,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-surface px-3 lg:hidden">
           <MobileNav
             admin={admin}
+            counts={counts}
             account={
               <Suspense fallback={<AccountPanelSkeleton />}>
                 <AccountPanel />
@@ -68,6 +78,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       <Suspense fallback={null}>
         <SessionKeeperLoader />
       </Suspense>
+      <CommandPalette />
     </div>
   );
 }

@@ -541,3 +541,31 @@ on x86-64 and refused elsewhere), the isolation checks for Chrome, unit tests
 of the identity, the policies and the offer, and the browser e2e journeys
 (the launcher on desktop and phone, Firefox and Chrome side by side with the
 switcher, the taskbar and the passwords panel).
+
+## Also built: Home as a dashboard
+
+Asked for directly on 2026-11-10, from a design the person drew. Home now
+greets by the person's own clock and shows, from the account's own data:
+sessions today (counted in the person's timezone from start times the API
+gives for the last 48 hours), profiles against the plan, signed-in devices,
+and Drive storage; the browsers as a dock (one click opens one with its
+first free profile, or goes back to it if it's open); Shield (what's left to
+set up, an ad and tracker blocker switch that installs the catalogue's
+uBlock Origin into the first profile, two-factor, passkeys, failed
+sign-ins); the network (the first profile's proxy and its last test, the
+sign-in mode, site rules); and this month's browsing time by browser,
+counted as the plan counts it. A bell lists recent security history, and
+⌘K or Ctrl+K anywhere in the app opens a "Go to" search. Shield's count of
+things to do shows beside it in the navigation.
+
+Nothing on it is decoration: where the drawing had switches for features
+Brawzer doesn't have (tracker protection, HTTPS upgrade, fingerprint
+shield) or numbers it doesn't measure (bandwidth by browser), Home shows
+what Brawzer does have and measure instead. Building it found that a link
+drawn as a button got Base UI's button role; the shared Button now keeps a
+link a link.
+
+Checked by `apps/web/e2e/home.spec.ts` (every panel, the blocker switch
+reaching the profile, the bell, the search by click and by keyboard,
+opening a browser from the dock and going back to it, accessibility in both
+themes, phones), and the browser integration test (the activity figures).

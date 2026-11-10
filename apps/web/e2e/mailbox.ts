@@ -138,3 +138,14 @@ export async function signOut(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page).toHaveURL(/\/sign-in\?signed_out=1$/);
 }
+
+/** The page's own cookie is signed in as `email`: asked of the API, not read off the page. */
+export async function expectSignedInAs(page: Page, email: string): Promise<void> {
+  // The page's own origin: a passkey test signs in on localhost, not the base URL.
+  const response = await page.request.get(new URL("/api/v1/auth/session", page.url()).toString());
+  expect(response.status()).toBe(200);
+  expect(((await response.json()) as { account: { email: string } }).account.email).toBe(email);
+}
+
+/** Home's heading: a greeting by the person's own clock. */
+export const GREETING = /^(Good (morning|afternoon|evening)|Welcome back)/;

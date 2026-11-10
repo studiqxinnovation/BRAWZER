@@ -562,6 +562,10 @@ describe("cloud browser sessions", () => {
     expect(viewer.closeCode).toBe(STREAM_CLOSE_CODES.ended);
     const after = browserOverviewSchema.parse((await client.get("/browser")).json());
     expect(after.session).toBeNull();
+    // Home's numbers: when it browsed, never what.
+    expect(after.activity.recentStarts).toHaveLength(2);
+    expect(after.activity.lastEndedAt).not.toBeNull();
+    expect(after.activity.minutesThisMonth.map((entry) => entry.engine)).toEqual(["bee"]);
 
     expect(await h.eventTypes(email)).toEqual(
       expect.arrayContaining(["browser.session_started", "browser.session_ended"]),

@@ -1,6 +1,13 @@
 import { expect, type Page, test } from "@playwright/test";
 import { horizontalOverflow, wcagViolations } from "./accessibility";
-import { createConfirmedAccount, linkFromEmail, otherDevice, uniqueEmail } from "./mailbox";
+import {
+  createConfirmedAccount,
+  expectSignedInAs,
+  GREETING,
+  linkFromEmail,
+  otherDevice,
+  uniqueEmail,
+} from "./mailbox";
 
 // Requires the local services (`pnpm infra:up`): real API, Postgres, Valkey and Mailpit.
 
@@ -47,9 +54,13 @@ test.describe("account journey", () => {
     await passwordField(page).fill(PASSWORD);
     await page.getByRole("button", { name: "Confirm and sign in" }).click();
     await expect(page).toHaveURL(/\/app$/);
-    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
-    await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
-    await expect(page.getByRole("main").getByText(/Shared-computer mode/)).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
+    await expectSignedInAs(page, email);
+    await expect(
+      page
+        .getByRole("note", { name: "Shared-computer mode" })
+        .getByText("Shared-computer mode is on"),
+    ).toBeVisible();
 
     // Shared-computer default: HttpOnly, SameSite=Lax, gone when the browser closes.
     expect(await sessionCookie(page)).toMatchObject({
@@ -96,7 +107,10 @@ test.describe("account journey", () => {
     await keepSignedIn.check();
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page).toHaveURL(/\/app$/);
-    await expect(page.getByText(/Kept signed in on this device/)).toBeVisible();
+    await expect(page.getByRole("region", { name: "Network" })).toContainText(
+      "Kept on this device",
+    );
+    await expect(page.getByRole("note", { name: "Shared-computer mode" })).toHaveCount(0);
 
     const cookie = await sessionCookie(page);
     const twentyNineDays = Date.now() / 1000 + 29 * 24 * 60 * 60;
@@ -217,7 +231,7 @@ test.describe("accessibility of account pages", () => {
     await emailField(page).fill(email);
     await passwordField(page).fill(PASSWORD);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
     for (const colorScheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme });
       expect(await wcagViolations(page), `/app ${colorScheme}`).toEqual([]);

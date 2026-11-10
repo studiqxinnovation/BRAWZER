@@ -6,7 +6,6 @@ import {
   type BrowserSession,
   engineDetails,
   type Profile,
-  profileColors,
   type SavedTabs,
 } from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
@@ -29,8 +28,8 @@ import Link from "next/link";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { LocalDate } from "@/components/local-date";
 import { endBrowserSession, fetchBrowserOverview } from "@/lib/api/browser";
-import { createProfile } from "@/lib/api/profiles";
 import { hostOf } from "@/lib/browser/input";
+import { defaultProfile, makeProfileFor } from "@/lib/browser/launch";
 import { leaveSignedInArea } from "@/lib/session-channel";
 import { AppIconArt, EngineLogo } from "./engine-logo";
 import "./launcher.css";
@@ -43,15 +42,6 @@ export interface LaunchChoice {
 }
 
 type Proxies = readonly { id: string; name: string }[];
-
-/** What clicking a browser's icon opens: its first profile not open now, or a new one. */
-function defaultProfile(
-  engine: BrowserEngine,
-  profiles: readonly Profile[],
-  busy: ReadonlySet<string | null>,
-): Profile | null {
-  return profiles.find((profile) => profile.engine === engine && !busy.has(profile.id)) ?? null;
-}
 
 /** What opening a profile keeps, and where websites see it from, in a sentence or two. */
 function describeProfile(engine: BrowserEngine, profile: Profile | null, proxies: Proxies): string {
@@ -170,14 +160,8 @@ export function Launcher({
       return;
     }
     // A profile of its own for this browser: named after it, a colour not yet taken.
-    const details = engineDetails[engine];
     setCreating(engine);
-    const taken = new Set(profiles.map((profile) => profile.name.toLowerCase()));
-    let name: string = details.short;
-    for (let n = 2; taken.has(name.toLowerCase()); n += 1) name = `${details.short} ${String(n)}`;
-    const used = new Set(profiles.map((profile) => profile.color));
-    const color = profileColors.find((candidate) => !used.has(candidate)) ?? "indigo";
-    const created = await createProfile({ name, color, engine });
+    const created = await makeProfileFor(engine, profiles);
     setCreating(null);
     if (!created.ok) {
       setLaunching(null);

@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { horizontalOverflow, wcagViolations } from "./accessibility";
 import { expireIdentityConfirmation } from "./database";
-import { createConfirmedAccount, otherDevice, signIn, uniqueEmail } from "./mailbox";
+import { createConfirmedAccount, GREETING, otherDevice, signIn, uniqueEmail } from "./mailbox";
 
 // The signed-in app against the real API, Postgres, Valkey and Mailpit.
 
@@ -21,7 +21,7 @@ async function keeperReady(page: Page, mode: "shared" | "persistent" = "shared")
 }
 
 const appPages = [
-  { path: "/app", heading: "Home" },
+  { path: "/app", heading: GREETING },
   { path: "/app/browser", heading: "Browser" },
   { path: "/app/profiles", heading: "Profiles" },
   { path: "/app/drive", heading: "Drive" },
@@ -46,7 +46,7 @@ test.describe("navigation", () => {
     const nav = page.getByRole("navigation", { name: "Main" });
     await expect(nav.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
     // Home opens the cloud browser; no development notes are left on it.
-    await expect(page.getByRole("heading", { name: "Cloud browser" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
     await expect(page.getByRole("link", { name: "Start browsing" })).toHaveAttribute(
       "href",
       "/app/browser",

@@ -20,7 +20,9 @@ import {
   type DatabaseHandle,
   desc,
   eq,
+  gte,
   inArray,
+  isNotNull,
   ne,
   schema,
   sql,
@@ -196,12 +198,13 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
   // ── Reads ─────────────────────────────────────────────────────────────
 
   async overview(userId: string): Promise<BrowserOverview> {
-    const [live, runtime, savedTabs, limits, engines] = await Promise.all([
+    const [live, runtime, savedTabs, limits, engines, activity] = await Promise.all([
       this.liveSessions(userId),
       this.runtimeStatus(),
       this.history.savedTabsFor(userId),
       this.billing.limitsFor(userId),
       this.engines.offered(),
+      this.activity(userId),
     ]);
     const sessions = live.map(describe);
     return {
@@ -216,6 +219,59 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
       runtime,
       region: this.config.browser.region,
       savedTabs,
+      activity,
+    };
+  }
+
+  /**
+   * When the account browsed, never what: session starts in the last 48
+   * hours, the last end, and this month's minutes in each browser, counted
+   * as the plan counts them (BillingService.browsingMinutesThisMonth).
+   */
+  private async activity(userId: string, now = new Date()): Promise<BrowserOverview["activity"]> {
+    const since = new Date(now.getTime() - 48 * 60 * 60_000);
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const sessions = schema.browserSessions;
+    const [starts, ended, byEngine] = await Promise.all([
+      this.database.db
+        .select({ startedAt: sessions.startedAt })
+        .from(sessions)
+        .where(and(eq(sessions.userId, userId), gte(sessions.startedAt, since)))
+        .orderBy(desc(sessions.startedAt))
+        .limit(100),
+      this.database.db
+        .select({ endedAt: sessions.endedAt })
+        .from(sessions)
+        .where(and(eq(sessions.userId, userId), isNotNull(sessions.endedAt)))
+        .orderBy(desc(sessions.endedAt))
+        .limit(1),
+      this.database.db
+        .select({
+          engine: sessions.engine,
+          // Sums come back as strings from PostgreSQL.
+          seconds: sql<
+            string | number
+          >`coalesce(sum(extract(epoch from (coalesce(${sessions.endedAt}, now()) - greatest(${sessions.startedAt}, ${monthStart})))), 0)`,
+        })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.userId, userId),
+            gte(sql`coalesce(${sessions.endedAt}, now())`, monthStart),
+            isNotNull(sessions.startedAt),
+          ),
+        )
+        .groupBy(sessions.engine),
+    ]);
+    return {
+      recentStarts: starts.flatMap((row) => (row.startedAt ? [row.startedAt.toISOString()] : [])),
+      lastEndedAt: ended[0]?.endedAt?.toISOString() ?? null,
+      minutesThisMonth: byEngine
+        .map((row) => ({
+          engine: row.engine,
+          minutes: Math.max(0, Math.round(Number(row.seconds) / 60)),
+        }))
+        .sort((a, b) => b.minutes - a.minutes),
     };
   }
 

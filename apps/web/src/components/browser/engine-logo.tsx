@@ -85,6 +85,19 @@ export function BeeArt({ size, className }: { size: number | string; className?:
 const HONEY =
   "rounded-[24%] bg-[linear-gradient(150deg,#fbe27e_0%,#f4c55a_48%,#e9a43c_100%)] shadow-[inset_0_1px_0_rgb(255_255_255/0.55),inset_0_-1px_0_rgb(160_90_0/0.25)]";
 
+/** Bee's honey tile at any size: Bee Browser's icon, and Brawzer's in the app. */
+export function BeeTile({ size, className }: { size: number; className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("inline-grid shrink-0 place-items-center", HONEY, className)}
+      style={{ width: size, height: size }}
+    >
+      <BeeArt size={Math.round(size * 0.86)} />
+    </span>
+  );
+}
+
 /** An engine's logo, sized for chips (sm), lists (md) and cards (lg). */
 export function EngineLogo({
   engine,
@@ -96,17 +109,7 @@ export function EngineLogo({
   className?: string;
 }) {
   const pixels = size === "sm" ? 18 : size === "md" ? 26 : 44;
-  if (engine === "bee") {
-    return (
-      <span
-        aria-hidden="true"
-        className={cn("inline-grid shrink-0 place-items-center", HONEY, className)}
-        style={{ width: pixels, height: pixels }}
-      >
-        <BeeArt size={Math.round(pixels * 0.86)} />
-      </span>
-    );
-  }
+  if (engine === "bee") return <BeeTile size={pixels} {...(className ? { className } : {})} />;
   return (
     // A fixed-size local file: next/image's optimiser has nothing to add here.
     // eslint-disable-next-line @next/next/no-img-element

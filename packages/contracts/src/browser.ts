@@ -87,6 +87,16 @@ export const browserOverviewSchema = z.object({
   region: z.string().max(80).nullable(),
   /** Tabs profiles' last sessions left open, to continue from (Phase 8, idea 3; ADR 0020). */
   savedTabs: z.array(savedTabsSchema),
+  /** When the account browsed, never what: for Home's counts. */
+  activity: z.object({
+    /** When sessions started in the last 48 hours, newest first: the page counts its own "today". */
+    recentStarts: z.array(z.iso.datetime()).max(100),
+    lastEndedAt: z.iso.datetime().nullable(),
+    /** Minutes in each browser this calendar month (UTC), counted as the plan counts them. */
+    minutesThisMonth: z.array(
+      z.object({ engine: browserEngineSchema, minutes: z.number().int().nonnegative() }),
+    ),
+  }),
 });
 
 export const startBrowserSessionRequestSchema = z.object({

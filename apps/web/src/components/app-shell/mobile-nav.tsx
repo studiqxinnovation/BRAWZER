@@ -1,19 +1,21 @@
 "use client";
 
-import { Logo } from "@brawzer/ui/brand";
 import { Button } from "@brawzer/ui/components/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@brawzer/ui/components/sheet";
 import { Menu } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { Logo } from "@brawzer/ui/brand";
 import { AppNav } from "./nav";
 
 /** Phones and small windows: the same navigation in a drawer. */
 export function MobileNav({
   account,
   admin,
+  counts,
 }: {
   account: ReactNode;
   admin?: Promise<boolean> | undefined;
+  counts?: Readonly<Record<string, Promise<number>>> | undefined;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -31,6 +33,7 @@ export function MobileNav({
           <AppNav
             label="Brawzer"
             admin={admin}
+            counts={counts}
             onNavigate={() => {
               setOpen(false);
             }}

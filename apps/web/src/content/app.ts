@@ -31,10 +31,10 @@ export interface AppNavGroup {
 
 /** The signed-in navigation. Module names match the Product page. */
 export const appNav: readonly AppNavGroup[] = [
-  { items: [{ href: "/app", label: "Home", icon: House, status: "available" }] },
   {
     label: "Browse",
     items: [
+      { href: "/app", label: "Home", icon: House, status: "available" },
       { href: "/app/browser", label: "Browser", icon: AppWindow, status: "available" },
       { href: "/app/profiles", label: "Profiles", icon: Layers, status: "available" },
       { href: "/app/drive", label: "Drive", icon: HardDriveDownload, status: "available" },
@@ -51,6 +51,7 @@ export const appNav: readonly AppNavGroup[] = [
     ],
   },
   {
+    label: "Account",
     items: [
       { href: "/app/team", label: "Team", icon: Users, status: "available" },
       { href: "/app/account", label: "Account", icon: CircleUserRound, status: "available" },
