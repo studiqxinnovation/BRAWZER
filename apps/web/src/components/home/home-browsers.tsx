@@ -6,16 +6,27 @@ import {
   engineDetails,
   type Profile,
 } from "@brawzer/contracts";
-import { useToast } from "@brawzer/ui/components/toast";
 import { cn } from "@brawzer/ui/lib/cn";
-import type { Route } from "next";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { type MouseEvent, useRef } from "react";
 import { AppIconArt } from "@/components/browser/engine-logo";
-import { startBrowserSession } from "@/lib/api/browser";
-import { defaultProfile, makeProfileFor } from "@/lib/browser/launch";
-import { leaveSignedInArea } from "@/lib/session-channel";
+import { useLaunchBrowser } from "@/lib/browser/use-launch";
 import "@/components/browser/launcher.css";
+
+const SPARKS = ["#3b82f6", "#a78bfa", "#34d399", "#fbbf24"] as const;
+const stillness = () =>
+  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** A ring that spreads from a tile as it's pressed. */
+function ripple(tile: HTMLElement) {
+  if (stillness()) return;
+  const ring = document.createElement("span");
+  ring.className = "hm-ripple";
+  ring.setAttribute("aria-hidden", "true");
+  tile.append(ring);
+  setTimeout(() => {
+    ring.remove();
+  }, 560);
+}
 
 /**
  * Home's row of browsers, as a dock: one click opens a browser with its
@@ -35,48 +46,41 @@ export function HomeBrowsers({
   limit: number;
   available: boolean;
 }) {
-  const router = useRouter();
-  const toast = useToast();
-  const [opening, setOpening] = useState<BrowserEngine | null>(null);
-  const busy = new Set(sessions.map((session) => session.profileId));
+  const { opening, launch } = useLaunchBrowser();
+  const lastSpark = useRef(0);
   const full = sessions.length >= limit;
 
-  async function open(engine: BrowserEngine) {
-    const running = sessions.find((session) => session.engine === engine);
-    if (running) {
-      router.push(`/app/browser?session=${running.id}` as Route);
-      return;
+  /** A few sparks where the pointer comes in: the dock noticing it. */
+  function sparkle(event: MouseEvent<HTMLButtonElement>) {
+    const now = Date.now();
+    if (stillness() || now - lastSpark.current < 300) return;
+    lastSpark.current = now;
+    const tile = event.currentTarget.parentElement;
+    if (!tile) return;
+    const box = tile.getBoundingClientRect();
+    for (let index = 0; index < 5; index += 1) {
+      const spark = document.createElement("span");
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 20 + Math.random() * 30;
+      const size = 3 + Math.random() * 4;
+      spark.className = "hm-spark";
+      spark.setAttribute("aria-hidden", "true");
+      spark.style.left = `${String(event.clientX - box.left)}px`;
+      spark.style.top = `${String(event.clientY - box.top)}px`;
+      spark.style.width = `${String(size)}px`;
+      spark.style.height = `${String(size)}px`;
+      spark.style.background = SPARKS[index % SPARKS.length] ?? SPARKS[0];
+      spark.style.setProperty("--hm-x", `${String(Math.cos(angle) * distance)}px`);
+      spark.style.setProperty("--hm-y", `${String(Math.sin(angle) * distance - 30)}px`);
+      spark.style.animationDelay = `${String(index * 60)}ms`;
+      tile.append(spark);
+      setTimeout(
+        () => {
+          spark.remove();
+        },
+        800 + index * 60,
+      );
     }
-    setOpening(engine);
-    let profile = defaultProfile(engine, profiles, busy);
-    if (!profile) {
-      const created = await makeProfileFor(engine, profiles);
-      if (!created.ok) {
-        setOpening(null);
-        if (created.status === 401) leaveSignedInArea("expired");
-        else
-          toast.add({
-            type: "error",
-            title: "The profile wasn’t made",
-            description: created.error.message,
-          });
-        return;
-      }
-      profile = created.data;
-    }
-    const started = await startBrowserSession({ profileId: profile.id });
-    if (!started.ok) {
-      setOpening(null);
-      if (started.status === 401) leaveSignedInArea("expired");
-      else
-        toast.add({
-          type: "error",
-          title: `${engineDetails[engine].short} couldn’t open`,
-          description: started.error.message,
-        });
-      return;
-    }
-    router.push(`/app/browser?session=${started.data.id}` as Route);
   }
 
   return (
@@ -98,15 +102,21 @@ export function HomeBrowsers({
         return (
           <li
             key={engine}
-            className="bl-app hm-app"
+            className="bl-app hm-app hm-tile"
             data-launching={opening === engine || undefined}
+            data-disabled={disabled || undefined}
           >
             <button
               type="button"
               className="bl-app-button"
               aria-label={running ? `Go back to ${details.short}` : `Open ${details.short}`}
               disabled={disabled}
-              onClick={() => void open(engine)}
+              onMouseEnter={sparkle}
+              onClick={(event) => {
+                const tile = event.currentTarget.parentElement;
+                if (tile) ripple(tile);
+                void launch(engine, { profiles, sessions });
+              }}
             >
               <AppIconArt engine={engine} />
               <span className="bl-label">{details.short}</span>

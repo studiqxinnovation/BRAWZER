@@ -19,6 +19,10 @@ test.describe("home", () => {
     baseURL,
     isMobile,
   }) => {
+    // A returning visitor: nothing new arrives on its own, so the audits see a still page.
+    await page.addInitScript(() => {
+      localStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
+    });
     await signedIn(page, baseURL, "home");
     await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
     await expect(page.getByText("Cloud is running · only pixels reach this device")).toBeVisible();
@@ -28,8 +32,8 @@ test.describe("home", () => {
 
     // The numbers, each from the account itself.
     await expect(page.getByRole("region", { name: "Sessions today" })).toContainText("None yet");
-    await expect(page.getByRole("region", { name: "Profiles" })).toContainText(
-      "Of 10 on your plan",
+    await expect(page.getByRole("region", { name: "Active profiles" })).toContainText(
+      "“Personal” is the default · of 10",
     );
     await expect(page.getByRole("region", { name: "Devices signed in" })).toContainText(
       "Only this device",
@@ -66,7 +70,7 @@ test.describe("home", () => {
     const network = page.getByRole("region", { name: "Network" });
     await expect(network).toContainText("Direct");
     await expect(network).toContainText("Shared computer");
-    await expect(page.getByRole("region", { name: "This month" })).toContainText(
+    await expect(page.getByRole("region", { name: "Usage" })).toContainText(
       "No browsing yet this month.",
     );
 
@@ -77,15 +81,31 @@ test.describe("home", () => {
     await page.emulateMedia({ colorScheme: "light" });
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
 
-    // The bell: what happened lately, from the security history.
-    await page.getByRole("button", { name: /^Notifications/ }).click();
-    await expect(page.getByText("Recent activity")).toBeVisible();
-    await expect(page.getByRole("link", { name: "See all activity in Shield" })).toBeVisible();
+    // The bell: what happened lately, sliding in as notices; each can be dismissed.
+    const notices = page.getByRole("region", { name: "Recent notices" });
+    const bell = page.getByRole("button", { name: /^Notifications/ });
+    await expect(bell).toHaveAccessibleName("Notifications");
+    await bell.click();
+    await expect(bell).toHaveAttribute("aria-expanded", "true");
+    await expect(notices.getByText("Shield · Security").first()).toBeVisible();
+    const cards = notices.getByRole("listitem");
+    await expect(cards.last()).toHaveCSS("opacity", "1");
+    expect(await wcagViolations(page)).toEqual([]);
+    const before = await cards.count();
+    await notices
+      .getByRole("button", { name: /^Dismiss / })
+      .first()
+      .click();
+    await expect(cards).toHaveCount(before - 1);
+    await expect(notices.getByRole("link", { name: "See all activity in Shield" })).toBeVisible();
     await page.keyboard.press("Escape");
+    await expect(bell).toHaveAttribute("aria-expanded", "false");
 
     // Search: any page, by typing.
     await page.getByRole("button", { name: "Search Brawzer" }).click();
-    const search = page.getByRole("combobox", { name: "Go to a page, or open a browser" });
+    const search = page.getByRole("combobox", { name: "Launch a browser or search" });
+    // The browsers come first, each ready to launch.
+    await expect(page.getByRole("option").first()).toHaveAccessibleName(/^Bee Browser\s*Launch$/);
     await search.fill("site");
     await expect(page.getByRole("option", { name: /Site rules/ })).toHaveAttribute(
       "aria-selected",
@@ -137,4 +157,18 @@ test.describe("home", () => {
       timeout: 30_000,
     });
   });
+});
+
+test("new notices arrive on their own, counted on the bell", async ({ page, baseURL }) => {
+  await signedIn(page, baseURL, "home-notices");
+  const bell = page.getByRole("button", { name: /^Notifications/ });
+  await expect(bell).toHaveAccessibleName(/^Notifications, \d new$/);
+  await expect(bell).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("region", { name: "Recent notices" })).toContainText(
+    "Shield · Security",
+  );
+  // They step back after a few seconds, and count as seen next time.
+  await expect(bell).toHaveAttribute("aria-expanded", "false", { timeout: 10_000 });
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Notifications", exact: true })).toBeVisible();
 });

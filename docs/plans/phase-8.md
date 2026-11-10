@@ -569,3 +569,20 @@ Checked by `apps/web/e2e/home.spec.ts` (every panel, the blocker switch
 reaching the profile, the bell, the search by click and by keyboard,
 opening a browser from the dock and going back to it, accessibility in both
 themes, phones), and the browser integration test (the activity figures).
+
+**Then, from the person's own HTML prototype (2026-11-10):** on wide screens
+the app now sits in a rounded window over a wallpaper (starry in dark), under
+a menu bar with Brawzer's menus (File, View, Sessions, Shield, Help; every
+item does what it says, and the arrow keys move between them), the clock and
+a light or dark switch. The palette in the app is cooler, like the
+wallpaper; text keeps its contrast (the accessibility audit of every page
+passes in both themes). ⌘K is quick launch: the browsers first, with their
+logos (choosing one opens it, or goes back to it), then the pages. New
+notices slide in from the right on arrival, counted on the bell, each
+dismissable. Tiles on Home lift and glow under the pointer, ripple when
+pressed and give off a few sparks; figures count up; the browser panel's
+title says how long ago one was launched, ticking. Motion stops under
+"reduce motion". The prototype's switches for features Brawzer doesn't have
+(tracker protection, HTTPS upgrade, fingerprint shield) and its invented
+figures (bandwidth by browser, trackers blocked) were not copied; Home shows
+what Brawzer does and measures.

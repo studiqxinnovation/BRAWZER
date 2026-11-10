@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AccountPanel, AccountPanelSkeleton } from "@/components/app-shell/account-panel";
 import { CommandPalette } from "@/components/app-shell/command-palette";
+import { MenuBar } from "@/components/app-shell/menu-bar";
+import "@/components/app-shell/desktop.css";
 import { ConfirmIdentityProvider } from "@/components/app-shell/confirm-identity";
 import { MobileNav } from "@/components/app-shell/mobile-nav";
 import { AppNav } from "@/components/app-shell/nav";
@@ -34,45 +36,51 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     ),
   };
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
+    <div className="ad-shell min-h-dvh lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden">
       <SkipLink />
+      <MenuBar />
 
-      <aside className="hidden border-r border-line bg-surface lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col">
-        <div className="px-5 pt-5 pb-6">
-          <Link href="/app" aria-label="Brawzer home" className="inline-flex rounded-md">
-            <Logo size={18} />
-          </Link>
-        </div>
-        <div className="flex-1 overflow-y-auto px-3 pb-4">
-          <AppNav label="Main" admin={admin} counts={counts} />
-        </div>
-        <div className="flex flex-col gap-1 border-t border-line p-3">
-          <Suspense fallback={<AccountPanelSkeleton />}>
-            <AccountPanel />
-          </Suspense>
-          <SignOutButton className="justify-start px-2.5" />
-        </div>
-      </aside>
+      <div className="ad-window lg:grid lg:min-h-0 lg:flex-1 lg:grid-cols-[15.5rem_minmax(0,1fr)]">
+        <aside className="ad-sidebar hidden border-r border-line lg:flex lg:min-h-0 lg:flex-col">
+          <div className="px-5 pt-5 pb-6">
+            <Link href="/app" aria-label="Brawzer home" className="inline-flex rounded-md">
+              <Logo size={18} />
+            </Link>
+          </div>
+          <div className="flex-1 overflow-y-auto px-3 pb-4">
+            <AppNav label="Main" admin={admin} counts={counts} />
+          </div>
+          <div className="flex flex-col gap-1 border-t border-line p-3">
+            <Suspense fallback={<AccountPanelSkeleton />}>
+              <AccountPanel />
+            </Suspense>
+            <SignOutButton className="justify-start px-2.5" />
+          </div>
+        </aside>
 
-      <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-surface px-3 lg:hidden">
-          <MobileNav
-            admin={admin}
-            counts={counts}
-            account={
-              <Suspense fallback={<AccountPanelSkeleton />}>
-                <AccountPanel />
-              </Suspense>
-            }
-          />
-          <Link href="/app" aria-label="Brawzer home" className="inline-flex rounded-md">
-            <Logo size={18} />
-          </Link>
-          <SignOutButton className="ml-auto" compact />
-        </header>
-        <main id="main-content" className="flex-1">
-          <ConfirmIdentityProvider>{children}</ConfirmIdentityProvider>
-        </main>
+        <div
+          data-app-scroll=""
+          className="flex min-w-0 flex-col lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain"
+        >
+          <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-surface px-3 lg:hidden">
+            <MobileNav
+              admin={admin}
+              counts={counts}
+              account={
+                <Suspense fallback={<AccountPanelSkeleton />}>
+                  <AccountPanel />
+                </Suspense>
+              }
+            />
+            <Link href="/app" aria-label="Brawzer home" className="inline-flex rounded-md">
+              <Logo size={18} />
+            </Link>
+            <SignOutButton className="ml-auto" compact />
+          </header>
+          <main id="main-content" className="flex-1 lg:flex lg:min-h-0 lg:flex-col">
+            <ConfirmIdentityProvider>{children}</ConfirmIdentityProvider>
+          </main>
+        </div>
       </div>
 
       <Suspense fallback={null}>

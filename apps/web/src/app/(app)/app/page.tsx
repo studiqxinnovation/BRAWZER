@@ -25,9 +25,11 @@ import { Suspense } from "react";
 import { Unavailable } from "@/components/app-shell/page";
 import { textLinkClassName } from "@/components/auth/auth-ui";
 import { AdBlockerSwitch } from "@/components/home/ad-blocker-switch";
+import { CountUp } from "@/components/home/count-up";
 import { Greeting } from "@/components/home/greeting";
-import { Notifications, SearchButton } from "@/components/home/header-actions";
+import { type Notice, Notifications, SearchButton } from "@/components/home/header-actions";
 import { HomeBrowsers } from "@/components/home/home-browsers";
+import { LaunchedAgo } from "@/components/home/launched-ago";
 import { SessionsToday } from "@/components/home/sessions-today";
 import "@/components/home/home.css";
 import { describeEvent } from "@/content/app";
@@ -96,6 +98,21 @@ function warningText(warning: UsageWarning): { title: string; body: string } {
   }
 }
 
+/** Where a security-history entry comes from, as a notification names it. */
+function noticeSource(type: string, tone: string): Pick<Notice, "source" | "emoji" | "tone"> {
+  if (type.startsWith("browser."))
+    return { source: "Brawzer · Sessions", emoji: "▶️", tone: "success" };
+  if (type.startsWith("drive.")) return { source: "Brawzer · Drive", emoji: "📁", tone: "accent" };
+  if (type.startsWith("profile"))
+    return { source: "Brawzer · Profiles", emoji: "👤", tone: "accent" };
+  if (type.startsWith("team.")) return { source: "Brawzer · Team", emoji: "👥", tone: "accent" };
+  return {
+    source: "Shield · Security",
+    emoji: tone === "warning" || tone === "danger" ? "⚠️" : "🔔",
+    tone: tone === "success" ? "success" : "danger",
+  };
+}
+
 /** "45 min", "2 h 5 min". */
 function duration(minutes: number): string {
   if (minutes < 60) return `${String(minutes)} min`;
@@ -116,7 +133,7 @@ function StatCard({
   children: ReactNode;
 }) {
   return (
-    <section aria-label={label} className="hm-card hm-rise flex flex-col gap-3 p-4 sm:p-5">
+    <section aria-label={label} className="hm-card hm-rise hm-lift flex flex-col gap-3 p-4 sm:p-5">
       <h2 className="hm-eyebrow">{label}</h2>
       <p
         className={cn(
@@ -133,12 +150,15 @@ function StatCard({
 
 function Panel({
   title,
+  heading,
   emoji,
   link,
   className,
   children,
 }: {
   title: string;
+  /** What the heading shows, when it's more than the title. */
+  heading?: ReactNode;
   emoji: string;
   link?: { href: Route; label: string };
   className?: string;
@@ -151,7 +171,7 @@ function Panel({
           <span aria-hidden="true" className="hm-emoji">
             {emoji}
           </span>
-          {title}
+          {heading ?? title}
         </h2>
         {link && (
           <Link href={link.href} className="hm-link">
@@ -170,7 +190,7 @@ async function Dashboard() {
     await Promise.all([
       getSession(),
       serverGet("/auth/sessions", deviceSessionListSchema),
-      serverGet("/security/events?limit=5", securityEventPageSchema),
+      serverGet("/security/events?limit=3", securityEventPageSchema),
       serverGet("/browser", browserOverviewSchema),
       serverGet("/billing", billingOverviewSchema),
       serverGet("/security/overview", securityOverviewSchema),
@@ -217,13 +237,18 @@ async function Dashboard() {
   const blocked = rules.filter((rule) => rule.kind === "block").length;
   const allowed = rules.length - blocked;
   const issues = shield?.recommendations.length ?? 0;
-  const notices =
+  const notices: Notice[] =
     activity.kind === "ok"
-      ? activity.data.events.map((event) => ({
-          id: event.id,
-          title: describeEvent(event).title,
-          when: timeAgo(event.occurredAt, now),
-        }))
+      ? activity.data.events.map((event) => {
+          const { title, tone } = describeEvent(event);
+          return {
+            id: event.id,
+            ...noticeSource(event.type, tone),
+            title,
+            when: timeAgo(event.occurredAt, now),
+            at: event.occurredAt,
+          };
+        })
       : [];
 
   return (
@@ -243,15 +268,10 @@ async function Dashboard() {
         </div>
         <div className="flex items-center gap-1.5">
           <SearchButton />
-          <Notifications
-            notices={notices}
-            attention={
-              (shield?.recentFailedAttempts ?? 0) > 0 || (shield?.newDeviceSignIns.length ?? 0) > 0
-            }
-          />
+          <Notifications notices={notices} />
           <Button
             variant="primary"
-            className="ml-1.5 h-10 rounded-xl px-4"
+            className="ml-1.5 h-10 rounded-xl px-4 shadow-[0_0_16px_color-mix(in_oklab,var(--color-accent)_45%,transparent)] hover:-translate-y-px"
             render={<Link href="/app/browser" />}
           >
             <Play aria-hidden="true" className="fill-current" />
@@ -274,8 +294,8 @@ async function Dashboard() {
               {String(current.idleTimeoutMinutes)} minutes without activity.
             </p>
           </div>
-          <Link href="/app/sessions" className="hm-link text-danger max-sm:ml-9">
-            Review your devices
+          <Link href="/app/shield" className="hm-link text-danger max-sm:ml-9">
+            Review in Shield
             <ArrowRight aria-hidden="true" className="size-3.5" />
           </Link>
         </div>
@@ -315,15 +335,24 @@ async function Dashboard() {
                 : "None yet"}
           </p>
         </StatCard>
-        <StatCard label="Profiles" tone="accent" figure={String(profileList.length)}>
+        <StatCard
+          label="Active profiles"
+          tone="accent"
+          figure={<CountUp value={profileList.length} />}
+        >
           <p className="flex items-center gap-1.5">
             <span aria-hidden="true" className="hm-dot text-accent-ink" />
-            {plan ? `Of ${String(plan.plan.limits.profiles)} on your plan` : "Separate browsers"}
+            {firstProfile
+              ? `“${firstProfile.name}” is the default · ${plan ? `of ${String(plan.plan.limits.profiles)}` : ""}`.replace(
+                  / · $/,
+                  "",
+                )
+              : "None yet"}
           </p>
         </StatCard>
         <StatCard
           label="Devices signed in"
-          figure={deviceCount === null ? "–" : String(deviceCount)}
+          figure={deviceCount === null ? "–" : <CountUp value={deviceCount} />}
         >
           <p className="flex items-center gap-1.5">
             <span aria-hidden="true" className="hm-dot text-success" />
@@ -366,8 +395,9 @@ async function Dashboard() {
 
       <Panel
         title="Your browsers"
+        heading={<LaunchedAgo since={overview?.activity.recentStarts[0] ?? null} />}
         emoji="🖥️"
-        link={{ href: "/app/browser?new=1" as Route, label: "Open launcher" }}
+        link={{ href: "/app/browser?new=1" as Route, label: "Manage" }}
       >
         <p className="px-5 pt-4 text-footnote text-ink-secondary">
           {live.length > 0
@@ -489,9 +519,9 @@ async function Dashboard() {
           </div>
         </Panel>
 
-        <Panel title="This month" emoji="📊" link={{ href: "/app/account", label: "Your plan" }}>
+        <Panel title="Usage" emoji="📊" link={{ href: "/app/account", label: "Report" }}>
           <div className="flex flex-1 flex-col gap-4 px-5 py-4">
-            <h3 className="hm-eyebrow">Browsing time by browser</h3>
+            <h3 className="hm-eyebrow">Browsing time by browser, this month</h3>
             {minutes.length > 0 ? (
               <ul aria-label="Browsing time by browser" className="flex flex-col gap-3">
                 {minutes.map((entry) => (

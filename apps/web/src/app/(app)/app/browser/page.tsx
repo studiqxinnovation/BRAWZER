@@ -55,7 +55,7 @@ async function Workspace({ searchParams }: Pick<PageProps<"/app/browser">, "sear
 /** Full-height: the streamed page takes everything below the app's header. */
 export default function BrowserPage({ searchParams }: PageProps<"/app/browser">) {
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col lg:h-dvh">
+    <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col lg:h-auto lg:flex-1">
       <Suspense fallback={<Skeleton className="m-5 h-64 rounded-xl" />}>
         <Workspace searchParams={searchParams} />
       </Suspense>

@@ -1,13 +1,16 @@
 "use client";
 
+import { type BrowserEngine, type BrowserSession, engineDetails } from "@brawzer/contracts";
 import { Dialog, DialogContent, DialogTitle } from "@brawzer/ui/components/dialog";
 import { Kbd } from "@brawzer/ui/components/kbd";
 import { cn } from "@brawzer/ui/lib/cn";
-import { AppWindow, CornerDownLeft, Search } from "lucide-react";
-import type { Route } from "next";
+import { Search } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type ComponentType, type KeyboardEvent, useEffect, useId, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useState } from "react";
+import { EngineLogo } from "@/components/browser/engine-logo";
 import { appNav } from "@/content/app";
+import { fetchBrowserOverview } from "@/lib/api/browser";
+import { useLaunchBrowser } from "@/lib/browser/use-launch";
 
 const OPEN_EVENT = "brawzer:open-command-palette";
 
@@ -17,45 +20,67 @@ export function openCommandPalette() {
 }
 
 interface Command {
+  key: string;
   label: string;
+  /** Shown on the right, as the design has it: "Launch", "Security settings". */
   hint: string;
-  href: string;
-  icon: ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
+  /** Matched by typing as well as the label. */
+  words: string;
+  icon: ReactNode;
+  run: () => void;
 }
 
-const COMMANDS: readonly Command[] = [
-  {
-    label: "Open a browser",
-    hint: "Bee, Chrome, Firefox and the others",
-    href: "/app/browser?new=1",
-    icon: AppWindow,
-  },
-  ...appNav.flatMap((group) =>
-    group.items.map((item) => ({
-      label: item.label,
-      hint: group.label ? `Go to ${item.label}, in ${group.label}` : `Go to ${item.label}`,
-      href: item.href,
-      icon: item.icon,
-    })),
-  ),
-];
+const PAGE_HINTS: Record<string, string> = {
+  "/app": "Your dashboard",
+  "/app/browser": "Every browser",
+  "/app/profiles": "Manage profiles",
+  "/app/drive": "Your files",
+  "/app/proxy": "Proxy settings",
+  "/app/extensions": "Add-ons",
+  "/app/shield": "Security settings",
+  "/app/site-rules": "Allow and block",
+  "/app/sessions": "Signed-in devices",
+  "/app/team": "People",
+  "/app/account": "Plan and sign-in",
+};
+
+/** A page's icon in a small tile, beside the browsers' logos. */
+function PageIcon({ icon: Icon }: { icon: (typeof appNav)[number]["items"][number]["icon"] }) {
+  return (
+    <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-hover">
+      <Icon aria-hidden="true" className="size-4 text-ink-secondary" />
+    </span>
+  );
+}
 
 /**
- * "Go to": every page of the app and opening a browser, found by typing.
- * ⌘K or Ctrl+K anywhere in the app opens it.
+ * Quick launch: the browsers first (choosing one opens it, or goes back to it
+ * if it's open), then every page of the app, found by typing. ⌘K or Ctrl+K
+ * anywhere in the app opens it.
  */
 export function CommandPalette() {
   const router = useRouter();
   const listId = useId();
+  const { launch } = useLaunchBrowser();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  const [browsers, setBrowsers] = useState<{
+    engines: readonly BrowserEngine[];
+    sessions: readonly BrowserSession[];
+  } | null>(null);
 
   useEffect(() => {
     const show = () => {
       setQuery("");
       setActive(0);
       setOpen(true);
+      // What's offered and what's open now, read as it opens.
+      void fetchBrowserOverview().then((result) => {
+        if (result.ok) {
+          setBrowsers({ engines: result.data.engines, sessions: result.data.sessions });
+        }
+      });
     };
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && !event.altKey) {
@@ -71,16 +96,49 @@ export function CommandPalette() {
     };
   }, []);
 
+  const commands: Command[] = [
+    ...(browsers?.engines ?? []).map((engine) => {
+      const details = engineDetails[engine];
+      const running = browsers?.sessions.some((session) => session.engine === engine) ?? false;
+      return {
+        key: `browser:${engine}`,
+        label: details.short,
+        hint: running ? "Open now" : "Launch",
+        words: `${details.name} browser launch open`,
+        icon: (
+          <span className="grid size-7 shrink-0 place-items-center">
+            <EngineLogo engine={engine} size="md" />
+          </span>
+        ),
+        run: () => void launch(engine),
+      };
+    }),
+    ...appNav.flatMap((group) =>
+      group.items.map((item) => ({
+        key: item.href,
+        label: item.label,
+        hint: PAGE_HINTS[item.href] ?? `Go to ${item.label}`,
+        words: `${group.label ?? ""} page go`,
+        icon: <PageIcon icon={item.icon} />,
+        run: () => {
+          router.push(item.href);
+        },
+      })),
+    ),
+  ];
+
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = COMMANDS.filter((command) =>
-    words.every((word) => `${command.label} ${command.hint}`.toLowerCase().includes(word)),
+  const matches = commands.filter((command) =>
+    words.every((word) =>
+      `${command.label} ${command.hint} ${command.words}`.toLowerCase().includes(word),
+    ),
   );
   const current = Math.min(active, Math.max(0, matches.length - 1));
 
   function go(command: Command | undefined) {
     if (!command) return;
     setOpen(false);
-    router.push(command.href as Route);
+    command.run();
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -97,37 +155,40 @@ export function CommandPalette() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="top-[18vh] w-[min(36rem,calc(100vw-2rem))] translate-y-0 gap-0 overflow-hidden p-0">
-        <DialogTitle className="sr-only">Go to</DialogTitle>
-        <div className="flex items-center gap-3 border-b border-line px-4">
+      <DialogContent className="top-[18vh] w-[min(32rem,calc(100vw-2rem))] translate-y-0 gap-0 overflow-hidden rounded-[1.375rem] p-0">
+        <DialogTitle className="sr-only">Quick launch</DialogTitle>
+        <div className="flex items-center gap-2.5 px-4">
           <Search aria-hidden="true" className="size-4 shrink-0 text-ink-tertiary" />
           <input
-            // The palette exists to be typed into the moment it opens.
+            // Quick launch exists to be typed into the moment it opens.
             // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
             role="combobox"
             aria-expanded="true"
             aria-controls={listId}
             aria-activedescendant={matches[current] ? `${listId}-${String(current)}` : undefined}
-            aria-label="Go to a page, or open a browser"
-            placeholder="Go to a page, or open a browser…"
+            aria-label="Launch a browser or search"
+            placeholder="Launch a browser or search…"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
               setActive(0);
             }}
             onKeyDown={onKeyDown}
-            className="h-14 min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-ink-tertiary"
+            className="h-14 min-w-0 flex-1 bg-transparent text-[0.95rem] font-medium text-ink outline-none placeholder:text-ink-tertiary"
           />
-          <Kbd>Esc</Kbd>
         </div>
-        <div id={listId} role="listbox" aria-label="Pages" className="max-h-80 overflow-y-auto p-2">
+        <div
+          id={listId}
+          role="listbox"
+          aria-label="Browsers and pages"
+          className="max-h-[22rem] overflow-y-auto border-y border-line p-2"
+        >
           {matches.map((command, index) => {
-            const Icon = command.icon;
             const selected = index === current;
             return (
               <div
-                key={command.href}
+                key={command.key}
                 id={`${listId}-${String(index)}`}
                 role="option"
                 aria-selected={selected}
@@ -141,29 +202,33 @@ export function CommandPalette() {
                 // Keys stay with the search field (aria-activedescendant), as a combobox's do.
                 onKeyDown={() => undefined}
                 className={cn(
-                  "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5",
-                  selected && "bg-hover",
+                  "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2",
+                  selected && "bg-accent-soft",
                 )}
               >
-                <Icon aria-hidden="true" className="size-4 shrink-0 text-ink-secondary" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-callout font-medium text-ink">{command.label}</span>
-                  <span className="block truncate text-footnote text-ink-secondary">
-                    {command.hint}
-                  </span>
-                </span>
-                {selected && (
-                  <CornerDownLeft aria-hidden="true" className="size-4 text-ink-tertiary" />
-                )}
+                {command.icon}
+                <span className="text-callout font-semibold text-ink">{command.label}</span>
+                <span className="ml-auto text-footnote text-ink-tertiary">{command.hint}</span>
               </div>
             );
           })}
           {matches.length === 0 && (
-            <p className="px-3 py-6 text-center text-callout text-ink-secondary">
+            <p className="px-3 py-5 text-center text-callout text-ink-secondary">
               Nothing matches “{query.trim()}”.
             </p>
           )}
         </div>
+        <p className="flex gap-4 px-3.5 py-2 text-[0.72rem] text-ink-tertiary" aria-hidden="true">
+          <span>
+            <Kbd>↵</Kbd> open
+          </span>
+          <span>
+            <Kbd>↑↓</Kbd> navigate
+          </span>
+          <span>
+            <Kbd>Esc</Kbd> close
+          </span>
+        </p>
       </DialogContent>
     </Dialog>
   );
