@@ -223,7 +223,7 @@ describe("cloud browser sessions", () => {
     const overview = browserOverviewSchema.parse(response.json());
     expect(overview.session).toBeNull();
     expect(overview.runtime).toBe("available");
-    expect(overview.limits).toEqual({ idleMinutes: 15, maxHours: 4 });
+    expect(overview.limits).toEqual({ idleMinutes: 15, maxHours: 4, liveSessions: 3 });
   });
 
   it("starts a session, streams the page, browses the test site and ends", async () => {
@@ -232,12 +232,19 @@ describe("cloud browser sessions", () => {
     expect(session.status).toBe("running");
     expect(session.startedAt).not.toBeNull();
 
-    // One live session per account.
-    const second = await client.post("/browser/sessions", {});
-    expect(second.statusCode).toBe(409);
+    // Several browsers at once (three on the free plan), a profile in one at a time.
+    const [profile] = profileListSchema.parse((await client.get("/profiles")).json()).profiles;
+    const second = await client.post("/browser/sessions", { profileId: profile?.id });
+    expect(second.statusCode, second.body).toBe(201);
+    const secondId = browserSessionSchema.parse(second.json()).id;
+    const twice = await client.post("/browser/sessions", { profileId: profile?.id });
+    expect(twice.statusCode).toBe(409);
+    expect(h.errorOf(twice).message).toContain("is already open in another browser");
 
     const overview = browserOverviewSchema.parse((await client.get("/browser")).json());
-    expect(overview.session?.id).toBe(session.id);
+    expect(overview.session?.id).toBe(secondId);
+    expect(overview.sessions.map((entry) => entry.id)).toEqual([secondId, session.id]);
+    expect((await client.delete(`/browser/sessions/${secondId}`)).statusCode).toBe(204);
 
     const ticket = await ticketFor(client, session.id);
     expect(ticket.url).toBe(`ws://127.0.0.1:4100/api/v1/browser/sessions/${session.id}/stream`);
@@ -260,6 +267,12 @@ describe("cloud browser sessions", () => {
       "test site over https",
     );
     expect(viewer.activeTab()).toMatchObject({ url: "https://testsite.invalid/second" });
+
+    // Websites are told it's Bee, built on Chromium, and never that it runs without a window.
+    const beeAgent = await agentOf(viewer, tab!.id);
+    expect(beeAgent).toMatch(/ Chrome\/\d+[.\d]* Safari\/537\.36 Bee\/[\d.]+ \| /);
+    expect(beeAgent).toMatch(/"Chromium";v="\d+"/);
+    expect(beeAgent).not.toContain("Headless");
 
     // The test site, through the filtering proxy.
     viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
@@ -554,8 +567,11 @@ describe("cloud browser sessions", () => {
       expect.arrayContaining(["browser.session_started", "browser.session_ended"]),
     );
     const exported = accountExportSchema.parse((await client.get("/account/export")).json());
-    expect(exported.browserSessions).toHaveLength(1);
-    expect(exported.browserSessions[0]).toMatchObject({ engine: "bee", endReason: "user" });
+    // Both browsers it opened, each ended by the person.
+    expect(exported.browserSessions).toHaveLength(2);
+    for (const entry of exported.browserSessions) {
+      expect(entry).toMatchObject({ engine: "bee", endReason: "user" });
+    }
   }, 90_000);
 
   it("refuses the stream without a valid ticket, and a ticket works only once", async () => {
@@ -1258,6 +1274,200 @@ describe("Firefox, the second engine", () => {
       "brawzer-test.bin",
       "notes.txt",
     ]);
+  }, 180_000);
+});
+
+/** The environment Docker started a session's runtime and egress containers with. */
+async function containerEnv(sessionId: string): Promise<{ runtime: string[]; egress: string[] }> {
+  const row = await h.database.pool.query<{ container_id: string }>(
+    "select container_id from browser_sessions where id = $1",
+    [sessionId],
+  );
+  return {
+    runtime: (await fetchDocker(`/containers/${row.rows[0]?.container_id ?? ""}/json`)).Config.Env,
+    // The egress sidecar is named after the session (no warm pool in these tests).
+    egress: (await fetchDocker(`/containers/brawzer-egress-${sessionId}/json`)).Config.Env,
+  };
+}
+
+describe("Google Chrome, the third engine", () => {
+  it("browses, and opens Chrome's own account and password pages only when the profile allows", async () => {
+    const { client, email } = await account("browser-chrome");
+    const created = await client.post("/profiles", {
+      name: "Chrome",
+      color: "rose",
+      engine: "chrome",
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const profile = profileSchema.parse(created.json());
+    expect(profile).toMatchObject({ engine: "chrome", browserAccount: false });
+
+    const first = await openSession(client, profile.id);
+    expect(first.session.engine).toBe("chrome");
+    const welcome = first.viewer.messages.find((m) => m.type === "welcome");
+    expect(welcome?.type === "welcome" && welcome.engine.name).toBe("chrome");
+    // Websites are told it's Chrome, not Bee Browser.
+    const chromeAgent = await agentOf(first.viewer, first.tab.id);
+    expect(chromeAgent).toMatch(/ Chrome\/\d+[.\d]* Safari\/537\.36 \| /);
+    expect(chromeAgent).toMatch(/"Google Chrome";v="\d+"/);
+    expect(chromeAgent).not.toContain("Headless");
+    expect(chromeAgent).not.toContain("Bee/");
+    await openPage(first.viewer, first.tab.id, "https://testsite.invalid/second", "Second page");
+    first.viewer.send({ type: "navigate", tabId: first.tab.id, url: "https://10.0.0.1/" });
+    await first.viewer.until(
+      () => first.viewer.activeTab()?.error?.code === "BRAWZER_REFUSED_ADDRESS",
+      "chrome navigation error",
+    );
+    await openPage(first.viewer, first.tab.id, "http://testsite.invalid/", "Brawzer test site");
+    await first.viewer.until(() => first.viewer.frames.length > 0, "a frame");
+    click(first.viewer, first.tab.id, 100, 60);
+    await first.viewer.until(
+      () => first.viewer.activeTab()?.title === "Second page",
+      "clicked link",
+    );
+    const firstEnv = await containerEnv(first.session.id);
+    expect(firstEnv.runtime).toContain("BRAWZER_ENGINE=chrome");
+    expect(firstEnv.runtime).not.toContain("BRAWZER_BROWSER_ACCOUNT=true");
+    expect(firstEnv.egress).not.toContain("EGRESS_ACCOUNT_SYNC=true");
+
+    // With the browser account off, the browser's own pages stay out of reach.
+    first.viewer.send({ type: "open-browser-page", page: "passwords" });
+    first.viewer.send({ type: "new-tab", url: "http://testsite.invalid/" });
+    await first.viewer.until(() => first.viewer.tabs()?.tabs.length === 2, "second tab");
+    expect(first.viewer.tabs()?.tabs.map((tab) => tab.url)).not.toContainEqual(
+      expect.stringMatching(/^chrome:/),
+    );
+    first.viewer.close();
+    expect((await client.delete(`/browser/sessions/${first.session.id}`)).statusCode).toBe(204);
+
+    // Turning it on is a recent-sign-in change, like a proxy.
+    await h.expireConfirmation(email);
+    const stale = await client.patch(`/profiles/${profile.id}`, { browserAccount: true });
+    expect(stale.statusCode).toBe(403);
+    expect(h.errorOf(stale).code).toBe("reauthentication_required");
+    expect(
+      (await client.post("/auth/reauthenticate", { password: "violet-harbor-lantern" })).statusCode,
+    ).toBe(200);
+    const on = await client.patch(`/profiles/${profile.id}`, { browserAccount: true });
+    expect(on.statusCode, on.body).toBe(200);
+    expect(profileSchema.parse(on.json()).browserAccount).toBe(true);
+
+    // Now the session may sign in to Google and show Chrome's saved passwords.
+    const second = await openSession(client, profile.id);
+    const secondEnv = await containerEnv(second.session.id);
+    expect(secondEnv.runtime).toContain("BRAWZER_BROWSER_ACCOUNT=true");
+    expect(secondEnv.egress).toContain("EGRESS_ACCOUNT_SYNC=true");
+    second.viewer.send({ type: "open-browser-page", page: "passwords" });
+    await second.viewer.until(
+      () => second.viewer.activeTab()?.url.startsWith("chrome://password-manager/") === true,
+      "Chrome's password manager",
+      30_000,
+    );
+    second.viewer.send({ type: "open-browser-page", page: "account" });
+    await second.viewer.until(
+      () => second.viewer.activeTab()?.url.startsWith("chrome://settings/") === true,
+      "Chrome's account settings",
+      30_000,
+    );
+    // Its other pages are still not tabs.
+    expect(second.viewer.tabs()?.tabs.map((tab) => tab.url)).not.toContainEqual(
+      expect.stringMatching(/^chrome:\/\/(?!password-manager|settings)/),
+    );
+    second.viewer.close();
+    expect((await client.delete(`/browser/sessions/${second.session.id}`)).statusCode).toBe(204);
+
+    // A profile that keeps nothing has no account to keep.
+    const forget = await client.patch(`/profiles/${profile.id}`, { keepData: false });
+    expect(forget.statusCode, forget.body).toBe(200);
+    const third = await client.post("/browser/sessions", { profileId: profile.id });
+    expect(third.statusCode, third.body).toBe(201);
+    const thirdId = browserSessionSchema.parse(third.json()).id;
+    expect((await containerEnv(thirdId)).runtime).not.toContain("BRAWZER_BROWSER_ACCOUNT=true");
+    expect((await client.delete(`/browser/sessions/${thirdId}`)).statusCode).toBe(204);
+  }, 240_000);
+});
+
+/** What the test site's /agent page says the browser told it: user agent | brand hints. */
+async function agentOf(viewer: Viewer, tabId: string): Promise<string> {
+  viewer.send({ type: "navigate", tabId, url: "https://testsite.invalid/agent" });
+  await viewer.until(() => viewer.activeTab()?.title.startsWith("Agent: ") === true, "agent page");
+  return viewer.activeTab()?.title ?? "";
+}
+
+describe("Chromium and Microsoft Edge", () => {
+  it("opens Chromium as Chromium, with nothing of Bee in what websites see", async () => {
+    const { client } = await account("browser-chromium");
+    const created = await client.post("/profiles", {
+      name: "Plain",
+      color: "slate",
+      engine: "chromium",
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const profile = profileSchema.parse(created.json());
+    const { session, viewer, tab } = await openSession(client, profile.id);
+    expect(session.engine).toBe("chromium");
+    const welcome = viewer.messages.find((m) => m.type === "welcome");
+    expect(welcome?.type === "welcome" && welcome.engine.name).toBe("chromium");
+    const agent = await agentOf(viewer, tab.id);
+    expect(agent).toMatch(/ Chrome\/\d+[.\d]* Safari\/537\.36 \| /);
+    expect(agent).toMatch(/"Chromium";v="\d+"/);
+    expect(agent).not.toMatch(/Headless|Bee\/|Google Chrome/);
+    await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
+    click(viewer, tab.id, 100, 60);
+    await viewer.until(() => viewer.activeTab()?.title === "Second page", "clicked link");
+    viewer.close();
+    expect((await client.delete(`/browser/sessions/${session.id}`)).statusCode).toBe(204);
+  }, 90_000);
+
+  it("offers Edge only where the runtime image is x86-64, and browses with it there", async () => {
+    const { client } = await account("browser-edge");
+    const image = (await fetchDocker(
+      `/images/${encodeURIComponent(h.config.browser.image)}/json`,
+    )) as unknown as { Architecture?: string };
+    const offered = profileListSchema.parse((await client.get("/profiles")).json()).engines;
+    if (image.Architecture !== "amd64") {
+      // Microsoft ships Edge for x86-64 Linux only: it isn't offered, or made, here.
+      expect(offered).not.toContain("edge");
+      const refused = await client.post("/profiles", {
+        name: "Edge",
+        color: "teal",
+        engine: "edge",
+      });
+      expect(refused.statusCode).toBe(400);
+      const overview = browserOverviewSchema.parse((await client.get("/browser")).json());
+      expect(overview.engines).not.toContain("edge");
+      return;
+    }
+
+    expect(offered).toContain("edge");
+    const created = await client.post("/profiles", { name: "Edge", color: "teal", engine: "edge" });
+    expect(created.statusCode, created.body).toBe(201);
+    const profile = profileSchema.parse(created.json());
+    const on = await client.patch(`/profiles/${profile.id}`, { browserAccount: true });
+    expect(on.statusCode, on.body).toBe(200);
+    const { session, viewer, tab } = await openSession(client, profile.id);
+    expect(session.engine).toBe("edge");
+    const welcome = viewer.messages.find((m) => m.type === "welcome");
+    expect(welcome?.type === "welcome" && welcome.engine.name).toBe("edge");
+    const agent = await agentOf(viewer, tab.id);
+    expect(agent).toMatch(/ Edg\/[\d.]+ \| /);
+    expect(agent).toMatch(/"Microsoft Edge";v="\d+"/);
+    expect(agent).not.toContain("Headless");
+    await openPage(viewer, tab.id, "https://testsite.invalid/second", "Second page");
+    viewer.send({ type: "navigate", tabId: tab.id, url: "https://10.0.0.1/" });
+    await viewer.until(
+      () => viewer.activeTab()?.error?.code === "BRAWZER_REFUSED_ADDRESS",
+      "edge navigation error",
+    );
+    // Its passwords, for a profile with its browser account on.
+    viewer.send({ type: "open-browser-page", page: "passwords" });
+    await viewer.until(
+      () => viewer.activeTab()?.url.startsWith("edge://wallet") === true,
+      "Edge's passwords",
+      30_000,
+    );
+    viewer.close();
+    expect((await client.delete(`/browser/sessions/${session.id}`)).statusCode).toBe(204);
   }, 180_000);
 });
 

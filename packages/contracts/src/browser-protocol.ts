@@ -59,6 +59,11 @@ const baseClientMessages = [
   z.object({ type: z.literal("reload"), tabId: tabIdSchema }),
   z.object({ type: z.literal("stop"), tabId: tabIdSchema }),
   z.object({ type: z.literal("new-tab"), url: browserUrlSchema.optional() }),
+  /**
+   * The browser's own pages, in a new tab, for a profile with its browser
+   * account on (ADR 0021): its saved passwords, or signing in to its account.
+   */
+  z.object({ type: z.literal("open-browser-page"), page: z.enum(["passwords", "account"]) }),
   z.object({ type: z.literal("close-tab"), tabId: tabIdSchema }),
   z.object({ type: z.literal("activate-tab"), tabId: tabIdSchema }),
   z.object({
@@ -221,7 +226,7 @@ export const agentMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("welcome"),
     protocol: z.literal(BROWSER_PROTOCOL_VERSION),
     engine: z.object({
-      name: z.enum(["bee", "firefox"]),
+      name: z.enum(["bee", "chrome", "firefox", "edge", "chromium"]),
       /** What the engine says it is, such as "Chrome/156.0.8078.79" or "153.6.0esr". */
       version: z.string().max(64),
     }),

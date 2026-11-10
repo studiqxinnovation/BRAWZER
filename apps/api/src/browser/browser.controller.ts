@@ -76,7 +76,13 @@ export class BrowserController {
     @CurrentAuth() auth: AuthContext,
     @Req() request: FastifyRequest,
   ): Promise<BrowserSession> {
-    return this.browser.start(auth, body.profileId ?? null, requestMeta(request), body.resume);
+    return this.browser.start(
+      auth,
+      body.profileId ?? null,
+      requestMeta(request),
+      body.resume,
+      body.engine,
+    );
   }
 
   @Post("sessions/:id/hand-off")

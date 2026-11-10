@@ -17,6 +17,7 @@ import {
   type NavigationError,
 } from "@brawzer/contracts";
 import { BEE_VERSION } from "./bee.ts";
+import type { ChromiumBrand } from "./config.ts";
 import type { CdpConnection } from "./cdp.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
@@ -131,9 +132,77 @@ function hostOf(url: string): string {
   }
 }
 
+/** What `Sec-CH-UA-*` and `navigator.userAgentData` say (CDP's UserAgentMetadata). */
+export interface UserAgentMetadata {
+  brands: { brand: string; version: string }[];
+  fullVersionList: { brand: string; version: string }[];
+  fullVersion: string;
+  platform: string;
+  platformVersion: string;
+  architecture: string;
+  model: string;
+  mobile: boolean;
+  bitness: string;
+}
+
+/** The name each Chromium browser gives itself in its brand hints, beside "Chromium". */
+const BRAND_NAMES: Partial<Record<ChromiumBrand, string>> = {
+  chrome: "Google Chrome",
+  edge: "Microsoft Edge",
+};
+
+/**
+ * What websites are told the browser is. Running without a window is how
+ * Brawzer runs it, not what it is: the "Headless" marker goes, so Chrome and
+ * Edge read as the browsers they are, Chromium as Chromium, and Bee as
+ * Chromium with its own name after. Brand hints match, as the browser would
+ * send them with a window.
+ */
+export function browserIdentity(
+  version: { product: string; userAgent: string },
+  brand: ChromiumBrand,
+  arch: string = process.arch,
+): { userAgent: string; metadata: UserAgentMetadata | null } {
+  const base = version.userAgent
+    .replace("HeadlessChrome/", "Chrome/")
+    .replace("HeadlessEdg/", "Edg/");
+  const full = /\/([\d.]+)$/.exec(version.product)?.[1];
+  const userAgent =
+    brand === "bee"
+      ? `${base} Bee/${BEE_VERSION}`
+      : brand === "edge" && !base.includes(" Edg/") && full
+        ? `${base} Edg/${full}`
+        : base;
+  const major = full?.split(".")[0];
+  if (!full || !major) return { userAgent, metadata: null };
+  const own = BRAND_NAMES[brand];
+  const named = (versionOf: (v: string) => string) => [
+    ...(own ? [{ brand: own, version: versionOf(full) }] : []),
+    { brand: "Chromium", version: versionOf(full) },
+    { brand: "Not_A Brand", version: versionOf("24.0.0.0") },
+  ];
+  return {
+    userAgent,
+    metadata: {
+      brands: named((v) => v.split(".")[0] ?? v),
+      fullVersionList: named((v) => v),
+      fullVersion: full,
+      platform: "Linux",
+      platformVersion: "",
+      architecture: arch === "arm64" || arch === "arm" ? "arm" : "x86",
+      model: "",
+      mobile: false,
+      bitness: arch === "arm" || arch === "ia32" ? "32" : "64",
+    },
+  };
+}
+
 /** The engine's own UI surfaces (omnibox popups and the like) are never tabs. */
 const isInternal = (url: string) =>
-  /^(chrome|devtools|chrome-untrusted|chrome-extension|chrome-search):/.test(url);
+  /^(chrome|edge|devtools|chrome-untrusted|chrome-extension|chrome-search|extension):/.test(url);
+
+/** The browser's own pages a profile with its account on may see as tabs (ADR 0021). */
+const ACCOUNT_PAGES = /^(chrome:\/\/(password-manager|settings)|edge:\/\/(wallet|settings))(\/|$)/;
 
 const securityOf = (state: string): TabSecurity => {
   if (state === "secure") return "secure";
@@ -166,6 +235,7 @@ export class BrowserEngine implements Engine {
   private readonly choosers = new Map<string, Chooser>();
   private titleTimer: NodeJS.Timeout | null = null;
   private userAgent = "";
+  private userAgentMetadata: UserAgentMetadata | null = null;
   private readonly loadedExtensions: string[] = [];
 
   constructor(
@@ -352,8 +422,10 @@ export class BrowserEngine implements Engine {
       "Browser.getVersion",
     );
     this.version = version.product;
-    // Bee is Brawzer's own browser: it says so, after what it is built on.
-    this.userAgent = `${version.userAgent} Bee/${BEE_VERSION}`;
+    // Bee is Brawzer's own browser: it says so, after what it is built on. Chrome is as Google ships it.
+    const identity = browserIdentity(version, this.options.brand ?? "bee");
+    this.userAgent = identity.userAgent;
+    this.userAgentMetadata = identity.metadata;
     // Downloads land in the scratch directory under their id and are handed to Drive.
     await this.cdp.send("Browser.setDownloadBehavior", {
       behavior: "allowAndName",
@@ -407,7 +479,7 @@ export class BrowserEngine implements Engine {
       viewer.send({
         type: "welcome",
         protocol: BROWSER_PROTOCOL_VERSION,
-        engine: { name: "bee", version: this.version.slice(0, 64) },
+        engine: { name: this.options.brand ?? "bee", version: this.version.slice(0, 64) },
         tabs: this.snapshot(),
         activeTabId: this.activeId ?? this.order[0] ?? "",
         extensions: this.loadedExtensions,
@@ -442,6 +514,12 @@ export class BrowserEngine implements Engine {
       case "new-tab":
         await this.createTab(message.url);
         return;
+      case "open-browser-page": {
+        const pages = this.options.browserPages;
+        const url = pages ? (message.page === "passwords" ? pages.passwords : pages.account) : null;
+        if (url) await this.createTab(url);
+        return;
+      }
       case "close-tab":
         if (this.tabs.has(message.tabId)) {
           await this.cdp.send("Target.closeTarget", { targetId: message.tabId });
@@ -820,7 +898,8 @@ export class BrowserEngine implements Engine {
 
   /** Attaches to a page target the engine reported, unless it is internal or already ours. */
   private async considerTarget(info: TargetInfo): Promise<void> {
-    if (info.type !== "page" || isInternal(info.url)) return;
+    const accountPage = Boolean(this.options.browserPages) && ACCOUNT_PAGES.test(info.url);
+    if (info.type !== "page" || (isInternal(info.url) && !accountPage)) return;
     if (this.tabs.has(info.targetId) || this.attaching.has(info.targetId)) return;
     if (this.tabs.size >= MAX_TABS) {
       // Popup storms: close anything past the limit.
@@ -869,7 +948,14 @@ export class BrowserEngine implements Engine {
         this.cdp.send("Security.enable", {}, sessionId),
         this.cdp.send("Page.setInterceptFileChooserDialog", { enabled: true }, sessionId),
         this.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId),
-        this.cdp.send("Emulation.setUserAgentOverride", { userAgent: this.userAgent }, sessionId),
+        this.cdp.send(
+          "Emulation.setUserAgentOverride",
+          {
+            userAgent: this.userAgent,
+            ...(this.userAgentMetadata ? { userAgentMetadata: this.userAgentMetadata } : {}),
+          },
+          sessionId,
+        ),
         this.cdp.send(
           "Emulation.setDeviceMetricsOverride",
           { ...this.viewport, deviceScaleFactor: 1, mobile: false },

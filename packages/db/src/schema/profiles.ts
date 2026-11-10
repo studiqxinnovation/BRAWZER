@@ -27,8 +27,14 @@ export const profileColor = pgEnum("profile_color", [
   "slate",
 ]);
 
-/** Must match `browserEngines` in @brawzer/contracts: Bee (Brawzer's own, on Chromium) and Firefox. */
-export const browserEngine = pgEnum("browser_engine", ["bee", "firefox"]);
+/** Must match `browserEngines` in @brawzer/contracts: Bee (Brawzer's own, on Chromium), Firefox and Chrome. */
+export const browserEngine = pgEnum("browser_engine", [
+  "bee",
+  "firefox",
+  "chrome",
+  "edge",
+  "chromium",
+]);
 
 /**
  * A browser profile: a name, a colour, a place in the list, and (since the
@@ -69,6 +75,8 @@ export const profiles = pgTable(
     dataSavedAt: timestamptz(),
     /** Brawzer keeps a searchable history while the profile keeps its data (ADR 0020). */
     keepHistory: boolean().notNull().default(true),
+    /** The browser's password manager and own account sign-in, for this profile's sessions. */
+    browserAccount: boolean().notNull().default(false),
     /**
      * The profile's own key for its history, bookmarks and open tabs: 32
      * random bytes sealed by the key service, bound to the account and profile.

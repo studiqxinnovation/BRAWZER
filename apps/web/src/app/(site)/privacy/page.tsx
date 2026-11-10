@@ -40,6 +40,12 @@ export default function PrivacyPage() {
                 days are forgotten.
               </li>
               <li>
+                Saved passwords, for a profile whose browser account you switch on: they stay in
+                that profile’s browsing data, encrypted like the rest of it. If you sign the browser
+                in to your Google, Microsoft or Mozilla account, that company syncs them with you
+                under its own privacy terms, as it would on your own computer.
+              </li>
+              <li>
                 Billing details, handled by a payment provider once paid plans exist. [Provider to
                 be confirmed]
               </li>

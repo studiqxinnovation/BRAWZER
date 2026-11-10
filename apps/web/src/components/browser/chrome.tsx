@@ -41,6 +41,7 @@ import {
   FileText,
   Flag,
   Keyboard,
+  KeyRound,
   Lock,
   LockOpen,
   AppWindow,
@@ -624,6 +625,7 @@ export function MoreMenu({
   onScreenshot,
   onReport,
   onHistory,
+  onPasswords,
   onHandOff,
   onPopOut,
   onCloseWindow,
@@ -647,6 +649,8 @@ export function MoreMenu({
   onReport: () => void;
   /** With a profile: its history and bookmarks. */
   onHistory?: (() => void) | undefined;
+  /** Where the person's saved passwords are (ADR 0021). */
+  onPasswords: () => void;
   /** With a profile that keeps its data: end here, continue elsewhere. */
   onHandOff?: (() => void) | undefined;
   /** In the app: open this session in a window of its own. */
@@ -672,6 +676,9 @@ export function MoreMenu({
             History and bookmarks
           </MenuItem>
         )}
+        <MenuItem icon={<KeyRound />} onClick={onPasswords}>
+          Saved passwords
+        </MenuItem>
         <MenuItem icon={<Printer />} disabled={!canPrint} onClick={onPrint}>
           Save page as PDF in Drive
         </MenuItem>

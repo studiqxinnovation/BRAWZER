@@ -3,7 +3,7 @@ import type { Readable } from "node:stream";
 import { STREAM_CLOSE_CODES } from "@brawzer/contracts";
 import { BEE_HOME_HOST, BEE_HOME_PORT, BEE_HOME_URL, createBeeHome } from "./bee.ts";
 import { type LaunchedChromium, launchChromium } from "./chromium.ts";
-import { readConfig } from "./config.ts";
+import { type AgentEngine, readConfig } from "./config.ts";
 import { cpSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { type Engine, type InstallableExtension, RefusalLog } from "./engine-types.ts";
@@ -13,6 +13,7 @@ import { BrowserEngine } from "./engine.ts";
 import { type LaunchedFirefox, launchFirefox } from "./firefox.ts";
 import { FirefoxEngine } from "./firefox-engine.ts";
 import { log } from "./log.ts";
+import { writePolicies } from "./policies.ts";
 import { packProfile, restoreProfile } from "./profile-data.ts";
 import type { ProxyOverride } from "./proxy.ts";
 import { createFilteringProxy } from "./proxy.ts";
@@ -54,7 +55,7 @@ const audio = new SessionAudio(config.scratchDir);
 const soundReady = await audio.start();
 
 /** The catalogue index the image was built with: which builds exist, for which engine. */
-function installableExtensions(engine: "bee" | "firefox"): InstallableExtension[] {
+function installableExtensions(engine: AgentEngine): InstallableExtension[] {
   if (config.extensions.length === 0) return [];
   let index: Record<string, Record<string, { path: string }>>;
   try {
@@ -68,8 +69,10 @@ function installableExtensions(engine: "bee" | "firefox"): InstallableExtension[
     return [];
   }
   const found: InstallableExtension[] = [];
+  // Chrome, Edge and Chromium run the same builds as Bee: all are Chromium.
+  const family = engine === "firefox" ? "firefox" : "bee";
   for (const slug of config.extensions) {
-    const build = index[slug]?.[engine];
+    const build = index[slug]?.[family];
     if (!build) {
       log("warn", "extension not in the catalogue for this engine", { slug, engine });
       continue;
@@ -154,12 +157,31 @@ async function stopEngine(): Promise<void> {
   clearTimeout(forceTimer);
 }
 
+/**
+ * Each browser's own pages for a profile with its browser account on (ADR
+ * 0021): its saved passwords, and signing in to its maker's account. Only
+ * Google's own Chrome can sign in to a Google account; Bee and Chromium keep
+ * their passwords in the profile, with no account to sync them.
+ */
+const BROWSER_PAGES: Record<AgentEngine, { passwords: string; account: string | null }> = {
+  bee: { passwords: "chrome://password-manager/passwords", account: null },
+  chromium: { passwords: "chrome://password-manager/passwords", account: null },
+  chrome: {
+    passwords: "chrome://password-manager/passwords",
+    account: "chrome://settings/syncSetup",
+  },
+  edge: { passwords: "edge://wallet/passwords", account: "edge://settings/profiles" },
+  firefox: { passwords: "about:logins", account: "about:preferences#sync" },
+};
+
 const lifecycle: AgentLifecycle = {
   state: () => state,
   engine: () => engine,
   restore: (archive: Readable) => restoreProfile(config.scratchDir, archive),
   async start() {
     state = "starting";
+    // The engines' policies for this session: written first, or no engine starts (ADR 0021).
+    writePolicies({ scratchDir: config.scratchDir, browserAccount: config.browserAccount });
     const engineOptions = {
       downloadDir: path.join(config.scratchDir, "downloads"),
       uploadDir: path.join(config.scratchDir, "uploads"),
@@ -168,6 +190,7 @@ const lifecycle: AgentLifecycle = {
       refusalFor: (url: string) => refusals.codeFor(url),
       readerScript: readerScript(readabilitySource),
       extensions: installableExtensions(config.engine),
+      browserPages: config.browserAccount ? BROWSER_PAGES[config.engine] : null,
     };
     const onGone = (error: Error) => {
       // The engine left on its own (crash, kill): the session is over.
@@ -193,15 +216,24 @@ const lifecycle: AgentLifecycle = {
       launched.bidi.onClose(onGone);
     } else {
       const launched = launchChromium({
-        binary: config.chromiumBinary,
+        binary:
+          config.engine === "chrome"
+            ? config.chromeBinary
+            : config.engine === "edge"
+              ? config.edgeBinary
+              : config.chromiumBinary,
         scratchDir: config.scratchDir,
         extraEnv: soundReady ? audio.env() : {},
         proxyPort: config.proxyPort,
         viewport: config.initialViewport,
         startUrl: BEE_HOME_URL,
         trustedSpkiHashes,
+        browserAccount: config.browserAccount,
       });
-      started = new BrowserEngine(launched.cdp, config.initialViewport, engineOptions);
+      started = new BrowserEngine(launched.cdp, config.initialViewport, {
+        ...engineOptions,
+        brand: config.engine,
+      });
       chromium = launched;
       launched.cdp.onClose(onGone);
     }

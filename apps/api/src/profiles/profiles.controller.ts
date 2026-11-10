@@ -41,7 +41,9 @@ import { SESSION_AUTH } from "../auth/auth.controller.js";
 import { assertRecentAuth } from "../auth/recent-auth.guard.js";
 import { CurrentAuth, SessionGuard } from "../auth/session.guard.js";
 import type { AuthContext } from "../auth/session.service.js";
+import { ApiException } from "../common/api-exception.js";
 import { requestMeta } from "../common/request-meta.js";
+import { EnginesService } from "../egress/engines.service.js";
 import { ProfilesService } from "./profiles.service.js";
 
 const profileIdSchema = z.uuid({ error: "That isn’t a profile ID." });
@@ -52,7 +54,10 @@ const profileIdSchema = z.uuid({ error: "That isn’t a profile ID." });
 @UseGuards(SessionGuard)
 @Controller({ path: "profiles", version: "1" })
 export class ProfilesController {
-  constructor(@Inject(ProfilesService) private readonly profiles: ProfilesService) {}
+  constructor(
+    @Inject(ProfilesService) private readonly profiles: ProfilesService,
+    @Inject(EnginesService) private readonly engines: EnginesService,
+  ) {}
 
   @Get()
   @SerializeOptions({ schema: profileListSchema })
@@ -62,7 +67,11 @@ export class ProfilesController {
     standardSchema: profileListSchema,
   })
   async list(@CurrentAuth() auth: AuthContext): Promise<ProfileList> {
-    return { profiles: await this.profiles.list(auth.user.id), limit: MAX_PROFILES };
+    return {
+      profiles: await this.profiles.list(auth.user.id),
+      limit: MAX_PROFILES,
+      engines: [...(await this.engines.offered())],
+    };
   }
 
   @Post()
@@ -71,11 +80,21 @@ export class ProfilesController {
   @ApiOperation({ summary: "Create a profile", description: "Added at the end of the list." })
   @ApiCreatedResponse({ description: "The new profile.", standardSchema: profileSchema })
   @ApiConflictResponse({ description: "The name is taken, or the account has reached its limit." })
-  create(
+  async create(
     @Body({ schema: createProfileRequestSchema }) body: z.output<typeof createProfileRequestSchema>,
     @CurrentAuth() auth: AuthContext,
     @Req() request: FastifyRequest,
   ): Promise<Profile> {
+    if (!(await this.engines.offered()).includes(body.engine)) {
+      throw new ApiException(
+        "validation_failed",
+        400,
+        "Some of the submitted values are invalid.",
+        {
+          details: ["engine: That browser isn’t offered here."],
+        },
+      );
+    }
     return this.profiles.create(auth, body, requestMeta(request));
   }
 
@@ -92,7 +111,11 @@ export class ProfilesController {
     body: z.output<typeof reorderProfilesRequestSchema>,
     @CurrentAuth() auth: AuthContext,
   ): Promise<ProfileList> {
-    return { profiles: await this.profiles.reorder(auth.user.id, body.ids), limit: MAX_PROFILES };
+    return {
+      profiles: await this.profiles.reorder(auth.user.id, body.ids),
+      limit: MAX_PROFILES,
+      engines: [...(await this.engines.offered())],
+    };
   }
 
   @Patch(":id")
@@ -107,7 +130,12 @@ export class ProfilesController {
   ): Promise<Profile> {
     // Browsing goes through the proxy (ADR 0014), so choosing one is a sensitive
     // change; so is letting it reach private addresses (Phase 8, idea 9).
-    if (body.proxyId !== undefined || body.privateThroughProxy !== undefined)
+    // Where traffic goes, and whether passwords are kept, need a recent confirmation.
+    if (
+      body.proxyId !== undefined ||
+      body.privateThroughProxy !== undefined ||
+      body.browserAccount !== undefined
+    )
       assertRecentAuth(auth);
     return this.profiles.update(auth.user.id, id, body);
   }

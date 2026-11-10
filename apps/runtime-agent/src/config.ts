@@ -1,13 +1,20 @@
 import { BROWSER_LIMITS } from "@brawzer/contracts";
 
+export const AGENT_ENGINES = ["bee", "chrome", "firefox", "edge", "chromium"] as const;
+export type AgentEngine = (typeof AGENT_ENGINES)[number];
+/** The engines driven over CDP, and what they tell websites they are. */
+export type ChromiumBrand = Exclude<AgentEngine, "firefox">;
+
 export interface AgentConfig {
   /** Presented by the relay on every connection; set per session by the orchestrator. */
   sessionSecret: string;
   /** Where the relay connects (inside the container). */
   port: number;
-  /** Bee (Brawzer's own browser, on Chromium) or Firefox. */
-  engine: "bee" | "firefox";
+  /** Bee (Brawzer's own browser, on Chromium), Chrome, Firefox, Edge or plain Chromium. */
+  engine: AgentEngine;
   chromiumBinary: string;
+  chromeBinary: string;
+  edgeBinary: string;
   firefoxBinary: string;
   /** The filtering proxy every page connection goes through (loopback only). */
   proxyPort: number;
@@ -17,6 +24,8 @@ export interface AgentConfig {
   egress: { host: string; port: number } | null;
   /** The profile's choice: private addresses are handed to the egress (and its proxy) instead of refused here. */
   privateViaEgress: boolean;
+  /** The profile's browser account and saved passwords are on (ADR 0021). */
+  browserAccount: boolean;
   /** Catalogue extensions (slugs) to install into this session, and where the catalogue lives. */
   extensions: string[];
   extensionsDir: string;
@@ -37,13 +46,16 @@ export function readConfig(env: NodeJS.ProcessEnv): AgentConfig {
   return {
     sessionSecret: secret,
     port,
-    engine: env.BRAWZER_ENGINE === "firefox" ? "firefox" : "bee",
+    engine: AGENT_ENGINES.find((engine) => engine === env.BRAWZER_ENGINE) ?? "bee",
     chromiumBinary: env.CHROMIUM_BIN ?? "/usr/bin/chromium",
+    chromeBinary: env.CHROME_BIN ?? "/usr/bin/google-chrome-stable",
+    edgeBinary: env.EDGE_BIN ?? "/usr/bin/microsoft-edge-stable",
     firefoxBinary: env.FIREFOX_BIN ?? "/usr/bin/firefox-esr",
     proxyPort: 3128,
     testSite: env.BRAWZER_TEST_SITE === "true",
     egress: readEgress(env.BRAWZER_EGRESS_PROXY),
     privateViaEgress: env.BRAWZER_PRIVATE_VIA_EGRESS === "true",
+    browserAccount: env.BRAWZER_BROWSER_ACCOUNT === "true",
     extensions: (env.BRAWZER_EXTENSIONS ?? "")
       .split(",")
       .map((slug) => slug.trim())

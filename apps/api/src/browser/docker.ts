@@ -176,6 +176,20 @@ export class DockerClient {
     }
   }
 
+  /** The CPU architecture an image is built for (`amd64`, `arm64`), or null if it's missing. */
+  async imageArchitecture(reference: string): Promise<string | null> {
+    try {
+      const image = await this.request<{ Architecture?: string }>(
+        "GET",
+        `/images/${encodeURIComponent(reference)}/json`,
+      );
+      return image.Architecture ?? null;
+    } catch (error) {
+      if (error instanceof DockerError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
   /** A bridge network whose containers can't talk to each other. */
   async ensureNetwork(name: string): Promise<void> {
     try {

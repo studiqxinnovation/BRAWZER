@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isIP } from "node:net";
 import path from "node:path";
-import { DRIVE_LIMITS } from "@brawzer/contracts";
+import { type BrowserEngine, browserEngines, DRIVE_LIMITS } from "@brawzer/contracts";
 import { homedir } from "node:os";
 import { z } from "zod";
 import { parsePlanDefinitions, type PlanDefinition } from "../billing/plans.js";
@@ -134,6 +134,27 @@ export const envSchema = z.object({
     .optional(),
   /** Live cloud browser sessions across the installation; starting more waits for one to end. */
   BROWSER_MAX_LIVE_SESSIONS: z.coerce.number().int().min(1).max(100_000).default(200),
+  /**
+   * The engines this installation offers, comma-separated: bee, chrome,
+   * firefox, edge, chromium. Leave Chrome or Edge out where their makers'
+   * terms for hosting them aren't met. Edge runs only where the runtime image
+   * is x86-64 (Microsoft ships no other Linux build); elsewhere it isn't offered.
+   */
+  BROWSER_ENGINES: z
+    .string()
+    .default("bee,chrome,firefox,edge,chromium")
+    .transform((value) => [
+      ...new Set(value.split(",").map((engine) => engine.trim().toLowerCase())),
+    ])
+    .pipe(
+      z
+        .array(
+          z.enum(browserEngines, {
+            error: "must list engines from bee, chrome, firefox, edge and chromium",
+          }),
+        )
+        .min(1, "must offer at least one engine"),
+    ),
   /** Container pairs kept waiting so a session without a proxy starts at once (Phase 8, idea 14). */
   BROWSER_WARM_POOL: z.coerce.number().int().min(0).max(10).default(0),
   /** "cli" for the operator CLI's process: it serves nothing and reconciles nothing at boot. */
@@ -287,6 +308,8 @@ export interface AppConfig {
     readonly containerRuntime: string | null;
     readonly maxLiveSessions: number;
     readonly warmPool: number;
+    /** The engines offered here (`BROWSER_ENGINES`). */
+    readonly engines: readonly BrowserEngine[];
     /** Where published agent ports bind on the engine host. */
     readonly region: string | null;
     readonly agentBind: string;
@@ -608,6 +631,7 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       containerRuntime: values.BROWSER_CONTAINER_RUNTIME ?? null,
       maxLiveSessions: values.BROWSER_MAX_LIVE_SESSIONS,
       warmPool: values.BROWSER_WARM_POOL,
+      engines: Object.freeze(values.BROWSER_ENGINES),
       region: values.BROWSER_REGION ?? null,
       agentBind: primary.agentBind,
       agentHost: primary.agentHost,

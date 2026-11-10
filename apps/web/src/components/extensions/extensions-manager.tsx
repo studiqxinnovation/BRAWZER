@@ -61,7 +61,8 @@ export function ExtensionsManager({ profiles }: { profiles: readonly Profile[] }
       </Panel>
       <ul aria-label="Extension catalogue" className="flex flex-col gap-3">
         {EXTENSION_CATALOGUE.map((entry) => {
-          const build = profile ? entry[profile.engine] : null;
+          // Chrome runs the same builds as Bee: both are Chromium.
+          const build = profile ? entry[profile.engine === "firefox" ? "firefox" : "bee"] : null;
           const installed = profile?.extensions.includes(entry.slug) ?? false;
           return (
             <li key={entry.slug}>

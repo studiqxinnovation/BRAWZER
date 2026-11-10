@@ -23,6 +23,8 @@ export interface RuleOptions {
   privateViaUpstream?: boolean;
   /** The account's own rules: blocked hosts never open; with any allowed hosts, only those open. */
   siteRules?: { allow: readonly string[]; block: readonly string[] } | null;
+  /** The profile's browser account is on: the engine may reach its account's sync service (ADR 0021). */
+  accountSync?: boolean;
   lookup: Lookup;
 }
 
@@ -79,6 +81,13 @@ export function isAllowedPort(port: number): boolean {
   return port >= 1024;
 }
 
+/**
+ * The engine services a profile with its browser account on needs: Chrome's
+ * sync server (signing in and the account's pages are on hosts that aren't
+ * blocked at all). Everything else on the list stays refused.
+ */
+export const ACCOUNT_SYNC_HOSTS = ["clients4.google.com"] as const;
+
 export function isEngineHost(host: string): boolean {
   const name = host.toLowerCase();
   return ENGINE_HOSTS.some((blocked) => name === blocked || name.endsWith(`.${blocked}`));
@@ -111,7 +120,12 @@ export async function decideEgress(
       return { kind: "refused", reason: "address" };
     }
   }
-  if (isEngineHost(parsed.name)) return { kind: "refused", reason: "engine" };
+  const syncing =
+    options.accountSync === true &&
+    ACCOUNT_SYNC_HOSTS.some(
+      (allowed) => parsed.name === allowed || parsed.name.endsWith(`.${allowed}`),
+    );
+  if (isEngineHost(parsed.name) && !syncing) return { kind: "refused", reason: "engine" };
   if (options.hasUpstream) return { kind: "upstream", host: parsed.name, port };
   let answers: readonly { address: string }[];
   try {

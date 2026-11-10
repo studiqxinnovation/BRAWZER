@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type BrowserEngine,
   createProfileRequestSchema,
   type Profile,
   type ProfileColor,
@@ -52,8 +53,6 @@ import { initialOf, profileColorShades } from "@/lib/profiles";
 import { leaveSignedInArea } from "@/lib/session-channel";
 import { EngineChoice, ProfileNameAndColor } from "./profile-fields";
 
-const engineLabels = { bee: engineDetails.bee.name, firefox: engineDetails.firefox.name } as const;
-
 /** What a failed save means for the form: field errors, a message, or signing in again. */
 function handleFailure(
   result: Extract<ApiResult<unknown>, { ok: false }>,
@@ -73,7 +72,13 @@ function handleFailure(
   return false;
 }
 
-function NewProfile({ suggestedColor }: { suggestedColor: ProfileColor }) {
+function NewProfile({
+  suggestedColor,
+  engines,
+}: {
+  suggestedColor: ProfileColor;
+  engines: readonly BrowserEngine[];
+}) {
   const router = useRouter();
   const toast = useToast();
   const formRef = useRef<HTMLFormElement>(null);
@@ -126,7 +131,7 @@ function NewProfile({ suggestedColor }: { suggestedColor: ProfileColor }) {
       <DialogContent>
         <DialogTitle>New profile</DialogTitle>
         <DialogDescription>
-          A separate browser with its own name and colour. Browsing in it arrives in Phase 3.
+          A separate browser with its own name, colour and saved data, in the browser you choose.
         </DialogDescription>
         <form
           method="post"
@@ -137,7 +142,7 @@ function NewProfile({ suggestedColor }: { suggestedColor: ProfileColor }) {
         >
           {failure && <FormMessage tone="danger">{failure}</FormMessage>}
           <ProfileNameAndColor color={suggestedColor} errors={errors} />
-          <EngineChoice />
+          <EngineChoice engines={engines} />
           <DialogFooter className="mt-1">
             <Button
               variant="secondary"
@@ -169,6 +174,7 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
   const formRef = useRef<HTMLFormElement>(null);
   const [open, setOpen] = useState(false);
   const [keepData, setKeepData] = useState(profile.keepData);
+  const [browserAccount, setBrowserAccount] = useState(profile.browserAccount);
   const [privateThroughProxy, setPrivateThroughProxy] = useState(profile.privateThroughProxy);
   const [proxyChoice, setProxyChoice] = useState(profile.proxyId ?? NO_PROXY);
   const confirmed = useConfirmedRequest();
@@ -182,6 +188,7 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
     setErrors({});
     setFailure(null);
     setKeepData(profile.keepData);
+    setBrowserAccount(profile.browserAccount);
     setPrivateThroughProxy(profile.privateThroughProxy);
     setProxyChoice(profile.proxyId ?? NO_PROXY);
   }
@@ -195,6 +202,8 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
       color: data.get("color"),
       ...(proxyChoice === null ? {} : { proxyId: proxyChoice === NO_PROXY ? null : proxyChoice }),
       keepData,
+      // Sent only when it changes: changing it asks the person to confirm it's them.
+      ...(browserAccount !== profile.browserAccount ? { browserAccount } : {}),
       // Only meaningful with a proxy; dropping the proxy switches it off.
       privateThroughProxy: proxyChoice !== null && proxyChoice !== NO_PROXY && privateThroughProxy,
     });
@@ -265,7 +274,32 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
                 restored next time. Off: every session starts clean.
               </span>
             </span>
-            <Switch checked={keepData} onCheckedChange={setKeepData} />
+            <Switch
+              aria-label="Keep browsing data between sessions"
+              checked={keepData}
+              onCheckedChange={setKeepData}
+            />
+          </label>
+          <label className="flex items-start justify-between gap-4">
+            <span>
+              <span className="block text-callout font-medium text-ink">
+                Browser account and saved passwords
+              </span>
+              <span className="block text-footnote text-ink-secondary">
+                Turns on {engineDetails[profile.engine].name}’s own password manager
+                {engineDetails[profile.engine].account
+                  ? `, and signing in to your ${engineDetails[profile.engine].account} account so the passwords you saved there sync in (${engineDetails[profile.engine].account} syncs them under its own terms)`
+                  : ""}
+                . They’re kept with this profile’s data, encrypted. Needs the data kept. Changing it
+                asks you to confirm it’s you.
+              </span>
+            </span>
+            <Switch
+              aria-label="Browser account and saved passwords"
+              checked={browserAccount && keepData}
+              disabled={!keepData}
+              onCheckedChange={setBrowserAccount}
+            />
           </label>
           {proxies.length > 0 && proxyChoice !== NO_PROXY && (
             <label className="flex items-start justify-between gap-4">
@@ -402,10 +436,13 @@ function ClearProfileData({ profile }: { profile: Profile }) {
 export function ProfilesManager({
   profiles,
   limit,
+  engines,
   proxies,
 }: {
   profiles: readonly Profile[];
   limit: number;
+  /** The browsers this installation offers for a new profile. */
+  engines: readonly BrowserEngine[];
   proxies: readonly ProxyChoice[];
 }) {
   const proxyNames = new Map(proxies.map((proxy) => [proxy.id, proxy.name]));
@@ -447,7 +484,7 @@ export function ProfilesManager({
         <p className="text-callout text-ink-secondary">
           {profiles.length} of {limit} profiles
         </p>
-        {!atLimit && <NewProfile suggestedColor={suggestedColor} />}
+        {!atLimit && <NewProfile suggestedColor={suggestedColor} engines={engines} />}
       </div>
       {atLimit && (
         <p className="text-footnote text-ink-secondary">
@@ -470,7 +507,7 @@ export function ProfilesManager({
                 <div className="min-w-0">
                   <p className="truncate text-callout font-medium text-ink">{profile.name}</p>
                   <p className="text-footnote text-ink-secondary">
-                    {engineLabels[profile.engine]}
+                    {engineDetails[profile.engine].name}
                     {profile.proxyId && proxyNames.has(profile.proxyId)
                       ? ` · Proxy: ${proxyNames.get(profile.proxyId) ?? ""}${profile.privateThroughProxy ? " · Private addresses through the proxy" : ""}`
                       : ""}
@@ -486,6 +523,9 @@ export function ProfilesManager({
                         : "Keeps browsing data · nothing saved yet"
                       : "Starts every session clean"}
                     {profile.keepData && profile.data && <LocalDate iso={profile.data.savedAt} />}
+                    {profile.keepData && profile.browserAccount
+                      ? " · Browser account and saved passwords on"
+                      : ""}
                   </p>
                 </div>
               </div>

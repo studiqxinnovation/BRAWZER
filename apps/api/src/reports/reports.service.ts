@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   type AdminPageReport,
+  type BrowserEngine,
   type AdminPageReportList,
   type createPageReportRequestSchema,
   MAX_REPORT_PICTURE_BYTES,
@@ -84,7 +85,7 @@ export class ReportsService implements OnApplicationBootstrap {
     // Counted once the report is known to be well formed.
     await this.limiter.enforce(RATE_LIMITS.pageReportsPerAccount, auth.user.id);
     // A session is named only if it is the sender's own; its engine comes from the record.
-    let session: { id: string; engine: "bee" | "firefox" } | null = null;
+    let session: { id: string; engine: BrowserEngine } | null = null;
     if (input.sessionId !== null) {
       const [row] = await this.database.db
         .select({ id: schema.browserSessions.id, engine: schema.browserSessions.engine })

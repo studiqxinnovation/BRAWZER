@@ -24,6 +24,8 @@ export interface EgressProxyOptions {
   privateViaUpstream?: boolean;
   /** The account's site rules, if it has any. */
   siteRules?: { allow: readonly string[]; block: readonly string[] } | null;
+  /** The profile's browser account is on: Chrome's sync server is reachable (ADR 0021). */
+  accountSync?: boolean;
   /** Development only: loopback targets are reached under this name. */
   loopbackHost: string | null;
   lookup?: (name: string) => Promise<readonly { address: string; family: number }[]>;
@@ -95,6 +97,7 @@ export function createEgressProxy(options: EgressProxyOptions): http.Server {
     allowPrivate: options.allowPrivate,
     privateViaUpstream: options.privateViaUpstream === true,
     siteRules: options.siteRules ?? null,
+    accountSync: options.accountSync === true,
     lookup,
   };
 

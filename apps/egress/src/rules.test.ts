@@ -81,6 +81,20 @@ describe("egress rules", () => {
     ).toEqual({ kind: "refused", reason: "engine" });
   });
 
+  it("lets a profile with its browser account on reach Chrome's sync, and nothing more", async () => {
+    const options = { hasUpstream: true, allowPrivate: false, lookup };
+    expect(await decideEgress("clients4.google.com", 443, options)).toEqual({
+      kind: "refused",
+      reason: "engine",
+    });
+    expect(
+      await decideEgress("clients4.google.com", 443, { ...options, accountSync: true }),
+    ).toEqual({ kind: "upstream", host: "clients4.google.com", port: 443 });
+    expect(
+      await decideEgress("update.googleapis.com", 443, { ...options, accountSync: true }),
+    ).toEqual({ kind: "refused", reason: "engine" });
+  });
+
   it("lets pages sign in to Google and load what its sites need", () => {
     for (const host of [
       "accounts.google.com",

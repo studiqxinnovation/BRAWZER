@@ -3,6 +3,7 @@ import { DockerClient } from "../browser/docker.js";
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 import { DOCKER, EgressService } from "./egress.service.js";
+import { EnginesService } from "./engines.service.js";
 import { RuntimeHostsService } from "./runtime-hosts.service.js";
 
 /**
@@ -19,7 +20,8 @@ import { RuntimeHostsService } from "./runtime-hosts.service.js";
     },
     RuntimeHostsService,
     EgressService,
+    EnginesService,
   ],
-  exports: [DOCKER, EgressService, RuntimeHostsService],
+  exports: [DOCKER, EgressService, RuntimeHostsService, EnginesService],
 })
 export class EgressModule {}

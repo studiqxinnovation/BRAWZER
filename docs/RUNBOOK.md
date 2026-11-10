@@ -93,8 +93,9 @@ them like a release when the changes matter (the Chromium version is in the
 image's `docker image inspect` labels and in each session's status bar).
 
 Between Mondays, the "Engine watch" workflow checks each day whether Debian
-ships a newer `chromium` or `firefox-esr` than `nightly` holds and, if so,
-starts the release workflow at once. To check by hand:
+ships a newer `chromium` or `firefox-esr`, or Google or Microsoft a newer
+`google-chrome-stable` or `microsoft-edge-stable`, than `nightly` holds and,
+if so, starts the release workflow at once. To check by hand:
 `node infra/scripts/engine-versions.mjs ghcr.io/<owner>/brawzer-runtime:nightly`
 (exit 3 means a rebuild is due).
 
@@ -139,6 +140,18 @@ waiting per API instance so a plain Bee session starts at once; each waiting
 pair counts against the host like a session, so size the pool from the
 capacity left after the expected live sessions. When the limit is reached, starting a session
 answers 503 with `Retry-After: 60`, and the Browser page says so.
+
+### Which browsers are offered
+
+`BROWSER_ENGINES` lists them, in the launcher's order (default
+`bee,chrome,firefox,edge,chromium`). Take `chrome` or `edge` out where
+Google's or Microsoft's terms for hosting their browsers aren't met; their
+profiles then can't start until it's back, and say so. Edge is offered only
+when every runtime host's image is x86-64 (the API asks the hosts' engines
+every 5 minutes), since Microsoft ships Edge for x86-64 Linux only; on ARM
+hosts its icon simply isn't shown. A profile's "Browser account and saved
+passwords" switch is the person's to make (ADR 0021); nothing here turns it
+on for them.
 
 ## Before launch
 

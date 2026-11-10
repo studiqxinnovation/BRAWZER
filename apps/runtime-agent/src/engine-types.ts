@@ -1,3 +1,4 @@
+import type { ChromiumBrand } from "./config.ts";
 import type { AgentMessage, RelayMessage, TransferChunkHeader, Viewport } from "@brawzer/contracts";
 import type { BinarySink } from "./transfers.ts";
 
@@ -26,6 +27,17 @@ export interface EngineOptions {
   readerScript: string;
   /** Catalogue extensions to install for this session, with where their builds are in the image. */
   extensions: readonly InstallableExtension[];
+  /**
+   * Which Chromium browser this is: Brawzer's own Bee (which says so in its
+   * user agent), or Chrome, Edge or Chromium as their makers ship them.
+   */
+  brand?: ChromiumBrand;
+  /**
+   * The browser's own pages a profile with its browser account on may open
+   * (ADR 0021): its saved passwords, and its account sign-in where the
+   * engine has one. Null: none.
+   */
+  browserPages?: { passwords: string; account: string | null } | null;
 }
 
 export interface InstallableExtension {

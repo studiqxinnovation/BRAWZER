@@ -3,8 +3,10 @@
  * Asks a runtime image's own package manager whether Debian ships newer
  * browser engines than the image holds (Phase 8, idea 18). The image's apt
  * sources include the security archive, so a security release shows up the
- * day Debian publishes it. Exit 0: current; exit 3: a newer chromium or
- * firefox-esr exists, rebuild; exit 1: the check could not run.
+ * day Debian publishes it (Chrome and Edge come from Google's and Microsoft's
+ * own repositories, also in the image's sources; Edge only on x86-64). Exit 0:
+ * current; exit 3: a newer chromium, firefox-esr, google-chrome-stable or
+ * microsoft-edge-stable exists, rebuild; exit 1: the check could not run.
  *
  *   node infra/scripts/engine-versions.mjs ghcr.io/owner/brawzer-runtime:nightly
  */
@@ -15,7 +17,7 @@ if (!image) {
   console.error("usage: engine-versions.mjs <runtime image>");
   process.exit(1);
 }
-const PACKAGES = ["chromium", "firefox-esr"];
+const PACKAGES = ["chromium", "firefox-esr", "google-chrome-stable", "microsoft-edge-stable"];
 
 let policy;
 try {
@@ -45,7 +47,8 @@ for (const line of policy.split("\n")) {
   const name = /^(\S+):$/.exec(line)?.[1];
   if (name) current = { name, installed: null, candidate: null };
   const installed = /^\s+Installed:\s*(\S+)/.exec(line)?.[1];
-  if (installed && current) current.installed = installed;
+  // "(none)": known to apt but not in this image (Edge on an ARM image).
+  if (installed && installed !== "(none)" && current) current.installed = installed;
   const candidate = /^\s+Candidate:\s*(\S+)/.exec(line)?.[1];
   if (candidate && current) {
     current.candidate = candidate;

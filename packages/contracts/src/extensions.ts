@@ -102,8 +102,12 @@ export const extensionListSchema = z
 
 /** The catalogue entries an engine can run. */
 // The engine is named, not imported from profiles.ts, which imports this module.
-export function extensionsFor(engine: "bee" | "firefox"): CatalogueEntry[] {
-  return EXTENSION_CATALOGUE.filter((entry) => entry[engine] !== null);
+// Chrome, Edge and Chromium run the same builds as Bee: all are Chromium.
+export function extensionsFor(
+  engine: "bee" | "chrome" | "firefox" | "edge" | "chromium",
+): CatalogueEntry[] {
+  const family = engine === "firefox" ? "firefox" : "bee";
+  return EXTENSION_CATALOGUE.filter((entry) => entry[family] !== null);
 }
 
 export function catalogueEntry(slug: string): CatalogueEntry | undefined {

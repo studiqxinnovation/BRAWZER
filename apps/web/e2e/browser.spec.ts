@@ -32,16 +32,13 @@ test.describe("browser", () => {
     baseURL,
     isMobile,
   }) => {
-    test.skip(
-      isMobile,
-      "The streamed page is driven with a mouse; phones get the start panel test.",
-    );
+    test.skip(isMobile, "The streamed page is driven with a mouse; phones get the launcher test.");
     test.setTimeout(120_000);
     await signedIn(page, baseURL, "browser");
     await expect(page.getByRole("heading", { name: "Browser" })).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);
 
-    await page.getByRole("button", { name: "Start browsing" }).click();
+    await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
     const viewport = page.getByTestId("browser-viewport");
     await expect(viewport).toBeVisible({ timeout: 60_000 });
     await expect
@@ -300,7 +297,7 @@ test.describe("browser", () => {
       streams.push(socket);
     });
     await signedIn(page, baseURL, "browser-reconnect");
-    await page.getByRole("button", { name: "Start browsing" }).click();
+    await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
     const viewport = page.getByTestId("browser-viewport");
     await expect
       .poll(() => viewport.getAttribute("data-frames"), { timeout: 60_000 })
@@ -344,7 +341,7 @@ test.describe("browser", () => {
     test.skip(isMobile, "The streamed page is driven with a mouse; one run covers it.");
     test.setTimeout(150_000);
     const email = await signedIn(page, baseURL, "browser-history");
-    await page.getByRole("button", { name: "Start browsing" }).click();
+    await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
     const viewport = page.getByTestId("browser-viewport");
     await expect(viewport).toBeVisible({ timeout: 60_000 });
     // Typed addresses go to a live stream: wait for its first frames.
@@ -398,7 +395,7 @@ test.describe("browser", () => {
     await expect(phone.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
     const resume = phone.getByRole("region", { name: "Continue where you left off" });
     await expect(resume).toBeVisible({ timeout: 15_000 });
-    await expect(resume.getByRole("list", { name: "Tabs to reopen" })).toContainText(
+    await expect(resume.getByRole("list", { name: "Tabs Personal reopens" })).toContainText(
       "Brawzer test site",
     );
     expect(await wcagViolations(phone)).toEqual([]);
@@ -443,18 +440,130 @@ test.describe("browser", () => {
     await expect(page.getByRole("list", { name: "Bookmarks" })).toContainText("Brawzer test site");
   });
 
-  test("the start panel explains what the cloud browser does and doesn't do yet", async ({
+  test("the launcher shows each browser's icon and says what opening it keeps", async ({
     page,
     baseURL,
+    isMobile,
   }) => {
-    await signedIn(page, baseURL, "browser-start");
-    await expect(page.getByRole("button", { name: "Start browsing" })).toBeVisible();
-    // The panel says where websites will see the session from.
-    await expect(
-      page.getByText("Websites see Brawzer’s cloud; the profile has no proxy."),
-    ).toBeVisible();
-    // The default profile keeps its data; a temporary session is offered too.
-    await expect(page.getByText(/Cookies, history and site data are saved to/)).toBeVisible();
+    await signedIn(page, baseURL, "browser-launcher");
+    await expect(page.getByRole("heading", { name: "Browser", level: 1 })).toBeVisible();
+    const browsers = page.getByRole("list", { name: "Browsers" });
+    const icon = (name: string) =>
+      browsers.getByRole("button", { name: `Open ${name}`, exact: true });
+    // Bee first, then the others this installation offers (Edge only where the runtime is x86-64).
+    await expect(browsers.locator("button.bl-app-button").first()).toHaveAccessibleName(
+      "Open Bee Browser",
+    );
+    for (const name of ["Chrome", "Firefox", "Chromium"]) await expect(icon(name)).toBeVisible();
+    // Bee opens the default profile; what it keeps and where websites see it from is said.
+    await expect(icon("Bee Browser")).toHaveAccessibleDescription(
+      /Opens “Personal”: cookies, history and sign-ins are saved, encrypted.*Websites see Brawzer’s cloud; the profile has no proxy\./,
+    );
+    await expect(page.getByRole("navigation", { name: "Taskbar" })).toContainText(
+      "No browsers open",
+    );
     expect(await wcagViolations(page)).toEqual([]);
+
+    if (!isMobile) {
+      await icon("Chrome").hover();
+      // The caption under the icons says what the pointed-at one does.
+      await expect(page.locator(".bl-caption")).toContainText(
+        "Google’s own browser, as Google ships it. Opens a new profile named after Chrome",
+      );
+      // Arrow keys move along the icons, as on a desktop.
+      await icon("Bee Browser").focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(icon("Chrome")).toBeFocused();
+      // Right-clicking an icon offers its profiles, as a desktop does.
+      await icon("Firefox").click({ button: "right" });
+      const newFirefox = page.getByRole("menuitem", { name: "A new Firefox profile" });
+      await expect(newFirefox).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(newFirefox).toBeHidden();
+    }
+
+    // The menu under an icon opens it with another profile, or with nothing kept.
+    await page
+      .getByRole("button", { name: /^Personal\b.*open Bee Browser with another profile$/ })
+      .click();
+    await expect(page.getByRole("menuitem", { name: "Personal" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "A new Bee Browser profile" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Temporary (nothing kept)" })).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+  });
+
+  test("runs Firefox and Chrome side by side, switches between them, and shows where passwords are", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The streamed page is driven with a mouse; one run covers it.");
+    test.setTimeout(240_000);
+    await signedIn(page, baseURL, "browser-side-by-side");
+    const viewport = page.getByTestId("browser-viewport");
+    const address = page.getByRole("textbox", { name: "Address or search" });
+    const streaming = async () => {
+      await expect
+        .poll(() => viewport.getAttribute("data-frames"), { timeout: 90_000 })
+        .not.toBe("0");
+    };
+
+    // Firefox first: clicking its icon gives it a profile of its own.
+    await page.getByRole("button", { name: "Open Firefox", exact: true }).click();
+    await streaming();
+    await expect(page).toHaveURL(/[?&]session=/);
+    const firefoxUrl = page.url();
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+
+    // Then Chrome, from the switcher, while Firefox keeps running.
+    await page.getByRole("button", { name: "Firefox · Firefox. Switch browser" }).click();
+    await page.getByRole("menuitem", { name: "Open another browser" }).click();
+    const open = page.getByRole("list", { name: "Browsers open now" });
+    await expect(open.getByRole("listitem")).toHaveCount(1);
+    await expect(open).toContainText("Firefox · Firefox");
+    await page.getByRole("button", { name: "Open Chrome", exact: true }).click();
+    await streaming();
+    await address.fill("http://testsite.invalid/second");
+    await address.press("Enter");
+    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+
+    // Where saved passwords are: Chrome's own are off for this profile until it's
+    // turned on; a password manager with a website opens in a new tab.
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Saved passwords" }).click();
+    const passwords = page.getByRole("dialog", { name: "Saved passwords" });
+    await expect(passwords).toContainText(
+      "Google Chrome’s own password manager and Google account are off for “Chrome”.",
+    );
+    expect(await wcagViolations(page)).toEqual([]);
+    await passwords.getByRole("button", { name: /^Bitwarden/ }).click();
+    await expect(passwords).toBeHidden();
+    await expect(page.getByRole("tab")).toHaveCount(2, { timeout: 30_000 });
+
+    // Back to Firefox: its page is as it was left.
+    await page.getByRole("button", { name: "Chrome · Chrome. Switch browser" }).click();
+    await page.getByRole("menuitem", { name: "Firefox · Firefox" }).click();
+    await expect(page).toHaveURL(firefoxUrl);
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+
+    // End both: this one from its menu, Chrome from the launcher's taskbar.
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "End session" }).click();
+    await page
+      .getByRole("alertdialog", { name: "End this browser session?" })
+      .getByRole("button", { name: "End session" })
+      .click();
+    await expect(page.getByText("You ended this browser session.")).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByRole("button", { name: "Open a browser" }).click();
+    await expect(open.getByRole("listitem")).toHaveCount(1);
+    await page.getByRole("button", { name: "End Chrome · Chrome" }).click();
+    await expect(page.getByText("Browser ended")).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Taskbar" })).toContainText(
+      "No browsers open",
+    );
   });
 });

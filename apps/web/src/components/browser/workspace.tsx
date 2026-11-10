@@ -4,6 +4,7 @@ import {
   CLIPBOARD_MAX_CHARS,
   type AgentMessage,
   type Bookmark,
+  type BrowserEngine,
   type BrowserOverview,
   type BrowserSession,
   type ClientMessageInput,
@@ -70,7 +71,9 @@ import {
 import { type ChooserRequest, DrivePicker } from "./drive-picker";
 import { ReportPageDialog, type ReportTarget } from "./report-dialog";
 import { HistoryPanel } from "./history-panel";
-import { StartPanel } from "./start-panel";
+import { PasswordsDialog } from "./passwords-dialog";
+import { type LaunchChoice, Launcher } from "./launcher";
+import { SessionSwitcher } from "./session-switcher";
 import { BrowserViewport, type Shortcut, type ViewportHandle } from "./viewport";
 
 type Phase =
@@ -175,9 +178,10 @@ function remainingLabel(expiresAt: string, now: number): string {
  */
 export function BrowserWorkspace({
   initial,
-  profiles,
+  profiles: loadedProfiles,
   proxies,
   mode = "page",
+  select = { session: null, launcher: false },
 }: {
   /** "window": the pop-out, with nothing around it but the browser's own chrome. */
   mode?: "page" | "window";
@@ -185,12 +189,22 @@ export function BrowserWorkspace({
   profiles: readonly Profile[];
   /** The account's saved proxies, for naming the one a session uses. */
   proxies: readonly { id: string; name: string; protocol: string }[];
+  /** Which open browser to show (`?session=`), or the launcher (`?new=1`); else the newest. */
+  select?: { session: string | null; launcher: boolean };
 }) {
   const toast = useToast();
+  // The page's profiles, and any the launcher makes for a browser while this page is open.
+  const [profiles, setProfiles] = useState(loadedProfiles);
+  const base = mode === "window" ? "/app/browser/window" : "/app/browser";
+  const sessionHref = (id: string) => `${base}?${new URLSearchParams({ session: id }).toString()}`;
+  const launcherHref = `${base}?new=1`;
+  const attachTo = select.launcher
+    ? null
+    : select.session
+      ? (initial.sessions.find((candidate) => candidate.id === select.session) ?? null)
+      : initial.session;
   const [phase, setPhase] = useState<Phase>(
-    initial.session?.status === "running"
-      ? { kind: "connecting", session: initial.session }
-      : { kind: "idle" },
+    attachTo?.status === "running" ? { kind: "connecting", session: attachTo } : { kind: "idle" },
   );
   const [startError, setStartError] = useState<string | null>(null);
   const [tabs, setTabs] = useState<TabState[]>([]);
@@ -240,6 +254,7 @@ export function BrowserWorkspace({
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [report, setReport] = useState<ReportTarget | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [passwordsOpen, setPasswordsOpen] = useState(false);
   const [confirmHandOff, setConfirmHandOff] = useState(false);
   const [bookmarkBusy, setBookmarkBusy] = useState(false);
   /** The live session's profile's bookmarks, for the star (ADR 0020). */
@@ -262,9 +277,7 @@ export function BrowserWorkspace({
   const [firstFrame, setFirstFrame] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   /** The profile of the session that ran last, for what the end message says. */
-  const [lastProfileId, setLastProfileId] = useState<string | null>(
-    initial.session?.profileId ?? null,
-  );
+  const [lastProfileId, setLastProfileId] = useState<string | null>(attachTo?.profileId ?? null);
   const lastProfile = profiles.find((profile) => profile.id === lastProfileId) ?? null;
   const coarsePointer = useSyncExternalStore(subscribeCoarsePointer, isCoarsePointer, () => false);
 
@@ -443,10 +456,12 @@ export function BrowserWorkspace({
     stream.open(ticket.data.url, ticket.data.ticket, viewport.current);
   }
 
-  async function start(profileId: string | null, resume = false) {
+  async function start(profileId: string | null, resume = false, engine?: BrowserEngine) {
     setStartError(null);
     setPhase({ kind: "starting" });
-    const result = await startBrowserSession(profileId ? { profileId, resume } : {});
+    const result = await startBrowserSession(
+      profileId ? { profileId, resume } : engine ? { engine } : {},
+    );
     if (!result.ok) {
       if (result.status === 401) {
         leaveSignedInArea("expired");
@@ -458,6 +473,8 @@ export function BrowserWorkspace({
     }
     attempts.current = 0;
     setLastProfileId(result.data.profileId);
+    // The address says which browser this is, so a reload comes back to it.
+    window.history.replaceState(null, "", sessionHref(result.data.id));
     await connect(result.data);
   }
 
@@ -564,7 +581,7 @@ export function BrowserWorkspace({
 
   // Reattach to a session that was already running when the page loaded.
   useEffect(() => {
-    if (initial.session?.status === "running") void connect(initial.session);
+    if (attachTo?.status === "running") void connect(attachTo);
     return () => {
       stream.close();
     };
@@ -798,9 +815,12 @@ export function BrowserWorkspace({
   }
 
   function popOut() {
+    const current = phaseRef.current;
+    if (current.kind !== "live" && current.kind !== "connecting") return;
+    // A window per browser, so Firefox and Chrome can sit side by side.
     const opened = window.open(
-      "/app/browser/window",
-      "brawzer-browser",
+      `/app/browser/window?${new URLSearchParams({ session: current.session.id }).toString()}`,
+      `brawzer-browser-${current.session.id}`,
       "popup=yes,width=1280,height=860",
     );
     if (!opened) {
@@ -829,13 +849,19 @@ export function BrowserWorkspace({
 
   if (phase.kind === "idle" || phase.kind === "starting") {
     return (
-      <StartPanel
+      <Launcher
         profiles={profiles}
         proxies={proxies}
         overview={initial}
+        onProfileCreated={(profile) => {
+          setProfiles((current) => [...current, profile]);
+        }}
         starting={phase.kind === "starting"}
         error={startError}
-        onStart={(profileId, resume) => void start(profileId, resume)}
+        sessionHref={sessionHref}
+        onStart={(choice: LaunchChoice) =>
+          void start(choice.profileId, choice.resume, choice.engine)
+        }
       />
     );
   }
@@ -894,7 +920,7 @@ export function BrowserWorkspace({
               setPhase({ kind: "idle" });
             }}
           >
-            Start a new session
+            Open a browser
           </Button>
         </div>
       </div>
@@ -928,6 +954,13 @@ export function BrowserWorkspace({
       />
 
       <div className="flex items-center gap-2 border-b border-line bg-canvas px-3 py-2">
+        <SessionSwitcher
+          current={session}
+          engine={session.engine}
+          profiles={profiles}
+          hrefFor={sessionHref}
+          launcherHref={launcherHref}
+        />
         <NavButtons
           tab={activeTab}
           onBack={() => {
@@ -1039,6 +1072,9 @@ export function BrowserWorkspace({
                 }
               : undefined
           }
+          onPasswords={() => {
+            setPasswordsOpen(true);
+          }}
           onHandOff={
             sessionProfile?.keepData
               ? () => {
@@ -1194,6 +1230,18 @@ export function BrowserWorkspace({
           onOpen={navigate}
         />
       )}
+      <PasswordsDialog
+        open={passwordsOpen}
+        onOpenChange={setPasswordsOpen}
+        engine={session.engine}
+        profile={sessionProfile}
+        onBrowserPage={(page) => {
+          send({ type: "open-browser-page", page });
+        }}
+        onOpenUrl={(url) => {
+          send({ type: "new-tab", url });
+        }}
+      />
       <HandOffDialog
         open={confirmHandOff}
         onOpenChange={setConfirmHandOff}

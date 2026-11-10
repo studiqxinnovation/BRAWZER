@@ -1,4 +1,4 @@
-import { BROWSER_LIMITS, type SiteRulesForEgress } from "@brawzer/contracts";
+import { type BrowserEngine, BROWSER_LIMITS, type SiteRulesForEgress } from "@brawzer/contracts";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { APP_CONFIG } from "../config/config.module.js";
 import { Readable } from "node:stream";
@@ -31,7 +31,7 @@ export interface RuntimePair {
   egressId: string;
   containerId: string;
   agentAddress: string;
-  engine: "bee" | "firefox";
+  engine: BrowserEngine;
 }
 
 export interface StartedRuntime {
@@ -83,11 +83,12 @@ export class OrchestratorService {
     secret: string,
     profileData: Readable | null = null,
     upstream: ProxyTarget | null = null,
-    engine: "bee" | "firefox" = "bee",
+    engine: BrowserEngine = "bee",
     options: {
       privateViaUpstream: boolean;
       siteRules?: SiteRulesForEgress | null;
       extensions?: readonly string[];
+      browserAccount?: boolean;
     } = { privateViaUpstream: false },
   ): Promise<StartedRuntime> {
     const pair = await this.createPair(host, sessionId, secret, upstream, engine, options);
@@ -104,11 +105,12 @@ export class OrchestratorService {
     sessionId: string,
     secret: string,
     upstream: ProxyTarget | null,
-    engine: "bee" | "firefox",
+    engine: BrowserEngine,
     options: {
       privateViaUpstream: boolean;
       siteRules?: SiteRulesForEgress | null;
       extensions?: readonly string[];
+      browserAccount?: boolean;
     },
     extraLabels: Record<string, string> = {},
   ): Promise<RuntimePair> {
@@ -127,6 +129,7 @@ export class OrchestratorService {
         ...(upstream ? [`EGRESS_UPSTREAM=${JSON.stringify(upstream)}`] : []),
         ...(options.privateViaUpstream ? ["EGRESS_PRIVATE_VIA_UPSTREAM=true"] : []),
         ...(options.siteRules ? [`EGRESS_SITE_RULES=${JSON.stringify(options.siteRules)}`] : []),
+        ...(options.browserAccount ? ["EGRESS_ACCOUNT_SYNC=true"] : []),
         ...this.egress.commonEnv(),
       ],
       labels: {
@@ -159,6 +162,7 @@ export class OrchestratorService {
           `BRAWZER_EGRESS_PROXY=127.0.0.1:${String(EGRESS_PROXY_PORT)}`,
           `BRAWZER_ENGINE=${engine}`,
           ...(options.privateViaUpstream ? ["BRAWZER_PRIVATE_VIA_EGRESS=true"] : []),
+          ...(options.browserAccount ? ["BRAWZER_BROWSER_ACCOUNT=true"] : []),
           ...(options.extensions?.length
             ? [`BRAWZER_EXTENSIONS=${options.extensions.join(",")}`]
             : []),

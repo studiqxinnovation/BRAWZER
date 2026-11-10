@@ -148,13 +148,13 @@ describe("session isolation, checked against the real containers", () => {
     }
   }, 120_000);
 
-  for (const engine of ["bee", "firefox"] as const) {
+  for (const engine of ["bee", "firefox", "chrome"] as const) {
     it(`gives a ${engine} page no way out but the filtering proxy`, async () => {
       const client = h.browser();
       await h.signUp(client, h.uniqueEmail(`isolation-${engine}`));
       let profileId: string | null = null;
-      if (engine === "firefox") {
-        const created = await client.post("/profiles", { name: "Firefox", color: "teal", engine });
+      if (engine !== "bee") {
+        const created = await client.post("/profiles", { name: engine, color: "teal", engine });
         expect(created.statusCode, created.body).toBe(201);
         profileId = profileSchema.parse(created.json()).id;
       }
@@ -215,7 +215,8 @@ describe("session isolation, checked against the real containers", () => {
           `const net=require("node:net");const s=net.connect({host:"127.0.0.1",port:9222});
            s.on("connect",()=>{console.log("open");s.destroy()});s.on("error",(e)=>console.log(e.code));`,
         );
-        if (engine === "bee") expect(debug).toBe("ECONNREFUSED");
+        // Bee and Chrome are driven over a pipe; Firefox over its own loopback port.
+        if (engine !== "firefox") expect(debug).toBe("ECONNREFUSED");
       } finally {
         await endSession(client, session.id);
       }

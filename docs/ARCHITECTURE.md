@@ -110,14 +110,14 @@ In production the edge should route `/api/v1` straight to the API, so that
    - **Phase 3a:** frames over secure WebSocket with end-to-end acknowledgements: the DevTools screencast for Bee Browser, BiDi screenshots for Firefox. Real browsing, no audio, about 15–30 fps.
    - **Phase 3b:** WebRTC. The engine runs full-screen in a virtual display sized to the viewport, so the display holds only page content. It's captured with GStreamer and streamed with audio and an input channel, through TURN on port 443 for strict networks.
    - Firefox turned out not to need it: WebDriver BiDi screenshots serve the 3a stream ([ADR 0017](adr/0017-bee-browser-and-firefox.md)). Step 3a remains the fallback where UDP is blocked.
-2. **Engines behind one adapter.** Bee Browser (Chromium) is controlled through CDP, Firefox through WebDriver BiDi on standard Firefox ESR; both implement the agent's `Engine` interface and the relay doesn't know which runs. Edge is Chromium-based and is not presented as a separate engine.
+2. **Engines behind one adapter.** Bee Browser, Chromium, Google Chrome and Microsoft Edge are controlled through CDP over a pipe, Firefox through WebDriver BiDi on standard Firefox ESR; both drivers implement the agent's `Engine` interface and the relay doesn't know which runs. Chrome and Edge are their makers' own builds from their signed repositories; Edge only where the runtime is x86-64 ([ADR 0021](adr/0021-more-browsers-and-browser-accounts.md)).
 3. **Server-side sessions** ([ADR 0005](adr/0005-session-model.md)).
    - Opaque tokens live in `__Host-` HttpOnly cookies, stored only as hashes.
    - Sessions can be revoked instantly, including live streams.
    - Streams connect with single-use tickets that expire within 60 seconds.
    - Shared-computer mode is the default.
 4. **Authentication built in-house** on well-tested libraries (argon2id, SimpleWebAuthn, otplib). Passkey sign-in from the user's phone comes first in Phase 2, so nobody has to type a password on a public keyboard.
-5. **Profiles as encrypted archives** ([ADR 0013](adr/0013-profile-data-and-drive-hand-off.md)). One engine data directory per profile, restored into the container before the engine starts and packed, encrypted, when the session ends cleanly. One live session per account means a profile runs in at most one session. Brawzer keeps each profile's history, bookmarks and open tabs as its own encrypted records, readable only by the profile's owner ([ADR 0020](adr/0020-history-bookmarks-and-open-tabs.md)).
+5. **Profiles as encrypted archives** ([ADR 0013](adr/0013-profile-data-and-drive-hand-off.md)). One engine data directory per profile, restored into the container before the engine starts and packed, encrypted, when the session ends cleanly. An account runs as many sessions as its plan allows, a profile in at most one of them. Brawzer keeps each profile's history, bookmarks and open tabs as its own encrypted records, readable only by the profile's owner ([ADR 0020](adr/0020-history-bookmarks-and-open-tabs.md)).
 6. **Files stay in the cloud** (built, milestone 3.7).
    - Downloads are handed to Brawzer Drive, scanned and encrypted on the way.
    - When a site asks for an upload, Brawzer shows a Drive file picker.

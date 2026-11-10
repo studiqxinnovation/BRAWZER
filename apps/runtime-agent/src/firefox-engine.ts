@@ -452,6 +452,12 @@ export class FirefoxEngine implements Engine {
       case "new-tab":
         await this.createTab(message.url);
         return;
+      case "open-browser-page": {
+        const pages = this.options.browserPages;
+        const url = pages ? (message.page === "passwords" ? pages.passwords : pages.account) : null;
+        if (url) await this.createTab(url);
+        return;
+      }
       case "close-tab":
         if (this.tabs.has(message.tabId)) {
           await this.bidi.send("browsingContext.close", { context: message.tabId });

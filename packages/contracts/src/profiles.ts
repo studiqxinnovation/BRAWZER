@@ -20,23 +20,61 @@ export const profileColors = [
 export const profileColorSchema = z.enum(profileColors, { error: "Choose a colour." });
 
 /**
- * Browser engines. Must match the database enum `browser_engine`. Bee is
- * Brawzer's own browser, built on Chromium; Firefox is the second engine.
+ * Browser engines. Must match the database enum `browser_engine`, order
+ * included (the launcher shows them in `BROWSER_ENGINES` order). Bee is
+ * Brawzer's own browser, built on Chromium; the others are their makers'
+ * browsers as their makers ship them.
  */
-export const browserEngines = ["bee", "firefox"] as const;
-export const browserEngineSchema = z.enum(browserEngines, { error: "Choose Bee or Firefox." });
+export const browserEngines = ["bee", "firefox", "chrome", "edge", "chromium"] as const;
+export const browserEngineSchema = z.enum(browserEngines, {
+  error: "Choose Bee Browser, Chrome, Firefox, Edge or Chromium.",
+});
+
+/** Engines built on Chromium, which share its extensions (ADR 0018) and its driver (CDP). */
+export const chromiumFamily = (engine: BrowserEngine): boolean => engine !== "firefox";
 
 /** What each engine is, in the words the pages use. */
 export const engineDetails = {
   bee: {
     name: "Bee Browser",
+    short: "Bee Browser",
+    account: null,
     basis: "Brawzer’s own browser, built on Chromium",
   },
   firefox: {
     name: "Firefox",
-    basis: "Mozilla’s engine, for sites and extensions that need it",
+    short: "Firefox",
+    account: "Mozilla",
+    basis: "Mozilla’s browser, for sites and extensions that need it",
   },
-} as const satisfies Record<(typeof browserEngines)[number], { name: string; basis: string }>;
+  chrome: {
+    name: "Google Chrome",
+    short: "Chrome",
+    account: "Google",
+    basis: "Google’s own browser, as Google ships it",
+  },
+  edge: {
+    name: "Microsoft Edge",
+    short: "Edge",
+    account: "Microsoft",
+    basis: "Microsoft’s browser, as Microsoft ships it",
+  },
+  chromium: {
+    name: "Chromium",
+    short: "Chromium",
+    account: null,
+    basis: "The open-source browser Chrome is built from",
+  },
+} as const satisfies Record<
+  (typeof browserEngines)[number],
+  {
+    name: string;
+    short: string;
+    basis: string;
+    /** Whose account the browser signs in to for its synced passwords (ADR 0021); null: none. */
+    account: "Google" | "Microsoft" | "Mozilla" | null;
+  }
+>;
 
 /** Temporary limit until plans exist (Phase 6). */
 export const MAX_PROFILES = 10;
@@ -69,6 +107,12 @@ export const profileSchema = z.object({
   /** Whether Brawzer keeps a searchable history for the profile (when it keeps its data; ADR 0020). */
   keepHistory: z.boolean(),
   /**
+   * The browser's own account and saved passwords: its password manager on,
+   * and signing in to Google (Chrome) or Mozilla (Firefox) allowed, so saved
+   * passwords sync in. Off by default; needs the profile to keep its data.
+   */
+  browserAccount: z.boolean(),
+  /**
    * With a proxy: private and internal addresses go to the proxy instead of
    * being refused, so an intranet behind one's own proxy is reachable.
    * Off by default. Without a proxy it has no effect.
@@ -91,6 +135,8 @@ export const profileListSchema = z.object({
   profiles: z.array(profileSchema),
   /** How many profiles the account may have. */
   limit: z.number().int().positive(),
+  /** The engines this installation offers, for new profiles. */
+  engines: z.array(browserEngineSchema),
 });
 
 export const createProfileRequestSchema = z.object({
@@ -106,6 +152,7 @@ export const updateProfileRequestSchema = z
     proxyId: z.uuid({ error: "Choose one of your proxies." }).nullable().optional(),
     keepData: z.boolean().optional(),
     keepHistory: z.boolean().optional(),
+    browserAccount: z.boolean().optional(),
     privateThroughProxy: z.boolean().optional(),
     extensions: extensionListSchema.optional(),
   })
@@ -116,6 +163,7 @@ export const updateProfileRequestSchema = z
       value.proxyId !== undefined ||
       value.keepData !== undefined ||
       value.keepHistory !== undefined ||
+      value.browserAccount !== undefined ||
       value.privateThroughProxy !== undefined ||
       value.extensions !== undefined,
     { error: "Change the name, colour, proxy or what is kept." },

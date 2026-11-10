@@ -1,3 +1,4 @@
+import type { BrowserEngine } from "@brawzer/contracts";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   Inject,
@@ -81,7 +82,7 @@ export class WarmPoolService implements OnApplicationBootstrap, OnApplicationShu
   }
 
   /** A waiting pair for `engine`, checked once more, or null when none is ready. */
-  async claim(engine: "bee" | "firefox"): Promise<WarmPair | null> {
+  async claim(engine: BrowserEngine): Promise<WarmPair | null> {
     for (;;) {
       const index = this.pairs.findIndex((pair) => pair.engine === engine);
       if (index === -1) return null;

@@ -501,3 +501,43 @@ download, retention), a real session in the browser integration test
 tabs, a temporary session leaving nothing), unit tests of the encryption,
 and the browser e2e journey (star, panel, hand-off to a second signed-in
 browser, the History page, accessibility).
+
+## Also built: more browsers at once, and the browsers' own accounts
+
+Asked for directly on 2026-11-10: open several browsers together, Chrome
+among them, from their logos, and sign in to the browsers' own accounts to
+reach saved passwords ([ADR 0021](../adr/0021-more-browsers-and-browser-accounts.md)).
+
+- **Five browsers.** Bee Browser, Google Chrome (Google's own package),
+  Firefox ESR, Microsoft Edge (Microsoft's own package, on x86-64 runtime
+  hosts only) and Chromium as Debian ships it. `BROWSER_ENGINES` chooses
+  them; Edge is offered only where every runtime image is x86-64. Websites
+  are told the real browser, without the "Headless" marker.
+- **A desktop to open them from.** The Browser page shows each browser's own
+  logo, taken from the browser itself, as an app icon: click to open it with
+  its first free profile (a profile named after it is made the first time),
+  or pick a profile or "Temporary" from the menu under it or by
+  right-clicking. A taskbar lists the browsers running now, to switch to or
+  end; the browser's bar has a switcher with "Open another browser". Up to
+  the plan's live sessions run at once (three on the free plan), a profile in
+  one at a time.
+- **Browser accounts and saved passwords.** A per-profile switch, off by
+  default, for profiles that keep their data, behind a recent sign-in. With
+  it on, the session's policies allow the engine's password manager, sign-in
+  and sync, the egress lets Chrome's sync service through, and "Saved
+  passwords" in the "…" menu opens the browser's own passwords page or its
+  account sign-in. The same panel opens Google Password Manager, Bitwarden,
+  1Password and Proton Pass in a tab, for any session.
+
+Building it found two bugs: concurrent requests could be told the cloud
+browser was unavailable while the first runtime check was still running,
+and a profile the launcher made for a browser showed as "Temporary" in that
+browser until the page reloaded. Both are fixed.
+
+Checked by the browser integration tests (Chrome: browsing, refusals, what
+websites are told, its account pages only with the switch on and a recent
+sign-in, the environment of both containers; Chromium; Edge, run for real
+on x86-64 and refused elsewhere), the isolation checks for Chrome, unit tests
+of the identity, the policies and the offer, and the browser e2e journeys
+(the launcher on desktop and phone, Firefox and Chrome side by side with the
+switcher, the taskbar and the passwords panel).

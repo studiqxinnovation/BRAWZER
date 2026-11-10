@@ -185,6 +185,12 @@ function handleTestSiteRequest(req: http.IncomingMessage, res: http.ServerRespon
         "set-cookie": "brawzer_test=kept; Max-Age=86400; Path=/; SameSite=Lax",
       });
       return;
+    case "/agent": {
+      // What a website is told about the browser: its user agent and brand hints.
+      const agent = `${req.headers["user-agent"] ?? "none"} | ${String(req.headers["sec-ch-ua"] ?? "none")}`;
+      send(200, page(`Agent: ${agent}`, `<h1>${escapeHtml(agent)}</h1>`));
+      return;
+    }
     case "/cookie": {
       const cookie = req.headers.cookie ?? "none";
       send(200, page(`Cookie: ${cookie}`, `<h1>Cookie: ${escapeHtml(cookie)}</h1>`));

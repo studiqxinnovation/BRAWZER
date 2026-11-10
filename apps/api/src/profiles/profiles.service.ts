@@ -43,6 +43,7 @@ export function toProfile(row: ProfileRow): Profile {
     proxyId: row.proxyId,
     keepData: row.keepData,
     keepHistory: row.keepHistory,
+    browserAccount: row.browserAccount,
     privateThroughProxy: row.privateThroughProxy,
     extensions: row.extensions,
     data:
@@ -145,6 +146,7 @@ export class ProfilesService {
       proxyId?: string | null | undefined;
       keepData?: boolean | undefined;
       keepHistory?: boolean | undefined;
+      browserAccount?: boolean | undefined;
       privateThroughProxy?: boolean | undefined;
       extensions?: string[] | undefined;
     },
@@ -176,6 +178,7 @@ export class ProfilesService {
           ...(input.proxyId === undefined ? {} : { proxyId: input.proxyId }),
           ...(input.keepData === undefined ? {} : { keepData: input.keepData }),
           ...(input.keepHistory === undefined ? {} : { keepHistory: input.keepHistory }),
+          ...(input.browserAccount === undefined ? {} : { browserAccount: input.browserAccount }),
           ...(input.privateThroughProxy === undefined
             ? {}
             : { privateThroughProxy: input.privateThroughProxy }),

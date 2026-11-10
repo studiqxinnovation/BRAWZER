@@ -1,0 +1,441 @@
+/*
+ * The browser launcher, a desktop of app icons over a taskbar (class names
+ * start with bl- so they never meet Tailwind's). Motion is decoration:
+ * "reduce motion" stills all of it.
+ */
+
+@layer components {
+  .bl-desktop {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+    --bl-light: rgb(255 255 255 / 0.55);
+    --bl-shadow: 0 1px 2px rgb(28 27 25 / 0.06), 0 8px 22px -6px rgb(28 27 25 / 0.16);
+    background:
+      radial-gradient(120% 70% at 50% 0%, var(--bl-light), transparent 60%),
+      var(--color-canvas-subtle);
+    /* Apple's own font on Apple devices, Inter elsewhere. */
+    font-family:
+      -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", var(--font-inter),
+      system-ui, sans-serif;
+  }
+
+  .bl-main {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+    justify-content: center;
+    overflow-y: auto;
+    padding: 3rem 1rem 2rem;
+  }
+
+  .bl-header {
+    text-align: center;
+  }
+
+  .bl-title {
+    color: var(--color-ink);
+    font-size: clamp(2.25rem, 1.6rem + 2.4vw, 3.25rem);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.05;
+  }
+
+  .bl-subtitle {
+    margin-top: 0.75rem;
+    color: var(--color-ink-secondary);
+    font-size: clamp(1rem, 0.9rem + 0.4vw, 1.25rem);
+    text-wrap: balance;
+  }
+
+  /* ── The icons ─────────────────────────────────────────────────────────── */
+
+  .bl-icons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: clamp(1.25rem, 0.6rem + 2.4vw, 2.5rem);
+    margin: clamp(2.5rem, 1.5rem + 3vw, 4rem) auto 0;
+    max-width: 64rem;
+  }
+
+  .bl-icon {
+    animation: bl-arrive 520ms cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+  }
+
+  .bl-app {
+    --bl-size: clamp(4.75rem, 3.6rem + 4.6vw, 7rem);
+    position: relative;
+    display: flex;
+    width: calc(var(--bl-size) + 1.5rem);
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .bl-app-button {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    border-radius: 1.25rem;
+    padding: 0.25rem 0;
+    outline: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .bl-app-button:disabled {
+    cursor: default;
+  }
+
+  .bl-tile {
+    position: relative;
+    display: grid;
+    width: var(--bl-size);
+    height: var(--bl-size);
+    place-items: center;
+    border-radius: 24%;
+    box-shadow: var(--bl-shadow);
+    transition:
+      transform 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2),
+      box-shadow 260ms ease,
+      filter 260ms ease,
+      opacity 260ms ease;
+  }
+
+  .bl-tile-logo {
+    background: #ffffff;
+    box-shadow:
+      inset 0 0 0 1px rgb(28 27 25 / 0.05),
+      var(--bl-shadow);
+  }
+
+  .bl-tile-image {
+    width: 76%;
+    height: 76%;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  /* A soft sheen, as a glossy app icon has. */
+  .bl-tile::after {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.22), transparent 42%);
+    content: "";
+    pointer-events: none;
+  }
+
+  .bl-app-button:not(:disabled):hover .bl-tile,
+  .bl-app-button:focus-visible .bl-tile {
+    transform: translateY(-5px) scale(1.045);
+    box-shadow:
+      0 2px 4px rgb(28 27 25 / 0.06),
+      0 18px 34px -10px rgb(28 27 25 / 0.28);
+  }
+
+  .bl-app-button:not(:disabled):active .bl-tile {
+    transform: translateY(-1px) scale(0.95);
+    transition-duration: 90ms;
+  }
+
+  .bl-app-button:focus-visible .bl-tile {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 4px;
+  }
+
+  .bl-label {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--color-ink);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* While one opens, it bounces as a dock icon does and the others step back. */
+  .bl-app[data-launching] .bl-tile {
+    animation: bl-bounce 900ms cubic-bezier(0.3, 0, 0.3, 1) infinite;
+  }
+
+  .bl-icons[data-launching] .bl-app:not([data-launching]) .bl-tile {
+    filter: saturate(0.6);
+    opacity: 0.45;
+  }
+
+  .bl-app-button:disabled .bl-tile {
+    cursor: default;
+  }
+
+  /* The dot under a browser that's running, as on a dock. */
+  .bl-running {
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--color-ink);
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .bl-app[data-running] .bl-running {
+    opacity: 0.7;
+  }
+
+  .bl-profile {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    gap: 0.2rem;
+    border-radius: 999px;
+    padding: 0.2rem 0.55rem;
+    color: var(--color-ink-secondary);
+    font-size: 0.8125rem;
+    outline: none;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+
+  .bl-profile svg {
+    width: 0.8rem;
+    height: 0.8rem;
+    flex-shrink: 0;
+  }
+
+  .bl-profile:not(:disabled):hover,
+  .bl-profile[data-popup-open] {
+    background: var(--color-hover);
+    color: var(--color-ink);
+  }
+
+  .bl-profile:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 1px;
+  }
+
+  .bl-profile:disabled {
+    opacity: 0.6;
+  }
+
+  .bl-caption {
+    min-height: 3rem;
+    max-width: 40rem;
+    margin: 1.75rem auto 0;
+    color: var(--color-ink-secondary);
+    font-size: 0.9375rem;
+    text-align: center;
+    text-wrap: pretty;
+  }
+
+  /* ── Continue where you left off ───────────────────────────────────────── */
+
+  .bl-recent {
+    width: 100%;
+    max-width: 56rem;
+    margin: 2.5rem auto 0;
+  }
+
+  .bl-section-title {
+    margin-bottom: 0.75rem;
+    color: var(--color-ink);
+    font-size: 1.0625rem;
+    font-weight: 600;
+  }
+
+  .bl-recent-list {
+    display: grid;
+    gap: 1rem;
+  }
+
+  @media (min-width: 48rem) {
+    .bl-recent-list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .bl-recent-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    border: 1px solid var(--color-line);
+    border-radius: 1rem;
+    padding: 1.1rem 1.25rem;
+    background: var(--color-surface);
+  }
+
+  /* ── The taskbar ───────────────────────────────────────────────────────── */
+
+  .bl-taskbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    border-top: 1px solid var(--color-line);
+    padding: 0.5rem max(1rem, env(safe-area-inset-left)) calc(0.5rem + env(safe-area-inset-bottom));
+    background: color-mix(in oklab, var(--color-surface) 82%, transparent);
+    backdrop-filter: blur(18px) saturate(1.4);
+  }
+
+  .bl-tasks {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    gap: 0.375rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .bl-task {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    border-radius: 0.75rem;
+    background: var(--color-canvas-subtle);
+    box-shadow: inset 0 0 0 1px var(--color-line);
+  }
+
+  .bl-task-open {
+    display: flex;
+    max-width: 18rem;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 0.75rem 0 0 0.75rem;
+    padding: 0.45rem 0.4rem 0.45rem 0.65rem;
+    color: var(--color-ink);
+    font-size: 0.875rem;
+    font-weight: 500;
+    outline: none;
+  }
+
+  .bl-task-open:hover {
+    background: var(--color-hover);
+  }
+
+  .bl-task-open:focus-visible,
+  .bl-task-end:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: -2px;
+  }
+
+  .bl-task-since {
+    flex-shrink: 0;
+    color: var(--color-ink-tertiary);
+    font-size: 0.75rem;
+    font-weight: 400;
+  }
+
+  .bl-task-end {
+    display: grid;
+    width: 2rem;
+    align-self: stretch;
+    place-items: center;
+    border-radius: 0 0.75rem 0.75rem 0;
+    color: var(--color-ink-tertiary);
+    outline: none;
+  }
+
+  .bl-task-end svg {
+    width: 0.9rem;
+    height: 0.9rem;
+  }
+
+  .bl-task-end:not(:disabled):hover {
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+  }
+
+  .bl-tasks-empty,
+  .bl-tray {
+    color: var(--color-ink-tertiary);
+    font-size: 0.8125rem;
+  }
+
+  .bl-tray {
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 40rem) {
+    .bl-task-since,
+    .bl-tray {
+      display: none;
+    }
+
+    /* Three to a row on a phone, with room for a profile's name under each. */
+    .bl-icons {
+      gap: 1.25rem 0.5rem;
+    }
+
+    .bl-app {
+      width: 6.9rem;
+    }
+
+    .bl-profile {
+      padding-inline: 0.4rem;
+    }
+  }
+
+  @keyframes bl-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(14px) scale(0.92);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes bl-bounce {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    35% {
+      transform: translateY(-16px);
+    }
+    60% {
+      transform: translateY(0);
+    }
+    75% {
+      transform: translateY(-5px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bl-icon,
+    .bl-app[data-launching] .bl-tile {
+      animation: none;
+    }
+
+    .bl-tile,
+    .bl-app-button:not(:disabled):hover .bl-tile,
+    .bl-app-button:focus-visible .bl-tile,
+    .bl-app-button:not(:disabled):active .bl-tile {
+      transform: none;
+      transition: none;
+    }
+  }
+}
+
+/* Dark: chosen, or the system's when nothing is chosen. */
+[data-theme="dark"] .bl-desktop {
+  --bl-light: rgb(255 255 255 / 0.04);
+  --bl-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 26px -8px rgb(0 0 0 / 0.6);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .bl-desktop {
+    --bl-light: rgb(255 255 255 / 0.04);
+    --bl-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 26px -8px rgb(0 0 0 / 0.6);
+  }
+}

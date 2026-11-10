@@ -34,6 +34,7 @@ if (config.mode === "tester") {
     allowPrivate: config.allowPrivate,
     privateViaUpstream: config.privateViaUpstream,
     siteRules: config.siteRules,
+    accountSync: config.accountSync,
     loopbackHost: config.loopbackHost,
     onRefused: (target, reason) => log("info", "refused", { target: target.slice(0, 253), reason }),
   });

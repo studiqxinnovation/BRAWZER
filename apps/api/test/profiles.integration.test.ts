@@ -126,7 +126,7 @@ describe("creating profiles", () => {
         "name: Use letters, numbers, spaces and punctuation.",
       ],
       [{ name: "Work", color: "chartreuse" }, "color: Choose a colour."],
-      [{ name: "Work", color: "teal", engine: "safari" }, "engine: Choose Bee or Firefox."],
+      [{ name: "Work", color: "teal", engine: "safari" }, "engine: Choose Bee Browser, Chrome, Firefox, Edge or Chromium."],
     ];
     for (const [body, detail] of cases) {
       const response = await client.post("/profiles", body);

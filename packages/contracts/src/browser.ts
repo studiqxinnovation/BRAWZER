@@ -31,8 +31,11 @@ export const browserSessionEndReasonSchema = z.enum(browserSessionEndReasons);
 
 /** Temporary limits until plans exist (Phase 6); the durations are Phase 3 decisions. */
 export const BROWSER_LIMITS = {
-  /** Live sessions per account. */
-  liveSessions: 1,
+  /**
+   * Browsers an account runs at once (the free plan's; plans set their own):
+   * say Firefox and Chrome side by side. A profile is in one at a time.
+   */
+  liveSessions: 3,
   /** A session nobody is viewing ends after this. */
   idleMinutes: 15,
   /** Longest a session can live, viewed or not. */
@@ -66,11 +69,17 @@ export const browserSessionSchema = z.object({
 });
 
 export const browserOverviewSchema = z.object({
-  /** The account's live session (starting or running), if any. */
+  /** The account's newest live session (starting or running), if any. */
   session: browserSessionSchema.nullable(),
+  /** Every live session, newest first: several browsers can run at once. */
+  sessions: z.array(browserSessionSchema),
+  /** The engines this installation offers. */
+  engines: z.array(browserEngineSchema),
   limits: z.object({
     idleMinutes: z.number().int().positive(),
     maxHours: z.number().int().positive(),
+    /** Browsers the account's plan runs at once. */
+    liveSessions: z.number().int().positive(),
   }),
   /** Whether the service that starts cloud browsers can be reached right now. */
   runtime: z.enum(["available", "unavailable"]),
@@ -84,6 +93,8 @@ export const startBrowserSessionRequestSchema = z.object({
   profileId: z.uuid({ error: "Choose one of your profiles." }).optional(),
   /** Reopen the tabs the profile's last session left open. */
   resume: z.boolean().default(false),
+  /** For a temporary session (no profile): which browser. A profile brings its own. */
+  engine: browserEngineSchema.optional(),
 });
 
 /** Where and how to open the stream. The ticket is sent as the first message, never in the URL. */

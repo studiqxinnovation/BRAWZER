@@ -19,6 +19,8 @@ export interface LaunchOptions {
    * in development and tests. Every other certificate is checked as usual.
    */
   trustedSpkiHashes?: string[];
+  /** The profile's browser account is on: sync and the account's sign-in aren't switched off here. */
+  browserAccount?: boolean;
 }
 
 export interface LaunchedChromium {
@@ -51,7 +53,7 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
     "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
     "--no-first-run",
     "--no-default-browser-check",
-    "--disable-sync",
+    ...(options.browserAccount ? [] : ["--disable-sync"]),
     "--disable-background-networking",
     "--disable-component-update",
     "--disable-default-apps",
@@ -69,7 +71,7 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
     "--disk-cache-size=52428800",
     "--password-store=basic",
     "--lang=en-US",
-    "--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication,InterestFeedContentSuggestions,CertificateTransparencyComponentUpdater,AccountConsistency,DialMediaRouteProvider",
+    `--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication,InterestFeedContentSuggestions,CertificateTransparencyComponentUpdater,${options.browserAccount ? "" : "AccountConsistency,"}DialMediaRouteProvider`,
     ...(options.trustedSpkiHashes?.length
       ? [`--ignore-certificate-errors-spki-list=${options.trustedSpkiHashes.join(",")}`]
       : []),

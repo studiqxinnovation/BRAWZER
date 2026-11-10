@@ -43,6 +43,8 @@ test.describe("profiles", () => {
     const dialog = page.getByRole("dialog", { name: "New profile" });
     await expect(dialog.getByRole("radio", { name: "Bee Browser" })).toBeChecked();
     await expect(dialog.getByRole("radio", { name: "Firefox" })).toBeEnabled();
+    await expect(dialog.getByRole("radio", { name: "Google Chrome" })).toBeEnabled();
+    await expect(dialog.getByRole("radio", { name: /^Chromium/ })).toBeEnabled();
     await dialog.getByRole("textbox", { name: "Name" }).fill("personal");
     await dialog.getByRole("button", { name: "Create profile" }).click();
     await expect(dialog.getByText("You already have a profile with that name.")).toBeVisible();
@@ -72,6 +74,23 @@ test.describe("profiles", () => {
     await edit.getByRole("button", { name: "Save" }).click();
     await expect.poll(() => names(page)).toEqual(["Office", "Personal"]);
     await expect(page.getByText("Starts every session clean")).toBeVisible();
+
+    // A profile's own password manager and browser account: off until asked for,
+    // and only for a profile that keeps its data.
+    await page.getByRole("button", { name: "Edit Personal" }).click();
+    const personal = page.getByRole("dialog", { name: "Edit “Personal”" });
+    const account = personal.getByRole("switch", { name: "Browser account and saved passwords" });
+    await expect(account).not.toBeChecked();
+    await account.click();
+    await personal.getByRole("button", { name: "Save" }).click();
+    await expect(personal).toBeHidden();
+    await expect(page.getByText("Browser account and saved passwords on")).toBeVisible();
+    await page.getByRole("button", { name: "Edit Office" }).click();
+    const office = page.getByRole("dialog", { name: "Edit “Office”" });
+    await expect(
+      office.getByRole("switch", { name: "Browser account and saved passwords" }),
+    ).toBeDisabled();
+    await office.getByRole("button", { name: "Cancel" }).click();
 
     // Delete, after confirming.
     await page.getByRole("button", { name: "Delete Office" }).click();

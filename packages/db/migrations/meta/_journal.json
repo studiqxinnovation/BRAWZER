@@ -190,6 +190,27 @@
       "when": 1794197184194,
       "tag": "0026_strange_earthquake",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794347068388,
+      "tag": "0027_gigantic_rattler",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794347623396,
+      "tag": "0028_complex_stingray",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794348666144,
+      "tag": "0029_dazzling_mikhail_rasputin",
+      "breakpoints": true
     }
   ]
 }

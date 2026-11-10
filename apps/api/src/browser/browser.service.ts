@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
 import { randomBytes } from "node:crypto";
 import {
+  type BrowserEngine,
+  engineDetails,
   type AdminRuntime,
   extensionsFor,
   BROWSER_LIMITS,
@@ -51,6 +53,7 @@ import { ProxiesService } from "../proxies/proxies.service.js";
 import { SiteRulesService } from "../site-rules/site-rules.service.js";
 import { POOL_MAX_AGE_MS, WarmPoolService } from "./warm-pool.service.js";
 import { RuntimeHostsService } from "../egress/runtime-hosts.service.js";
+import { EnginesService } from "../egress/engines.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 import { MetricsService } from "../metrics/metrics.service.js";
@@ -93,6 +96,8 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
   private timer: NodeJS.Timeout | undefined;
   private runtimeChecked = 0;
   private runtimeAvailable = false;
+  /** The check in progress (or the last one): requests meanwhile wait for it, not a stale answer. */
+  private runtimeCheck: Promise<void> | null = null;
 
   constructor(
     @Inject(DATABASE) private readonly database: DatabaseHandle,
@@ -111,6 +116,7 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
     @Inject(RuntimeHostsService) private readonly hosts: RuntimeHostsService,
     @Inject(MetricsService) private readonly metrics: MetricsService,
     @Inject(BillingService) private readonly billing: BillingService,
+    @Inject(EnginesService) private readonly engines: EnginesService,
     @Inject(REDIS) private readonly redis: Pick<Redis, "publish" | "set">,
     @Inject(TeamsService) private readonly teams: TeamsService,
     @Inject(HistoryService) private readonly history: HistoryService,
@@ -190,14 +196,23 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
   // ── Reads ─────────────────────────────────────────────────────────────
 
   async overview(userId: string): Promise<BrowserOverview> {
-    const [live, runtime, savedTabs] = await Promise.all([
-      this.liveSession(userId),
+    const [live, runtime, savedTabs, limits, engines] = await Promise.all([
+      this.liveSessions(userId),
       this.runtimeStatus(),
       this.history.savedTabsFor(userId),
+      this.billing.limitsFor(userId),
+      this.engines.offered(),
     ]);
+    const sessions = live.map(describe);
     return {
-      session: live ? describe(live) : null,
-      limits: { idleMinutes: BROWSER_LIMITS.idleMinutes, maxHours: BROWSER_LIMITS.maxHours },
+      session: sessions[0] ?? null,
+      sessions,
+      engines: [...engines],
+      limits: {
+        idleMinutes: BROWSER_LIMITS.idleMinutes,
+        maxHours: BROWSER_LIMITS.maxHours,
+        liveSessions: limits.liveSessions,
+      },
       runtime,
       region: this.config.browser.region,
       savedTabs,
@@ -206,21 +221,25 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
 
   /** Cached for 10 seconds: the Browser page asks on every load. */
   private async runtimeStatus(): Promise<"available" | "unavailable"> {
-    if (Date.now() - this.runtimeChecked > 10_000) {
+    if (this.runtimeCheck === null || Date.now() - this.runtimeChecked > 10_000) {
       this.runtimeChecked = Date.now();
-      try {
-        await this.orchestrator.ping();
-        this.runtimeAvailable = true;
-      } catch (error) {
-        this.runtimeAvailable = false;
-        logger.warn(`Runtime unavailable: ${error instanceof Error ? error.message : "unknown"}`);
-      }
+      this.runtimeCheck = this.orchestrator.ping().then(
+        () => {
+          this.runtimeAvailable = true;
+        },
+        (error: unknown) => {
+          this.runtimeAvailable = false;
+          logger.warn(`Runtime unavailable: ${error instanceof Error ? error.message : "unknown"}`);
+        },
+      );
     }
+    await this.runtimeCheck;
     return this.runtimeAvailable ? "available" : "unavailable";
   }
 
-  private async liveSession(userId: string): Promise<BrowserSessionRow | undefined> {
-    const [row] = await this.database.db
+  /** Every live session of the account, newest first. */
+  private async liveSessions(userId: string): Promise<BrowserSessionRow[]> {
+    return this.database.db
       .select()
       .from(schema.browserSessions)
       .where(
@@ -229,9 +248,7 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
           inArray(schema.browserSessions.status, [...LIVE]),
         ),
       )
-      .orderBy(desc(schema.browserSessions.createdAt))
-      .limit(1);
-    return row;
+      .orderBy(desc(schema.browserSessions.createdAt));
   }
 
   async forExport(
@@ -259,6 +276,7 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
     profileId: string | null,
     meta: RequestMeta,
     resume = false,
+    requestedEngine?: BrowserEngine,
   ): Promise<BrowserSession> {
     const userId = auth.user.id;
     const profile = profileId ? await this.profiles.find(userId, profileId) : undefined;
@@ -283,15 +301,26 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
     // What the session needs decides whether a waiting pair can serve it.
     const upstream = await this.proxies.forEgress(userId, profile?.proxyId ?? null);
     const siteRules = await this.siteRules.forEgress(userId);
-    const engine = profile?.engine ?? "bee";
+    // A profile brings its own browser; a temporary session names one (Bee by default).
+    const offered = await this.engines.offered();
+    const engine = profile?.engine ?? requestedEngine ?? offered[0] ?? "bee";
+    if (!offered.includes(engine)) {
+      throw new ApiException(
+        "conflict",
+        409,
+        `${engineDetails[engine].name} isn’t offered on this installation.`,
+      );
+    }
     const privateViaUpstream = upstream !== null && profile?.privateThroughProxy === true;
     // Only the catalogue entries this engine runs (ADR 0018); a waiting pair has none,
     // so it serves plain sessions only.
     const extensions = (profile?.extensions ?? []).filter((slug) =>
       extensionsFor(engine).some((entry) => entry.slug === slug),
     );
+    // The browser's own account and passwords (ADR 0021): only where the profile keeps its data.
+    const browserAccount = profile?.browserAccount === true && profile.keepData;
     const pair =
-      upstream === null && siteRules === null && extensions.length === 0
+      upstream === null && siteRules === null && extensions.length === 0 && !browserAccount
         ? await this.pool.claim(engine)
         : null;
     const secretForAgent = pair?.secret ?? secret;
@@ -315,7 +344,7 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
           );
         }
         const live = await tx
-          .select({ id: schema.browserSessions.id })
+          .select({ id: schema.browserSessions.id, profileId: schema.browserSessions.profileId })
           .from(schema.browserSessions)
           .where(
             and(
@@ -323,8 +352,22 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
               inArray(schema.browserSessions.status, [...LIVE]),
             ),
           );
+        // A profile's saved data can be in one session at a time.
+        if (profileId && live.some((entry) => entry.profileId === profileId)) {
+          throw new ApiException(
+            "conflict",
+            409,
+            `“${profile?.name ?? "That profile"}” is already open in another browser. Switch to it, or end it first.`,
+          );
+        }
         if (live.length >= limits.liveSessions) {
-          throw new ApiException("conflict", 409, "A browser session is already running.");
+          throw new ApiException(
+            "conflict",
+            409,
+            limits.liveSessions === 1
+              ? "A browser is already running. End it to open another."
+              : `Your plan runs ${String(limits.liveSessions)} browsers at once. End one to open another.`,
+          );
         }
         // Where it runs: a waiting pair's own host, else the host with the most room.
         const perHost = await tx
@@ -399,6 +442,7 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
               privateViaUpstream,
               siteRules,
               extensions,
+              browserAccount,
             },
           );
     } catch (error) {

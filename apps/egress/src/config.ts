@@ -32,6 +32,8 @@ export interface EgressConfig {
   privateViaUpstream: boolean;
   /** The account's own site rules (Phase 8, idea 8), or none. */
   siteRules: { allow: string[]; block: string[] } | null;
+  /** The profile's browser account is on: Chrome's sync server is reachable (ADR 0021). */
+  accountSync: boolean;
   /**
    * Development only: proxies and echo servers that the tests run on this
    * machine's loopback are reached under this name from inside the container.
@@ -75,6 +77,7 @@ export function readConfig(env: NodeJS.ProcessEnv): EgressConfig {
     allowPrivate: env.EGRESS_ALLOW_PRIVATE === "true",
     privateViaUpstream: upstream !== null && env.EGRESS_PRIVATE_VIA_UPSTREAM === "true",
     siteRules,
+    accountSync: env.EGRESS_ACCOUNT_SYNC === "true",
     loopbackHost: loopback === undefined || loopback === "" ? null : loopback,
     firewall: mode === "session" && env.EGRESS_FIREWALL !== "false",
     runAs: { uid, gid },
