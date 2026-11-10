@@ -426,6 +426,8 @@ export function BrowserWorkspace({
   async function connect(session: BrowserSession) {
     setPhase({ kind: "connecting", session });
     setFirstFrame(false);
+    // The viewport stays mounted through a reconnect: it must report the new stream's first frame.
+    viewportRef.current?.restart();
     const ticket = await requestStreamTicket(session.id);
     if (!ticket.ok) {
       if (ticket.status === 401) {

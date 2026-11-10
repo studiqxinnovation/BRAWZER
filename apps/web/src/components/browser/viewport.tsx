@@ -21,6 +21,12 @@ export interface ViewportHandle {
   focusKeyboard(): void;
   /** What the page shows now, as drawn here; null before the first frame. */
   canvas(): HTMLCanvasElement | null;
+  /**
+   * A new connection is starting: the next frame drawn counts as the first
+   * again, so `onReady` fires for it. Without this, a reconnect never lifts
+   * the workspace's waiting overlay, though frames keep arriving under it.
+   */
+  restart(): void;
 }
 
 /** Brawzer's own shortcuts, handled by the workspace rather than sent to the page. */
@@ -178,6 +184,9 @@ export function BrowserViewport({
       canvas() {
         const canvas = canvasRef.current;
         return canvas && readyRef.current && canvas.width > 0 ? canvas : null;
+      },
+      restart() {
+        readyRef.current = false;
       },
     }),
     [drawNext, onDrawn],

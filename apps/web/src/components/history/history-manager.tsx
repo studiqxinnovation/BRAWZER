@@ -165,6 +165,7 @@ export function HistoryManager({
               </span>
             </span>
             <Switch
+              aria-label={`Keep a searchable history for “${profile.name}”`}
               checked={history.keepHistory}
               disabled={busy === "toggle"}
               onCheckedChange={(checked) => void toggle(checked)}

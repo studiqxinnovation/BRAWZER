@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test, type WebSocketRoute } from "@playwright/test";
 import { wcagViolations } from "./accessibility";
 import { createConfirmedAccount, signIn, uniqueEmail } from "./mailbox";
 
@@ -284,6 +284,55 @@ test.describe("browser", () => {
         "browser.page_reported",
       ]),
     );
+  });
+
+  test("comes back to a live page after the stream drops and reconnects", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The streamed page is driven with a mouse; one run covers it.");
+    test.setTimeout(120_000);
+    // The stream runs through Playwright, so the test can cut it as a restarting server would.
+    const streams: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/browser\/sessions\/[^/]+\/stream$/, (socket) => {
+      socket.connectToServer();
+      streams.push(socket);
+    });
+    await signedIn(page, baseURL, "browser-reconnect");
+    await page.getByRole("button", { name: "Start browsing" }).click();
+    const viewport = page.getByTestId("browser-viewport");
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 60_000 })
+      .not.toBe("0");
+    const address = page.getByRole("textbox", { name: "Address or search" });
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+    const waiting = page.getByText("Waiting for the page…");
+    await expect(waiting).toBeHidden();
+
+    // The connection goes away; the page reconnects on its own, and the overlay lifts again.
+    await streams.at(-1)?.close({ code: 1001, reason: "going away" });
+    await expect.poll(() => streams.length, { timeout: 30_000 }).toBe(2);
+    await expect(page.getByText("Connecting to your browser…")).toBeHidden({ timeout: 30_000 });
+    await expect(waiting).toBeHidden({ timeout: 30_000 });
+
+    // And the page takes input again.
+    await address.fill("http://testsite.invalid/second");
+    await address.press("Enter");
+    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+    await clickPage(page, 100, 100);
+
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "End session" }).click();
+    await page
+      .getByRole("alertdialog", { name: "End this browser session?" })
+      .getByRole("button", { name: "End session" })
+      .click();
+    await expect(page.getByText("You ended this browser session.")).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
   test("keeps history and bookmarks, and continues a session on another device", async ({

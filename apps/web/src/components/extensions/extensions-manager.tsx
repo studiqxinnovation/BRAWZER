@@ -99,10 +99,9 @@ export function ExtensionsManager({ profiles }: { profiles: readonly Profile[] }
                   )}
                 </div>
                 <label className="flex shrink-0 items-center gap-2 text-footnote text-ink-secondary">
-                  <span className="sr-only">
-                    {entry.name} in {profile?.name ?? "the profile"}
-                  </span>
+                  {/* Named in the server's markup: a wrapping label names it only once script runs. */}
                   <Switch
+                    aria-label={`${entry.name} in ${profile?.name ?? "the profile"}`}
                     checked={installed}
                     disabled={!profile || !build || pending === entry.slug}
                     onCheckedChange={(on) => void toggle(entry.slug, on)}
