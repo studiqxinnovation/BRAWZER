@@ -296,7 +296,12 @@ test.describe("browser", () => {
     test.setTimeout(150_000);
     const email = await signedIn(page, baseURL, "browser-history");
     await page.getByRole("button", { name: "Start browsing" }).click();
-    await expect(page.getByTestId("browser-viewport")).toBeVisible({ timeout: 60_000 });
+    const viewport = page.getByTestId("browser-viewport");
+    await expect(viewport).toBeVisible({ timeout: 60_000 });
+    // Typed addresses go to a live stream: wait for its first frames.
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 30_000 })
+      .not.toBe("0");
     const address = page.getByRole("textbox", { name: "Address or search" });
     await address.fill("http://testsite.invalid/");
     await address.press("Enter");

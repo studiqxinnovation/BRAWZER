@@ -3,7 +3,7 @@
 Twenty-four additions proposed after Phase 7 and accepted as a set on
 2026-11-08 ("build all"), each contained, each closing something a review or
 plan already named. They are built in value order, one commit each, on the
-`phase-8-finishing` branch, and this page tracks them.
+`phase-8-finishing` branch, and this page tracks them. The phase's review is [docs/reviews/phase-8.md](../reviews/phase-8.md).
 
 | #   | Idea                                                       | Status                                                                                                               |
 | --- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |

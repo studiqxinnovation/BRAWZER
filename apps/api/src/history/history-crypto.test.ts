@@ -6,6 +6,7 @@ import {
   openValue,
   sealValue,
   urlDigest,
+  VisitBudget,
 } from "./history-crypto.js";
 
 describe("history encryption", () => {
@@ -47,5 +48,22 @@ describe("history encryption", () => {
     ]) {
       expect(isRecordable(url), url).toBe(false);
     }
+  });
+});
+
+describe("the visit budget", () => {
+  it("lets a stream record so many visits a minute, then waits for the next", () => {
+    let now = 0;
+    const budget = new VisitBudget(3, 60_000, () => now);
+    expect([budget.take(), budget.take(), budget.take(), budget.take()]).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
+    now = 59_999;
+    expect(budget.take()).toBe(false);
+    now = 60_000;
+    expect(budget.take()).toBe(true);
   });
 });

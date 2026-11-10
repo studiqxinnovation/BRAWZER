@@ -38,6 +38,7 @@ import {
   openValue,
   sealValue,
   urlDigest,
+  VisitBudget,
 } from "./history-crypto.js";
 
 const logger = new Logger("History");
@@ -48,6 +49,8 @@ const KEY_CACHE_MS = 10 * 60_000;
 const KEY_CACHE_SIZE = 1000;
 /** Open tabs are written at most this often while a session changes them. */
 const TABS_THROTTLE_MS = 2_000;
+/** Visits one stream may record a minute; more are not recorded. */
+const VISITS_PER_MINUTE = 60;
 
 const profileNotFound = () => new ApiException("not_found", 404, "That profile doesn’t exist.");
 
@@ -109,6 +112,7 @@ export class HistoryService {
 
   /** The profile's keys; made on first use when `create`, else null while it has none. */
   private async keysFor(profile: KeyedProfile, create: boolean): Promise<HistoryKeys | null> {
+    this.sweep();
     const cached = this.keys.get(profile.id);
     if (cached && cached.expires > Date.now()) return cached.keys;
     let sealed = profile.historyKey;
@@ -145,6 +149,14 @@ export class HistoryService {
     }
     this.keys.set(profile.id, { keys, expires: Date.now() + KEY_CACHE_MS });
     return keys;
+  }
+
+  /** Unwrapped keys don't outstay their time in memory. */
+  private sweep(): void {
+    const now = Date.now();
+    for (const [profileId, cached] of this.keys) {
+      if (cached.expires <= now) this.forget(profileId);
+    }
   }
 
   private forget(profileId: string): void {
@@ -585,6 +597,7 @@ export class HistoryService {
     let pending: Page[] | null = null;
     let timer: NodeJS.Timeout | undefined;
     let savedAt = 0;
+    const budget = new VisitBudget(VISITS_PER_MINUTE, 60_000);
     const run = (work: (ctx: SessionContext) => Promise<void>) => {
       chain = chain
         .then(async () => {
@@ -622,6 +635,7 @@ export class HistoryService {
           if (before?.u === tab.url && (before.t === tab.title || tab.title === "")) continue;
           const counted = before?.u !== tab.url;
           seen.set(tab.id, { u: tab.url, t: tab.title });
+          if (!budget.take()) continue;
           run(async (ctx) => {
             if (ctx.recordHistory) await this.recordVisit(ctx.profile, tab.url, tab.title, counted);
           });

@@ -72,9 +72,8 @@ function AddRule({ kind, full }: { kind: SiteRuleKind; full: boolean }) {
       className="flex flex-col gap-3 sm:flex-row sm:items-end"
     >
       <Field className="flex-1">
-        <FieldLabel htmlFor={`site-rule-${kind}`}>{KINDS[kind].add}</FieldLabel>
+        <FieldLabel>{KINDS[kind].add}</FieldLabel>
         <Input
-          id={`site-rule-${kind}`}
           name="host"
           type="text"
           inputMode="url"

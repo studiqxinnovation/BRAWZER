@@ -405,9 +405,8 @@ function RenameForm({
       <DialogTitle>Rename bookmark</DialogTitle>
       <DialogDescription className="break-all">{displayUrl(bookmark.url)}</DialogDescription>
       <Field>
-        <FieldLabel htmlFor="bookmark-title">Name</FieldLabel>
+        <FieldLabel>Name</FieldLabel>
         <Input
-          id="bookmark-title"
           name="title"
           value={title}
           maxLength={300}

@@ -25,7 +25,7 @@ import { isUniqueViolation } from "../common/database-errors.js";
 import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
 import { EmailService } from "../email/email.js";
-import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
+import { RATE_LIMITS, RateLimiter, rateLimitSubject } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 
 const logger = new Logger("Teams");
@@ -280,6 +280,8 @@ export class TeamsService {
   ): Promise<TeamOverview> {
     await this.limiter.enforce(RATE_LIMITS.teamInvitationsPerAccount, auth.user.id);
     const address = email.trim().toLowerCase();
+    // Inviting again re-sends the email: an address isn't mailed more than a few times a day.
+    await this.limiter.enforce(RATE_LIMITS.teamInvitationsPerAddress, rateLimitSubject(address));
     const team = await this.database.db.transaction(async (tx) => {
       const mine = await this.lockMine(tx, auth.user.id, ["owner", "admin"], "owner or admins");
       const owner = await this.ownerOf(mine.teamId, tx);

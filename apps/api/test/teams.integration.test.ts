@@ -479,6 +479,24 @@ describe("team accounts", () => {
     ).toEqual(["plan.txt"]);
   });
 
+  it("mails one address at most three invitations a day, however often it's invited", async () => {
+    const owner = await person("invite-limit");
+    ok(await owner.client.post("/team", { name: "Persistent" }));
+    const target = h.uniqueEmail("invite-target");
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      ok(await owner.client.post("/team/invitations", { email: target, role: "member" }));
+    }
+    const fourth = await owner.client.post("/team/invitations", { email: target, role: "member" });
+    expect(fourth.statusCode).toBe(429);
+    // Another address is unaffected.
+    ok(
+      await owner.client.post("/team/invitations", {
+        email: h.uniqueEmail("invite-other"),
+        role: "member",
+      }),
+    );
+  });
+
   it("deletes a team its owner leaves alone with their account, and refuses a team on a one-person plan", async () => {
     const solo = await person("team-solo");
     const teamId = ok(await solo.client.post("/team", { name: "Just me" })).team?.id ?? "";

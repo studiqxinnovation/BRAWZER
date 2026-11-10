@@ -204,9 +204,8 @@ function NoTeam({
               className="flex flex-col gap-3 sm:flex-row sm:items-end"
             >
               <Field className="flex-1">
-                <FieldLabel htmlFor="team-name">Team name</FieldLabel>
+                <FieldLabel>Team name</FieldLabel>
                 <Input
-                  id="team-name"
                   name="name"
                   autoComplete="organization"
                   value={name}
@@ -467,9 +466,8 @@ function TeamName({ team, busy, run }: { team: Team; busy: string | null; run: R
           className="flex flex-col gap-3 sm:flex-row sm:items-end"
         >
           <Field className="flex-1">
-            <FieldLabel htmlFor="team-rename">Team name</FieldLabel>
+            <FieldLabel>Team name</FieldLabel>
             <Input
-              id="team-rename"
               name="name"
               value={name}
               onChange={(event) => {
@@ -544,9 +542,8 @@ function Invitations({
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <Field className="flex-1">
-              <FieldLabel htmlFor="team-invite-email">Email address</FieldLabel>
+              <FieldLabel>Email address</FieldLabel>
               <Input
-                id="team-invite-email"
                 name="email"
                 type="email"
                 autoComplete="off"

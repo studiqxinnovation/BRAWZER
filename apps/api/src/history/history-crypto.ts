@@ -63,3 +63,31 @@ export function isRecordable(url: string): boolean {
     return false;
   }
 }
+
+/**
+ * How many visits one stream may record in a window. A page (or an engine
+ * gone wrong) can navigate as fast as it likes; the history doesn't follow.
+ */
+export class VisitBudget {
+  private started: number;
+  private used = 0;
+
+  constructor(
+    private readonly limit: number,
+    private readonly windowMs: number,
+    private readonly now: () => number = Date.now,
+  ) {
+    this.started = now();
+  }
+
+  take(): boolean {
+    const at = this.now();
+    if (at - this.started >= this.windowMs) {
+      this.started = at;
+      this.used = 0;
+    }
+    if (this.used >= this.limit) return false;
+    this.used += 1;
+    return true;
+  }
+}

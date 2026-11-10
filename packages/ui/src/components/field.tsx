@@ -15,6 +15,11 @@ export function Field({
   return <BaseField.Root className={cn("flex flex-col gap-1.5", className)} {...props} />;
 }
 
+/**
+ * Inside a Field, pass neither `htmlFor` here nor `id` to the control: the
+ * Field links them, in the server's markup too. An explicit pair only meets
+ * once the page's script has run, leaving the label unlinked until then.
+ */
 export function FieldLabel({
   className,
   ...props
