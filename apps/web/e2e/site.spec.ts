@@ -37,6 +37,43 @@ test.describe("public website", () => {
     });
   }
 
+  test("the home page's sections rise into view and pass the audit once they have", async ({
+    page,
+  }) => {
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme, reducedMotion: "no-preference" });
+      await page.goto("/");
+      await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
+      // Scroll the whole page so every section has risen in, then audit it all.
+      for (let step = 0; step < 30; step += 1) {
+        await page.mouse.wheel(0, 500);
+        await page.waitForTimeout(60);
+      }
+      await expect(
+        page.getByRole("heading", { name: "Your browser, wherever you are." }),
+      ).toBeVisible();
+      await expect(page.locator(".lp-reveal:not([data-shown])")).toHaveCount(0);
+      expect(await wcagViolations(page), colorScheme).toEqual([]);
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    }
+  });
+
+  test("the home page holds still for people who ask for less motion", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    // Nothing waits to rise in, and nothing moves.
+    await expect(page.locator("html")).not.toHaveAttribute("data-motion", "on");
+    const running = await page.evaluate(
+      () =>
+        document.getAnimations().filter((animation) => animation.playState === "running").length,
+    );
+    expect(running).toBe(0);
+    await expect(
+      page.getByRole("heading", { name: "Made for the computers you don’t own." }),
+    ).toBeVisible();
+  });
+
   test("says plainly that Brawzer is still in development", async ({ page }) => {
     await page.goto("/");
     await expect(
