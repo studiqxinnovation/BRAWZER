@@ -48,8 +48,13 @@ function isLoopback(address: string): boolean {
 
 /**
  * The engine's own background services: component and variation updates,
- * account services and the like. The managed policy already turns most of
- * them off; this closes what is left. Matched by suffix.
+ * Safe Browsing lookups, optimisation hints and the like. The managed policy
+ * already turns most of them off; this closes what is left. Matched by
+ * suffix. Only hosts a web page has no use for belong here: Google's
+ * sign-in (`accounts.google.com`), its static files (`www.gstatic.com`),
+ * its web apps' APIs (`clients6.google.com`) and its downloads
+ * (`dl.google.com`) serve websites, so blocking them broke signing in to
+ * Gmail, YouTube or Google's password manager inside Brawzer.
  */
 export const ENGINE_HOSTS = [
   "clients1.google.com",
@@ -57,18 +62,14 @@ export const ENGINE_HOSTS = [
   "clients3.google.com",
   "clients4.google.com",
   "clients5.google.com",
-  "clients6.google.com",
   "clientservices.googleapis.com",
   "update.googleapis.com",
   "edgedl.me.gvt1.com",
   "redirector.gvt1.com",
-  "dl.google.com",
   "optimizationguide-pa.googleapis.com",
   "safebrowsing.googleapis.com",
   "safebrowsingohttpgateway.googleapis.com",
   "content-autofill.googleapis.com",
-  "accounts.google.com",
-  "www.gstatic.com/chrome",
 ] as const;
 
 /** Ports a page may connect to: the web's, and the unprivileged range. Mail, shell and the like are not for a browser. */
@@ -80,10 +81,7 @@ export function isAllowedPort(port: number): boolean {
 
 export function isEngineHost(host: string): boolean {
   const name = host.toLowerCase();
-  return ENGINE_HOSTS.some((blocked) => {
-    const [blockedHost] = blocked.split("/");
-    return name === blockedHost || name.endsWith(`.${blockedHost ?? ""}`);
-  });
+  return ENGINE_HOSTS.some((blocked) => name === blocked || name.endsWith(`.${blocked}`));
 }
 
 export async function decideEgress(

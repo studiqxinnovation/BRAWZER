@@ -73,12 +73,26 @@ describe("egress rules", () => {
     expect(isEngineHost("foo.clients2.google.com")).toBe(true);
     expect(isEngineHost("www.google.com")).toBe(false);
     expect(
-      await decideEgress("accounts.google.com", 443, {
+      await decideEgress("safebrowsing.googleapis.com", 443, {
         hasUpstream: true,
         allowPrivate: false,
         lookup,
       }),
     ).toEqual({ kind: "refused", reason: "engine" });
+  });
+
+  it("lets pages sign in to Google and load what its sites need", () => {
+    for (const host of [
+      "accounts.google.com",
+      "www.gstatic.com",
+      "ssl.gstatic.com",
+      "clients6.google.com",
+      "dl.google.com",
+      "passwords.google.com",
+      "myaccount.google.com",
+    ]) {
+      expect(isEngineHost(host), host).toBe(false);
+    }
   });
 
   it("refuses ports a browser has no business with, before anything else", async () => {
