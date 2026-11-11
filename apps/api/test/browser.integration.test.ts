@@ -566,6 +566,17 @@ describe("cloud browser sessions", () => {
     expect(after.activity.recentStarts).toHaveLength(2);
     expect(after.activity.lastEndedAt).not.toBeNull();
     expect(after.activity.minutesThisMonth.map((entry) => entry.engine)).toEqual(["bee"]);
+    // The Sessions page's history: each ended session with why, never what was browsed.
+    expect(after.activity.ended.length).toBeGreaterThanOrEqual(1);
+    for (const entry of after.activity.ended) {
+      expect(entry.engine).toBe("bee");
+      expect(Object.keys(entry).sort()).toEqual(
+        ["endedAt", "engine", "id", "profileId", "reason", "startedAt"].sort(),
+      );
+      expect(new Date(entry.endedAt).getTime()).toBeGreaterThanOrEqual(
+        new Date(entry.startedAt).getTime(),
+      );
+    }
 
     expect(await h.eventTypes(email)).toEqual(
       expect.arrayContaining(["browser.session_started", "browser.session_ended"]),

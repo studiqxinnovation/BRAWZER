@@ -43,7 +43,7 @@ test.describe("browser", () => {
     test.skip(isMobile, "The streamed page is driven with a mouse; phones get the launcher test.");
     test.setTimeout(120_000);
     await signedIn(page, baseURL, "browser");
-    await expect(page.getByRole("heading", { name: "Browser" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Browsers" })).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);
 
     await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
@@ -289,6 +289,14 @@ test.describe("browser", () => {
         "browser.page_reported",
       ]),
     );
+
+    // The Sessions page lists it as ended and wiped, without what was browsed.
+    await page.goto("/app/sessions");
+    const ended = page.getByRole("table", { name: "Session history" });
+    await expect(ended).toContainText("Bee Browser");
+    await expect(ended).toContainText("Ended by you");
+    await expect(ended).toContainText("Wiped");
+    await expect(ended).not.toContainText("Brawzer test site");
   });
 
   test("comes back to a live page after the stream drops and reconnects", async ({
@@ -457,7 +465,7 @@ test.describe("browser", () => {
     isMobile,
   }) => {
     await signedIn(page, baseURL, "browser-launcher");
-    await expect(page.getByRole("heading", { name: "Browser", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Browsers", level: 1 })).toBeVisible();
     const browsers = page.getByRole("list", { name: "Browsers" });
     const icon = (name: string) =>
       browsers.getByRole("button", { name: `Open ${name}`, exact: true });

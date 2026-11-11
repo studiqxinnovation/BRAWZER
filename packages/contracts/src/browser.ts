@@ -96,6 +96,18 @@ export const browserOverviewSchema = z.object({
     minutesThisMonth: z.array(
       z.object({ engine: browserEngineSchema, minutes: z.number().int().nonnegative() }),
     ),
+    /** Sessions that ended, newest first, up to 20: the Sessions page's history. Never what was browsed. */
+    ended: z.array(
+      z.object({
+        id: z.uuid(),
+        engine: browserEngineSchema,
+        profileId: z.uuid().nullable(),
+        startedAt: z.iso.datetime(),
+        endedAt: z.iso.datetime(),
+        /** Why: "user", "idle", "max_lifetime", "signed_out", "handed_off", "runtime_failed", "admin", "team_left"; null when unknown. */
+        reason: z.string().max(40).nullable(),
+      }),
+    ),
   }),
 });
 

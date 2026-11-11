@@ -1,6 +1,5 @@
 "use client";
 
-import { type BrowserEngine, engineDetails } from "@brawzer/contracts";
 import { type ProfileColor, profileColors } from "@brawzer/contracts";
 import { Field, FieldError, FieldLabel, Input } from "@brawzer/ui/components/field";
 import { Check } from "lucide-react";
@@ -53,34 +52,5 @@ export function ProfileNameAndColor({
         {errors.color && <p className="text-footnote text-danger">{errors.color}</p>}
       </fieldset>
     </>
-  );
-}
-
-/**
- * Engine choice for a new profile: Brawzer's own Bee Browser, Firefox or
- * Google Chrome, as far as this installation offers them.
- */
-export function EngineChoice({ engines }: { engines: readonly BrowserEngine[] }) {
-  return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="mb-2 text-callout font-medium text-ink">Browser engine</legend>
-      {engines.map((engine, index) => (
-        <label key={engine} className="flex items-start gap-2.5 text-callout text-ink">
-          <input
-            type="radio"
-            name="engine"
-            value={engine}
-            defaultChecked={index === 0}
-            className="mt-1 size-4 accent-accent"
-          />
-          <span>
-            <span className="block">{engineDetails[engine].name}</span>
-            <span className="block text-footnote text-ink-secondary">
-              {engineDetails[engine].basis}
-            </span>
-          </span>
-        </label>
-      ))}
-    </fieldset>
   );
 }

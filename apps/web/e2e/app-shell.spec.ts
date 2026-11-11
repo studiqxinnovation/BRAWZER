@@ -29,7 +29,7 @@ async function keeperReady(page: Page, mode: "shared" | "persistent" = "shared")
 
 const appPages = [
   { path: "/app", heading: GREETING },
-  { path: "/app/browser", heading: "Browser" },
+  { path: "/app/browser", heading: "Browsers" },
   { path: "/app/profiles", heading: "Profiles" },
   { path: "/app/drive", heading: "Drive" },
   { path: "/app/proxy", heading: "Proxy" },
@@ -226,8 +226,13 @@ test.describe("account", () => {
     const phone = await otherDevice(browser, baseURL ?? "", email, PASSWORD);
 
     await page.goto("/app/account");
+    // The password form is behind the Security card's "Change…", as on the prototype.
     const current = page.getByLabel("Current password", { exact: true });
     const next = page.getByLabel("New password", { exact: true });
+    await expect(async () => {
+      await page.locator("#password-heading").getByRole("button", { name: "Change…" }).click();
+      await expect(current).toBeVisible({ timeout: 1000 });
+    }).toPass();
     await current.fill("not-my-password");
     await next.fill("amber-river-compass");
     await page.getByRole("button", { name: "Change password" }).click();

@@ -16,17 +16,15 @@ import {
   AlertDialogFooter,
   AlertDialogTitle,
 } from "@brawzer/ui/components/alert-dialog";
-import { Badge } from "@brawzer/ui/components/badge";
 import { Button } from "@brawzer/ui/components/button";
-import { EmptyState } from "@brawzer/ui/components/empty-state";
 import { Field, FieldLabel, Input } from "@brawzer/ui/components/field";
 import { FormMessage } from "@brawzer/ui/components/form-message";
 import { Select } from "@brawzer/ui/components/select";
 import { useToast } from "@brawzer/ui/components/toast";
-import { Mail, UserPlus, Users } from "lucide-react";
 import { type SubmitEvent, useState } from "react";
 import { useConfirmedRequest } from "@/components/app-shell/confirm-identity";
-import { Panel, SectionHeading } from "@/components/app-shell/page";
+import { Card, Empty, Grid, InfoHead, Panel, Pill, Row } from "@/components/app-shell/page";
+import { Reveal } from "@/components/app-shell/reveal";
 import { LocalDate } from "@/components/local-date";
 import type { ApiResult } from "@/lib/api/client";
 import {
@@ -51,9 +49,12 @@ const ROLE_LABELS: Record<TeamRole, string> = {
 };
 
 const ROLE_OPTIONS = [
-  { value: "member", label: "Member: uses the team’s plan, proxies and Drive" },
-  { value: "admin", label: "Admin: also invites, removes members and manages proxies" },
+  { value: "member", label: "Member" },
+  { value: "admin", label: "Admin" },
 ] as const;
+
+/** The prototype's avatar colours, by position in the list. */
+const AVATAR_COLOURS = ["#3B82F6", "#A78BFA", "#34D399", "#FB923C", "#F472B6", "#22D3EE"];
 
 type Confirming =
   | { kind: "remove"; member: TeamMember }
@@ -105,6 +106,40 @@ type Run = (
   onError?: (message: string) => void,
 ) => Promise<boolean>;
 
+function Avatar({ text, index, muted }: { text: string; index: number; muted?: boolean }) {
+  return (
+    <span
+      className="ad-pav"
+      aria-hidden="true"
+      style={{
+        background: muted
+          ? "var(--color-ink-tertiary)"
+          : AVATAR_COLOURS[index % AVATAR_COLOURS.length],
+      }}
+    >
+      {text.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
+/** The prototype's Seats card: how many of the plan's places are taken. */
+function SeatsCard({ taken, seats, plan }: { taken: number; seats: number; plan: string }) {
+  const share = seats > 0 ? Math.min(100, Math.round((taken / seats) * 100)) : 0;
+  return (
+    <Card label="Seats">
+      <p className="ad-stat-big">
+        {String(taken)} of {String(seats)}
+      </p>
+      <div className="ad-prog" role="presentation">
+        <div className="ad-prog-fill" style={{ width: `${String(share)}%` }} />
+      </div>
+      <p className="ad-stat-small">
+        {plan} includes {String(seats)} {seats === 1 ? "seat" : "seats"}
+      </p>
+    </Card>
+  );
+}
+
 function NoTeam({
   overview,
   busy,
@@ -130,109 +165,108 @@ function NoTeam({
   }
 
   return (
-    <div className="flex flex-col gap-10">
-      {overview.invitations.length > 0 && (
-        <section aria-labelledby="team-invitations" className="flex flex-col gap-4">
-          <SectionHeading id="team-invitations">Invitations for you</SectionHeading>
-          <Panel>
-            <ul aria-label="Invitations for you" className="divide-y divide-line">
-              {overview.invitations.map((invitation) => (
-                <li
-                  key={invitation.id}
-                  className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-callout font-medium text-ink">{invitation.teamName}</p>
-                    <p className="text-footnote text-ink-secondary">
+    <div className="flex flex-col">
+      <Grid cols={3} className="mb-[14px]">
+        <SeatsCard taken={1} seats={Math.max(1, overview.seats)} plan="Your plan" />
+        <Card label="Start a team" className="ad-span-2">
+          {canStart ? (
+            <form method="post" noValidate onSubmit={(event) => void submit(event)}>
+              <div className="ad-form-row">
+                <Field className="ad-grow">
+                  <FieldLabel className="sr-only">Team name</FieldLabel>
+                  <Input
+                    name="name"
+                    autoComplete="organization"
+                    placeholder="Team name"
+                    value={name}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                    }}
+                  />
+                </Field>
+                <Button type="submit" variant="primary" loading={busy === "create"}>
+                  Start team
+                </Button>
+              </div>
+              <p className="ad-stat-small">
+                You’ll own it: everyone you invite uses your plan, which allows{" "}
+                {String(overview.seats)} people, you included.
+              </p>
+              {error && (
+                <FormMessage tone="danger" title="The team wasn’t started" className="mt-3">
+                  {error}
+                </FormMessage>
+              )}
+            </form>
+          ) : (
+            <p className="ad-stat-small">
+              Your plan doesn’t include a team. A plan with team members, chosen on the Account
+              page, lets you start one.
+            </p>
+          )}
+        </Card>
+      </Grid>
+
+      <Panel>
+        <InfoHead title="Invitations for you">
+          <span className="ad-info-count">
+            {overview.invitations.length === 1
+              ? "1 invitation"
+              : `${String(overview.invitations.length)} invitations`}
+          </span>
+        </InfoHead>
+        {overview.invitations.length > 0 ? (
+          <ul aria-label="Invitations for you">
+            {overview.invitations.map((invitation, index) => (
+              <li key={invitation.id}>
+                <Row
+                  icon={<Avatar text={invitation.teamName} index={index} />}
+                  title={invitation.teamName}
+                  sub={
+                    <>
                       {invitation.invitedBy ? `From ${invitation.invitedBy}, as ` : "As "}
                       {invitation.role === "admin" ? "an admin" : "a member"} · until{" "}
-                      <LocalDate iso={invitation.expiresAt} />
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      loading={busy === `decline-${invitation.id}`}
-                      onClick={() =>
-                        void run(
-                          `decline-${invitation.id}`,
-                          () => declineInvitation(invitation.id),
-                          "Invitation declined",
-                        )
-                      }
-                    >
-                      Decline<span className="sr-only"> {invitation.teamName}</span>
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      loading={busy === `join-${invitation.id}`}
-                      onClick={() =>
-                        void run(
-                          `join-${invitation.id}`,
-                          () => joinTeam(invitation.id),
-                          `You’re in ${invitation.teamName}`,
-                        )
-                      }
-                    >
-                      Join<span className="sr-only"> {invitation.teamName}</span>
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Panel>
-          <p className="text-footnote text-ink-secondary">
-            Joining puts you on the team owner’s plan. A subscription of your own has to end first.
-          </p>
-        </section>
-      )}
-
-      <section aria-labelledby="team-start" className="flex flex-col gap-4">
-        <SectionHeading id="team-start">Start a team</SectionHeading>
-        {canStart ? (
-          <Panel className="flex flex-col gap-4 p-5">
-            <p className="text-callout text-ink-secondary">
-              You’ll own it: everyone you invite uses your plan, which allows{" "}
-              {String(overview.seats)} people, you included.
-            </p>
-            <form
-              method="post"
-              noValidate
-              onSubmit={(event) => void submit(event)}
-              className="flex flex-col gap-3 sm:flex-row sm:items-end"
-            >
-              <Field className="flex-1">
-                <FieldLabel>Team name</FieldLabel>
-                <Input
-                  name="name"
-                  autoComplete="organization"
-                  value={name}
-                  onChange={(event) => {
-                    setName(event.target.value);
-                  }}
-                />
-              </Field>
-              <Button type="submit" variant="primary" loading={busy === "create"}>
-                <Users aria-hidden="true" />
-                Start team
-              </Button>
-            </form>
-            {error && (
-              <FormMessage tone="danger" title="The team wasn’t started">
-                {error}
-              </FormMessage>
-            )}
-          </Panel>
+                      <LocalDate iso={invitation.expiresAt} /> · joining puts you on the team
+                      owner’s plan
+                    </>
+                  }
+                >
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={busy === `decline-${invitation.id}`}
+                    onClick={() =>
+                      void run(
+                        `decline-${invitation.id}`,
+                        () => declineInvitation(invitation.id),
+                        "Invitation declined",
+                      )
+                    }
+                  >
+                    Decline<span className="sr-only"> {invitation.teamName}</span>
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    loading={busy === `join-${invitation.id}`}
+                    onClick={() =>
+                      void run(
+                        `join-${invitation.id}`,
+                        () => joinTeam(invitation.id),
+                        `You’re in ${invitation.teamName}`,
+                      )
+                    }
+                  >
+                    Join<span className="sr-only"> {invitation.teamName}</span>
+                  </Button>
+                </Row>
+              </li>
+            ))}
+          </ul>
         ) : (
-          <EmptyState
-            icon={<Users />}
-            title="Your plan doesn’t include a team"
-            description="A plan with team members, chosen on the Account page, lets you start one."
-          />
+          <Empty>No invitations. Someone who runs a team can invite this email address.</Empty>
         )}
-      </section>
+      </Panel>
     </div>
   );
 }
@@ -274,116 +308,168 @@ function InTeam({
   }
 
   return (
-    <div className="flex flex-col gap-10">
-      <TeamName team={team} busy={busy} run={run} />
+    <div className="flex flex-col">
+      <Grid cols={3} className="mb-[14px]">
+        <SeatsCard taken={taken} seats={team.seats} plan={`${team.planName} plan`} />
+        {manages ? (
+          <Invitations team={team} full={taken >= team.seats} busy={busy} run={run} />
+        ) : (
+          <Card label="Your place" className="ad-span-2">
+            <p className="ad-stat-big">{ROLE_LABELS[team.role]}</p>
+            <p className="ad-stat-small">
+              From your team: everyone here uses the {team.planName} plan, and{" "}
+              {team.members.find((member) => member.role === "owner")?.email ?? "its owner"} pays
+              for it. Admins invite people; ask one to invite someone.
+            </p>
+          </Card>
+        )}
+      </Grid>
 
-      <section aria-labelledby="team-members" className="flex flex-col gap-4">
-        <SectionHeading id="team-members">People</SectionHeading>
-        <p className="text-footnote text-ink-secondary">
-          {String(team.members.length)} of {String(team.seats)} on the {team.planName} plan
-          {team.invitations.length > 0 ? `, and ${String(team.invitations.length)} invited` : ""}.
-        </p>
-        <Panel>
-          <ul aria-label="Team members" className="divide-y divide-line">
-            {team.members.map((member) => {
-              const self = member.email === me;
-              const canRemove =
-                !self &&
-                member.role !== "owner" &&
-                (team.role === "owner" || (team.role === "admin" && member.role === "member"));
-              return (
-                <li
-                  key={member.userId}
-                  className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-2 text-callout font-medium text-ink">
+      <Panel className="mb-[14px]">
+        <InfoHead title={team.name}>
+          <span className="ad-info-count">
+            {String(team.members.length)} of {String(team.seats)} members · started{" "}
+            <LocalDate iso={team.createdAt} />
+          </span>
+        </InfoHead>
+        {manages && <TeamName team={team} busy={busy} run={run} />}
+        <ul aria-label="Team members">
+          {team.members.map((member, index) => {
+            const self = member.email === me;
+            const canRemove =
+              !self &&
+              member.role !== "owner" &&
+              (team.role === "owner" || (team.role === "admin" && member.role === "member"));
+            return (
+              <li key={member.userId}>
+                <Row
+                  icon={<Avatar text={member.email} index={index} />}
+                  title={
+                    <>
                       <span className="truncate">{member.email}</span>
-                      {self && <span className="text-footnote text-ink-secondary">(you)</span>}
-                      <Badge tone={member.role === "owner" ? "accent" : "neutral"}>
+                      {self && <Pill tone="grey">You</Pill>}
+                      <Pill tone={member.role === "owner" ? "blue" : "grey"}>
                         {ROLE_LABELS[member.role]}
-                      </Badge>
-                    </p>
-                    <p className="text-footnote text-ink-secondary">
+                      </Pill>
+                    </>
+                  }
+                  sub={
+                    <>
                       Joined <LocalDate iso={member.joinedAt} />
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {team.role === "owner" && !self && (
-                      <>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          loading={busy === `role-${member.userId}`}
-                          onClick={() =>
-                            void run(
-                              `role-${member.userId}`,
-                              () =>
-                                setTeamRole(
-                                  member.userId,
-                                  member.role === "admin" ? "member" : "admin",
-                                ),
-                              member.role === "admin"
-                                ? `${member.email} is a member now`
-                                : `${member.email} is an admin now`,
-                            )
-                          }
-                        >
-                          {member.role === "admin" ? "Make member" : "Make admin"}
-                          <span className="sr-only"> {member.email}</span>
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => {
-                            setConfirming({ kind: "transfer", member });
-                          }}
-                        >
-                          Hand over<span className="sr-only"> the team to {member.email}</span>
-                        </Button>
-                      </>
-                    )}
-                    {canRemove && (
+                    </>
+                  }
+                >
+                  {team.role === "owner" && !self && (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={busy === `role-${member.userId}`}
+                        onClick={() =>
+                          void run(
+                            `role-${member.userId}`,
+                            () =>
+                              setTeamRole(
+                                member.userId,
+                                member.role === "admin" ? "member" : "admin",
+                              ),
+                            member.role === "admin"
+                              ? `${member.email} is a member now`
+                              : `${member.email} is an admin now`,
+                          )
+                        }
+                      >
+                        {member.role === "admin" ? "Make member" : "Make admin"}
+                        <span className="sr-only"> {member.email}</span>
+                      </Button>
                       <Button
                         variant="secondary"
                         size="sm"
                         onClick={() => {
-                          setConfirming({ kind: "remove", member });
+                          setConfirming({ kind: "transfer", member });
                         }}
                       >
-                        Remove<span className="sr-only"> {member.email}</span>
+                        Hand over<span className="sr-only"> the team to {member.email}</span>
                       </Button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
+                    </>
+                  )}
+                  {canRemove && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setConfirming({ kind: "remove", member });
+                      }}
+                    >
+                      Remove<span className="sr-only"> {member.email}</span>
+                    </Button>
+                  )}
+                </Row>
+              </li>
+            );
+          })}
+        </ul>
+        {manages && team.invitations.length > 0 && (
+          <ul aria-label="Waiting invitations">
+            {team.invitations.map((invitation, index) => (
+              <li key={invitation.id}>
+                <Row
+                  icon={<Avatar text={invitation.email} index={index} muted />}
+                  title={
+                    <>
+                      <span className="truncate">{invitation.email}</span>
+                      <Pill tone="orange">Invite sent</Pill>
+                      <Pill tone="grey">{ROLE_LABELS[invitation.role]}</Pill>
+                    </>
+                  }
+                  sub={
+                    <>
+                      Until <LocalDate iso={invitation.expiresAt} />
+                    </>
+                  }
+                >
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={busy === `withdraw-${invitation.id}`}
+                    onClick={() =>
+                      void run(
+                        `withdraw-${invitation.id}`,
+                        () => withdrawInvitation(invitation.id),
+                        `The invitation to ${invitation.email} was withdrawn`,
+                      )
+                    }
+                  >
+                    Cancel<span className="sr-only"> the invitation to {invitation.email}</span>
+                  </Button>
+                </Row>
+              </li>
+            ))}
           </ul>
-        </Panel>
-      </section>
+        )}
+      </Panel>
 
-      {manages && <Invitations team={team} full={taken >= team.seats} busy={busy} run={run} />}
-
-      <section aria-labelledby="team-leave" className="flex flex-col gap-4">
-        <SectionHeading id="team-leave">
-          {team.role === "owner" ? "Delete the team" : "Leave the team"}
-        </SectionHeading>
-        <Panel className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
-          <p className="flex-1 text-callout text-ink-secondary">
-            {team.role === "owner"
+      <Panel className="ad-danger">
+        <InfoHead title={team.role === "owner" ? "Delete the team" : "Leave the team"} />
+        <Row
+          title={team.role === "owner" ? "Delete team" : "Leave team"}
+          sub={
+            team.role === "owner"
               ? "Its shared proxies and Drive space are deleted, and everyone goes back to their own plan. To leave instead, hand the team to someone first."
-              : "You go back to your own plan. What you put in the team’s Drive stays with the team."}
-          </p>
+              : "You go back to your own plan. What you put in the team’s Drive stays with the team."
+          }
+        >
           <Button
             variant="danger"
+            size="sm"
             onClick={() => {
               setConfirming(team.role === "owner" ? { kind: "delete" } : { kind: "leave" });
             }}
           >
             {team.role === "owner" ? "Delete team" : "Leave team"}
           </Button>
-        </Panel>
-      </section>
+        </Row>
+      </Panel>
 
       <AlertDialog
         open={confirming !== null}
@@ -432,10 +518,10 @@ function InTeam({
   );
 }
 
+/** Renaming, behind "Rename" at the top of the members card. */
 function TeamName({ team, busy, run }: { team: Team; busy: string | null; run: Run }) {
   const [name, setName] = useState(team.name);
   const [error, setError] = useState<string | null>(null);
-  const manages = team.role === "owner" || team.role === "admin";
 
   async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -449,24 +535,11 @@ function TeamName({ team, busy, run }: { team: Team; busy: string | null; run: R
   }
 
   return (
-    <Panel className="flex flex-col gap-4 p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <Users aria-hidden="true" className="size-5 text-ink-secondary" />
-        <h2 className="text-title-3 text-ink">{team.name}</h2>
-        <Badge tone="neutral">You: {ROLE_LABELS[team.role]}</Badge>
-      </div>
-      <p className="text-callout text-ink-secondary">
-        Everyone here uses the {team.planName} plan, started <LocalDate iso={team.createdAt} />.
-      </p>
-      {manages && (
-        <form
-          method="post"
-          noValidate
-          onSubmit={(event) => void submit(event)}
-          className="flex flex-col gap-3 sm:flex-row sm:items-end"
-        >
-          <Field className="flex-1">
-            <FieldLabel>Team name</FieldLabel>
+    <Reveal title="Team name" sub={`You: ${ROLE_LABELS[team.role]}`} label="Rename">
+      <form method="post" noValidate onSubmit={(event) => void submit(event)}>
+        <div className="ad-form-row">
+          <Field className="ad-grow">
+            <FieldLabel className="sr-only">Team name</FieldLabel>
             <Input
               name="name"
               value={name}
@@ -478,22 +551,24 @@ function TeamName({ team, busy, run }: { team: Team; busy: string | null; run: R
           <Button
             type="submit"
             variant="secondary"
+            size="sm"
             loading={busy === "rename"}
             disabled={name.trim() === team.name}
           >
             Rename
           </Button>
-        </form>
-      )}
-      {error && (
-        <FormMessage tone="danger" title="The name wasn’t changed">
-          {error}
-        </FormMessage>
-      )}
-    </Panel>
+        </div>
+        {error && (
+          <FormMessage tone="danger" title="The name wasn’t changed" className="mt-3">
+            {error}
+          </FormMessage>
+        )}
+      </form>
+    </Reveal>
   );
 }
 
+/** The prototype's "Invite someone" card: an email, a role, Send invitation. */
 function Invitations({
   team,
   full,
@@ -527,95 +602,44 @@ function Invitations({
   }
 
   return (
-    <section aria-labelledby="team-invite" className="flex flex-col gap-4">
-      <SectionHeading id="team-invite">Invite someone</SectionHeading>
-      <Panel className="flex flex-col gap-4 p-5">
-        <p className="text-callout text-ink-secondary">
-          They get an email, and join from their own Team page once they’re signed in with that
-          address. An invitation lasts 7 days and holds a place in the team.
-        </p>
-        <form
-          method="post"
-          noValidate
-          onSubmit={(event) => void submit(event)}
-          className="flex flex-col gap-3"
-        >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <Field className="flex-1">
-              <FieldLabel>Email address</FieldLabel>
-              <Input
-                name="email"
-                type="email"
-                autoComplete="off"
-                value={email}
-                onChange={(event) => {
-                  setEmail(event.target.value);
-                }}
-              />
-            </Field>
-            <Select
-              className="sm:w-80"
-              label="Role"
-              options={ROLE_OPTIONS}
-              value={role}
-              onValueChange={setRole}
+    <Card label="Invite someone" className="ad-span-2">
+      <form method="post" noValidate onSubmit={(event) => void submit(event)}>
+        <div className="ad-form-row">
+          <Field className="ad-grow">
+            <FieldLabel className="sr-only">Email address</FieldLabel>
+            <Input
+              name="email"
+              type="email"
+              autoComplete="off"
+              placeholder="name@company.com"
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+              }}
             />
-          </div>
-          <div>
-            <Button type="submit" variant="primary" loading={busy === "invite"} disabled={full}>
-              <UserPlus aria-hidden="true" />
-              Send invitation
-            </Button>
-          </div>
-        </form>
-        {full && (
-          <p className="text-footnote text-ink-secondary">
-            The team is full: its plan allows {String(team.seats)} people, invitations included.
-          </p>
-        )}
+          </Field>
+          <Select
+            label="Role"
+            hideLabel
+            options={ROLE_OPTIONS}
+            value={role}
+            onValueChange={setRole}
+          />
+          <Button type="submit" variant="primary" loading={busy === "invite"} disabled={full}>
+            Send invitation
+          </Button>
+        </div>
+        <p className="ad-stat-small">
+          {full
+            ? `The team is full: its plan allows ${String(team.seats)} people, invitations included.`
+            : "They get an email and join from their own Team page. An invitation lasts 7 days and holds a place. Admins also invite and remove members and manage proxies."}
+        </p>
         {error && (
-          <FormMessage tone="danger" title="The invitation wasn’t sent">
+          <FormMessage tone="danger" title="The invitation wasn’t sent" className="mt-3">
             {error}
           </FormMessage>
         )}
-      </Panel>
-      {team.invitations.length > 0 && (
-        <Panel>
-          <ul aria-label="Waiting invitations" className="divide-y divide-line">
-            {team.invitations.map((invitation) => (
-              <li
-                key={invitation.id}
-                className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-2 text-callout text-ink">
-                    <Mail aria-hidden="true" className="size-4 text-ink-secondary" />
-                    <span className="truncate">{invitation.email}</span>
-                    <Badge tone="neutral">{ROLE_LABELS[invitation.role]}</Badge>
-                  </p>
-                  <p className="text-footnote text-ink-secondary">
-                    Until <LocalDate iso={invitation.expiresAt} />
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  loading={busy === `withdraw-${invitation.id}`}
-                  onClick={() =>
-                    void run(
-                      `withdraw-${invitation.id}`,
-                      () => withdrawInvitation(invitation.id),
-                      "Invitation withdrawn",
-                    )
-                  }
-                >
-                  Withdraw<span className="sr-only"> the invitation to {invitation.email}</span>
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      )}
-    </section>
+      </form>
+    </Card>
   );
 }

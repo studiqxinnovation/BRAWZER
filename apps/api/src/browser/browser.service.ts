@@ -232,7 +232,7 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
     const since = new Date(now.getTime() - 48 * 60 * 60_000);
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const sessions = schema.browserSessions;
-    const [starts, ended, byEngine] = await Promise.all([
+    const [starts, ended, byEngine, past] = await Promise.all([
       this.database.db
         .select({ startedAt: sessions.startedAt })
         .from(sessions)
@@ -262,10 +262,43 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
           ),
         )
         .groupBy(sessions.engine),
+      this.database.db
+        .select({
+          id: sessions.id,
+          engine: sessions.engine,
+          profileId: sessions.profileId,
+          startedAt: sessions.startedAt,
+          endedAt: sessions.endedAt,
+          endReason: sessions.endReason,
+        })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.userId, userId),
+            isNotNull(sessions.startedAt),
+            isNotNull(sessions.endedAt),
+          ),
+        )
+        .orderBy(desc(sessions.endedAt))
+        .limit(20),
     ]);
     return {
       recentStarts: starts.flatMap((row) => (row.startedAt ? [row.startedAt.toISOString()] : [])),
       lastEndedAt: ended[0]?.endedAt?.toISOString() ?? null,
+      ended: past.flatMap((row) =>
+        row.startedAt && row.endedAt
+          ? [
+              {
+                id: row.id,
+                engine: row.engine,
+                profileId: row.profileId,
+                startedAt: row.startedAt.toISOString(),
+                endedAt: row.endedAt.toISOString(),
+                reason: row.endReason,
+              },
+            ]
+          : [],
+      ),
       minutesThisMonth: byEngine
         .map((row) => ({
           engine: row.engine,

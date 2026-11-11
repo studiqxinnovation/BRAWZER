@@ -2323,7 +2323,7 @@ div:has(> .dt-os) > :not(.dt-os) {
     line-height: 1.25;
   }
 
-  :root:not([data-desktop="off"]) .dt-dash .ad-page-head h1 + div {
+  :root:not([data-desktop="off"]) .dt-dash .ad-page-head > div > h1 + div {
     margin-top: 4px;
     max-width: none;
     color: var(--color-ink-secondary);

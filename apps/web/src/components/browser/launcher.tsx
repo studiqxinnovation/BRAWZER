@@ -23,15 +23,18 @@ import {
   MenuTrigger,
 } from "@brawzer/ui/components/menu";
 import { useToast } from "@brawzer/ui/components/toast";
-import { ChevronDown, Clock, History, Plus, X } from "lucide-react";
+import { ChevronDown, Clock, History, Play, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useState } from "react";
+import { PageHeader } from "@/components/app-shell/page";
 import { LocalDate } from "@/components/local-date";
 import { endBrowserSession, fetchBrowserOverview } from "@/lib/api/browser";
 import { hostOf } from "@/lib/browser/input";
 import { defaultProfile, makeProfileFor } from "@/lib/browser/launch";
+import { startEngine } from "@/lib/browser/use-launch";
 import { leaveSignedInArea } from "@/lib/session-channel";
 import { AppIconArt, EngineLogo } from "./engine-logo";
+import { LaunchSettings } from "./launch-settings";
 import "./launcher.css";
 
 /** What to start: a profile (its own browser), a new profile for a browser, or a temporary one. */
@@ -60,6 +63,12 @@ function describeProfile(engine: BrowserEngine, profile: Profile | null, proxies
         ? "Websites see Brawzer’s cloud; the profile has no proxy."
         : "Websites see Brawzer’s cloud.";
   return `${details.basis}. ${keeps} ${network}`;
+}
+
+/** The card's line under a browser: what opening it keeps and where websites see it from. */
+function profileBlurb(engine: BrowserEngine, profile: Profile | null, proxies: Proxies): string {
+  const full = describeProfile(engine, profile, proxies);
+  return full.slice(`${engineDetails[engine].basis}. `.length);
 }
 
 /**
@@ -188,11 +197,33 @@ export function Launcher({
 
   return (
     <div className="bl-desktop">
-      <div className="bl-main">
-        <header className="bl-header">
-          <h1 className="bl-title">Browser</h1>
-          <p className="bl-subtitle">Only pixels reach your device — click a browser to launch</p>
-        </header>
+      <div className="bl-main ad-page">
+        <PageHeader
+          title="Browsers"
+          action={
+            <Button
+              variant="primary"
+              disabled={blocked}
+              onClick={() => {
+                const engine = startEngine(overview.engines);
+                const chosen = defaultProfile(
+                  engine,
+                  profiles.filter((profile) => profile.engine === engine),
+                  busy,
+                );
+                void open(engine, chosen ? chosen.id : "new");
+              }}
+            >
+              <Play aria-hidden="true" />
+              Launch default
+            </Button>
+          }
+        >
+          <p>
+            Every browser runs in the cloud. Nothing is installed on this device. Run up to{" "}
+            {String(overview.limits.liveSessions)} at once.
+          </p>
+        </PageHeader>
 
         {(unavailable || error) && (
           <div className="mx-auto mt-8 flex w-full max-w-xl flex-col gap-3">
@@ -208,6 +239,8 @@ export function Launcher({
             )}
           </div>
         )}
+
+        <LaunchSettings engines={overview.engines} />
 
         <ul aria-label="Browsers" className="bl-icons" data-launching={launching ?? undefined}>
           {overview.engines.map((engine, index) => (
@@ -463,16 +496,39 @@ function AppIcon({
           <AppIconArt engine={engine} />
           <span className="bl-label">{details.short}</span>
         </button>
-        <span className="bl-running" aria-hidden="true" />
-        <Menu>
-          <MenuTrigger disabled={disabled} className="bl-profile" onFocus={point} onBlur={leave}>
-            {/* Named as shown, then what it does: voice control says what it sees. */}
-            <span className="truncate">{chosen ? chosen.name : "New profile"}</span>
-            <span className="sr-only">, or open {details.short} with another profile</span>
-            <ChevronDown aria-hidden="true" />
-          </MenuTrigger>
-          <MenuContent align="center">{items}</MenuContent>
-        </Menu>
+        <span className="bl-engine">{details.basis}</span>
+        <p className="bl-app-desc">{profileBlurb(engine, chosen, proxies)}</p>
+        <div className="bl-app-foot">
+          <span
+            className="bl-pill"
+            data-tone={launching ? "blue" : running ? "green" : disabled ? "grey" : "green"}
+          >
+            {launching ? "Opening…" : running ? "Open now" : disabled ? "Wait" : "Ready"}
+          </span>
+          <Menu>
+            <MenuTrigger disabled={disabled} className="bl-profile" onFocus={point} onBlur={leave}>
+              {/* Named as shown, then what it does: voice control says what it sees. */}
+              <span className="truncate">{chosen ? chosen.name : "New profile"}</span>
+              <span className="sr-only">, or open {details.short} with another profile</span>
+              <ChevronDown aria-hidden="true" />
+            </MenuTrigger>
+            <MenuContent align="center">{items}</MenuContent>
+          </Menu>
+          <Button
+            variant="primary"
+            size="sm"
+            className="ml-auto"
+            aria-label={`Launch ${details.short}`}
+            disabled={disabled}
+            onFocus={point}
+            onBlur={leave}
+            onClick={() => {
+              onOpen(chosen ? chosen.id : "new");
+            }}
+          >
+            Launch
+          </Button>
+        </div>
         <span id={descriptionId} hidden>
           {describeProfile(engine, chosen, proxies)}
           {running ? ` ${details.short} is open now.` : ""}

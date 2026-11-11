@@ -1,5 +1,6 @@
 "use client";
 
+import { type BrowserEngine, browserEngineSchema } from "@brawzer/contracts";
 import { z } from "zod";
 import { type AppId, defaultPinnedApps, isAppId } from "@/components/desktop/apps/registry";
 import { webAppById } from "@/components/desktop/apps/web-apps";
@@ -23,6 +24,8 @@ export interface DesktopPrefs {
   volume: number;
   /** 15 to 100. */
   brightness: number;
+  /** What "Start Browsing" opens; null: Bee Browser, or the first offered. */
+  defaultEngine: BrowserEngine | null;
 }
 
 const prefsSchema = z.object({
@@ -33,6 +36,7 @@ const prefsSchema = z.object({
   sounds: z.boolean().optional(),
   volume: z.number().min(0).max(100).optional(),
   brightness: z.number().min(15).max(100).optional(),
+  defaultEngine: browserEngineSchema.nullable().optional(),
 });
 
 const DEFAULT: DesktopPrefs = {
@@ -43,6 +47,7 @@ const DEFAULT: DesktopPrefs = {
   sounds: true,
   volume: 60,
   brightness: 100,
+  defaultEngine: null,
 };
 
 let prefs: DesktopPrefs = DEFAULT;
@@ -84,6 +89,7 @@ export async function loadDesktopPrefs(): Promise<void> {
       sounds: data.sounds ?? DEFAULT.sounds,
       volume: data.volume ?? DEFAULT.volume,
       brightness: data.brightness ?? DEFAULT.brightness,
+      defaultEngine: data.defaultEngine ?? null,
     };
   }
   loaded = "yes";

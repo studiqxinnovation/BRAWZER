@@ -24,7 +24,7 @@ import { toNotices } from "@/components/home/notices";
 import { openCommandPalette } from "@/components/app-shell/command-palette";
 import { appNav } from "@/content/app";
 import { fetchSecurityEvents } from "@/lib/api/security";
-import { useLaunchBrowser } from "@/lib/browser/use-launch";
+import { startEngine, useLaunchBrowser } from "@/lib/browser/use-launch";
 import { lockNow } from "@/lib/lock";
 import { signOut } from "@/lib/session-channel";
 import { type AppId, Tile } from "./apps/registry";
@@ -254,7 +254,7 @@ export function DashboardBar({
           <button
             type="button"
             className="dw-start"
-            onClick={() => void launch(engines.includes("bee") ? "bee" : (engines[0] ?? "bee"))}
+            onClick={() => void launch(startEngine(engines))}
           >
             <Play aria-hidden="true" />
             Start Browsing

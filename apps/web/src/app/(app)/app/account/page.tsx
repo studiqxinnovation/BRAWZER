@@ -1,8 +1,13 @@
-import { billingOverviewSchema, mfaStatusSchema, passkeyListSchema } from "@brawzer/contracts";
-import { Badge } from "@brawzer/ui/components/badge";
+import {
+  billingOverviewSchema,
+  deviceSessionListSchema,
+  mfaStatusSchema,
+  passkeyListSchema,
+} from "@brawzer/contracts";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
-import { BadgeCheck } from "lucide-react";
+import { buttonVariants } from "@brawzer/ui/lib/button-variants";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 import { ChangeEmail } from "@/components/account/change-email";
 import { ChangePasswordForm } from "@/components/account/change-password-form";
@@ -10,87 +15,57 @@ import { DeleteAccount } from "@/components/account/delete-account";
 import { DownloadData } from "@/components/account/download-data";
 import { PasskeysSection } from "@/components/account/passkeys-section";
 import { PlanSection } from "@/components/account/plan-section";
+import { DesktopStyleSegment, WallpaperButton } from "@/components/account/preference-controls";
 import { TwoFactorSection } from "@/components/account/two-factor-section";
 import {
+  Card,
+  Grid,
+  InfoHead,
   PageContainer,
   PageHeader,
   Panel,
-  SectionHeading,
+  Pill,
+  Row,
   Unavailable,
 } from "@/components/app-shell/page";
+import { Reveal } from "@/components/app-shell/reveal";
 import { AccentControl, ThemeControl } from "@/components/appearance-controls";
 import { LocalDate } from "@/components/local-date";
+import { EndOtherSessionsButton } from "@/components/sessions/session-actions";
 import { serverGet, signInAgain } from "@/lib/server-api";
 import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Account", robots: { index: false, follow: false } };
 
-async function AccountDetails() {
+async function ProfileCard() {
   const state = await getSession();
   if (state.kind === "signed-out") signInAgain("/app/account");
   if (state.kind === "unavailable") return <Unavailable />;
   const { account } = state.data;
-
   return (
-    <Panel>
-      <dl className="divide-y divide-line">
-        <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:gap-6">
-          <dt className="w-40 shrink-0 text-callout text-ink-secondary">Email</dt>
-          <dd className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-callout text-ink">
-            <span className="break-all">{account.email}</span>
-            {account.emailVerified && (
-              <Badge tone="success">
-                <BadgeCheck aria-hidden="true" />
-                Confirmed
-              </Badge>
-            )}
-            <span className="sm:ml-auto">
-              <ChangeEmail currentEmail={account.email} />
-            </span>
-          </dd>
+    <>
+      <div className="flex items-center gap-3">
+        <span
+          className="ad-pav"
+          style={{ background: "linear-gradient(145deg, #5e5ce6, #0a84ff)" }}
+        >
+          {account.email.slice(0, 1).toUpperCase()}
+        </span>
+        <div className="min-w-0">
+          <p className="ad-li-title">
+            <span className="truncate">{account.email}</span>
+            {account.emailVerified && <Pill tone="green">Confirmed</Pill>}
+          </p>
+          <p className="ad-li-sub">
+            Since <LocalDate iso={account.createdAt} />
+          </p>
         </div>
-        <div className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:gap-6">
-          <dt className="w-40 shrink-0 text-callout text-ink-secondary">Account created</dt>
-          <dd className="text-callout text-ink">
-            <LocalDate iso={account.createdAt} />
-          </dd>
-        </div>
-      </dl>
-    </Panel>
+      </div>
+      <div>
+        <ChangeEmail currentEmail={account.email} />
+      </div>
+    </>
   );
-}
-
-async function Passkeys() {
-  const [state, list] = await Promise.all([
-    getSession(),
-    serverGet("/auth/passkeys", passkeyListSchema),
-  ]);
-  if (state.kind === "signed-out" || list.kind === "signed-out") signInAgain("/app/account");
-  if (state.kind === "unavailable" || list.kind === "unavailable") return <Unavailable />;
-  return (
-    <PasskeysSection
-      passkeys={list.data.passkeys}
-      sharedComputer={!state.data.session.persistent}
-      renderedAt={list.receivedAt}
-    />
-  );
-}
-
-async function TwoFactor() {
-  const [state, status] = await Promise.all([
-    getSession(),
-    serverGet("/auth/mfa", mfaStatusSchema),
-  ]);
-  if (state.kind === "signed-out" || status.kind === "signed-out") signInAgain("/app/account");
-  if (state.kind === "unavailable" || status.kind === "unavailable") return <Unavailable />;
-  return <TwoFactorSection status={status.data} sharedComputer={!state.data.session.persistent} />;
-}
-
-async function YourData() {
-  const state = await getSession();
-  if (state.kind === "signed-out") signInAgain("/app/account");
-  if (state.kind === "unavailable") return <Unavailable />;
-  return <DownloadData sharedComputer={!state.data.session.persistent} />;
 }
 
 async function Plan() {
@@ -100,97 +75,198 @@ async function Plan() {
   return <PlanSection overview={overview.data} />;
 }
 
-async function DeleteSection() {
+async function SecurityRows() {
+  const [state, status, list, devices] = await Promise.all([
+    getSession(),
+    serverGet("/auth/mfa", mfaStatusSchema),
+    serverGet("/auth/passkeys", passkeyListSchema),
+    serverGet("/auth/sessions", deviceSessionListSchema),
+  ]);
+  if (
+    state.kind === "signed-out" ||
+    status.kind === "signed-out" ||
+    list.kind === "signed-out" ||
+    devices.kind === "signed-out"
+  ) {
+    signInAgain("/app/account");
+  }
+  if (
+    state.kind === "unavailable" ||
+    status.kind === "unavailable" ||
+    list.kind === "unavailable" ||
+    devices.kind === "unavailable"
+  ) {
+    return <Unavailable />;
+  }
+  const sharedComputer = !state.data.session.persistent;
+  const count = devices.data.sessions.length;
+  return (
+    <>
+      <Row
+        id="two-factor-heading"
+        title="Two-factor authentication"
+        sub="Ask for a code when you sign in."
+        body={<TwoFactorSection status={status.data} sharedComputer={sharedComputer} />}
+      >
+        {status.data.totpEnabled ? <Pill tone="green">On</Pill> : <Pill tone="grey">Off</Pill>}
+      </Row>
+      <Row
+        id="passkeys-heading"
+        title="Passkeys"
+        sub="Your phone, face, fingerprint or a security key."
+        body={
+          <PasskeysSection
+            passkeys={list.data.passkeys}
+            sharedComputer={sharedComputer}
+            renderedAt={list.receivedAt}
+          />
+        }
+      >
+        <Pill tone={list.data.passkeys.length > 0 ? "green" : "grey"}>
+          {list.data.passkeys.length === 0 ? "None" : String(list.data.passkeys.length)}
+        </Pill>
+      </Row>
+      <Reveal
+        id="password-heading"
+        title="Password"
+        sub="Changing it signs out your other devices."
+        label="Change…"
+      >
+        <ChangePasswordForm />
+      </Reveal>
+      <Row
+        title="Signed-in devices"
+        sub={
+          count === 1
+            ? "1 device · this one"
+            : `${String(count)} devices · this one and ${String(count - 1)} more`
+        }
+      >
+        <Link href="/app/sessions" className={buttonVariants({ variant: "secondary", size: "sm" })}>
+          View
+        </Link>
+      </Row>
+    </>
+  );
+}
+
+async function Preferences() {
   const state = await getSession();
   if (state.kind === "signed-out") signInAgain("/app/account");
   if (state.kind === "unavailable") return <Unavailable />;
-  return <DeleteAccount email={state.data.account.email} />;
+  const { session } = state.data;
+  return (
+    <>
+      <Row title="Theme">
+        <ThemeControl />
+      </Row>
+      <Row title="Accent colour">
+        <AccentControl />
+      </Row>
+      <Row title="Desktop style">
+        <DesktopStyleSegment />
+      </Row>
+      <Row title="Wallpaper">
+        <WallpaperButton />
+      </Row>
+      <Row
+        title="Shared-computer mode"
+        sub={
+          session.persistent
+            ? "Off: you stay signed in on this device. Chosen when you sign in."
+            : "On: signed out when the browser closes. Chosen when you sign in."
+        }
+      >
+        {session.persistent ? <Pill tone="grey">Off</Pill> : <Pill tone="green">On</Pill>}
+      </Row>
+      <Row title="Idle timeout" sub="Signed out after this long without activity.">
+        <span className="ad-li-title">
+          {session.persistent ? "Never" : `${String(session.idleTimeoutMinutes)} min`}
+        </span>
+      </Row>
+    </>
+  );
+}
+
+async function YourData() {
+  const state = await getSession();
+  if (state.kind === "signed-out") signInAgain("/app/account");
+  if (state.kind === "unavailable") return <Unavailable />;
+  return <DownloadData sharedComputer={!state.data.session.persistent} />;
+}
+
+async function DangerRows() {
+  const [state, devices] = await Promise.all([
+    getSession(),
+    serverGet("/auth/sessions", deviceSessionListSchema),
+  ]);
+  if (state.kind === "signed-out" || devices.kind === "signed-out") signInAgain("/app/account");
+  if (state.kind === "unavailable" || devices.kind === "unavailable") return <Unavailable />;
+  const others = devices.data.sessions.filter((session) => !session.current).length;
+  return (
+    <>
+      <Row title="Sign out everywhere" sub="Ends every session on every other device.">
+        {others > 0 ? (
+          <EndOtherSessionsButton count={others} />
+        ) : (
+          <Pill tone="grey">Only this device</Pill>
+        )}
+      </Row>
+      <Row
+        title="Delete account"
+        sub="Removes your profiles, Drive files and team. This can’t be undone."
+        body={<DeleteAccount email={state.data.account.email} />}
+      />
+    </>
+  );
 }
 
 export default function AccountPage() {
   return (
     <PageContainer>
       <PageHeader title="Account">
-        <p>Your sign-in details, your data and how Brawzer looks on this computer.</p>
+        <p>Manage your profile, plan, security and preferences.</p>
       </PageHeader>
-      <div className="flex flex-col gap-10">
-        <section aria-labelledby="details-heading" className="flex flex-col gap-4">
-          <SectionHeading id="details-heading">Details</SectionHeading>
-          <Suspense fallback={<Skeleton className="h-28 w-full rounded-xl" />}>
-            <AccountDetails />
+      <Grid cols={2}>
+        <Card label="Profile">
+          <Suspense fallback={<Skeleton className="h-16 w-full rounded-lg" />}>
+            <ProfileCard />
           </Suspense>
-        </section>
-
-        <section aria-labelledby="plan-heading" className="flex flex-col gap-4">
-          <SectionHeading id="plan-heading">Plan</SectionHeading>
-          <Panel className="p-5 sm:p-6">
-            <Suspense fallback={<Skeleton className="h-40 w-full rounded-lg" />}>
-              <Plan />
-            </Suspense>
-          </Panel>
-        </section>
-
-        <section aria-labelledby="passkeys-heading" className="flex flex-col gap-4">
-          <SectionHeading id="passkeys-heading">Passkeys</SectionHeading>
-          <Panel className="p-5 sm:p-6">
-            <Suspense fallback={<Skeleton className="h-24 w-full rounded-lg" />}>
-              <Passkeys />
-            </Suspense>
-          </Panel>
-        </section>
-
-        <section aria-labelledby="two-factor-heading" className="flex flex-col gap-4">
-          <SectionHeading id="two-factor-heading">Two-factor authentication</SectionHeading>
-          <Panel className="p-5 sm:p-6">
-            <Suspense fallback={<Skeleton className="h-20 w-full rounded-lg" />}>
-              <TwoFactor />
-            </Suspense>
-          </Panel>
-        </section>
-
-        <section aria-labelledby="password-heading" className="flex flex-col gap-4">
-          <SectionHeading id="password-heading">Password</SectionHeading>
-          <Panel className="p-5 sm:p-6">
-            <ChangePasswordForm />
-          </Panel>
-        </section>
-
-        <section aria-labelledby="appearance-heading" className="flex flex-col gap-4">
-          <SectionHeading id="appearance-heading">Appearance</SectionHeading>
-          <Panel className="flex flex-col gap-5 p-5 sm:p-6">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-callout text-ink">Theme</p>
-              <ThemeControl />
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-callout text-ink">Accent colour</p>
-              <AccentControl />
-            </div>
-            <p className="text-footnote text-ink-secondary">
-              Kept in this browser tab only and forgotten when the browser closes, so nothing about
-              you stays on a shared computer.
-            </p>
-          </Panel>
-        </section>
-
-        <section aria-labelledby="data-heading" className="flex flex-col gap-4">
-          <SectionHeading id="data-heading">Your data</SectionHeading>
-          <Panel className="p-5 sm:p-6">
-            <Suspense fallback={<Skeleton className="h-20 w-full rounded-lg" />}>
-              <YourData />
-            </Suspense>
-          </Panel>
-        </section>
-
-        <section aria-labelledby="delete-heading" className="flex flex-col gap-4">
-          <SectionHeading id="delete-heading">Delete account</SectionHeading>
-          <Panel className="p-5 sm:p-6">
-            <Suspense fallback={<Skeleton className="h-20 w-full rounded-lg" />}>
-              <DeleteSection />
-            </Suspense>
-          </Panel>
-        </section>
-      </div>
+        </Card>
+        <Card label="Plan" aria-label="Plan">
+          <Suspense fallback={<Skeleton className="h-16 w-full rounded-lg" />}>
+            <Plan />
+          </Suspense>
+        </Card>
+        <Panel>
+          <InfoHead title="Security" />
+          <Suspense fallback={<Skeleton className="m-4 h-24 rounded-lg" />}>
+            <SecurityRows />
+          </Suspense>
+        </Panel>
+        <Panel>
+          <InfoHead title="Preferences">
+            <span className="ad-info-count">Theme and accent are kept for this tab only</span>
+          </InfoHead>
+          <Suspense fallback={<Skeleton className="m-4 h-24 rounded-lg" />}>
+            <Preferences />
+          </Suspense>
+        </Panel>
+      </Grid>
+      <Panel className="mb-[14px]">
+        <InfoHead title="Your data" />
+        <div className="px-4 py-3">
+          <Suspense fallback={<Skeleton className="h-16 w-full rounded-lg" />}>
+            <YourData />
+          </Suspense>
+        </div>
+      </Panel>
+      <Panel className="ad-danger">
+        <InfoHead title="Danger zone" />
+        <Suspense fallback={<Skeleton className="m-4 h-16 rounded-lg" />}>
+          <DangerRows />
+        </Suspense>
+      </Panel>
     </PageContainer>
   );
 }

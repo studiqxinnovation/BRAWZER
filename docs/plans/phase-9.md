@@ -27,6 +27,7 @@ never reach the browser.
 | 9.8  | The prototype's look, exactly: lock screen, Dock, menus, style picker, desktop icons, Wipe    | **Done** 2026-11-11 |
 | 9.9  | The apps inside, as on the prototype, and screen time per app                                 | **Done** 2026-11-11 |
 | 9.10 | The dashboard as the prototype's app window, and the start-up screen                          | **Done** 2026-11-11 |
+| 9.11 | Every dashboard page laid out as on the prototype, with Brawzer's own data                    | **Done** 2026-11-11 |
 
 ## 9.1 The desktop
 
@@ -313,6 +314,43 @@ native app window"):
   per tab when the desktop first opens (after a wipe, again). The theme
   script decides it before the first paint, so it never flashes; it's left
   out with reduced motion, on phones and in browser windows.
+
+## 9.11 The pages, as on the prototype
+
+Each page of the dashboard takes the prototype's layout, with Brawzer's real
+data behind it (nothing the prototype only pretends: no made-up threat
+counts, exit cities or regions). Shared pieces: the page head with its
+crumb, title, line and action; two- and three-column card grids with a
+small label; info cards with a head, a count and rows (avatar, title, line,
+actions, and a form that opens under a row); pills; tables; the ring.
+
+- **Browsers**: Launch settings (the default browser, kept with the account;
+  "Start Browsing" and "Launch default" open it) and a card per browser
+  (icon, name, engine, what opening it keeps, Ready / Open now, the
+  profile to open it with, Launch).
+- **Profiles**: "New profile" inline (name, browser, Create profile; a
+  colour is picked, Edit changes it) and "Your profiles" rows with Default
+  on the first, Open, Edit, History, Clear data, Delete and reorder.
+- **Proxy**: Route (the first profile's proxy or Direct), Latency (measured
+  from this device), Proxies (own of the limit), then the manager.
+- **Extensions**: the catalogue as cards with a switch per profile and
+  "Get extensions" (the Web Store app).
+- **Shield**: Security score ring, Protections (2FA, passkeys, ad blocker,
+  recovery codes), Issues (the real recommendations), Alerts (sign-ins from
+  new devices) and the activity list.
+- **Site rules**: "Add a rule" (website, Block or Always allow) and the
+  rules table.
+- **Sessions**: the running cloud browsers with a live timer and End, "End
+  all sessions", the History table (each ended session: browser, profile,
+  when, how long, why it ended, Wiped; the overview's new `activity.ended`),
+  then the signed-in devices.
+- **Team**: Seats (with the bar), Invite someone (email, role, Send
+  invitation), the members list with You / role pills and waiting
+  invitations, Rename behind a row, Delete or Leave in a danger card.
+- **Account**: Profile and Plan cards; Security rows (2FA, passkeys,
+  password behind "Change…", signed-in devices); Preferences (theme,
+  accent, desktop style, wallpaper, shared-computer mode, idle timeout);
+  Your data; Danger zone (sign out everywhere, delete the account).
 
 ## Not built, and why
 

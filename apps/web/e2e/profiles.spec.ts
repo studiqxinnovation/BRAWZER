@@ -22,7 +22,7 @@ const names = (page: Page) =>
   page
     .getByRole("list", { name: "Your profiles" })
     .getByRole("listitem")
-    .locator("p.truncate")
+    .locator(".ad-li-title > .truncate")
     .allTextContents();
 
 test.describe("profiles", () => {
@@ -38,23 +38,17 @@ test.describe("profiles", () => {
     await expect(page.getByText("the last one can’t be deleted")).toBeVisible();
     await expect(page.getByRole("button", { name: "Delete Personal" })).toHaveCount(0);
 
-    // Create, with a name that's already taken first.
-    await page.getByRole("button", { name: "New profile" }).click();
-    const dialog = page.getByRole("dialog", { name: "New profile" });
-    await expect(dialog.getByRole("radio", { name: "Bee Browser" })).toBeChecked();
-    await expect(dialog.getByRole("radio", { name: "Firefox" })).toBeEnabled();
-    await expect(dialog.getByRole("radio", { name: "Google Chrome" })).toBeEnabled();
-    await expect(dialog.getByRole("radio", { name: /^Chromium/ })).toBeEnabled();
-    await dialog.getByRole("textbox", { name: "Name" }).fill("personal");
-    await dialog.getByRole("button", { name: "Create profile" }).click();
-    await expect(dialog.getByText("You already have a profile with that name.")).toBeVisible();
-    await dialog.getByRole("textbox", { name: "Name" }).fill("Work");
-    // Teal is suggested because Personal already uses indigo.
-    await expect(dialog.getByRole("radio", { name: "Teal" })).toBeChecked();
-    await pickColour(dialog, "Green");
+    // Create, in the "New profile" card, with a name that's already taken first.
+    const card = page.getByRole("region", { name: "New profile" });
+    await expect(card.getByRole("combobox", { name: "Browser" })).toHaveText(/Bee Browser/);
+    await card.getByRole("textbox", { name: "Name" }).fill("personal");
+    await card.getByRole("button", { name: "Create profile" }).click();
+    await expect(card.getByText("You already have a profile with that name.")).toBeVisible();
+    await card.getByRole("textbox", { name: "Name" }).fill("Work");
+    await card.getByRole("combobox", { name: "Browser" }).click();
+    await page.getByRole("option", { name: "Google Chrome" }).click();
     expect(await wcagViolations(page)).toEqual([]);
-    await dialog.getByRole("button", { name: "Create profile" }).click();
-    await expect(dialog).toBeHidden();
+    await card.getByRole("button", { name: "Create profile" }).click();
     await expect.poll(() => names(page)).toEqual(["Personal", "Work"]);
 
     // Reorder.

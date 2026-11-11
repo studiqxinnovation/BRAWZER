@@ -14,6 +14,7 @@ import { fetchBrowserOverview, startBrowserSession } from "@/lib/api/browser";
 import { fetchProfiles } from "@/lib/api/profiles";
 import { type BrowserOpen, useDesktop } from "@/components/desktop/desktop-context";
 import { desktopActive } from "@/lib/desktop";
+import { readDesktopPrefs } from "@/lib/desktop-prefs";
 import { examAllows } from "@/lib/exam";
 import { leaveSignedInArea } from "@/lib/session-channel";
 import { defaultProfile, makeProfileFor } from "./launch";
@@ -24,6 +25,13 @@ import { defaultProfile, makeProfileFor } from "./launch";
  * made the first time), then on to the session. What's open and the
  * profiles are read fresh unless the caller has them.
  */
+/** What "Start Browsing" opens: the browser chosen in Launch settings, else Bee Browser. */
+export function startEngine(engines: readonly BrowserEngine[]): BrowserEngine {
+  const chosen = readDesktopPrefs().defaultEngine;
+  if (chosen && engines.includes(chosen)) return chosen;
+  return engines.includes("bee") ? "bee" : (engines[0] ?? "bee");
+}
+
 export function useLaunchBrowser() {
   const router = useRouter();
   const toast = useToast();
