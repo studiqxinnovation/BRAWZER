@@ -58,6 +58,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     <>
       <SkipLink />
       <DesktopShell
+        email={lock?.email ?? ""}
         menuBar={<MenuBar />}
         overlays={
           <>

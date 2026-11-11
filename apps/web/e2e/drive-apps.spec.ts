@@ -12,6 +12,16 @@ const PDF = Buffer.from(
 );
 
 async function openApp(page: Page, name: string) {
+  // Trash lives in the Dock, as on the prototype, not in Launchpad.
+  if (name === "Trash") {
+    await page
+      .getByRole("navigation", { name: "Dock" })
+      .getByRole("button", { name: /^Trash/ })
+      .click();
+    const trash = page.getByRole("region", { name: "Trash window" });
+    await expect(trash).toBeVisible();
+    return trash;
+  }
   await page
     .getByRole("navigation", { name: "Dock" })
     .getByRole("button", { name: "Launchpad" })

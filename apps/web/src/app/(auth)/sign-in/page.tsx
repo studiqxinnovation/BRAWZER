@@ -36,6 +36,14 @@ async function SignInNotice({ searchParams }: Pick<PageProps<"/sign-in">, "searc
       </FormMessage>
     );
   }
+  if (params.signed_out === "wiped") {
+    return (
+      <FormMessage tone="success" title="This computer is clean">
+        Every app and browser session was closed, the clipboard cleared and you were signed out.
+        Your Drive is safe in the cloud. On a shared computer, close the browser window as well.
+      </FormMessage>
+    );
+  }
   if (params.expired === "1") {
     return (
       <FormMessage tone="info" title="Your session has ended">

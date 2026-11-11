@@ -41,6 +41,16 @@ export function readDesktopStyle(): DesktopStyle {
   return document.documentElement.dataset.desktopStyle === "windows" ? "windows" : "mac";
 }
 
+/** The style this tab was set to, if one was chosen here (not just guessed from the computer). */
+export function chosenDesktopStyle(): DesktopStyle | null {
+  try {
+    const value = sessionStorage.getItem("brawzer:desktop-style");
+    return value === "mac" || value === "windows" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export function setDesktopStyle(style: DesktopStyle) {
   document.documentElement.dataset.desktopStyle = style;
   remember("brawzer:desktop-style", style);

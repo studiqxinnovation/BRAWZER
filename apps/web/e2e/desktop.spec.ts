@@ -22,8 +22,8 @@ async function signedIn(page: Page, baseURL: string | undefined, tag: string) {
 }
 
 const viewMenu = async (page: Page, item: string) => {
-  await page.getByRole("menuitem", { name: "View" }).click();
-  await page.getByRole("menuitem", { name: item }).click();
+  await page.getByRole("menuitem", { name: "View", exact: true }).click();
+  await page.getByRole("menuitem", { name: item, exact: true }).click();
 };
 
 test.describe("desktop", () => {
@@ -98,7 +98,7 @@ test.describe("desktop", () => {
     await expect(html).toHaveAttribute("data-wallpaper", "ocean");
 
     // Windows style: a taskbar with Start, search and the tray instead of the dock.
-    await viewMenu(page, "Use the Windows style");
+    await viewMenu(page, "Windows");
     await expect(html).toHaveAttribute("data-desktop-style", "windows");
     const taskbar = page.getByRole("navigation", { name: "Taskbar" });
     await expect(taskbar).toBeVisible();
@@ -114,14 +114,8 @@ test.describe("desktop", () => {
     await expect(start.getByRole("button", { name: "Bee Browser" })).toBeVisible();
     await expect(start.getByRole("button", { name: "Lock" })).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);
-    await page.keyboard.press("Escape");
-    await taskbar.getByRole("button", { name: "Control Centre" }).click();
-    await page
-      .getByRole("dialog", { name: "Control Centre" })
-      .getByRole("button", { name: "Use Mac style" })
-      .click();
+    await start.getByRole("button", { name: "Mac style" }).click();
     await expect(html).toHaveAttribute("data-desktop-style", "mac");
-    await page.keyboard.press("Escape");
     await expect(dock).toBeVisible();
 
     // The classic layout: the app as a page again, without the desktop.
@@ -147,10 +141,10 @@ test.describe("desktop", () => {
     // Launchpad lists the browsers and the apps, found by typing.
     await dock.getByRole("button", { name: "Launchpad" }).click();
     const launchpad = page.getByRole("dialog", { name: "Launchpad" });
-    await expect(launchpad.getByRole("region", { name: "Browsers" })).toContainText("Bee Browser");
+    await expect(launchpad.getByRole("button", { name: "Bee Browser" })).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);
     await launchpad.getByRole("searchbox").fill("calc");
-    await expect(launchpad.getByRole("region", { name: "Browsers" })).toHaveCount(0);
+    await expect(launchpad.getByRole("button", { name: "Bee Browser" })).toHaveCount(0);
     await launchpad.getByRole("button", { name: "Calculator" }).click();
     await expect(launchpad).toBeHidden();
 
@@ -191,16 +185,126 @@ test.describe("desktop", () => {
     // Control Centre's switches are real: dark mode.
     await page.getByRole("button", { name: "Control Centre" }).click();
     const control = page.getByRole("dialog", { name: "Control Centre" });
-    await expect(control).toContainText("0 of 3 open");
+    await expect(control).toContainText("Cloud · Direct");
     await control.getByRole("button", { name: "Dark mode" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     expect(await wcagViolations(page)).toEqual([]);
     await page.keyboard.press("Escape");
 
-    // Closing an app's window closes just it.
+    // Closing an app's window closes just it; not kept in the Dock, it leaves the Dock too.
     await calculator.getByRole("button", { name: "Close Calculator" }).click();
     await expect(calculator).toBeHidden();
-    await expect(dock.getByRole("button", { name: "Calculator", exact: true })).toBeVisible();
+    await expect(dock.getByRole("button", { name: /^Calculator/ })).toHaveCount(0);
+  });
+
+  test("first visit: the style is chosen once; the desktop's menus, its files, Leave no trace and Wipe", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The desktop needs a wide screen.");
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
+    });
+    const email = uniqueEmail("desktop-first");
+    await createConfirmedAccount(page.request, baseURL ?? "", email, PASSWORD, {
+      chooseDesktop: false,
+    });
+    await signIn(page.context(), baseURL ?? "", email, PASSWORD);
+    await page.goto("/app");
+    const html = page.locator("html");
+
+    // "Choose your desktop", once: the choice is kept with the account.
+    const picker = page.getByRole("dialog", { name: "Choose your desktop" });
+    await expect(picker).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+    await picker.getByRole("button", { name: /^Mac style/ }).click();
+    await expect(picker).toBeHidden();
+    await expect(html).toHaveAttribute("data-desktop-style", "mac");
+    await expect
+      .poll(async () => {
+        const records = (await (await page.request.get("/api/v1/apps/desktop/records")).json()) as {
+          records: { key: string; data: { style?: string } }[];
+        };
+        return records.records.find((record) => record.key === "state")?.data.style;
+      })
+      .toBe("mac");
+    await page.evaluate(() => {
+      sessionStorage.removeItem("brawzer:desktop-style");
+    });
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
+    await expect(picker).toBeHidden();
+
+    // The Dock's Brawzer icon sends the dashboard back, and brings it out again.
+    const dock = page.getByRole("navigation", { name: "Dock" });
+    await dock.getByRole("button", { name: "Brawzer, open" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeHidden();
+    const desktop = page.getByRole("list", { name: "Desktop" });
+    await expect(desktop.getByRole("button", { name: "Brawzer Drive" })).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+
+    // Right-click the desktop: New → Text file makes one in Drive's "Desktop" folder and opens it.
+    await page.mouse.click(500, 400, { button: "right" });
+    const menu = page.getByRole("menu", { name: "Menu" });
+    await expect(menu.getByRole("menuitem", { name: "Change wallpaper…" })).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+    await menu.getByRole("menuitem", { name: "New" }).click();
+    await page
+      .getByRole("menu", { name: "New" })
+      .getByRole("menuitem", { name: "Text file" })
+      .click();
+    const notepad = page.getByRole("region", { name: "Notepad window" });
+    await expect(notepad).toBeVisible();
+    await expect(desktop.getByRole("button", { name: "Untitled.txt" })).toBeVisible();
+
+    // A title bar's menu: Snap → Left half.
+    await notepad.locator(".dt-bar").click({ button: "right", position: { x: 200, y: 18 } });
+    await page.getByRole("menuitem", { name: "Snap" }).click();
+    await page
+      .getByRole("menu", { name: "Snap" })
+      .getByRole("menuitem", { name: "Left half" })
+      .click();
+    await expect
+      .poll(async () => Math.round((await notepad.boundingBox())?.x ?? -1))
+      .toBeLessThanOrEqual(10);
+
+    // Ctrl+M (⌘M on a Mac) tucks the window in front into the Dock.
+    await notepad.locator(".dt-bar").click({ position: { x: 200, y: 18 } });
+    await page.keyboard.press("ControlOrMeta+m");
+    await expect(notepad).toBeHidden();
+    await dock.getByRole("button", { name: "Notepad, minimised" }).click();
+    await expect(notepad).toBeVisible();
+
+    // Leave no trace: every window closes and the clipboard is cleared.
+    await page.getByRole("button", { name: "Control Centre" }).click();
+    await page
+      .getByRole("dialog", { name: "Control Centre" })
+      .getByRole("button", { name: /^Leave no trace/ })
+      .click();
+    const trace = page.getByRole("alertdialog", { name: "Leave no trace?" });
+    await trace.getByRole("button", { name: "Leave no trace" }).click();
+    const done = page.getByRole("alertdialog", { name: "No trace left" });
+    await expect(done).toContainText("1 window closed");
+    await done.getByRole("button", { name: "Done" }).click();
+    await expect(notepad).toBeHidden();
+
+    // File → Wipe this computer: signed out, and nothing left in this tab.
+    await page.getByRole("menuitem", { name: "File", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Wipe this computer…" }).click();
+    await page
+      .getByRole("alertdialog", { name: "Wipe this computer?" })
+      .getByRole("button", { name: "Wipe now" })
+      .click();
+    await expect(page).toHaveURL(/\/sign-in\?signed_out=wiped$/);
+    await expect(page.getByText("This computer is clean")).toBeVisible();
+    // Nothing of the desktop is left in the tab (only the key this test sets on every page).
+    expect(
+      await page.evaluate(() =>
+        Object.keys(sessionStorage).filter((key) => key !== "brawzer:notices-seen"),
+      ),
+    ).toEqual([]);
+    expect((await page.request.get("/api/v1/auth/session")).status()).toBe(401);
   });
 
   test("the style follows the device's own system until one is chosen", async ({ page }) => {

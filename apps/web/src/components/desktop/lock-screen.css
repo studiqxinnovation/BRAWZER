@@ -1,7 +1,8 @@
 /*
- * The lock screen (class names start with lk-): the time over the chosen
- * wallpaper, darkened so it reads, and a card to unlock. Above everything,
- * including dialogs and notices.
+ * The lock screen (class names start with lk-), as the prototype draws it:
+ * the time and date at the top, who is signed in with a password field in
+ * the middle, and a line at the bottom, all over the desktop blurred and
+ * dimmed. Above everything, dialogs and notices included.
  */
 
 @layer components {
@@ -41,115 +42,208 @@
     flex-direction: column;
     align-items: center;
     justify-content: space-between;
-    gap: 2rem;
     overflow-y: auto;
-    padding: max(8vh, 2rem) 1rem max(6vh, 1.5rem);
-    background: linear-gradient(rgb(2 6 23 / 0.4), rgb(2 6 23 / 0.4)), var(--lk-wallpaper, #0f1f35);
+    background: rgb(0 0 0 / 0.28);
+    backdrop-filter: blur(26px) brightness(0.75);
+    padding: 9vh 20px 7vh;
     color: #fff;
-    animation: lk-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: lk-in 380ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /*
+   * Over a light page the veil is deeper, so the white clock, name and links
+   * keep WCAG AA contrast (the prototype's 28% black only reads over its
+   * dark wallpaper).
+   */
+  :root:not([data-theme="dark"]) .lk-screen {
+    background: rgb(5 8 16 / 0.7);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .lk-screen {
+      background: rgb(0 0 0 / 0.28);
+    }
+  }
+
+  /* Loaded while locked: nothing of the app behind it, so the wallpaper itself, darkened. */
+  .lk-root[data-standalone] {
+    background: var(--lk-wallpaper, #0f1f35);
+  }
+  .lk-root[data-standalone] .lk-screen {
+    background: rgb(5 8 16 / 0.55);
   }
 
   .lk-clock {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.375rem;
-    text-shadow: 0 2px 24px rgb(0 0 0 / 0.35);
+    text-shadow: 0 2px 20px rgb(0 0 0 / 0.3);
   }
 
   .lk-time {
-    font-size: clamp(4rem, 12vw, 7.5rem);
+    font-size: clamp(3.5rem, 11vh, 5.5rem);
     font-variant-numeric: tabular-nums;
-    font-weight: 250;
-    letter-spacing: -0.04em;
+    font-weight: 600;
+    letter-spacing: -0.03em;
     line-height: 1;
   }
 
   .lk-date {
-    font-size: 1.15rem;
-    font-weight: 500;
+    margin-top: 0.5rem;
+    font-size: 1.125rem;
+    opacity: 0.85;
   }
 
-  .lk-card {
+  .lk-me {
     display: flex;
-    width: min(22rem, 100%);
     flex-direction: column;
     align-items: center;
-    gap: 0.875rem;
-    border: 1px solid rgb(255 255 255 / 0.16);
-    border-radius: 1.5rem;
-    background: var(--color-surface);
-    box-shadow: 0 30px 80px rgb(0 0 0 / 0.35);
-    padding: 1.75rem 1.5rem 1.25rem;
-    color: var(--color-ink);
-    animation: lk-rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    gap: 0.75rem;
   }
 
   .lk-avatar {
     display: grid;
-    width: 4.5rem;
-    height: 4.5rem;
+    width: 86px;
+    height: 86px;
     place-items: center;
     border-radius: 999px;
-    background: linear-gradient(
-      135deg,
-      var(--color-accent),
-      color-mix(in oklab, var(--color-accent) 55%, #7b5cff)
-    );
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.22);
-    color: var(--color-on-accent);
-    font-size: 1.75rem;
-    font-weight: 650;
+    background: linear-gradient(135deg, #5e5ce6, #0a84ff);
+    box-shadow: 0 8px 30px rgb(0 0 0 / 0.35);
+    font-size: 34px;
+    font-weight: 600;
   }
 
-  .lk-title {
-    font-size: 1.125rem;
-    font-weight: 650;
-  }
-
-  .lk-email {
-    margin-top: -0.5rem;
-    color: var(--color-ink-secondary);
-    font-size: 0.875rem;
-    overflow-wrap: anywhere;
-    text-align: center;
+  .lk-name {
+    max-width: min(28rem, 90vw);
+    overflow: hidden;
+    font-size: 1.25rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .lk-row {
     display: flex;
-    width: 100%;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.5rem;
   }
 
-  .lk-row > :first-child {
-    min-width: 0;
-    flex: 1;
+  .lk-input {
+    width: 190px;
+    height: 34px;
+    border: 1px solid rgb(255 255 255 / 0.3);
+    border-radius: 17px;
+    background: rgb(255 255 255 / 0.15);
+    padding: 0 14px;
+    color: #fff;
+    font-size: 0.8125rem;
+    outline: none;
+  }
+  .lk-input::placeholder {
+    color: rgb(255 255 255 / 0.7);
+  }
+  .lk-input:focus-visible {
+    border-color: rgb(255 255 255 / 0.65);
+    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.18);
+  }
+  .lk-input[aria-invalid] {
+    animation: lk-shake 320ms;
   }
 
-  .lk-note {
-    color: var(--color-ink-secondary);
-    font-size: 0.8rem;
-    line-height: 1.45;
+  .lk-go {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.25);
+    color: #fff;
+    transition: background 120ms;
+  }
+  .lk-go:hover:not(:disabled) {
+    background: rgb(255 255 255 / 0.35);
+  }
+  .lk-go:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+  }
+  .lk-go svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .lk-spin {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgb(255 255 255 / 0.35);
+    border-top-color: #fff;
+    border-radius: 999px;
+    animation: lk-spin 700ms linear infinite;
+  }
+
+  .lk-hint {
+    max-width: 22rem;
+    font-size: 0.72rem;
+    line-height: 1.4;
     text-align: center;
+    opacity: 0.8;
+  }
+  .lk-hint[data-problem] {
+    color: #ffc8c0;
+    opacity: 1;
+  }
+
+  .lk-link {
+    background: none;
+    color: #fff;
+    font-size: 0.8125rem;
+    opacity: 0.85;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .lk-link:hover:not(:disabled) {
+    opacity: 1;
+  }
+  .lk-link:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+  }
+
+  .lk-foot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.75rem;
+    text-align: center;
+  }
+  .lk-foot p {
+    opacity: 0.75;
   }
 
   @keyframes lk-in {
     from {
       opacity: 0;
+      transform: scale(1.04);
     }
   }
-
-  @keyframes lk-rise {
-    from {
-      opacity: 0;
-      transform: translateY(16px) scale(0.98);
+  @keyframes lk-shake {
+    25% {
+      transform: translateX(-8px);
+    }
+    75% {
+      transform: translateX(8px);
+    }
+  }
+  @keyframes lk-spin {
+    to {
+      transform: rotate(360deg);
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .lk-screen,
-    .lk-card {
+    .lk-input[aria-invalid] {
       animation: none;
     }
   }

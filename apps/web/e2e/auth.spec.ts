@@ -30,6 +30,7 @@ test.describe("account journey", () => {
     page,
     request,
     baseURL,
+    isMobile,
   }) => {
     const email = uniqueEmail("journey");
     await page.goto("/create-account");
@@ -54,6 +55,12 @@ test.describe("account journey", () => {
     await passwordField(page).fill(PASSWORD);
     await page.getByRole("button", { name: "Confirm and sign in" }).click();
     await expect(page).toHaveURL(/\/app$/);
+    // A new account on a wide screen is asked, once, which desktop it wants.
+    if (!isMobile) {
+      const picker = page.getByRole("dialog", { name: "Choose your desktop" });
+      await picker.getByRole("button", { name: /^Mac style/ }).click();
+      await expect(picker).toBeHidden();
+    }
     await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
     await expectSignedInAs(page, email);
     await expect(

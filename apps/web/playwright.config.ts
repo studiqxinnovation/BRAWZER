@@ -18,6 +18,8 @@ export default defineConfig({
   use: {
     baseURL: webUrl,
     trace: "retain-on-failure",
+    // The desktop's windows fly to and from the Dock; tests act on where things are, not mid-flight.
+    reducedMotion: "reduce",
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },

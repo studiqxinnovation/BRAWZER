@@ -23,6 +23,16 @@ export interface DesktopApi {
   toggleControlCentre: () => void;
   /** Opens Launchpad (Mac style) or Start (Windows style). */
   openLauncher: () => void;
+  /** Sends the dashboard back into its Dock icon. */
+  hideDashboard: () => void;
+  /** Shows the dashboard, or sends it back to the Dock (the Dock's Brawzer icon). */
+  toggleDashboard: () => void;
+  /** Whether the dashboard is tucked away, read when asked. */
+  dashboardHidden: () => boolean;
+  /** Asks to wipe this computer (File → Wipe this computer…). */
+  wipe: () => void;
+  /** Help → Keyboard shortcuts. */
+  showShortcuts: () => void;
 }
 
 export const DesktopContext = createContext<DesktopApi | null>(null);

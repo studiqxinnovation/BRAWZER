@@ -2,162 +2,286 @@
 
 import { type BrowserEngine, engineDetails } from "@brawzer/contracts";
 import { Dialog, DialogContent, DialogTitle } from "@brawzer/ui/components/dialog";
-import { Search } from "lucide-react";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AppIconArt } from "@/components/browser/engine-logo";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
-import { type AppCategory, type AppId, AppIcon, appIds, apps } from "./apps/registry";
+import { chooseDesktopStyle } from "@/lib/desktop-prefs";
+import { lockNow } from "@/lib/lock";
+import { type AppId, AppIcon, apps, launchpadOrder, Tile } from "./apps/registry";
 import { WebAppIcon } from "./apps/web-app-icon";
 import type { WebApp } from "./apps/web-apps";
-import { PowerButtons } from "./dock";
+import type { GlyphName, TileColour } from "./glyphs";
 
-const CATEGORIES: readonly AppCategory[] = ["Brawzer", "Productivity", "Education", "Business"];
+type Entry =
+  | { kind: "browser"; engine: BrowserEngine; name: string }
+  | { kind: "app"; app: AppId; name: string }
+  | { kind: "web"; app: WebApp; name: string };
 
-/**
- * Every app and browser in one place, found by typing: Launchpad in Mac
- * style (the whole screen), the Start panel in Windows style (above the
- * taskbar, with Lock and Sign out).
- */
-export function AppLauncher({
-  variant,
+/** Every app in the prototype's order: the browsers, the apps, then web apps from the App Store. */
+function useEntries(engines: readonly BrowserEngine[], webApps: readonly WebApp[]): Entry[] {
+  return [
+    ...engines.map((engine) => ({
+      kind: "browser" as const,
+      engine,
+      name: engineDetails[engine].short,
+    })),
+    ...launchpadOrder.map((app) => ({ kind: "app" as const, app, name: apps[app].name })),
+    ...webApps.map((app) => ({ kind: "web" as const, app, name: app.name })),
+  ];
+}
+
+function EntryIcon({ entry, size }: { entry: Entry; size: number }) {
+  if (entry.kind === "browser") {
+    return (
+      <span className="dt-lp-art" style={{ width: size, height: size }}>
+        <AppIconArt engine={entry.engine} />
+      </span>
+    );
+  }
+  if (entry.kind === "web") return <WebAppIcon app={entry.app} size={size} />;
+  return <AppIcon app={entry.app} size={size} />;
+}
+
+function useOpen(onOpenApp: (app: AppId) => void, onWebApp: (app: WebApp) => void) {
+  const { launch } = useLaunchBrowser();
+  return (entry: Entry) => {
+    if (entry.kind === "browser") void launch(entry.engine);
+    else if (entry.kind === "web") onWebApp(entry.app);
+    else onOpenApp(entry.app);
+  };
+}
+
+/** Launchpad (Mac style): every app over the blurred desktop, found by typing. */
+export function Launchpad({
   open,
   onOpenChange,
   engines,
   webApps,
-  onWebApp,
   onOpenApp,
+  onWebApp,
 }: {
-  variant: "launchpad" | "start";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   engines: readonly BrowserEngine[];
   webApps: readonly WebApp[];
-  onWebApp: (app: WebApp) => void;
   onOpenApp: (app: AppId) => void;
+  onWebApp: (app: WebApp) => void;
 }) {
-  const { launch } = useLaunchBrowser();
   const [query, setQuery] = useState("");
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = (text: string) => words.every((word) => text.toLowerCase().includes(word));
-  const browsers = engines.filter((engine) =>
-    matches(`${engineDetails[engine].name} ${engineDetails[engine].short} browser`),
+  const all = useEntries(engines, webApps);
+  const run = useOpen(onOpenApp, onWebApp);
+  const shown = all.filter((entry) =>
+    entry.name.toLowerCase().includes(query.trim().toLowerCase()),
   );
-  const found = appIds.filter((app) =>
-    matches(`${apps[app].name} ${apps[app].description} ${apps[app].category}`),
-  );
-
-  function close() {
+  const close = () => {
     onOpenChange(false);
     setQuery("");
-  }
-
-  const groups = [
-    { label: "Browsers", items: browsers.map((engine) => ({ kind: "browser" as const, engine })) },
-    {
-      label: "Web apps",
-      items: webApps
-        .filter((app) => matches(`${app.name} ${app.description} web`))
-        .map((app) => ({ kind: "web" as const, app })),
-    },
-    ...CATEGORIES.map((category) => ({
-      label: category,
-      items: found
-        .filter((app) => apps[app].category === category)
-        .map((app) => ({ kind: "app" as const, app })),
-    })),
-  ].filter((group) => group.items.length > 0);
-
+  };
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) close();
-        else onOpenChange(true);
+        if (next) onOpenChange(true);
+        else close();
       }}
     >
-      <DialogContent className={variant === "launchpad" ? "dt-launchpad" : "dt-start"}>
-        <DialogTitle className="sr-only">
-          {variant === "launchpad" ? "Launchpad" : "Start"}
-        </DialogTitle>
-        <label className="dt-lp-search">
-          <Search aria-hidden="true" />
-          <span className="sr-only">Search apps and browsers</span>
-          <input
-            // Launchpad is there to be typed into, as on a Mac.
-            // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
-            type="search"
-            value={query}
-            placeholder="Search"
-            onChange={(event) => {
-              setQuery(event.target.value);
-            }}
-          />
+      <DialogContent className="dt-lp">
+        <DialogTitle className="sr-only">Launchpad</DialogTitle>
+        <label className="sr-only" htmlFor="launchpad-search">
+          Search apps
         </label>
-        <div className="dt-lp-groups">
-          {groups.map((group) => (
-            <section key={group.label} aria-label={group.label} className="dt-lp-group">
-              <h2 className="dt-lp-heading">{group.label}</h2>
-              <ul className="dt-lp-grid">
-                {group.items.map((item) =>
-                  item.kind === "web" ? (
-                    <li key={item.app.id}>
-                      <button
-                        type="button"
-                        className="dt-lp-item"
-                        title={item.app.description}
-                        onClick={() => {
-                          close();
-                          onWebApp(item.app);
-                        }}
-                      >
-                        <WebAppIcon app={item.app} size={variant === "launchpad" ? 64 : 40} />
-                        <span>{item.app.name}</span>
-                      </button>
-                    </li>
-                  ) : item.kind === "browser" ? (
-                    <li key={item.engine}>
-                      <button
-                        type="button"
-                        className="dt-lp-item"
-                        onClick={() => {
-                          close();
-                          void launch(item.engine);
-                        }}
-                      >
-                        <span className="dt-lp-art">
-                          <AppIconArt engine={item.engine} />
-                        </span>
-                        <span>{engineDetails[item.engine].short}</span>
-                      </button>
-                    </li>
-                  ) : (
-                    <li key={item.app}>
-                      <button
-                        type="button"
-                        className="dt-lp-item"
-                        title={apps[item.app].description}
-                        onClick={() => {
-                          close();
-                          onOpenApp(item.app);
-                        }}
-                      >
-                        <AppIcon app={item.app} size={variant === "launchpad" ? 64 : 40} />
-                        <span>{apps[item.app].name}</span>
-                      </button>
-                    </li>
-                  ),
-                )}
-              </ul>
-            </section>
+        <input
+          id="launchpad-search"
+          className="dt-lp-q"
+          type="search"
+          value={query}
+          placeholder="Search apps"
+          spellCheck={false}
+          // Launchpad is there to be typed into, as on a Mac.
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
+          onChange={(event) => {
+            setQuery(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && shown[0]) {
+              close();
+              run(shown[0]);
+            }
+          }}
+        />
+        <ul className="dt-lp-grid" aria-label="Apps">
+          {shown.map((entry) => (
+            <li key={`${entry.kind}-${entry.name}`}>
+              <button
+                type="button"
+                className="dt-lp-app"
+                onClick={() => {
+                  close();
+                  run(entry);
+                }}
+              >
+                <EntryIcon entry={entry} size={68} />
+                <span>{entry.name}</span>
+              </button>
+            </li>
           ))}
-          {groups.length === 0 && <p className="dt-lp-none">Nothing matches “{query.trim()}”.</p>}
+          {shown.length === 0 && <li className="dt-lp-none">No apps match</li>}
+        </ul>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const PAGES: { label: string; href: Route; glyph: GlyphName; colour: TileColour }[] = [
+  { label: "Shield", href: "/app/shield", glyph: "shield", colour: "blue" },
+  { label: "Drive", href: "/app/drive", glyph: "drive", colour: "gray" },
+  { label: "Sessions", href: "/app/sessions", glyph: "list", colour: "orange" },
+  { label: "Profiles", href: "/app/profiles", glyph: "user", colour: "indigo" },
+  { label: "Proxy", href: "/app/proxy", glyph: "globe", colour: "teal" },
+  { label: "Account", href: "/app/account", glyph: "user", colour: "purple" },
+];
+
+/** Start (Windows style): every app, Brawzer's pages, and Lock and Wipe. */
+export function StartMenu({
+  open,
+  onOpenChange,
+  engines,
+  webApps,
+  email,
+  onOpenApp,
+  onWebApp,
+  onPage,
+  onWipe,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  engines: readonly BrowserEngine[];
+  webApps: readonly WebApp[];
+  email: string;
+  onOpenApp: (app: AppId) => void;
+  onWebApp: (app: WebApp) => void;
+  onPage: (href: Route) => void;
+  onWipe: () => void;
+}) {
+  const router = useRouter();
+  const [query, setQuery] = useState("");
+  const all = useEntries(engines, webApps);
+  const run = useOpen(onOpenApp, onWebApp);
+  const shown = all.filter((entry) =>
+    entry.name.toLowerCase().includes(query.trim().toLowerCase()),
+  );
+  const close = () => {
+    onOpenChange(false);
+    setQuery("");
+  };
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (next) onOpenChange(true);
+        else close();
+      }}
+    >
+      <DialogContent className="dt-start">
+        <DialogTitle className="sr-only">Start</DialogTitle>
+        <label className="sr-only" htmlFor="start-search">
+          Search apps
+        </label>
+        <input
+          id="start-search"
+          className="dt-start-q"
+          type="search"
+          value={query}
+          placeholder="Search apps"
+          spellCheck={false}
+          // Start is there to be typed into, as on Windows.
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
+          onChange={(event) => {
+            setQuery(event.target.value);
+          }}
+        />
+        <h2 className="dt-start-h">All apps</h2>
+        <ul className="dt-start-grid" aria-label="All apps">
+          {shown.map((entry) => (
+            <li key={`${entry.kind}-${entry.name}`}>
+              <button
+                type="button"
+                className="dt-start-app"
+                onClick={() => {
+                  close();
+                  run(entry);
+                }}
+              >
+                <EntryIcon entry={entry} size={32} />
+                <span>{entry.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <h2 className="dt-start-h">Brawzer</h2>
+        <ul className="dt-start-grid" aria-label="Brawzer">
+          {PAGES.map((page) => (
+            <li key={page.href}>
+              <button
+                type="button"
+                className="dt-start-app"
+                onClick={() => {
+                  close();
+                  router.push(page.href);
+                  onPage(page.href);
+                }}
+              >
+                <Tile glyph={page.glyph} colour={page.colour} size={32} />
+                <span>{page.label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="dt-start-foot">
+          <span className="dt-start-me">
+            <span className="dt-avatar" aria-hidden="true">
+              {email.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="truncate">{email}</span>
+          </span>
+          <span className="flex gap-1.5">
+            <button
+              type="button"
+              className="dt-btn"
+              onClick={() => {
+                close();
+                chooseDesktopStyle("mac");
+              }}
+            >
+              Mac style
+            </button>
+            <button
+              type="button"
+              className="dt-btn"
+              onClick={() => {
+                close();
+                void lockNow();
+              }}
+            >
+              Lock
+            </button>
+            <button
+              type="button"
+              className="dt-btn"
+              data-danger="true"
+              onClick={() => {
+                close();
+                onWipe();
+              }}
+            >
+              Wipe
+            </button>
+          </span>
         </div>
-        {variant === "start" && (
-          <div className="dt-start-power">
-            <PowerButtons />
-          </div>
-        )}
       </DialogContent>
     </Dialog>
   );

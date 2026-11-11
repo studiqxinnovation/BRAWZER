@@ -31,6 +31,18 @@ export const listDriveFiles = (
   return apiRequest(`/drive/files${search ? `?${search}` : ""}`, { schema: driveFileListSchema });
 };
 
+/** The files in a top-level folder found by its name; none if there's no such folder (or Drive can't be read). */
+export async function listFilesInFolder(name: string): Promise<DriveFile[]> {
+  const overview = await fetchDriveOverview();
+  if (!overview.ok) return [];
+  const folder = overview.data.folders.find(
+    (candidate) => candidate.parentId === null && candidate.name === name,
+  );
+  if (!folder) return [];
+  const files = await listDriveFiles({ folderId: folder.id });
+  return files.ok ? files.data.files : [];
+}
+
 export const createFolder = (body: CreateFolderRequest) =>
   apiRequest("/drive/folders", { method: "POST", body, schema: driveFolderSchema });
 

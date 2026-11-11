@@ -157,7 +157,10 @@ function resolve(token: string): Rgba | null {
   if (!probe) {
     probe = document.createElement("span");
     probe.setAttribute("aria-hidden", "true");
-    probe.style.cssText = "position:absolute;visibility:hidden;pointer-events:none";
+    // No transition: with reduced motion the site shortens transitions rather than removing
+    // them, and a colour read mid-transition is the old one.
+    probe.style.cssText =
+      "position:absolute;visibility:hidden;pointer-events:none;transition:none !important";
     document.body.append(probe);
   }
   probe.style.color = `var(${token})`;

@@ -1,37 +1,8 @@
 "use client";
 
 import { cn } from "@brawzer/ui/lib/cn";
-import {
-  BarChart3,
-  BookOpen,
-  Sparkles,
-  Calculator,
-  Camera,
-  KeyRound,
-  Puzzle,
-  ShoppingBag,
-  Smartphone,
-  SquareTerminal,
-  ClipboardList,
-  Code2,
-  FileText,
-  Folder,
-  Image as ImageIcon,
-  LayoutTemplate,
-  type LucideIcon,
-  Music,
-  NotebookPen,
-  PenLine,
-  Quote,
-  ReceiptText,
-  Settings,
-  ShieldCheck,
-  Sheet,
-  Timer,
-  Trash2,
-  Wallet,
-} from "lucide-react";
 import dynamic from "next/dynamic";
+import { type GlyphName, glyphs, type TileColour, tileColours } from "../glyphs";
 import type { ComponentType } from "react";
 
 /**
@@ -58,6 +29,7 @@ export const appIds = [
   "screenshot",
   "send-to-phone",
   "terminal",
+  "mail",
   "assistant",
   "study-notes",
   "calculator",
@@ -70,19 +42,6 @@ export const appIds = [
 ] as const;
 export type AppId = (typeof appIds)[number];
 
-export type AppTone =
-  | "blue"
-  | "indigo"
-  | "purple"
-  | "pink"
-  | "red"
-  | "orange"
-  | "yellow"
-  | "green"
-  | "teal"
-  | "gray"
-  | "black";
-
 export type AppCategory = "Brawzer" | "Productivity" | "Education" | "Business";
 
 export interface AppDefinition {
@@ -91,8 +50,9 @@ export interface AppDefinition {
   /** One line, for the App Store and Launchpad's search. */
   description: string;
   category: AppCategory;
-  icon: LucideIcon;
-  tone: AppTone;
+  /** The prototype's symbol and tile colour. */
+  glyph: GlyphName;
+  colour: TileColour;
   /** The window's size when it opens. */
   width: number;
   height: number;
@@ -109,8 +69,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Files",
     description: "Your Drive as folders and files, each opening in its app.",
     category: "Brawzer",
-    icon: Folder,
-    tone: "blue",
+    glyph: "folder",
+    colour: "blue",
     width: 880,
     height: 560,
     component: dynamic(() => import("./files"), { loading }),
@@ -120,8 +80,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Trash",
     description: "Deleted Drive files, kept 30 days to put back.",
     category: "Brawzer",
-    icon: Trash2,
-    tone: "gray",
+    glyph: "trash",
+    colour: "gray",
     width: 780,
     height: 500,
     single: true,
@@ -132,8 +92,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Photos",
     description: "Every picture in your Drive, and one at a time, larger.",
     category: "Productivity",
-    icon: ImageIcon,
-    tone: "pink",
+    glyph: "image",
+    colour: "pink",
     width: 920,
     height: 620,
     single: true,
@@ -144,8 +104,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "PDF Viewer",
     description: "The PDFs in your Drive.",
     category: "Productivity",
-    icon: FileText,
-    tone: "red",
+    glyph: "file",
+    colour: "red",
     width: 920,
     height: 680,
     component: dynamic(() => import("./pdf-viewer"), { loading }),
@@ -155,8 +115,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Music",
     description: "Plays the audio files in your Drive.",
     category: "Productivity",
-    icon: Music,
-    tone: "pink",
+    glyph: "music",
+    colour: "pink",
     width: 620,
     height: 520,
     single: true,
@@ -167,8 +127,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Notepad",
     description: "Plain text, saved to Drive.",
     category: "Productivity",
-    icon: NotebookPen,
-    tone: "yellow",
+    glyph: "note",
+    colour: "yellow",
     width: 680,
     height: 480,
     component: dynamic(() => import("./notepad"), { loading }),
@@ -178,8 +138,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Writer",
     description: "Documents with headings, lists and emphasis, saved to Drive.",
     category: "Productivity",
-    icon: PenLine,
-    tone: "blue",
+    glyph: "doc",
+    colour: "blue",
     width: 860,
     height: 640,
     component: dynamic(() => import("./writer"), { loading }),
@@ -189,8 +149,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Calc",
     description: "Sheets with formulas, saved to Drive as CSV.",
     category: "Productivity",
-    icon: Sheet,
-    tone: "green",
+    glyph: "table",
+    colour: "green",
     width: 920,
     height: 580,
     component: dynamic(() => import("./calc"), { loading }),
@@ -200,8 +160,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Code",
     description: "An editor for source files, with line numbers, saved to Drive.",
     category: "Productivity",
-    icon: Code2,
-    tone: "indigo",
+    glyph: "code",
+    colour: "indigo",
     width: 960,
     height: 620,
     component: dynamic(() => import("./code"), { loading }),
@@ -211,8 +171,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "App Store",
     description: "Apps for the Dock, and web apps that open in a cloud browser.",
     category: "Brawzer",
-    icon: ShoppingBag,
-    tone: "blue",
+    glyph: "bag",
+    colour: "blue",
     width: 880,
     height: 600,
     single: true,
@@ -223,8 +183,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Web Store",
     description: "Reviewed extensions for each profile’s browser.",
     category: "Brawzer",
-    icon: Puzzle,
-    tone: "teal",
+    glyph: "bag",
+    colour: "teal",
     width: 900,
     height: 620,
     single: true,
@@ -235,8 +195,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Passwords",
     description: "Where your saved passwords are: your browsers’ accounts and password managers.",
     category: "Brawzer",
-    icon: KeyRound,
-    tone: "indigo",
+    glyph: "key",
+    colour: "blue",
     width: 780,
     height: 560,
     single: true,
@@ -247,8 +207,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Usage",
     description: "This month’s browsing by browser, and your plan’s limits.",
     category: "Brawzer",
-    icon: BarChart3,
-    tone: "teal",
+    glyph: "chart",
+    colour: "teal",
     width: 640,
     height: 600,
     single: true,
@@ -259,8 +219,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Screenshot",
     description: "Saves a cloud browser’s page to Drive as a picture.",
     category: "Brawzer",
-    icon: Camera,
-    tone: "purple",
+    glyph: "camera",
+    colour: "purple",
     width: 560,
     height: 460,
     single: true,
@@ -271,20 +231,32 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Send to Phone",
     description: "A QR code that opens a Drive file on your phone, after signing in.",
     category: "Brawzer",
-    icon: Smartphone,
-    tone: "green",
+    glyph: "phone",
+    colour: "green",
     width: 560,
     height: 600,
     single: true,
     component: dynamic(() => import("./send-to-phone"), { loading }),
+  },
+  mail: {
+    id: "mail",
+    name: "Mail",
+    description: "Your email (Gmail, Outlook and others) in a cloud browser window.",
+    category: "Productivity",
+    glyph: "mail",
+    colour: "blue",
+    width: 640,
+    height: 520,
+    single: true,
+    component: dynamic(() => import("./mail"), { loading }),
   },
   assistant: {
     id: "assistant",
     name: "Assistant",
     description: "Ask Claude anything: explain, write, plan. Brawzer keeps none of it.",
     category: "Productivity",
-    icon: Sparkles,
-    tone: "purple",
+    glyph: "sparkle",
+    colour: "purple",
     width: 620,
     height: 660,
     single: true,
@@ -295,8 +267,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Study Notes",
     description: "A summary, flashcards or a practice quiz from your notes.",
     category: "Education",
-    icon: BookOpen,
-    tone: "indigo",
+    glyph: "sparkle",
+    colour: "purple",
     width: 940,
     height: 660,
     single: true,
@@ -307,8 +279,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Terminal",
     description: "Brawzer’s own commands for Drive, the apps and the cloud browsers.",
     category: "Productivity",
-    icon: SquareTerminal,
-    tone: "black",
+    glyph: "terminal",
+    colour: "black",
     width: 760,
     height: 460,
     component: dynamic(() => import("./terminal"), { loading }),
@@ -318,8 +290,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Templates",
     description: "Business plans, pitches, budgets and study plans to start from.",
     category: "Business",
-    icon: LayoutTemplate,
-    tone: "orange",
+    glyph: "grid",
+    colour: "orange",
     width: 820,
     height: 600,
     single: true,
@@ -330,8 +302,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Calculator",
     description: "Sums, percentages and memory, typed or clicked.",
     category: "Productivity",
-    icon: Calculator,
-    tone: "orange",
+    glyph: "calc",
+    colour: "orange",
     width: 320,
     height: 500,
     single: true,
@@ -342,8 +314,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Settings",
     description: "Theme, accent, the desktop's look, and your account.",
     category: "Brawzer",
-    icon: Settings,
-    tone: "gray",
+    glyph: "gear",
+    colour: "gray",
     width: 780,
     height: 560,
     single: true,
@@ -354,8 +326,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Assignments",
     description: "Coursework and due dates, grouped as they come up.",
     category: "Education",
-    icon: ClipboardList,
-    tone: "blue",
+    glyph: "doc",
+    colour: "blue",
     width: 720,
     height: 560,
     single: true,
@@ -366,8 +338,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Citations",
     description: "Harvard, APA and MLA references, and the list they go into.",
     category: "Education",
-    icon: Quote,
-    tone: "orange",
+    glyph: "pen",
+    colour: "orange",
     width: 900,
     height: 620,
     single: true,
@@ -378,8 +350,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Focus Timer",
     description: "Focus, then a break; your study time logged by subject.",
     category: "Education",
-    icon: Timer,
-    tone: "red",
+    glyph: "clock",
+    colour: "red",
     width: 520,
     height: 660,
     single: true,
@@ -390,8 +362,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Exam Mode",
     description: "For a set time, only the apps and browsers you choose open.",
     category: "Education",
-    icon: ShieldCheck,
-    tone: "purple",
+    glyph: "shield",
+    colour: "red",
     width: 520,
     height: 620,
     single: true,
@@ -402,8 +374,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Money",
     description: "Income and expenses, each month at a glance.",
     category: "Business",
-    icon: Wallet,
-    tone: "green",
+    glyph: "table",
+    colour: "green",
     width: 860,
     height: 640,
     single: true,
@@ -414,8 +386,8 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     name: "Invoices",
     description: "Invoices and quotes, saved to Drive as PDFs.",
     category: "Business",
-    icon: ReceiptText,
-    tone: "teal",
+    glyph: "doc",
+    colour: "green",
     width: 960,
     height: 660,
     single: true,
@@ -427,18 +399,84 @@ export const isAppId = (value: string): value is AppId =>
   (appIds as readonly string[]).includes(value);
 
 /** The apps in the dock (Mac) and on the taskbar (Windows) to begin with. */
+/** The Dock's own apps, as the prototype has them; the rest can be added from the App Store. */
 export const defaultPinnedApps: readonly AppId[] = [
   "files",
-  "notepad",
+  "music",
   "writer",
   "calc",
-  "calculator",
-  "app-store",
-  "settings",
-  "trash",
+  "notepad",
+  "assistant",
 ];
 
-/** An app's icon: its symbol on a coloured tile, as the prototype draws them. */
+/** Launchpad's and Start's order, as the prototype lists its apps (after the browsers). */
+export const launchpadOrder: readonly AppId[] = [
+  "files",
+  "music",
+  "writer",
+  "calc",
+  "notepad",
+  "calculator",
+  "send-to-phone",
+  "pdf-viewer",
+  "photos",
+  "screenshot",
+  "passwords",
+  "mail",
+  "code",
+  "terminal",
+  "assistant",
+  "app-store",
+  "settings",
+  "study-notes",
+  "citations",
+  "assignments",
+  "focus-timer",
+  "exam-mode",
+  "invoices",
+  "money",
+  "templates",
+  "web-store",
+  "usage",
+];
+
+/** Always at the Dock's end: Launchpad, then these, then Trash. */
+export const dockSystemApps: readonly AppId[] = ["app-store", "settings"];
+
+/**
+ * A symbol on a coloured tile, as the prototype draws every app: white
+ * line art on an Apple system colour, lighter at the top, with rounded
+ * corners and a soft highlight.
+ */
+export function Tile({
+  glyph,
+  colour,
+  size = 44,
+  className,
+}: {
+  glyph: GlyphName;
+  colour: TileColour;
+  size?: number;
+  className?: string;
+}) {
+  const hex = tileColours[colour];
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("ap-icon", className)}
+      style={{
+        width: size,
+        height: size,
+        background: `linear-gradient(180deg, color-mix(in srgb, ${hex} 75%, #fff), ${hex})`,
+      }}
+    >
+      {/* Static markup from glyphs.ts, never from data. */}
+      <svg viewBox="0 0 24 24" dangerouslySetInnerHTML={{ __html: glyphs[glyph] }} />
+    </span>
+  );
+}
+
+/** An app's icon: its symbol on its tile. */
 export function AppIcon({
   app,
   size = 44,
@@ -448,15 +486,7 @@ export function AppIcon({
   size?: number;
   className?: string;
 }) {
-  const { icon: Icon, tone } = apps[app];
   return (
-    <span
-      aria-hidden="true"
-      className={cn("ap-icon", className)}
-      data-tone={tone}
-      style={{ width: size, height: size, borderRadius: Math.round(size * 0.24) }}
-    >
-      <Icon style={{ width: Math.round(size * 0.52), height: Math.round(size * 0.52) }} />
-    </span>
+    <Tile glyph={apps[app].glyph} colour={apps[app].colour} size={size} className={className} />
   );
 }

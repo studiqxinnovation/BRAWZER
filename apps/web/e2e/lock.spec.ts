@@ -39,7 +39,7 @@ test.describe("lock screen", () => {
     test.skip(isMobile, "Phones lock from another device's page; see the next test.");
     const email = await signedIn(page, baseURL, "lock");
 
-    await page.getByRole("menuitem", { name: "File" }).click();
+    await page.getByRole("menuitem", { name: "File", exact: true }).click();
     await page.getByRole("menuitem", { name: "Lock screen" }).click();
     const lock = lockScreen(page);
     await expect(lock).toBeVisible();
@@ -78,7 +78,7 @@ test.describe("lock screen", () => {
       .getByRole("link", { name: "Drive" })
       .click();
     await expect(page.getByText("Brawzer — Drive")).toBeVisible();
-    await page.getByRole("menuitem", { name: "File" }).click();
+    await page.getByRole("menuitem", { name: "File", exact: true }).click();
     await page.getByRole("menuitem", { name: "Lock screen" }).click();
     await lockScreen(page).getByLabel("Password", { exact: true }).fill(PASSWORD);
     await page.keyboard.press("Enter");
@@ -110,7 +110,9 @@ test.describe("lock screen", () => {
       expect(await wcagViolations(page)).toEqual([]);
     }
 
-    await lockScreen(page).getByRole("button", { name: "Sign out" }).click();
+    await lockScreen(page)
+      .getByRole("button", { name: "Forgot your password? Wipe and sign out" })
+      .click();
     await expect(page).toHaveURL(/\/sign-in\?signed_out=1/);
     await expect(other).toHaveURL(/\/sign-in/, { timeout: 15_000 });
   });
@@ -131,7 +133,7 @@ test.describe("lock screen", () => {
       .poll(() => viewport.getAttribute("data-frames"), { timeout: 60_000 })
       .not.toBe("0");
 
-    await page.getByRole("menuitem", { name: "File" }).click();
+    await page.getByRole("menuitem", { name: "File", exact: true }).click();
     await page.getByRole("menuitem", { name: "Lock screen" }).click();
     await expect(lockScreen(page)).toBeVisible();
     await expect(window.locator("iframe")).toHaveCount(0);

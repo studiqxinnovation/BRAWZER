@@ -87,6 +87,7 @@ export async function createConfirmedAccount(
   baseURL: string,
   email: string,
   password: string,
+  options: { chooseDesktop?: boolean } = {},
 ): Promise<void> {
   const origin = new URL(baseURL).origin;
   const registered = await request.post("/api/v1/auth/register", {
@@ -101,6 +102,15 @@ export async function createConfirmedAccount(
     headers: { origin },
   });
   expect(verified.status()).toBe(200);
+  // A returning person: the desktop style is chosen (as this computer's own), so
+  // "Choose your desktop" doesn't ask. The desktop test that asks starts without it.
+  if (options.chooseDesktop !== false) {
+    const chosen = await request.put("/api/v1/apps/desktop/records/state", {
+      data: { data: { style: process.platform === "darwin" ? "mac" : "windows" } },
+      headers: { origin },
+    });
+    expect(chosen.status()).toBe(200);
+  }
   // Verification signs in; start the browser tests signed out.
   await request.post("/api/v1/auth/logout", { headers: { origin } });
 }

@@ -2,7 +2,7 @@
 
 import { AppIconArt } from "@/components/browser/engine-logo";
 import { AppIcon } from "./apps/registry";
-import { BrawzerIcon } from "./dock";
+import { BrawzerTile } from "./dock";
 import { type DesktopWindow, windowLabel } from "./windows";
 
 /**
@@ -29,13 +29,13 @@ export function WindowSwitcher({
             className="dt-switch-item"
           >
             {entry === "dashboard" ? (
-              <BrawzerIcon size={64} />
+              <BrawzerTile size={58} />
             ) : entry.content.kind === "browser" ? (
               <span className="dt-switch-art" aria-hidden="true">
                 <AppIconArt engine={entry.content.session.engine} />
               </span>
             ) : (
-              <AppIcon app={entry.content.app} size={64} />
+              <AppIcon app={entry.content.app} size={58} />
             )}
             <span>{label}</span>
           </div>

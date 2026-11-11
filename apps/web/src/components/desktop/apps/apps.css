@@ -4,63 +4,28 @@
  */
 
 @layer components {
-  /* ── Icons: a symbol on a coloured tile ─────────────────────────────── */
+  /* ── Icons: the prototype's tiles (.mi) ────────────────────────────── */
 
   .ap-icon {
-    --ap-from: #4f8cff;
-    --ap-to: #2563eb;
-    display: inline-grid;
+    display: inline-flex;
     flex-shrink: 0;
-    place-items: center;
-    background: linear-gradient(160deg, var(--ap-from), var(--ap-to));
+    align-items: center;
+    justify-content: center;
+    border-radius: 23%;
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.28),
-      0 1px 2px rgb(15 23 42 / 0.18);
+      inset 0 0.5px 0 rgb(255 255 255 / 0.35),
+      0 1px 2px rgb(0 0 0 / 0.22);
     color: #fff;
+    vertical-align: middle;
   }
   .ap-icon svg {
-    stroke-width: 2.1;
-  }
-  .ap-icon[data-tone="indigo"] {
-    --ap-from: #7c83ff;
-    --ap-to: #4f46e5;
-  }
-  .ap-icon[data-tone="purple"] {
-    --ap-from: #b57cff;
-    --ap-to: #7c3aed;
-  }
-  .ap-icon[data-tone="pink"] {
-    --ap-from: #ff7eb6;
-    --ap-to: #db2777;
-  }
-  .ap-icon[data-tone="red"] {
-    --ap-from: #ff7a6b;
-    --ap-to: #dc2626;
-  }
-  .ap-icon[data-tone="orange"] {
-    --ap-from: #ffad5a;
-    --ap-to: #ea580c;
-  }
-  .ap-icon[data-tone="yellow"] {
-    --ap-from: #ffd95a;
-    --ap-to: #e5a50a;
-    color: #4a3200;
-  }
-  .ap-icon[data-tone="green"] {
-    --ap-from: #4ade80;
-    --ap-to: #15803d;
-  }
-  .ap-icon[data-tone="teal"] {
-    --ap-from: #4fd1c5;
-    --ap-to: #0f766e;
-  }
-  .ap-icon[data-tone="gray"] {
-    --ap-from: #a3acb9;
-    --ap-to: #5b6573;
-  }
-  .ap-icon[data-tone="black"] {
-    --ap-from: #3b3f46;
-    --ap-to: #111317;
+    width: 58%;
+    height: 58%;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2.2;
   }
 
   /* ── Shared pieces ──────────────────────────────────────────────────── */
@@ -1298,7 +1263,6 @@
   /* ── App Store, Passwords, Usage, Screenshot ─────────────────────────── */
 
   .ap-web-icon {
-    background-image: linear-gradient(160deg, rgb(255 255 255 / 0.18), transparent);
     font-weight: 700;
     line-height: 1;
   }

@@ -3,13 +3,14 @@
 import { logout } from "./api/auth";
 import type { ApiResult } from "./api/client";
 
-export type SignOutReason = "user" | "idle" | "expired" | "deleted";
+export type SignOutReason = "user" | "idle" | "expired" | "deleted" | "wiped";
 
 const REASONS: readonly unknown[] = [
   "user",
   "idle",
   "expired",
   "deleted",
+  "wiped",
 ] satisfies SignOutReason[];
 
 type SessionMessage =
@@ -59,6 +60,7 @@ export function signInPathFor(reason: SignOutReason, from?: string): string {
   if (reason === "user") return "/sign-in?signed_out=1";
   if (reason === "idle") return "/sign-in?signed_out=idle";
   if (reason === "deleted") return "/sign-in?signed_out=deleted";
+  if (reason === "wiped") return "/sign-in?signed_out=wiped";
   const params = new URLSearchParams({ expired: "1", ...(from ? { next: from } : {}) });
   return `/sign-in?${params.toString()}`;
 }
@@ -74,12 +76,12 @@ export function leaveSignedInArea(reason: SignOutReason): void {
 }
 
 /**
- * Ends the session on the server, then leaves. After an idle timeout the
- * page leaves even if the server can't be reached: the screen must clear,
- * and the server ends the session on its own soon after.
+ * Ends the session on the server, then leaves. After an idle timeout or a
+ * wipe the page leaves even if the server can't be reached: the screen must
+ * clear, and the server ends the session on its own soon after.
  */
-export async function signOut(reason: "user" | "idle"): Promise<ApiResult<undefined>> {
+export async function signOut(reason: "user" | "idle" | "wiped"): Promise<ApiResult<undefined>> {
   const result = await logout();
-  if (result.ok || reason === "idle") leaveSignedInArea(reason);
+  if (result.ok || reason !== "user") leaveSignedInArea(reason);
   return result;
 }

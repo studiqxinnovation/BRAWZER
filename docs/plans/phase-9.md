@@ -24,6 +24,7 @@ never reach the browser.
 | 9.5 | Drive's apps: Files, Trash, Photos, PDF Viewer, Music, Notepad, Writer, Calc, Code, Templates | **Done** 2026-11-11 |
 | 9.6 | App Store and web apps, Web Store, Passwords, Usage, Screenshot, Send to Phone, Terminal      | **Done** 2026-11-11 |
 | 9.7 | Assistant and Study Notes                                                                     | **Done** 2026-11-11 |
+| 9.8 | The prototype's look, exactly: lock screen, Dock, menus, style picker, desktop icons, Wipe    | **Done** 2026-11-11 |
 
 ## 9.1 The desktop
 
@@ -99,8 +100,9 @@ Windows style) locks the sign-in on the server, not just the page:
   shows the lock screen. Behind it the page is `inert`. A page loaded while
   locked is sent only the lock screen, and unlocking loads it again; locked in
   place, unlocking leaves the desktop as it was and reads its data again.
-- **"Wipe" is signing out**, which the lock screen offers: it ends the
-  sign-in's cloud browsers and clears the site's storage (`Clear-Site-Data`).
+- **"Forgot your password? Wipe and sign out"** on the lock screen signs out:
+  it ends the sign-in's cloud browsers and clears the site's storage
+  (`Clear-Site-Data`).
 - The security history records "Locked Brawzer" and "Unlocked Brawzer".
 
 Tests: `test/auth.integration.test.ts` (what a locked session may do, no
@@ -200,6 +202,57 @@ Brawzer; Study Notes keeps the notes and the latest result as its app
 record. A refusal is retried on another model by the API's server-side
 fallback; one that still refuses says it plainly. Each account can make 60
 requests an hour.
+
+## 9.8 The prototype's look, exactly
+
+On 2026-11-11 the person asked for everything "exactly as it is on the
+prototype, except the logo": Brawzer keeps its own mark wherever the
+prototype has its bee. The desktop now uses the prototype's measurements,
+colours and behaviour (its CSS values are copied, with two changes for
+WCAG AA: the faintest text is a little stronger, and white text sits on a
+slightly deeper blue, `#2563EB` for `#3B82F6`).
+
+- **Lock screen**: the big clock and date, the avatar and the account's
+  email, a round password field with an arrow, "Unlock with a passkey", and
+  the footer "Your computer in the cloud. Nothing is saved on this device."
+  ⌘⇧L or Ctrl+Shift+L locks.
+- **The Dock's Brawzer tile** is the prototype's yellow tile with Brawzer's
+  mark. As on the prototype, it shows the dashboard (it flies out of the
+  tile), brings it forward, or sends it back into the tile. Minimised
+  windows fly into their Dock icon and back.
+- **"Choose your desktop"** asks once, the first time an account opens the
+  desktop, Mac style or Windows style. The choice is kept with the account
+  (the `desktop` app record) and follows it to any computer. A tab can still
+  switch, from View, Start, Settings or the menu bar's style button.
+- **The menu bar** is the prototype's: the app in front (Brawzer, or the
+  focused app), then File, View, Sessions, Shield and Help with the
+  prototype's items. On the right are this computer's online state, its
+  battery where the browser reports it (Chrome and Edge), the clock, Lock,
+  the style switch, the theme and Control Centre.
+- **Right-click menus** on the desktop (New text file, document or
+  spreadsheet, Upload, wallpaper, View, Settings, Lock), Dock icons
+  (windows, New window, Keep in Dock, App info, Quit), title bars (Minimise
+  ⌘M, Zoom, Snap, Close), the dashboard's tile and the bars. Arrow keys,
+  Enter and Escape work in them.
+- **Desktop icons**: Brawzer Drive (and the Recycle Bin in Windows style),
+  then the files in Drive's "Desktop" folder. Files made or uploaded from
+  the desktop's menu go there, scanned and encrypted like any upload.
+- **Launchpad, Start, Control Centre and the taskbar** are laid out as on the
+  prototype. Control Centre's Network shows the first profile's route
+  (direct or its proxy), and its Do Not Disturb, sounds, volume and
+  brightness are kept with the account.
+- **Wipe this computer** (File, Start, the Brawzer menu) ends every cloud
+  browser, empties the clipboard, removes what the tab kept and signs out.
+  The sign-in page then says "This computer is clean". **Leave no trace**
+  (Control Centre) closes every window and browser and empties the
+  clipboard, without signing out.
+- Help → Keyboard shortcuts lists the desktop's keys.
+
+Tests: `e2e/desktop.spec.ts` (the style asked once and kept with the
+account, the Dock tile, the desktop's menu making a file on the desktop, a
+title bar's Snap, ⌘M, Leave no trace, Wipe), `e2e/lock.spec.ts`, with axe
+audits in both themes. The browser tests run with reduced motion, which the
+desktop's animations follow.
 
 ## Not built, and why
 

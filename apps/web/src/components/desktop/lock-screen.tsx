@@ -1,17 +1,13 @@
 "use client";
 
 import { BROWSER_LIMITS } from "@brawzer/contracts";
-import { Button } from "@brawzer/ui/components/button";
-import { Field, FieldError, FieldLabel } from "@brawzer/ui/components/field";
-import { FormMessage } from "@brawzer/ui/components/form-message";
-import { PasswordInput } from "@brawzer/ui/components/password-input";
-import { ArrowRight, KeyRound, LogOut } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { CodeField, useIdentityCheck } from "@/components/app-shell/confirm-identity";
+import { useIdentityCheck } from "@/components/app-shell/confirm-identity";
 import { lockClock, subscribeToClock } from "@/lib/clock";
-import { isLocked, markUnlocked, startLocked, subscribeToLock } from "@/lib/lock";
+import { isLocked, lockNow, markUnlocked, startLocked, subscribeToLock } from "@/lib/lock";
 import { usePasskeysSupported } from "@/lib/passkeys";
 import { signOut } from "@/lib/session-channel";
 import "./lock-screen.css";
@@ -24,10 +20,11 @@ interface LockDetails {
 }
 
 /**
- * What the lock screen shows: the time over the wallpaper, who is signed in,
- * and unlocking, which is confirming it's you (password, with the
- * authenticator's code if the account asks, or a passkey). The server holds
- * the lock; this only asks for the proof.
+ * What the lock screen shows, as the prototype draws it: the time over the
+ * blurred desktop, who is signed in, and a password to unlock (with the
+ * authenticator's code when the account asks for one, or a passkey). The
+ * server holds the lock; this only asks for the proof. "Wipe and sign out"
+ * is the way out without the password.
  */
 function LockPanel({
   email,
@@ -42,8 +39,12 @@ function LockPanel({
   const passkeys = usePasskeysSupported();
   const [time, date] = useSyncExternalStore(subscribeToClock, lockClock, () => "|").split("|");
   const [leaving, setLeaving] = useState(false);
+  const problem = check.failure ?? check.error ?? check.codeError;
   return (
     <div className="lk-screen" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <h1 id={titleId} className="sr-only">
+        Brawzer is locked
+      </h1>
       <div className="lk-clock" aria-hidden="true">
         <span className="lk-time">{time}</span>
         <span className="lk-date">{date}</span>
@@ -52,61 +53,80 @@ function LockPanel({
         method="post"
         noValidate
         onSubmit={(event) => void check.submit(event)}
-        className="lk-card"
+        className="lk-me"
       >
         <span className="lk-avatar" aria-hidden="true">
           {email.slice(0, 1).toUpperCase()}
         </span>
-        <h1 id={titleId} className="lk-title">
-          Brawzer is locked
-        </h1>
-        <p className="lk-email">{email}</p>
-        {check.failure && <FormMessage tone="danger">{check.failure}</FormMessage>}
-        <Field name="password" invalid={check.error !== null} className="w-full">
-          <FieldLabel className="sr-only">Password</FieldLabel>
-          <div className="lk-row">
-            <PasswordInput
-              name="password"
-              autoComplete="current-password"
-              placeholder="Password"
-              required
-              // The lock screen is there to type the password into.
-              // eslint-disable-next-line jsx-a11y/no-autofocus
-              autoFocus
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              size="icon"
-              aria-label="Unlock"
-              loading={check.pending}
-            >
+        <p className="lk-name">{email}</p>
+        <div className="lk-row">
+          <label className="sr-only" htmlFor={`${titleId}-password`}>
+            Password
+          </label>
+          <input
+            id={`${titleId}-password`}
+            className="lk-input"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            placeholder="Enter password"
+            aria-invalid={check.error !== null || undefined}
+            // The lock screen is there to type the password into.
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+          />
+          <button type="submit" className="lk-go" aria-label="Unlock" disabled={check.pending}>
+            {check.pending ? (
+              <span className="lk-spin" aria-hidden="true" />
+            ) : (
               <ArrowRight aria-hidden="true" />
-            </Button>
+            )}
+          </button>
+        </div>
+        {check.needsCode && (
+          <div className="lk-row">
+            <label className="sr-only" htmlFor={`${titleId}-code`}>
+              Authentication code
+            </label>
+            <input
+              id={`${titleId}-code`}
+              className="lk-input"
+              name="code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="Authentication code"
+            />
           </div>
-          {check.error && <FieldError match>{check.error}</FieldError>}
-        </Field>
-        {check.needsCode && <CodeField error={check.codeError} />}
+        )}
+        <p
+          className="lk-hint"
+          role={problem ? "alert" : undefined}
+          data-problem={problem ? true : undefined}
+        >
+          {problem ??
+            `Your cloud browsers wait while it’s locked, for up to ${String(BROWSER_LIMITS.idleMinutes)} minutes.${
+              persistent
+                ? ""
+                : ` Brawzer signs out after ${String(idleTimeoutMinutes)} minutes without use.`
+            }`}
+        </p>
         {passkeys && (
-          <Button
-            variant="secondary"
-            className="w-full"
-            loading={check.passkeyPending}
+          <button
+            type="button"
+            className="lk-link"
+            disabled={check.passkeyPending}
             onClick={() => void check.withPasskey()}
           >
-            <KeyRound aria-hidden="true" />
-            Unlock with a passkey
-          </Button>
+            {check.passkeyPending ? "Waiting for your passkey…" : "Unlock with a passkey"}
+          </button>
         )}
-        <p className="lk-note">
-          {`Your cloud browsers wait while it’s locked, for up to ${String(BROWSER_LIMITS.idleMinutes)} minutes.`}
-          {!persistent &&
-            ` On a shared computer Brawzer still signs out after ${String(idleTimeoutMinutes)} minutes without use.`}
-        </p>
-        <Button
-          variant="ghost"
-          size="sm"
-          loading={leaving}
+      </form>
+      <div className="lk-foot">
+        <button
+          type="button"
+          className="lk-link"
+          disabled={leaving}
           onClick={() => {
             setLeaving(true);
             void signOut("user").then((result) => {
@@ -114,10 +134,10 @@ function LockPanel({
             });
           }}
         >
-          <LogOut aria-hidden="true" />
-          Sign out
-        </Button>
-      </form>
+          {leaving ? "Signing out…" : "Forgot your password? Wipe and sign out"}
+        </button>
+        <p>Your computer in the cloud. Nothing is saved on this device.</p>
+      </div>
     </div>
   );
 }
@@ -131,6 +151,20 @@ export function LockScreen(details: LockDetails) {
   const router = useRouter();
   const locked = useSyncExternalStore(subscribeToLock, isLocked, () => false);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // ⌘⇧L or Ctrl+Shift+L locks, as on the prototype.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "l") {
+        event.preventDefault();
+        if (!isLocked()) void lockNow();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   // Nothing behind the lock screen can be reached, by pointer or keyboard.
   useEffect(() => {
@@ -169,7 +203,7 @@ export function LockedPage(details: LockDetails) {
     startLocked();
   }, []);
   return (
-    <div className="lk-root">
+    <div className="lk-root" data-standalone="true">
       <LockPanel
         {...details}
         onUnlocked={() => {

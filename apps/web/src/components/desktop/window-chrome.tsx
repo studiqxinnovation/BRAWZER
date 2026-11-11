@@ -1,7 +1,11 @@
 "use client";
 
 import { cn } from "@brawzer/ui/lib/cn";
-import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from "react";
 
 export interface Rect {
   left: number;
@@ -28,6 +32,8 @@ export function trackPointer(
   bounds: () => DOMRect,
   onRect: (rect: Rect) => void,
   onEnd: (snap: Snap | null) => void,
+  /** While moving: where the window would snap if let go now (the prototype's blue hint). */
+  onHint?: (snap: Snap | null) => void,
 ) {
   if (event.button !== 0) return;
   event.preventDefault();
@@ -36,9 +42,16 @@ export function trackPointer(
   const fromX = event.clientX;
   const fromY = event.clientY;
   let last = { x: fromX, y: fromY };
+  const snapAt = (x: number, y: number): Snap | null => {
+    const box = bounds();
+    const left = x - box.left;
+    const top = y - box.top;
+    return top <= 2 ? "max" : left <= 4 ? "left" : left >= box.width - 4 ? "right" : null;
+  };
   const move = (moved: PointerEvent) => {
     const box = bounds();
     last = { x: moved.clientX, y: moved.clientY };
+    if (kind === "move") onHint?.(snapAt(moved.clientX, moved.clientY));
     const dx = moved.clientX - fromX;
     const dy = moved.clientY - fromY;
     if (kind === "move") {
@@ -59,14 +72,12 @@ export function trackPointer(
     handle.removeEventListener("pointermove", move);
     handle.removeEventListener("pointerup", up);
     handle.removeEventListener("pointercancel", up);
+    onHint?.(null);
     if (kind !== "move") {
       onEnd(null);
       return;
     }
-    const box = bounds();
-    const x = last.x - box.left;
-    const y = last.y - box.top;
-    onEnd(y <= 2 ? "max" : x <= 4 ? "left" : x >= box.width - 4 ? "right" : null);
+    onEnd(snapAt(last.x, last.y));
   };
   handle.addEventListener("pointermove", move);
   handle.addEventListener("pointerup", up);
@@ -99,6 +110,7 @@ export function TitleBar({
   onMinimise,
   onZoom,
   onDragStart,
+  onMenu,
   children,
   className,
 }: {
@@ -111,6 +123,8 @@ export function TitleBar({
   onMinimise: () => void;
   onZoom: () => void;
   onDragStart: (event: ReactPointerEvent<HTMLElement>) => void;
+  /** Right-click on the title bar: the window's menu. */
+  onMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
   children?: ReactNode;
   className?: string;
 }) {
@@ -127,6 +141,10 @@ export function TitleBar({
       }}
       onDoubleClick={(event) => {
         if (!(event.target as HTMLElement).closest("button, a, input")) onZoom();
+      }}
+      onContextMenu={(event) => {
+        if (!onMenu || (event.target as HTMLElement).closest("button, a, input")) return;
+        onMenu(event);
       }}
     >
       <span className="dt-lights">

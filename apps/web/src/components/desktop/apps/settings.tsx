@@ -21,17 +21,19 @@ import { type ReactNode, useState, useSyncExternalStore } from "react";
 import { AccentControl, ThemeControl } from "@/components/appearance-controls";
 import { useDesktop } from "@/components/desktop/desktop-context";
 import { WallpaperPicker } from "@/components/desktop/wallpaper";
+import { useAppWindow } from "./app-window";
 import {
   type DesktopStyle,
   readDesktopStyle,
   setDesktopOn,
-  setDesktopStyle,
   subscribeToDesktop,
 } from "@/lib/desktop";
+import { chooseDesktopStyle } from "@/lib/desktop-prefs";
 import { lockNow } from "@/lib/lock";
 import { signOut } from "@/lib/session-channel";
 
-type Section = "appearance" | "desktop" | "account" | "about";
+const SECTION_IDS = ["appearance", "desktop", "account", "about"] as const;
+type Section = (typeof SECTION_IDS)[number];
 
 const SECTIONS: { id: Section; label: string; icon: ReactNode }[] = [
   { id: "appearance", label: "Appearance", icon: <Palette aria-hidden="true" /> },
@@ -58,7 +60,11 @@ const PAGES: { href: Route; label: string; icon: ReactNode }[] = [
 export default function SettingsApp() {
   const router = useRouter();
   const desktop = useDesktop();
-  const [section, setSection] = useState<Section>("appearance");
+  // Opened at a section when asked ("About Brawzer" opens About).
+  const { params } = useAppWindow();
+  const [section, setSection] = useState<Section>(() =>
+    SECTION_IDS.includes(params.section as Section) ? (params.section as Section) : "appearance",
+  );
   const style = useSyncExternalStore<DesktopStyle>(
     subscribeToDesktop,
     readDesktopStyle,
@@ -126,7 +132,7 @@ export default function SettingsApp() {
                     aria-checked={style === option}
                     variant={style === option ? "primary" : "secondary"}
                     onClick={() => {
-                      setDesktopStyle(option);
+                      chooseDesktopStyle(option);
                     }}
                   >
                     {option === "mac" ? "Mac: menu bar and dock" : "Windows: taskbar and Start"}

@@ -1,164 +1,208 @@
 "use client";
 
-import type { BrowserSession } from "@brawzer/contracts";
 import { Dialog, DialogContent, DialogTitle } from "@brawzer/ui/components/dialog";
-import { useToast } from "@brawzer/ui/components/toast";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { fetchProfiles } from "@/lib/api/profiles";
+import { fetchProxies } from "@/lib/api/proxies";
 import {
-  AppWindow,
-  Image as ImageIcon,
-  Monitor,
-  Moon,
-  PanelsTopLeft,
-  Power,
-  Sun,
-} from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
-import { endBrowserSession } from "@/lib/api/browser";
-import {
-  type DesktopStyle,
-  readDesktopStyle,
-  setDesktopOn,
-  setDesktopStyle,
-  subscribeToDesktop,
-} from "@/lib/desktop";
+  defaultDesktopPrefs,
+  readDesktopPrefs,
+  subscribeToDesktopPrefs,
+  updateDesktopPrefs,
+} from "@/lib/desktop-prefs";
+import { readDesktopStyle, subscribeToDesktop } from "@/lib/desktop";
+import { playSound } from "@/lib/sounds";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
-import { PowerButtons } from "./dock";
+
+function Tile({
+  on,
+  icon,
+  label,
+  sub,
+  onClick,
+  pressed,
+}: {
+  on?: boolean;
+  icon: string;
+  label: string;
+  sub?: string;
+  onClick: () => void;
+  /** Set for switches: announced as on or off. */
+  pressed?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className="dt-cc-t"
+      data-on={on ? true : undefined}
+      aria-pressed={pressed}
+      onClick={onClick}
+    >
+      <span className="dt-cc-dot ad-emoji" aria-hidden="true">
+        {icon}
+      </span>
+      <span>
+        <b>{label}</b>
+        {sub && <small>{sub}</small>}
+      </span>
+    </button>
+  );
+}
+
+function Slider({
+  label,
+  value,
+  min = 0,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min?: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="dt-cc-s">
+      <span>{label}</span>
+      <input
+        type="range"
+        min={min}
+        max={100}
+        value={value}
+        onChange={(event) => {
+          onChange(Number(event.target.value));
+        }}
+      />
+    </label>
+  );
+}
 
 /**
- * Control Centre: only switches that do something real here, as tiles
- * (theme, the desktop's style, wallpaper, the classic layout), the cloud
- * browsers running now with a way to end them all, and Lock and Sign out.
+ * Control Centre, as the prototype has it: Network, Do Not Disturb, Dark
+ * mode and Sounds; brightness and volume; then Screenshot, Lock, Usage and
+ * Leave no trace. Each does what it says, here or with the account.
  */
 export function ControlCentre({
   open,
   onOpenChange,
-  sessions,
-  limit,
-  onWallpaper,
-  onShowDesktop,
+  onNetwork,
+  onScreenshot,
+  onLock,
+  onUsage,
+  onLeaveNoTrace,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  sessions: readonly BrowserSession[];
-  limit: number;
-  onWallpaper: () => void;
-  onShowDesktop: () => void;
+  onNetwork: () => void;
+  onScreenshot: () => void;
+  onLock: () => void;
+  onUsage: () => void;
+  onLeaveNoTrace: () => void;
 }) {
-  const toast = useToast();
-  const [ending, setEnding] = useState(false);
+  const prefs = useSyncExternalStore(
+    subscribeToDesktopPrefs,
+    readDesktopPrefs,
+    defaultDesktopPrefs,
+  );
   const dark = useSyncExternalStore(
     subscribeToAppearance,
     () => resolveTheme() === "dark",
     () => false,
   );
-  const style = useSyncExternalStore<DesktopStyle>(
-    subscribeToDesktop,
-    readDesktopStyle,
-    () => "mac",
-  );
+  const style = useSyncExternalStore(subscribeToDesktop, readDesktopStyle, () => "mac" as const);
+  const [route, setRoute] = useState<string | null>(null);
 
-  async function endAll() {
-    setEnding(true);
-    const results = await Promise.all(sessions.map((session) => endBrowserSession(session.id)));
-    setEnding(false);
-    const failed = results.filter((result) => !result.ok && result.status !== 404).length;
-    toast.add(
-      failed === 0
-        ? {
-            type: "success",
-            title: "Every browser ended",
-            description: "Profiles that keep their data saved it.",
-          }
-        : {
-            type: "error",
-            title: `${String(failed)} couldn’t be ended`,
-            description: "Try again.",
-          },
-    );
-  }
+  // How the account's first profile reaches the web: directly, or through its proxy.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void Promise.all([fetchProfiles(), fetchProxies()]).then(([profiles, proxies]) => {
+      if (cancelled) return;
+      const first = profiles.ok ? profiles.data.profiles[0] : undefined;
+      const proxy =
+        first?.proxyId && proxies.ok
+          ? proxies.data.proxies.find((candidate) => candidate.id === first.proxyId)
+          : undefined;
+      setRoute(proxy ? proxy.name : "Direct");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const then = (run: () => void) => () => {
+    onOpenChange(false);
+    run();
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={style === "mac" ? "dt-cc dt-cc-mac" : "dt-cc dt-cc-windows"}>
+      <DialogContent className={style === "windows" ? "dt-cc dt-cc-windows" : "dt-cc dt-cc-mac"}>
         <DialogTitle className="sr-only">Control Centre</DialogTitle>
-        <div className="dt-cc-tiles">
-          <button
-            type="button"
-            className="dt-cc-tile"
-            aria-pressed={dark}
-            onClick={() => {
-              setThemePreference(dark ? "light" : "dark");
-            }}
-          >
-            {dark ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}
-            <span>Dark mode</span>
-          </button>
-          <button
-            type="button"
-            className="dt-cc-tile"
-            onClick={() => {
-              setDesktopStyle(style === "mac" ? "windows" : "mac");
-            }}
-          >
-            <Monitor aria-hidden="true" />
-            <span>{style === "mac" ? "Use Windows style" : "Use Mac style"}</span>
-          </button>
-          <button
-            type="button"
-            className="dt-cc-tile"
-            onClick={() => {
-              onOpenChange(false);
-              onWallpaper();
-            }}
-          >
-            <ImageIcon aria-hidden="true" />
-            <span>Wallpaper</span>
-          </button>
-          <button
-            type="button"
-            className="dt-cc-tile"
-            onClick={() => {
-              onOpenChange(false);
-              onShowDesktop();
-            }}
-          >
-            <PanelsTopLeft aria-hidden="true" />
-            <span>Show the desktop</span>
-          </button>
-        </div>
-        <div className="dt-cc-panel">
-          <div className="dt-cc-row">
-            <AppWindow aria-hidden="true" />
-            <span className="flex-1">
-              <b className="block text-callout font-semibold text-ink">Cloud browsers</b>
-              <span className="text-footnote text-ink-secondary">
-                {String(sessions.length)} of {String(limit)} open
-              </span>
-            </span>
-            <button
-              type="button"
-              className="dt-cc-small"
-              disabled={sessions.length === 0 || ending}
-              onClick={() => void endAll()}
-            >
-              <Power aria-hidden="true" />
-              End all
-            </button>
-          </div>
-        </div>
-        <div className="dt-cc-power">
-          <PowerButtons />
-          <button
-            type="button"
-            className="dt-power"
-            onClick={() => {
-              onOpenChange(false);
-              setDesktopOn(false);
-            }}
-          >
-            Classic layout
-          </button>
-        </div>
+        <Tile
+          on
+          icon="📶"
+          label="Network"
+          sub={`Cloud · ${route ?? "…"}`}
+          onClick={then(onNetwork)}
+        />
+        <Tile
+          on={prefs.dnd}
+          pressed={prefs.dnd}
+          icon="🌙"
+          label="Do Not Disturb"
+          sub={prefs.dnd ? "On" : "Off"}
+          onClick={() => {
+            updateDesktopPrefs({ dnd: !prefs.dnd });
+          }}
+        />
+        <Tile
+          on={dark}
+          pressed={dark}
+          icon="◑"
+          label="Dark mode"
+          sub={dark ? "On" : "Off"}
+          onClick={() => {
+            setThemePreference(dark ? "light" : "dark");
+          }}
+        />
+        <Tile
+          on={prefs.sounds}
+          pressed={prefs.sounds}
+          icon="🔊"
+          label="Sounds"
+          sub={prefs.sounds ? "On" : "Off"}
+          onClick={() => {
+            updateDesktopPrefs({ sounds: !prefs.sounds });
+            if (!prefs.sounds)
+              setTimeout(() => {
+                playSound("pop");
+              }, 0);
+          }}
+        />
+        <Slider
+          label="Display brightness"
+          value={prefs.brightness}
+          min={15}
+          onChange={(value) => {
+            updateDesktopPrefs({ brightness: Math.max(15, value) });
+          }}
+        />
+        <Slider
+          label="Sound volume"
+          value={prefs.volume}
+          onChange={(value) => {
+            updateDesktopPrefs({ volume: value });
+          }}
+        />
+        <Tile icon="📸" label="Screenshot" onClick={then(onScreenshot)} />
+        <Tile icon="🔒" label="Lock" onClick={then(onLock)} />
+        <Tile icon="📊" label="Usage" sub="Time per app" onClick={then(onUsage)} />
+        <Tile
+          icon="🧹"
+          label="Leave no trace"
+          sub="Close everything"
+          onClick={then(onLeaveNoTrace)}
+        />
       </DialogContent>
     </Dialog>
   );
