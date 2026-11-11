@@ -5,9 +5,13 @@ import { createConfirmedAccount, GREETING, signIn, uniqueEmail } from "./mailbox
 const PASSWORD = "violet-harbor-lantern";
 
 async function signedIn(page: Page, baseURL: string | undefined, tag: string) {
-  // A returning visitor: nothing new arrives on its own, so the audits see a still page.
   await page.addInitScript(() => {
+    // A returning visitor: nothing new arrives on its own, so the audits see a still page.
     localStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
+    // Mac style to begin with, whatever system runs the tests (the default follows it).
+    if (!sessionStorage.getItem("brawzer:desktop-style")) {
+      sessionStorage.setItem("brawzer:desktop-style", "mac");
+    }
   });
   const email = uniqueEmail(tag);
   await createConfirmedAccount(page.request, baseURL ?? "", email, PASSWORD);
@@ -120,6 +124,22 @@ test.describe("desktop", () => {
     expect(await wcagViolations(page)).toEqual([]);
     await viewMenu(page, "Use the desktop");
     await expect(dock).toBeVisible();
+  });
+
+  test("the style follows the device's own system until one is chosen", async ({ page }) => {
+    for (const [platform, style] of [
+      ["MacIntel", "mac"],
+      ["Win32", "windows"],
+      ["Linux x86_64", "windows"],
+    ] as const) {
+      const fresh = await page.context().newPage();
+      await fresh.addInitScript((value) => {
+        Object.defineProperty(Navigator.prototype, "platform", { get: () => value });
+      }, platform);
+      await fresh.goto("/sign-in");
+      await expect(fresh.locator("html"), platform).toHaveAttribute("data-desktop-style", style);
+      await fresh.close();
+    }
   });
 
   test("phones keep the plain layout", async ({ page, baseURL, isMobile }) => {
