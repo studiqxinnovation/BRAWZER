@@ -2,7 +2,6 @@
 
 import { Button } from "@brawzer/ui/components/button";
 import { useToast } from "@brawzer/ui/components/toast";
-import { Copy, FolderOpen, Save } from "lucide-react";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { OpenFromDrive } from "./open-from-drive";
 import { useDriveDocument } from "./use-drive-document";
@@ -47,7 +46,7 @@ export function TextEditor({ variant }: { variant: "notepad" | "code" }) {
   const code = variant === "code";
   const [text, setText] = useState("");
   const [wrap, setWrap] = useState(!code);
-  const [size, setSize] = useState(code ? 13 : 14);
+  const [size, setSize] = useState(13);
   const [position, setPosition] = useState({ line: 1, column: 1 });
   const [picking, setPicking] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -150,7 +149,6 @@ export function TextEditor({ variant }: { variant: "notepad" | "code" }) {
             setPicking(true);
           }}
         >
-          <FolderOpen aria-hidden="true" />
           Open…
         </Button>
         <span className="flex-1" />
@@ -184,8 +182,7 @@ export function TextEditor({ variant }: { variant: "notepad" | "code" }) {
         >
           A+
         </button>
-        <Button size="sm" variant="ghost" onClick={() => void copyAll()}>
-          <Copy aria-hidden="true" />
+        <Button size="sm" onClick={() => void copyAll()}>
           Copy
         </Button>
         <Button
@@ -194,7 +191,6 @@ export function TextEditor({ variant }: { variant: "notepad" | "code" }) {
           loading={document.saving}
           onClick={() => void document.save(text)}
         >
-          <Save aria-hidden="true" />
           Save to Drive
         </Button>
       </div>

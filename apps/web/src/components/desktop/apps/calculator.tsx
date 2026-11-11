@@ -11,11 +11,10 @@ interface State {
   pending: { value: number; operator: Operator } | null;
   /** The next digit starts a new number (after an operator or =). */
   fresh: boolean;
-  memory: number | null;
   error: boolean;
 }
 
-const START: State = { entry: "0", pending: null, fresh: false, memory: null, error: false };
+const START: State = { entry: "0", pending: null, fresh: false, error: false };
 
 /** 0.1 + 0.2 shows 0.3: twelve significant digits, no trailing zeros. */
 export function tidy(value: number): string {
@@ -51,7 +50,7 @@ export default function CalculatorApp() {
 
   function digit(d: string) {
     setState((s) => {
-      if (s.error) return { ...START, memory: s.memory, entry: d === "." ? "0." : d };
+      if (s.error) return { ...START, entry: d === "." ? "0." : d };
       if (s.fresh) return { ...s, entry: d === "." ? "0." : d, fresh: false };
       if (d === "." && s.entry.includes(".")) return s;
       if (s.entry.replace(/[-.]/g, "").length >= 14) return s;
@@ -82,9 +81,7 @@ export default function CalculatorApp() {
   }
 
   function clear() {
-    setState((s) =>
-      s.entry !== "0" && !s.fresh ? { ...s, entry: "0" } : { ...START, memory: s.memory },
-    );
+    setState((s) => (s.entry !== "0" && !s.fresh ? { ...s, entry: "0" } : START));
   }
 
   function backspace() {
@@ -116,18 +113,6 @@ export default function CalculatorApp() {
     });
   }
 
-  function memory(action: "clear" | "recall" | "add" | "subtract") {
-    setState((s) => {
-      const current = Number.parseFloat(s.entry);
-      if (action === "clear") return { ...s, memory: null };
-      if (action === "recall")
-        return s.memory === null ? s : { ...s, entry: tidy(s.memory), fresh: false };
-      if (s.error) return s;
-      const base = s.memory ?? 0;
-      return { ...s, memory: action === "add" ? base + current : base - current, fresh: true };
-    });
-  }
-
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const key = event.key;
@@ -151,7 +136,7 @@ export default function CalculatorApp() {
   const key = (
     label: string,
     run: () => void,
-    kind: "num" | "fn" | "op" | "mem" = "num",
+    kind: "num" | "fn" | "op" = "num",
     extra: { name?: string; pressed?: boolean; wide?: boolean } = {},
   ) => (
     <button
@@ -177,18 +162,16 @@ export default function CalculatorApp() {
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div className="ap-calc" onKeyDown={onKeyDown}>
       <div className="ap-calc-display">
-        <span className="ap-calc-memory">
-          {state.memory === null ? "" : `M ${tidy(state.memory)}`}
+        <span className="ap-calc-memory" aria-hidden="true">
+          {state.pending
+            ? `${tidy(state.pending.value).replace("-", "−")} ${state.pending.operator}`
+            : ""}
         </span>
         <output className="ap-calc-value" aria-live="polite" aria-label="Result">
           {shown.replace("-", "−")}
         </output>
       </div>
       <div className="ap-calc-keys">
-        {key("MC", () => memory("clear"), "mem", { name: "MC, clear memory" })}
-        {key("MR", () => memory("recall"), "mem", { name: "MR, recall memory" })}
-        {key("M+", () => memory("add"), "mem", { name: "M+, add to memory" })}
-        {key("M−", () => memory("subtract"), "mem", { name: "M−, subtract from memory" })}
         {key(allClear ? "AC" : "C", clear, "fn", { name: allClear ? "All clear" : "Clear" })}
         {key("±", negate, "fn", { name: "Change sign" })}
         {key("%", percent, "fn", { name: "Percent" })}

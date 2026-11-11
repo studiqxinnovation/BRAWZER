@@ -4,8 +4,8 @@ import type { DriveFile, DriveFileKind } from "@brawzer/contracts";
 import { useEffect, useState } from "react";
 import { listDriveFiles } from "@/lib/api/drive";
 
-/** Every clean file of a kind in Drive, for the viewers. */
-export function useDriveKind(kind: DriveFileKind) {
+/** Every clean file of a kind in Drive, for the viewers; a new `version` reads them again. */
+export function useDriveKind(kind: DriveFileKind, version = 0) {
   const [files, setFiles] = useState<readonly DriveFile[] | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -15,7 +15,7 @@ export function useDriveKind(kind: DriveFileKind) {
     return () => {
       cancelled = true;
     };
-  }, [kind]);
+  }, [kind, version]);
   return files;
 }
 

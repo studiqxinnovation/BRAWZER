@@ -1,80 +1,187 @@
 "use client";
 
+import type { DriveUsage } from "@brawzer/contracts";
+import { Mark } from "@brawzer/ui/brand";
 import { Button } from "@brawzer/ui/components/button";
-import {
-  CircleUserRound,
-  Info,
-  Layers,
-  ListFilter,
-  Lock,
-  LogOut,
-  MonitorSmartphone,
-  Monitor,
-  Palette,
-  ShieldCheck,
-  Users,
-  Globe,
-} from "lucide-react";
+import { useToast } from "@brawzer/ui/components/toast";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useState, useSyncExternalStore } from "react";
-import { AccentControl, ThemeControl } from "@/components/appearance-controls";
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
+import { AccentControl } from "@/components/appearance-controls";
 import { useDesktop } from "@/components/desktop/desktop-context";
 import { WallpaperPicker } from "@/components/desktop/wallpaper";
-import { useAppWindow } from "./app-window";
+import { fetchBrowserOverview } from "@/lib/api/browser";
+import { emptyTrash, fetchDriveOverview, fetchTrash } from "@/lib/api/drive";
 import {
   type DesktopStyle,
   readDesktopStyle,
   setDesktopOn,
   subscribeToDesktop,
 } from "@/lib/desktop";
-import { chooseDesktopStyle } from "@/lib/desktop-prefs";
+import {
+  chooseDesktopStyle,
+  defaultDesktopPrefs,
+  readDesktopPrefs,
+  setPinned,
+  subscribeToDesktopPrefs,
+} from "@/lib/desktop-prefs";
 import { lockNow } from "@/lib/lock";
-import { signOut } from "@/lib/session-channel";
+import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
+import type { GlyphName, TileColour } from "../glyphs";
+import { useAppWindow } from "./app-window";
+import { type AppId, AppIcon, apps, dockSystemApps, launchpadOrder, Tile } from "./registry";
 
-const SECTION_IDS = ["appearance", "desktop", "account", "about"] as const;
-type Section = (typeof SECTION_IDS)[number];
+const SECTIONS = [
+  { id: "appearance", label: "Appearance", glyph: "sun", colour: "blue" },
+  { id: "desktop", label: "Desktop and dock", glyph: "grid", colour: "indigo" },
+  { id: "browsers", label: "Browsers", glyph: "globe", colour: "teal" },
+  { id: "security", label: "Privacy and security", glyph: "lock", colour: "red" },
+  { id: "storage", label: "Storage", glyph: "drive", colour: "gray" },
+  { id: "about", label: "About Brawzer", glyph: "bag", colour: "orange" },
+] as const satisfies readonly { id: string; label: string; glyph: GlyphName; colour: TileColour }[];
+type Section = (typeof SECTIONS)[number]["id"];
+const isSection = (value: string | undefined): value is Section =>
+  SECTIONS.some((section) => section.id === value);
 
-const SECTIONS: { id: Section; label: string; icon: ReactNode }[] = [
-  { id: "appearance", label: "Appearance", icon: <Palette aria-hidden="true" /> },
-  { id: "desktop", label: "Desktop", icon: <Monitor aria-hidden="true" /> },
-  { id: "account", label: "Account and security", icon: <CircleUserRound aria-hidden="true" /> },
-  { id: "about", label: "About Brawzer", icon: <Info aria-hidden="true" /> },
-];
+const size = (bytes: number) =>
+  bytes >= 1024 ** 3
+    ? `${(bytes / 1024 ** 3).toFixed(1)} GB`
+    : bytes >= 1024 ** 2
+      ? `${(bytes / 1024 ** 2).toFixed(1)} MB`
+      : bytes >= 1024
+        ? `${(bytes / 1024).toFixed(0)} KB`
+        : `${String(bytes)} B`;
 
-const PAGES: { href: Route; label: string; icon: ReactNode }[] = [
-  { href: "/app/account", label: "Account", icon: <CircleUserRound aria-hidden="true" /> },
-  { href: "/app/shield", label: "Shield", icon: <ShieldCheck aria-hidden="true" /> },
-  {
-    href: "/app/sessions",
-    label: "Signed-in devices",
-    icon: <MonitorSmartphone aria-hidden="true" />,
-  },
-  { href: "/app/profiles", label: "Profiles", icon: <Layers aria-hidden="true" /> },
-  { href: "/app/proxy", label: "Proxy", icon: <Globe aria-hidden="true" /> },
-  { href: "/app/site-rules", label: "Site rules", icon: <ListFilter aria-hidden="true" /> },
-  { href: "/app/team", label: "Team", icon: <Users aria-hidden="true" /> },
-];
+/** One setting: its name and what it does on the left, its control on the right. */
+function Row({ label, sub, children }: { label: string; sub?: string; children?: ReactNode }) {
+  return (
+    <div className="ap-st-row">
+      <div>
+        <div className="ap-st-t">{label}</div>
+        {sub && <div className="ap-st-sub">{sub}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
 
-/** Settings: how Brawzer looks here, and the way to the account's own pages. */
+/** The prototype's segmented control, as radio buttons. */
+function Segment<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly (readonly [T, string])[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <span className="ap-segment" role="radiogroup" aria-label={label}>
+      {options.map(([option, text]) => (
+        <button
+          key={option}
+          type="button"
+          role="radio"
+          aria-checked={value === option}
+          onClick={() => {
+            onChange(option);
+          }}
+        >
+          {text}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+const useDark = () =>
+  useSyncExternalStore(
+    subscribeToAppearance,
+    () => resolveTheme() === "dark",
+    () => false,
+  );
+
+/**
+ * Settings, as the prototype's: Appearance, Desktop and dock, Browsers,
+ * Privacy and security, Storage and About, each a page of cards. Every
+ * control does what it says, here or with the account.
+ */
 export default function SettingsApp() {
   const router = useRouter();
+  const toast = useToast();
   const desktop = useDesktop();
   // Opened at a section when asked ("About Brawzer" opens About).
   const { params } = useAppWindow();
   const [section, setSection] = useState<Section>(() =>
-    SECTION_IDS.includes(params.section as Section) ? (params.section as Section) : "appearance",
+    isSection(params.section) ? params.section : "appearance",
   );
   const style = useSyncExternalStore<DesktopStyle>(
     subscribeToDesktop,
     readDesktopStyle,
     () => "mac",
   );
+  const dark = useDark();
+  const prefs = useSyncExternalStore(
+    subscribeToDesktopPrefs,
+    readDesktopPrefs,
+    defaultDesktopPrefs,
+  );
+  const [usage, setUsage] = useState<DriveUsage | null>(null);
+  const [trash, setTrash] = useState<{ count: number; bytes: number } | null>(null);
+  const [browsers, setBrowsers] = useState<{ open: number; limit: number } | null>(null);
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (section === "storage") {
+      void Promise.all([fetchDriveOverview(), fetchTrash()]).then(([overview, trashed]) => {
+        if (cancelled) return;
+        if (overview.ok) setUsage(overview.data.usage);
+        if (trashed.ok) {
+          setTrash({
+            count: trashed.data.files.length,
+            bytes: trashed.data.files.reduce((total, file) => total + file.size, 0),
+          });
+        }
+      });
+    }
+    if (section === "browsers") {
+      void fetchBrowserOverview().then((result) => {
+        if (!cancelled && result.ok) {
+          setBrowsers({
+            open: result.data.sessions.length,
+            limit: result.data.limits.liveSessions,
+          });
+        }
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [section, version]);
 
   function openPage(href: Route) {
     router.push(href);
     desktop?.showDashboard();
   }
+
+  const styleSegment = (
+    <Segment
+      label="Desktop style"
+      value={style}
+      options={[
+        ["mac", "Mac"],
+        ["windows", "Windows"],
+      ]}
+      onChange={chooseDesktopStyle}
+    />
+  );
+  const heading = SECTIONS.find((item) => item.id === section)?.label ?? "";
+  const pinnable = launchpadOrder.filter(
+    (app): app is AppId => !dockSystemApps.includes(app) && app !== "trash",
+  );
 
   return (
     <div className="ap-split">
@@ -89,134 +196,273 @@ export default function SettingsApp() {
               setSection(item.id);
             }}
           >
-            {item.icon}
+            <Tile glyph={item.glyph} colour={item.colour} size={22} />
             {item.label}
           </button>
         ))}
       </nav>
-      <div className="ap-main">
+      <section className="ap-st-main" aria-labelledby="settings-heading">
+        <h2 id="settings-heading" className="ap-st-h">
+          {heading}
+        </h2>
+
         {section === "appearance" && (
-          <section aria-labelledby="settings-appearance">
-            <h2 id="settings-appearance" className="ap-section-title">
-              Appearance
-            </h2>
-            <div className="ap-setting">
-              <h3>Theme</h3>
-              <div>
-                <ThemeControl />
-              </div>
-            </div>
-            <div className="ap-setting">
-              <h3>Accent colour</h3>
-              <div>
+          <>
+            <div className="ap-st-card">
+              <Row label="Theme" sub="Light or dark windows and panels">
+                <Segment
+                  label="Theme"
+                  value={dark ? "dark" : "light"}
+                  options={[
+                    ["dark", "Dark"],
+                    ["light", "Light"],
+                  ]}
+                  onChange={setThemePreference}
+                />
+              </Row>
+              <Row label="Desktop style" sub="Mac dock or Windows taskbar">
+                {styleSegment}
+              </Row>
+              <Row label="Accent colour" sub="Buttons, links and what’s selected">
                 <AccentControl />
-              </div>
+              </Row>
             </div>
-            <p className="text-footnote text-ink-secondary">
-              Kept for this tab only, so a shared computer keeps nothing.
-            </p>
-          </section>
-        )}
-        {section === "desktop" && (
-          <section aria-labelledby="settings-desktop">
-            <h2 id="settings-desktop" className="ap-section-title">
-              Desktop
-            </h2>
-            <div className="ap-setting">
-              <h3>Style</h3>
-              <div className="ap-choice-row" role="radiogroup" aria-label="Desktop style">
-                {(["mac", "windows"] as const).map((option) => (
-                  <Button
-                    key={option}
-                    role="radio"
-                    aria-checked={style === option}
-                    variant={style === option ? "primary" : "secondary"}
-                    onClick={() => {
-                      chooseDesktopStyle(option);
-                    }}
-                  >
-                    {option === "mac" ? "Mac: menu bar and dock" : "Windows: taskbar and Start"}
-                  </Button>
-                ))}
-              </div>
-            </div>
-            <div className="ap-setting">
-              <h3>Wallpaper</h3>
+            <div className="ap-st-card">
+              <div className="ap-st-t ap-st-cap">Wallpaper</div>
               <WallpaperPicker />
             </div>
-            <div className="ap-setting">
-              <h3>Classic layout</h3>
-              <p>The app as pages, without windows, as it is on phones.</p>
-              <div>
+          </>
+        )}
+
+        {section === "desktop" && (
+          <>
+            <div className="ap-st-card">
+              <Row label="Desktop style">{styleSegment}</Row>
+              <Row label="Show desktop" sub="Hide the dashboard and minimise every window">
+                <Button size="sm" onClick={desktop?.showDesktop}>
+                  Show desktop
+                </Button>
+              </Row>
+              <Row label="All apps" sub="See every app at once">
+                <Button size="sm" onClick={desktop?.openLauncher}>
+                  Open
+                </Button>
+              </Row>
+              <Row label="Classic layout" sub="The app as pages, without windows, as on phones">
                 <Button
+                  size="sm"
                   onClick={() => {
                     setDesktopOn(false);
                   }}
                 >
-                  Use the classic layout
+                  Use it
                 </Button>
-              </div>
+              </Row>
             </div>
-          </section>
-        )}
-        {section === "account" && (
-          <section aria-labelledby="settings-account">
-            <h2 id="settings-account" className="ap-section-title">
-              Account and security
-            </h2>
-            <div className="ap-setting">
-              <p>These open in Brawzer’s own window.</p>
-              <div className="ap-links">
-                {PAGES.map((page) => (
-                  <button
-                    key={page.href}
-                    type="button"
-                    className="ap-link"
-                    onClick={() => {
-                      openPage(page.href);
-                    }}
-                  >
-                    {page.icon}
-                    {page.label}
-                  </button>
+            <div className="ap-st-card">
+              <div className="ap-st-t ap-st-cap">
+                Apps in the {style === "windows" ? "taskbar" : "Dock"}
+              </div>
+              <div className="ap-st-sub">
+                Browsers and system apps always stay. Choose the rest; it’s kept with your account.
+              </div>
+              <div className="ap-st-pins">
+                {pinnable.map((app) => (
+                  <label key={app} className="ap-st-pin">
+                    <AppIcon app={app} size={22} />
+                    <span>{apps[app].name}</span>
+                    <input
+                      type="checkbox"
+                      checked={prefs.pinned.includes(app)}
+                      onChange={(event) => {
+                        setPinned(app, event.target.checked);
+                      }}
+                    />
+                  </label>
                 ))}
               </div>
             </div>
-            <div className="ap-setting">
-              <h3>This computer</h3>
-              <p>
-                Locking keeps your browsers waiting until you confirm it’s you. Signing out ends
-                them and clears what Brawzer kept in this browser.
-              </p>
-              <div className="ap-choice-row">
-                <Button onClick={() => void lockNow()}>
-                  <Lock aria-hidden="true" />
-                  Lock screen
+          </>
+        )}
+
+        {section === "browsers" && (
+          <div className="ap-st-card">
+            <Row
+              label="Browsers at once"
+              sub="Each runs in Brawzer’s cloud, in a container of its own"
+            >
+              <span className="ap-st-pill">
+                {browsers ? `${String(browsers.open)} of ${String(browsers.limit)} running` : "…"}
+              </span>
+            </Row>
+            <Row label="Profiles" sub="Cookies, history and sign-ins, kept apart">
+              <Button
+                size="sm"
+                onClick={() => {
+                  openPage("/app/profiles");
+                }}
+              >
+                Open
+              </Button>
+            </Row>
+            <Row label="Proxy" sub="Where a profile’s browsing connects from">
+              <Button
+                size="sm"
+                onClick={() => {
+                  openPage("/app/proxy");
+                }}
+              >
+                Open
+              </Button>
+            </Row>
+            <Row label="Extensions" sub="Reviewed add-ons for each profile’s browser">
+              <Button
+                size="sm"
+                onClick={() => {
+                  desktop?.openApp("web-store");
+                }}
+              >
+                Web Store
+              </Button>
+            </Row>
+          </div>
+        )}
+
+        {section === "security" && (
+          <>
+            <div className="ap-st-card">
+              <Row
+                label="Lock now"
+                sub="Shortcut: Ctrl+Shift+L. Your browsers wait until it’s you."
+              >
+                <Button size="sm" variant="primary" onClick={() => void lockNow()}>
+                  Lock
                 </Button>
-                <Button variant="danger" onClick={() => void signOut("user")}>
-                  <LogOut aria-hidden="true" />
-                  Sign out
+              </Row>
+              <Row label="Shield" sub="Protection status and your security history">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    openPage("/app/shield");
+                  }}
+                >
+                  Open
                 </Button>
+              </Row>
+              <Row label="Signed-in devices" sub="See them, and sign any out">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    openPage("/app/sessions");
+                  }}
+                >
+                  Open
+                </Button>
+              </Row>
+              <Row label="Account" sub="Password, passkeys and two-factor">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    openPage("/app/account");
+                  }}
+                >
+                  Open
+                </Button>
+              </Row>
+            </div>
+            <div className="ap-st-card" data-danger="true">
+              <Row
+                label="Wipe this computer"
+                sub="Closes every app, ends all sessions and removes everything Brawzer left on this device. Your Drive stays safe."
+              >
+                <Button size="sm" variant="danger" onClick={desktop?.wipe}>
+                  Wipe now
+                </Button>
+              </Row>
+            </div>
+          </>
+        )}
+
+        {section === "storage" && (
+          <>
+            <div className="ap-st-card ap-st-storage">
+              <div className="ap-st-big">
+                <b>{usage ? size(usage.usedBytes) : "…"}</b>
+                <span>of {usage ? size(usage.limitBytes) : "…"}</span>
+              </div>
+              <span className="ap-bar" aria-hidden="true">
+                <i
+                  style={{
+                    width: `${String(usage ? Math.min(100, (usage.usedBytes / usage.limitBytes) * 100) : 0)}%`,
+                  }}
+                />
+              </span>
+              <div className="ap-st-sub">
+                {usage ? `${String(usage.fileCount)} files in Drive` : "…"}
+                {trash ? ` · ${String(trash.count)} in Trash (${size(trash.bytes)})` : ""}
               </div>
             </div>
-          </section>
-        )}
-        {section === "about" && (
-          <section aria-labelledby="settings-about">
-            <h2 id="settings-about" className="ap-section-title">
-              About Brawzer
-            </h2>
-            <div className="ap-setting">
-              <p>
-                Brawzer runs your browsers in its cloud, each in a container of its own. This
-                computer receives only the pictures of the pages and sends your clicks and typing.
-                What you save goes to Drive, encrypted; the apps keep their records with your
-                account, encrypted, not on this computer.
-              </p>
+            <div className="ap-st-card">
+              <Row label="Open Files" sub="See everything in your Drive">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    desktop?.openApp("files");
+                  }}
+                >
+                  Open
+                </Button>
+              </Row>
+              <Row label="Empty Trash" sub="Delete everything in Trash for good">
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={!trash || trash.count === 0}
+                  onClick={() =>
+                    void emptyTrash().then((result) => {
+                      toast.add(
+                        result.ok
+                          ? { type: "success", title: "Trash emptied" }
+                          : {
+                              type: "error",
+                              title: "Couldn’t empty Trash",
+                              description: result.error.message,
+                            },
+                      );
+                      setVersion((value) => value + 1);
+                    })
+                  }
+                >
+                  Empty
+                </Button>
+              </Row>
             </div>
-          </section>
+          </>
         )}
-      </div>
+
+        {section === "about" && (
+          <>
+            <div className="ap-st-card ap-st-about">
+              <span
+                className="dt-brand"
+                aria-hidden="true"
+                style={{ width: 64, height: 64, borderRadius: 15 }}
+              >
+                <Mark size={32} />
+              </span>
+              <b>Brawzer</b>
+              <span className="ap-st-sub">Your computer in the cloud</span>
+            </div>
+            <div className="ap-st-card">
+              <Row label="Apps" sub={`${String(launchpadOrder.length)} apps, and the browsers`} />
+              <Row
+                label="How it works"
+                sub="Your browsers and apps run in Brawzer’s cloud. Only pictures of the pages reach this device; what you save goes to Drive, encrypted, and the apps keep their records with your account."
+              />
+            </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }

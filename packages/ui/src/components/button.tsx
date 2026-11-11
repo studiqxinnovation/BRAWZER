@@ -51,10 +51,11 @@ export function Button({
       focusableWhenDisabled={loading || focusableWhenDisabled}
       aria-busy={loading || undefined}
     >
+      {/* Transparent, not hidden, while loading: the label stays the button's accessible name. */}
       <span
         className={cn(
           "inline-flex items-center justify-center gap-[inherit]",
-          loading && "invisible",
+          loading && "opacity-0",
         )}
       >
         {children}

@@ -166,11 +166,12 @@ test.describe("desktop", () => {
     await page.keyboard.press("Enter");
     const settings = page.getByRole("region", { name: "Settings window" });
     await expect(settings).toBeVisible();
-    await settings.getByRole("button", { name: "Desktop" }).click();
-    await expect(settings.getByRole("radio", { name: "Mac: menu bar and dock" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    await settings.getByRole("button", { name: "Desktop and dock" }).click();
+    await expect(
+      settings
+        .getByRole("radiogroup", { name: "Desktop style" })
+        .getByRole("radio", { name: "Mac", exact: true }),
+    ).toHaveAttribute("aria-checked", "true");
     expect(await wcagViolations(page)).toEqual([]);
 
     // The switcher goes back to the calculator.

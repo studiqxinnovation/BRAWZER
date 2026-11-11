@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@brawzer/ui/components/button";
-import { FolderOpen, Save } from "lucide-react";
 import { type KeyboardEvent, useMemo, useRef, useState } from "react";
 import { useAppWindow } from "./app-window";
 import { COLUMNS, display, evaluate, fromCsv, ROWS, toCsv } from "./calc-engine";
@@ -76,36 +75,16 @@ export default function CalcApp() {
             }}
           />
         </label>
-        <span className="flex-1" />
-        <Button
-          size="sm"
-          onClick={() => {
-            setPicking(true);
-          }}
-        >
-          <FolderOpen aria-hidden="true" />
-          Open…
-        </Button>
-        <Button
-          size="sm"
-          variant="primary"
-          loading={document.saving}
-          onClick={() => void document.save(toCsv(cells))}
-        >
-          <Save aria-hidden="true" />
-          Save to Drive
-        </Button>
-      </div>
-      <div className="ap-formula">
+        <span className="ap-tb-sep" aria-hidden="true" />
         <span className="ap-formula-ref" aria-live="polite">
           {current}
         </span>
         <label className="ap-grow ap-field ap-inline">
           <span className="sr-only">Formula for {current}</span>
           <input
-            className="ap-input ap-grow"
+            className="ap-input ap-grow ap-formula-input"
             value={cells[current] ?? ""}
-            placeholder="A value, or a formula such as =SUM(B2:B9)"
+            placeholder="Type a value or a formula, like =SUM(B3:B5)"
             onChange={(event) => {
               set(current, event.target.value);
             }}
@@ -117,6 +96,22 @@ export default function CalcApp() {
             }}
           />
         </label>
+        <Button
+          size="sm"
+          onClick={() => {
+            setPicking(true);
+          }}
+        >
+          Open…
+        </Button>
+        <Button
+          size="sm"
+          variant="primary"
+          loading={document.saving}
+          onClick={() => void document.save(toCsv(cells))}
+        >
+          Save to Drive
+        </Button>
       </div>
       <div className="ap-sheet-wrap">
         <table className="ap-sheet" aria-label={document.doc.name}>

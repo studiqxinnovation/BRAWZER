@@ -1,23 +1,8 @@
 "use client";
 
 import { Button } from "@brawzer/ui/components/button";
-import {
-  AlignCenter,
-  AlignLeft,
-  AlignRight,
-  Bold,
-  FolderOpen,
-  Heading1,
-  Heading2,
-  Italic,
-  List,
-  ListOrdered,
-  Pilcrow,
-  Quote,
-  Save,
-  Strikethrough,
-  Underline,
-} from "lucide-react";
+import { useToast } from "@brawzer/ui/components/toast";
+import { AlignCenter, AlignLeft, List, ListOrdered, Undo2 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useAppWindow } from "./app-window";
 import { OpenFromDrive } from "./open-from-drive";
@@ -29,12 +14,13 @@ type Command =
   | "bold"
   | "italic"
   | "underline"
-  | "strikeThrough"
   | "insertUnorderedList"
   | "insertOrderedList"
   | "justifyLeft"
   | "justifyCenter"
-  | "justifyRight";
+  | "undo";
+
+type Block = "H1" | "H2" | "P" | "BLOCKQUOTE";
 
 /** A toolbar button that keeps the page's selection when pressed. */
 function Tool({ label, icon, onClick }: { label: string; icon: ReactNode; onClick: () => void }) {
@@ -58,7 +44,10 @@ function Tool({ label, icon, onClick }: { label: string; icon: ReactNode; onClic
 export default function WriterApp() {
   const window = useAppWindow();
   const page = useRef<HTMLDivElement>(null);
+  const toast = useToast();
   const [words, setWords] = useState(0);
+  const [characters, setCharacters] = useState(0);
+  const [style, setStyle] = useState<Block>("P");
   const [picking, setPicking] = useState(false);
   const template = templateById(window.params.template);
   const document = useDriveDocument({
@@ -74,6 +63,20 @@ export default function WriterApp() {
   function count() {
     const text = page.current?.innerText.trim() ?? "";
     setWords(text ? text.split(/\s+/).length : 0);
+    setCharacters(text.length);
+  }
+
+  async function copyText() {
+    try {
+      await navigator.clipboard.writeText(page.current?.innerText ?? "");
+      toast.add({ type: "success", title: "Text copied" });
+    } catch {
+      toast.add({
+        type: "error",
+        title: "Couldn’t copy",
+        description: "The browser didn’t allow it.",
+      });
+    }
   }
 
   // A template starts the page; it's a new document until saved.
@@ -94,7 +97,7 @@ export default function WriterApp() {
     document.changed();
   }
 
-  function block(tag: "H1" | "H2" | "P" | "BLOCKQUOTE") {
+  function block(tag: Block) {
     page.current?.focus();
     // eslint-disable-next-line @typescript-eslint/no-deprecated
     globalThis.document.execCommand("formatBlock", false, tag);
@@ -121,103 +124,82 @@ export default function WriterApp() {
             }}
           />
         </label>
-        <span className="ap-tool-group" role="group" aria-label="Paragraph style">
-          <Tool
-            label="Title"
-            icon={<Heading1 aria-hidden="true" />}
-            onClick={() => {
-              block("H1");
-            }}
-          />
-          <Tool
-            label="Heading"
-            icon={<Heading2 aria-hidden="true" />}
-            onClick={() => {
-              block("H2");
-            }}
-          />
-          <Tool
-            label="Normal text"
-            icon={<Pilcrow aria-hidden="true" />}
-            onClick={() => {
-              block("P");
-            }}
-          />
-          <Tool
-            label="Quote"
-            icon={<Quote aria-hidden="true" />}
-            onClick={() => {
-              block("BLOCKQUOTE");
-            }}
-          />
-        </span>
-        <span className="ap-tool-group" role="group" aria-label="Text style">
-          <Tool
-            label="Bold"
-            icon={<Bold aria-hidden="true" />}
-            onClick={() => {
-              run("bold");
-            }}
-          />
-          <Tool
-            label="Italic"
-            icon={<Italic aria-hidden="true" />}
-            onClick={() => {
-              run("italic");
-            }}
-          />
-          <Tool
-            label="Underline"
-            icon={<Underline aria-hidden="true" />}
-            onClick={() => {
-              run("underline");
-            }}
-          />
-          <Tool
-            label="Strikethrough"
-            icon={<Strikethrough aria-hidden="true" />}
-            onClick={() => {
-              run("strikeThrough");
-            }}
-          />
-        </span>
-        <span className="ap-tool-group" role="group" aria-label="Lists and alignment">
-          <Tool
-            label="Bulleted list"
-            icon={<List aria-hidden="true" />}
-            onClick={() => {
-              run("insertUnorderedList");
-            }}
-          />
-          <Tool
-            label="Numbered list"
-            icon={<ListOrdered aria-hidden="true" />}
-            onClick={() => {
-              run("insertOrderedList");
-            }}
-          />
-          <Tool
-            label="Align left"
-            icon={<AlignLeft aria-hidden="true" />}
-            onClick={() => {
-              run("justifyLeft");
-            }}
-          />
-          <Tool
-            label="Centre"
-            icon={<AlignCenter aria-hidden="true" />}
-            onClick={() => {
-              run("justifyCenter");
-            }}
-          />
-          <Tool
-            label="Align right"
-            icon={<AlignRight aria-hidden="true" />}
-            onClick={() => {
-              run("justifyRight");
-            }}
-          />
-        </span>
+        <span className="ap-tb-sep" aria-hidden="true" />
+        <label className="sr-only" htmlFor={`${window.id}-style`}>
+          Paragraph style
+        </label>
+        <select
+          id={`${window.id}-style`}
+          className="ap-input ap-select"
+          value={style}
+          onChange={(event) => {
+            const tag = event.target.value as Block;
+            setStyle(tag);
+            block(tag);
+          }}
+        >
+          <option value="P">Body text</option>
+          <option value="H1">Title</option>
+          <option value="H2">Heading</option>
+          <option value="BLOCKQUOTE">Quote</option>
+        </select>
+        <Tool
+          label="Bold"
+          icon={<b>B</b>}
+          onClick={() => {
+            run("bold");
+          }}
+        />
+        <Tool
+          label="Italic"
+          icon={<i className="font-serif">I</i>}
+          onClick={() => {
+            run("italic");
+          }}
+        />
+        <Tool
+          label="Underline"
+          icon={<u>U</u>}
+          onClick={() => {
+            run("underline");
+          }}
+        />
+        <span className="ap-tb-sep" aria-hidden="true" />
+        <Tool
+          label="Bulleted list"
+          icon={<List aria-hidden="true" />}
+          onClick={() => {
+            run("insertUnorderedList");
+          }}
+        />
+        <Tool
+          label="Numbered list"
+          icon={<ListOrdered aria-hidden="true" />}
+          onClick={() => {
+            run("insertOrderedList");
+          }}
+        />
+        <Tool
+          label="Align left"
+          icon={<AlignLeft aria-hidden="true" />}
+          onClick={() => {
+            run("justifyLeft");
+          }}
+        />
+        <Tool
+          label="Centre"
+          icon={<AlignCenter aria-hidden="true" />}
+          onClick={() => {
+            run("justifyCenter");
+          }}
+        />
+        <Tool
+          label="Undo"
+          icon={<Undo2 aria-hidden="true" />}
+          onClick={() => {
+            run("undo");
+          }}
+        />
         <span className="flex-1" />
         <Button
           size="sm"
@@ -225,11 +207,12 @@ export default function WriterApp() {
             setPicking(true);
           }}
         >
-          <FolderOpen aria-hidden="true" />
           Open…
         </Button>
+        <Button size="sm" onClick={() => void copyText()}>
+          Copy text
+        </Button>
         <Button size="sm" variant="primary" loading={document.saving} onClick={save}>
-          <Save aria-hidden="true" />
           Save to Drive
         </Button>
       </div>
@@ -240,6 +223,7 @@ export default function WriterApp() {
           role="textbox"
           aria-multiline="true"
           aria-label="Document"
+          data-placeholder="Start typing here. Use the toolbar for titles, headings, bold text and lists. When you’re done, save it to your Drive."
           tabIndex={0}
           contentEditable={!document.loading}
           suppressContentEditableWarning
@@ -263,14 +247,15 @@ export default function WriterApp() {
         />
       </div>
       <div className="ap-statusbar">
-        <span>{words} words</span>
+        <span>
+          {words} words · {characters} characters
+        </span>
         <span>
           {document.doc.fileId
             ? document.dirty
               ? "Not saved yet"
               : "Saved in Drive"
-            : "Not in Drive yet"}{" "}
-          · HTML
+            : "Not saved yet"}
         </span>
       </div>
       <OpenFromDrive

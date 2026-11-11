@@ -3,6 +3,90 @@
  * pieces they share. Each app's own styles follow its section.
  */
 
+/*
+ * Inside an app's window, the prototype's window palette and its compact
+ * scale: the UI kit reads its colours, type sizes and spacing from these
+ * variables, so every app's controls take the prototype's look at once.
+ * Text keeps WCAG AA contrast on every surface here.
+ */
+.dt-app {
+  --spacing: 0.21875rem;
+  --text-caption: 0.65625rem;
+  --text-caption--line-height: 0.875rem;
+  --text-footnote: 0.71875rem;
+  --text-footnote--line-height: 1rem;
+  --text-callout: 0.78125rem;
+  --text-callout--line-height: 1.125rem;
+  --text-body: 0.8125rem;
+  --text-body--line-height: 1.25rem;
+  --text-body-lg: 0.875rem;
+  --text-body-lg--line-height: 1.375rem;
+  --text-title-3: 1.0625rem;
+  --text-title-3--line-height: 1.5rem;
+  --bw-canvas: #f7f8fb;
+  --bw-canvas-subtle: #eceff5;
+  --bw-surface: #f7f8fb;
+  --bw-surface-raised: #ffffff;
+  --bw-surface-sunken: #e6e9f0;
+  --bw-line: #dfe2e8;
+  --bw-line-strong: #cdd2db;
+  --bw-line-control: #8a93a3;
+  --bw-ink: #0f172a;
+  --bw-ink-secondary: #3f4a5e;
+  --bw-ink-tertiary: #5b6577;
+  --bw-hover: rgb(0 0 0 / 0.05);
+  --bw-pressed: rgb(0 0 0 / 0.09);
+  /* Re-read here: at the root they were already worked out from the root's values. */
+  --color-canvas: var(--bw-canvas);
+  --color-canvas-subtle: var(--bw-canvas-subtle);
+  --color-surface: var(--bw-surface);
+  --color-surface-raised: var(--bw-surface-raised);
+  --color-surface-sunken: var(--bw-surface-sunken);
+  --color-line: var(--bw-line);
+  --color-line-strong: var(--bw-line-strong);
+  --color-line-control: var(--bw-line-control);
+  --color-ink: var(--bw-ink);
+  --color-ink-secondary: var(--bw-ink-secondary);
+  --color-ink-tertiary: var(--bw-ink-tertiary);
+  --color-hover: var(--bw-hover);
+  --color-pressed: var(--bw-pressed);
+  font-size: var(--text-callout);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .dt-app {
+    --bw-canvas: #141b2b;
+    --bw-canvas-subtle: #1b2336;
+    --bw-surface: #141b2b;
+    --bw-surface-raised: #242b3c;
+    --bw-surface-sunken: #10161f;
+    --bw-line: #2a3140;
+    --bw-line-strong: #3a404e;
+    --bw-line-control: #5d6577;
+    --bw-ink: #f0f4ff;
+    --bw-ink-secondary: #b9c3d9;
+    --bw-ink-tertiary: #929cb2;
+    --bw-hover: rgb(255 255 255 / 0.07);
+    --bw-pressed: rgb(255 255 255 / 0.12);
+  }
+}
+
+:root[data-theme="dark"] .dt-app {
+  --bw-canvas: #141b2b;
+  --bw-canvas-subtle: #1b2336;
+  --bw-surface: #141b2b;
+  --bw-surface-raised: #242b3c;
+  --bw-surface-sunken: #10161f;
+  --bw-line: #2a3140;
+  --bw-line-strong: #3a404e;
+  --bw-line-control: #5d6577;
+  --bw-ink: #f0f4ff;
+  --bw-ink-secondary: #b9c3d9;
+  --bw-ink-tertiary: #929cb2;
+  --bw-hover: rgb(255 255 255 / 0.07);
+  --bw-pressed: rgb(255 255 255 / 0.12);
+}
+
 @layer components {
   /* ── Icons: the prototype's tiles (.mi) ────────────────────────────── */
 
@@ -50,10 +134,10 @@
     flex-shrink: 0;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.375rem;
+    gap: 6px;
     border-bottom: 1px solid var(--color-line);
     background: var(--color-surface);
-    padding: 0.375rem 0.625rem;
+    padding: 8px 10px;
   }
 
   .ap-statusbar {
@@ -63,9 +147,9 @@
     gap: 1rem;
     border-top: 1px solid var(--color-line);
     background: var(--color-surface);
-    padding: 0.25rem 0.75rem;
-    color: var(--color-ink-secondary);
-    font-size: 0.72rem;
+    padding: 5px 12px;
+    color: var(--color-ink-tertiary);
+    font-size: 10.5px;
   }
 
   .ap-split {
@@ -74,26 +158,50 @@
     flex: 1;
   }
 
+  /* The prototype's sidebars (.fx-side, .st-side, .sto-side). */
   .ap-side {
     display: flex;
-    width: 12.5rem;
+    width: 200px;
     flex-shrink: 0;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: 2px;
     overflow-y: auto;
     border-right: 1px solid var(--color-line);
-    background: var(--color-surface);
-    padding: 0.625rem;
+    background: var(--color-canvas-subtle);
+    padding: 12px 8px;
+  }
+
+  /* The column beside a sidebar: its toolbar, its content, its status bar. */
+  .ap-col {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+  .ap-col > .ap-main {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .ap-side-h {
+    padding: 4px 8px 6px;
+    color: var(--color-ink-tertiary);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 
   .ap-side-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    border-radius: 0.5rem;
-    padding: 0.4rem 0.55rem;
-    color: var(--color-ink);
-    font-size: 0.82rem;
+    gap: 9px;
+    border-radius: 7px;
+    padding: 6px 8px;
+    color: var(--color-ink-secondary);
+    font-size: 12px;
     font-weight: 500;
     text-align: left;
   }
@@ -104,6 +212,12 @@
   .ap-side-item[aria-selected="true"] {
     background: var(--color-accent-soft);
     color: var(--color-ink);
+    font-weight: 600;
+  }
+  .ap-side-n {
+    margin-left: auto;
+    color: var(--color-ink-tertiary);
+    font-size: 10.5px;
   }
   .ap-side-item svg {
     width: 1rem;
@@ -165,16 +279,21 @@
     flex: 1;
   }
 
+  /* The prototype's field (.inp). */
   .ap-input {
-    min-height: 2rem;
+    min-height: 26px;
     min-width: 0;
     border: 1px solid var(--color-line-strong);
-    border-radius: 0.5rem;
-    background: var(--color-surface);
-    padding: 0.3rem 0.55rem;
+    border-radius: 8px;
+    background: var(--color-surface-raised);
+    padding: 4px 9px;
     color: var(--color-ink);
-    font-size: 0.85rem;
+    font-size: 12px;
     font-weight: 400;
+    transition: border-color 0.15s;
+  }
+  .ap-input:focus {
+    border-color: var(--p-accent, #2563eb);
   }
   .ap-input:focus-visible {
     outline: 2px solid var(--color-focus);
@@ -330,29 +449,33 @@
     text-decoration: underline;
   }
 
+  /* The prototype's segmented control (.seg). */
   .ap-segment {
     display: inline-flex;
-    gap: 0.125rem;
-    border-radius: 0.6rem;
-    background: var(--color-canvas-subtle);
-    padding: 0.15rem;
+    gap: 2px;
+    border: 1px solid var(--color-line);
+    border-radius: 8px;
+    background: var(--color-surface-raised);
+    padding: 2px;
   }
   .ap-segment > button {
     display: inline-grid;
     min-width: 1.5rem;
     min-height: 1.5rem;
     place-items: center;
-    border-radius: 0.5rem;
-    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    padding: 4px 11px;
     color: var(--color-ink-secondary);
-    font-size: 0.78rem;
+    font-size: 11px;
     font-weight: 600;
+    transition:
+      background 0.15s,
+      color 0.15s;
   }
   .ap-segment > button[aria-checked="true"],
   .ap-segment > button[aria-selected="true"] {
-    background: var(--color-surface);
-    box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
-    color: var(--color-ink);
+    background: var(--p-accent, #2563eb);
+    color: #fff;
   }
 
   .ap-pane {
@@ -636,14 +759,14 @@
 
   .ap-tool {
     display: inline-grid;
-    min-width: 1.875rem;
-    height: 1.875rem;
+    min-width: 26px;
+    height: 26px;
     place-items: center;
-    border-radius: 0.45rem;
-    padding: 0 0.4rem;
+    border-radius: 6px;
+    padding: 0 6px;
     color: var(--color-ink-secondary);
-    font-size: 0.78rem;
-    font-weight: 650;
+    font-size: 12.5px;
+    font-weight: 600;
   }
   .ap-tool:hover:not(:disabled) {
     background: var(--color-hover);
@@ -651,7 +774,7 @@
   }
   .ap-tool[aria-pressed="true"] {
     background: var(--color-accent-soft);
-    color: var(--color-ink);
+    color: var(--color-accent-ink);
   }
   .ap-tool:disabled {
     opacity: 0.4;
@@ -668,8 +791,7 @@
   }
 
   .ap-name {
-    width: 14rem;
-    font-weight: 600;
+    width: 170px;
   }
 
   .ap-search {
@@ -677,8 +799,8 @@
     align-items: center;
     gap: 0.375rem;
     border: 1px solid var(--color-line-strong);
-    border-radius: 0.5rem;
-    background: var(--color-surface);
+    border-radius: 8px;
+    background: var(--color-surface-raised);
     padding: 0 0.5rem;
   }
   .ap-search:focus-within {
@@ -770,17 +892,19 @@
     text-align: right;
     user-select: none;
   }
+  /* Notepad's page (.np-ta): monospaced, as the prototype's. */
   .ap-textarea {
     min-width: 0;
     flex: 1;
     resize: none;
     border: 0;
     background: transparent;
-    padding: 0.75rem 0.875rem;
+    padding: 14px 16px;
     color: var(--color-ink);
+    font-family: var(--font-mono, ui-monospace, monospace);
     line-height: 1.55;
     outline: none;
-    tab-size: 2;
+    tab-size: 4;
   }
   [data-editor="code"] .ap-textarea {
     font-family: var(--font-mono, ui-monospace, monospace);
@@ -800,44 +924,67 @@
 
   /* ── Writer ─────────────────────────────────────────────────────────── */
 
+  /* Writer's desk and page (.wr-canvas, .wr-page). */
   .ap-desk {
     min-height: 0;
     flex: 1;
     overflow-y: auto;
     background: var(--color-canvas-subtle);
-    padding: 1.5rem;
+    padding: 24px 0;
   }
   .ap-page {
-    min-height: 100%;
-    max-width: 46rem;
+    width: min(640px, calc(100% - 40px));
+    min-height: 820px;
     margin: 0 auto;
-    border-radius: 0.375rem;
+    border-radius: 2px;
     background: #fff;
-    box-shadow: 0 2px 12px rgb(15 23 42 / 0.12);
-    padding: 3rem 3.5rem;
-    color: #111827;
+    box-shadow: 0 2px 12px rgb(0 0 0 / 0.25);
+    padding: 56px 64px;
+    color: #1b1b1f;
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 1rem;
+    font-size: 14.5px;
     line-height: 1.65;
     outline: none;
+  }
+  .ap-page:empty::before {
+    color: #5b6170;
+    content: attr(data-placeholder);
+    pointer-events: none;
+  }
+  .ap-page h1 {
+    margin: 0 0 14px;
+    font-family: var(--font-sans);
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .ap-page h2 {
+    margin: 18px 0 8px;
+    font-family: var(--font-sans);
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .ap-page p {
+    margin: 0 0 10px;
+  }
+  .ap-page :is(ul, ol) {
+    margin: 0 0 10px;
+    padding-left: 24px;
+  }
+  .ap-tb-sep {
+    width: 1px;
+    height: 18px;
+    margin: 0 4px;
+    background: var(--color-line);
+  }
+  .ap-select {
+    width: auto;
+    padding-right: 4px;
   }
   .ap-page:focus-visible {
     box-shadow:
       0 2px 12px rgb(15 23 42 / 0.12),
       0 0 0 2px var(--color-focus);
-  }
-  .ap-page h1 {
-    margin: 0 0 0.75rem;
-    font-family: system-ui, sans-serif;
-    font-size: 1.75rem;
-    font-weight: 700;
-    line-height: 1.25;
-  }
-  .ap-page h2 {
-    margin: 1.25rem 0 0.5rem;
-    font-family: system-ui, sans-serif;
-    font-size: 1.25rem;
-    font-weight: 650;
   }
   .ap-page h3 {
     margin: 1rem 0 0.4rem;
@@ -845,17 +992,10 @@
     font-size: 1.05rem;
     font-weight: 650;
   }
-  .ap-page p {
-    margin: 0 0 0.75rem;
-  }
   .ap-page ul {
-    margin: 0 0 0.75rem;
-    padding-left: 1.5rem;
     list-style: disc;
   }
   .ap-page ol {
-    margin: 0 0 0.75rem;
-    padding-left: 1.5rem;
     list-style: decimal;
   }
   .ap-page blockquote {
@@ -871,44 +1011,45 @@
 
   /* ── Calc ───────────────────────────────────────────────────────────── */
 
-  .ap-formula {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    border-bottom: 1px solid var(--color-line);
-    background: var(--color-surface);
-    padding: 0.375rem 0.625rem;
-  }
+  /* Calc, as the prototype's (.ca-ref, .ca-fx, .ca-grid). */
   .ap-formula-ref {
-    min-width: 2.75rem;
-    border-radius: 0.375rem;
-    background: var(--color-canvas-subtle);
-    padding: 0.25rem 0.5rem;
-    font-size: 0.78rem;
+    min-width: 46px;
+    border: 1px solid var(--color-line);
+    border-radius: 6px;
+    background: var(--color-surface-raised);
+    padding: 5px 6px;
+    color: var(--color-ink-secondary);
+    font-size: 11.5px;
     font-weight: 700;
     text-align: center;
+  }
+  .ap-formula-input {
+    font-family: var(--font-mono, ui-monospace, monospace);
   }
   .ap-sheet-wrap {
     min-height: 0;
     flex: 1;
     overflow: auto;
-    background: var(--color-surface);
+    background: var(--color-canvas);
   }
   .ap-sheet {
     border-collapse: collapse;
-    font-size: 0.82rem;
+    font-size: 12px;
   }
   .ap-sheet th {
     position: sticky;
     top: 0;
     z-index: 1;
-    min-width: 2.5rem;
+    min-width: 40px;
     border: 1px solid var(--color-line);
-    background: var(--color-canvas);
-    padding: 0.2rem 0.4rem;
-    color: var(--color-ink-secondary);
-    font-size: 0.72rem;
+    background: var(--color-canvas-subtle);
+    padding: 4px;
+    color: var(--color-ink-tertiary);
+    font-size: 10.5px;
     font-weight: 600;
+  }
+  .ap-sheet thead th + th {
+    min-width: 104px;
   }
   .ap-sheet tbody th {
     position: sticky;
@@ -919,15 +1060,16 @@
     padding: 0;
   }
   .ap-sheet td[data-current] {
-    outline: 2px solid var(--color-accent);
-    outline-offset: -1px;
+    box-shadow: inset 0 0 0 2px var(--p-accent, #2563eb);
+    background: var(--color-accent-soft);
   }
   .ap-cell {
-    width: 7.5rem;
-    height: 1.7rem;
+    width: 104px;
+    height: 27px;
     background: transparent;
-    padding: 0 0.4rem;
+    padding: 0 7px;
     color: var(--color-ink);
+    font-size: 12px;
     outline: none;
   }
   .ap-cell[data-number] {
@@ -935,7 +1077,7 @@
     text-align: right;
   }
   .ap-cell[data-error] {
-    color: #b42318;
+    color: #f87171;
     font-weight: 600;
   }
   .ap-cell:focus {
@@ -1012,8 +1154,8 @@
   }
   .ap-file-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 6px;
   }
   .ap-file-list {
     display: flex;
@@ -1024,10 +1166,12 @@
     width: 100%;
     flex-direction: column;
     align-items: center;
-    gap: 0.35rem;
-    border-radius: 0.625rem;
-    padding: 0.5rem 0.25rem;
-    font-size: 0.75rem;
+    gap: 7px;
+    border-radius: 9px;
+    padding: 12px 6px 10px;
+    color: var(--color-ink);
+    font-size: 11px;
+    line-height: 1.3;
     text-align: center;
   }
   .ap-file-list .ap-file {
@@ -1044,8 +1188,8 @@
   }
   .ap-file-icon {
     display: grid;
-    width: 3.25rem;
-    height: 3.25rem;
+    width: 52px;
+    height: 52px;
     place-items: center;
     overflow: hidden;
     border-radius: 0.5rem;
@@ -1055,16 +1199,10 @@
     width: 1.5rem;
     height: 1.5rem;
   }
-  .ap-file-icon svg {
+  .ap-file-icon > svg {
     width: 70%;
     height: 70%;
     stroke-width: 1.4;
-  }
-  .ap-file-icon[data-folder] {
-    color: #3b82f6;
-  }
-  .ap-file-icon[data-folder] svg {
-    fill: color-mix(in oklab, #3b82f6 25%, transparent);
   }
   .ap-file-icon[data-quarantined] {
     color: #b42318;
@@ -1179,85 +1317,121 @@
     background: #525659;
   }
 
-  .ap-now {
+  /* Music, as the prototype's (.mu). */
+  .ap-tracks {
     display: flex;
-    align-items: center;
-    gap: 1rem;
-    border-bottom: 1px solid var(--color-line);
-    background: linear-gradient(
-      135deg,
-      color-mix(in oklab, #db2777 14%, var(--color-surface)),
-      var(--color-surface)
-    );
-    padding: 1rem 1.25rem;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
-  .ap-now-art {
-    display: grid;
-    width: 4.5rem;
-    height: 4.5rem;
-    flex-shrink: 0;
-    place-items: center;
-    border-radius: 0.875rem;
-    background: linear-gradient(160deg, #ff7eb6, #db2777);
-    color: #fff;
+  .ap-side-note {
+    padding: 4px 8px;
+    color: var(--color-ink-tertiary);
+    font-size: 11px;
   }
-  .ap-now-art svg {
-    width: 2rem;
-    height: 2rem;
+  .ap-side-add {
+    border: 1px solid var(--color-line-strong);
+    border-radius: 8px;
+    background: var(--color-surface-raised);
+    padding: 5px 10px;
+    color: var(--color-ink-secondary);
+    font-size: 11px;
+    font-weight: 600;
   }
-  .ap-now-main {
+  .ap-side-add:hover {
+    color: var(--color-ink);
+  }
+  .ap-player {
     display: flex;
     min-width: 0;
     flex: 1;
     flex-direction: column;
-    gap: 0.25rem;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    overflow: auto;
+    padding: 20px;
   }
-  .ap-now-main b {
-    overflow: hidden;
-    font-size: 1rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .ap-player > .ap-icon {
+    border-radius: 22%;
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
   }
-  .ap-now-main > span {
-    color: var(--color-ink-secondary);
-    font-size: 0.78rem;
-  }
-  .ap-audio {
-    width: 100%;
-    margin-top: 0.375rem;
-  }
-  .ap-tracks {
+  .ap-player-t {
     display: flex;
     flex-direction: column;
-  }
-  .ap-track {
-    display: flex;
-    width: 100%;
     align-items: center;
-    gap: 0.75rem;
-    border-radius: 0.5rem;
-    padding: 0.45rem 0.6rem;
-    font-size: 0.85rem;
-    text-align: left;
+    text-align: center;
   }
-  .ap-track:hover {
-    background: var(--color-hover);
+  .ap-player-t b {
+    font-size: 16px;
+    font-weight: 700;
   }
-  .ap-track[aria-current="true"] {
-    background: var(--color-accent-soft);
-    font-weight: 600;
+  .ap-player-t span {
+    color: var(--color-ink-tertiary);
+    font-size: 12px;
   }
-  .ap-track-number {
-    display: grid;
-    width: 1.5rem;
-    place-items: center;
-    color: var(--color-ink-secondary);
-    font-size: 0.75rem;
+  .ap-player-seek {
+    display: flex;
+    width: min(360px, 100%);
+    align-items: center;
+    gap: 10px;
+    color: var(--color-ink-tertiary);
+    font-size: 10.5px;
     font-variant-numeric: tabular-nums;
   }
-  .ap-track-number svg {
-    width: 0.85rem;
-    height: 0.85rem;
+  .ap-player-seek input,
+  .ap-player-vol input {
+    flex: 1;
+    accent-color: var(--p-accent, #2563eb);
+  }
+  .ap-player-keys {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+  }
+  .ap-player-k {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border-radius: 50%;
+    color: var(--color-ink);
+  }
+  .ap-player-k svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
+  .ap-player-k[data-main] {
+    width: 50px;
+    height: 50px;
+    background: #f0f4ff;
+    color: #0f172a;
+  }
+  .ap-player-k[data-main] svg {
+    width: 20px;
+    height: 20px;
+  }
+  .ap-player-k:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  .ap-player-vol {
+    display: flex;
+    width: min(200px, 100%);
+    align-items: center;
+    gap: 8px;
+    color: var(--color-ink-tertiary);
+  }
+  .ap-player-vol svg {
+    width: 14px;
+    height: 14px;
+  }
+  .ap-player-note {
+    color: var(--color-ink-tertiary);
+    font-size: 10.5px;
   }
 
   /* ── App Store, Passwords, Usage, Screenshot ─────────────────────────── */
@@ -1567,37 +1741,42 @@
 
   /* ── Calculator ─────────────────────────────────────────────────────── */
 
+  /* The Calculator, as the prototype's (.cl). */
   .ap-calc {
     display: flex;
     height: 100%;
+    min-height: 0;
     flex-direction: column;
+    gap: 8px;
     background: #1c1c1e;
+    padding: 12px;
     color: #fff;
     outline: none;
   }
 
   .ap-calc-display {
     display: flex;
-    min-height: 7rem;
     flex-direction: column;
-    justify-content: flex-end;
     align-items: flex-end;
-    padding: 0.75rem 1.25rem 0.5rem;
     overflow: hidden;
   }
 
   .ap-calc-memory {
-    min-height: 1rem;
-    color: rgb(255 255 255 / 0.6);
-    font-size: 0.75rem;
+    min-height: 18px;
+    padding: 0 8px;
+    color: rgb(235 235 245 / 0.6);
+    font-size: 13px;
+    white-space: nowrap;
   }
 
   .ap-calc-value {
     max-width: 100%;
     overflow: hidden;
-    font-size: 3.25rem;
+    padding: 0 8px 4px;
+    font-size: 48px;
     font-variant-numeric: tabular-nums;
     font-weight: 300;
+    letter-spacing: -0.02em;
     line-height: 1.1;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1605,55 +1784,175 @@
 
   .ap-calc-keys {
     display: grid;
+    min-height: 0;
     flex: 1;
+    grid-auto-rows: 1fr;
     grid-template-columns: repeat(4, 1fr);
-    gap: 1px;
-    background: #1c1c1e;
-    padding: 0 0.5rem 0.5rem;
-    gap: 0.5rem;
+    gap: 8px;
   }
 
   .ap-calc-key {
-    border-radius: 999px;
+    border-radius: 16px;
     background: #333336;
     color: #fff;
-    font-size: 1.35rem;
-    font-weight: 450;
-    transition: filter 100ms;
+    font-size: 20px;
+    transition:
+      filter 0.1s,
+      transform 0.08s,
+      background 0.15s,
+      color 0.15s;
   }
   .ap-calc-key:hover {
-    filter: brightness(1.18);
+    filter: brightness(1.15);
   }
   .ap-calc-key:active {
     filter: brightness(1.35);
+    transform: scale(0.95);
   }
   .ap-calc-key:focus-visible {
-    outline: 2px solid var(--color-focus);
+    outline: 2px solid #fff;
     outline-offset: 2px;
   }
   .ap-calc-key[data-kind="fn"] {
-    background: #a5a5a5;
+    background: #a5a5aa;
     color: #111;
   }
   .ap-calc-key[data-kind="op"] {
     background: #ff9f0a;
+    font-size: 23px;
   }
   .ap-calc-key[data-kind="op"][aria-pressed="true"] {
     background: #fff;
     color: #ff9f0a;
   }
-  .ap-calc-key[data-kind="mem"] {
-    background: #2a2a2d;
-    color: rgb(255 255 255 / 0.85);
-    font-size: 0.85rem;
-  }
   .ap-calc-key[data-wide] {
     grid-column: span 2;
+    padding-left: 26px;
     text-align: left;
-    padding-left: 1.4rem;
   }
 
   /* ── Settings ───────────────────────────────────────────────────────── */
+
+  /* The prototype's Settings (.st-main, .st-card, .st-row). */
+  .ap-st-main {
+    min-width: 0;
+    flex: 1;
+    overflow: auto;
+    padding: 20px 24px;
+  }
+  .ap-st-h {
+    margin-bottom: 14px;
+    color: var(--color-ink);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .ap-st-card {
+    margin-bottom: 14px;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    background: var(--color-surface-raised);
+    padding: 6px 16px;
+  }
+  .ap-st-card[data-danger] {
+    border-color: rgb(248 113 113 / 0.35);
+  }
+  .ap-st-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 1px solid var(--color-line);
+    padding: 12px 0;
+  }
+  .ap-st-row:last-child {
+    border-bottom: 0;
+  }
+  .ap-st-t {
+    color: var(--color-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .ap-st-cap {
+    margin: 10px 0;
+  }
+  .ap-st-sub {
+    color: var(--color-ink-tertiary);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .ap-st-card [role="radiogroup"][aria-label="Wallpapers"] {
+    padding: 4px 0 12px;
+  }
+  .ap-st-card .dt-wp-tile {
+    height: 62px;
+  }
+  .ap-st-pins {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+    padding: 10px 0 12px;
+  }
+  .ap-st-pin {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    border: 1px solid var(--color-line);
+    border-radius: 8px;
+    background: var(--color-canvas);
+    padding: 7px 9px;
+    color: var(--color-ink);
+    font-size: 12px;
+  }
+  .ap-st-pin span {
+    flex: 1;
+  }
+  .ap-st-pin input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--p-accent, #2563eb);
+  }
+  .ap-st-pill {
+    border-radius: 999px;
+    background: var(--color-accent-soft);
+    padding: 3px 10px;
+    color: var(--color-accent-ink);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .ap-st-storage {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+  }
+  .ap-st-big {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .ap-st-big b {
+    font-size: 22px;
+    font-weight: 700;
+  }
+  .ap-st-big span {
+    color: var(--color-ink-tertiary);
+    font-size: 11px;
+  }
+  .ap-st-about {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 26px;
+    text-align: center;
+  }
+  .ap-st-about b {
+    margin-top: 8px;
+    font-size: 20px;
+    font-weight: 700;
+  }
 
   .ap-setting {
     display: flex;
