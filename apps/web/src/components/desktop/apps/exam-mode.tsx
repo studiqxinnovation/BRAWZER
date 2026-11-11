@@ -11,7 +11,7 @@ import { CodeField, useIdentityCheck } from "@/components/app-shell/confirm-iden
 import { fetchBrowserOverview } from "@/lib/api/browser";
 import { subscribeToClock } from "@/lib/clock";
 import { currentExam, endExam, startExam, subscribeToExam } from "@/lib/exam";
-import { type AppId, appIds, apps, isAppId } from "./registry";
+import { type AppId, AppIcon, appIds, apps, isAppId, Tile } from "./registry";
 
 const LENGTHS = [30, 45, 60, 90, 120, 180];
 const STUDY_APPS: readonly AppId[] = ["calculator", "assignments", "citations", "focus-timer"];
@@ -129,29 +129,35 @@ export default function ExamModeApp() {
   return (
     <div className="ap-body">
       <div className="ap-main ap-exam-setup">
-        <p className="text-callout text-ink-secondary">
-          For the time you choose, only the apps and browsers you tick open on this desktop, and the
-          classic layout stays off. Ending early asks for your password. It’s kept with your
-          account, so reloading doesn’t end it.
-        </p>
-        <label className="ap-field ap-inline">
-          <span>How long</span>
-          <select
-            className="ap-input"
-            value={minutes}
-            onChange={(event) => {
-              setMinutes(Number(event.target.value));
-            }}
-          >
-            {LENGTHS.map((length) => (
-              <option key={length} value={length}>
-                {length < 60
-                  ? `${String(length)} minutes`
-                  : `${String(length / 60)} hour${length === 60 ? "" : "s"}`}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="ap-exam-head">
+          <Tile glyph="shield" colour="red" size={52} />
+          <b>Focus without distractions</b>
+          <span>
+            Pick how long, and which apps you can still use. Only those open on this desktop until
+            the time is up; ending early asks for your password. It’s kept with your account, so
+            reloading doesn’t end it.
+          </span>
+        </div>
+        <div className="ap-st-card ap-exam-length">
+          <label className="ap-field ap-inline">
+            <span>Length</span>
+            <select
+              className="ap-input"
+              value={minutes}
+              onChange={(event) => {
+                setMinutes(Number(event.target.value));
+              }}
+            >
+              {LENGTHS.map((length) => (
+                <option key={length} value={length}>
+                  {length < 60
+                    ? `${String(length)} minutes`
+                    : `${String(length / 60)} hour${length === 60 ? "" : "s"}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <fieldset className="ap-fieldset">
           <legend>Allowed apps</legend>
           {appIds
@@ -165,6 +171,7 @@ export default function ExamModeApp() {
                     toggle(`app:${app}`);
                   }}
                 />
+                <AppIcon app={app} size={18} />
                 {apps[app].name}
               </label>
             ))}
@@ -204,7 +211,6 @@ export default function ExamModeApp() {
               );
             }}
           >
-            <ShieldCheck aria-hidden="true" />
             Start Exam Mode
           </Button>
         </div>

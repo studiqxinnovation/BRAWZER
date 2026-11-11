@@ -140,7 +140,7 @@ export default function CitationsApp() {
           ))}
         </div>
       </div>
-      <div className="ap-split">
+      <div className="ap-split ap-cite">
         <form
           method="post"
           className="ap-pane ap-grid-form"

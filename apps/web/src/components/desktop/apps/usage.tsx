@@ -1,9 +1,54 @@
 "use client";
 
-import { type BillingOverview, type BrowserOverview, engineDetails } from "@brawzer/contracts";
-import { useEffect, useState } from "react";
+import {
+  type BillingOverview,
+  type BrowserEngine,
+  type BrowserOverview,
+  engineDetails,
+} from "@brawzer/contracts";
+import { Button } from "@brawzer/ui/components/button";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { AppIconArt } from "@/components/browser/engine-logo";
 import { fetchBillingOverview } from "@/lib/api/billing";
 import { fetchBrowserOverview } from "@/lib/api/browser";
+import {
+  type ScreenTime,
+  loadScreenTime,
+  readScreenTime,
+  resetScreenTime,
+  subscribeToScreenTime,
+  today,
+} from "@/lib/screen-time";
+import { BrawzerTile } from "../dock";
+import { AppIcon, apps, isAppId } from "./registry";
+
+const NO_SCREEN_TIME: ScreenTime = {};
+
+const duration = (seconds: number) => {
+  if (seconds < 60) return `${String(seconds)}s`;
+  const total = Math.round(seconds / 60);
+  const hours = Math.floor(total / 60);
+  return hours > 0 ? `${String(hours)}h ${String(total % 60)}m` : `${String(total)}m`;
+};
+
+/** What screen time calls an app, as a name and an icon. */
+function appShown(key: string) {
+  if (key === "brawzer") return { name: "Brawzer", icon: <BrawzerTile size={22} /> };
+  if (key.startsWith("browser:")) {
+    const engine = key.slice("browser:".length) as BrowserEngine;
+    const details = (engineDetails as Partial<Record<string, { short: string }>>)[engine];
+    return {
+      name: details?.short ?? "Browser",
+      icon: (
+        <span className="ap-ut-art" aria-hidden="true">
+          <AppIconArt engine={engine} />
+        </span>
+      ),
+    };
+  }
+  if (isAppId(key)) return { name: apps[key].name, icon: <AppIcon app={key} size={22} /> };
+  return { name: key, icon: null };
+}
 
 const minutes = (total: number) => {
   const hours = Math.floor(total / 60);
@@ -59,6 +104,28 @@ export default function UsageApp() {
       if (plan.ok) setBilling(plan.data);
     });
   }, []);
+  const screenTime = useSyncExternalStore<ScreenTime>(
+    subscribeToScreenTime,
+    readScreenTime,
+    () => NO_SCREEN_TIME,
+  );
+  useEffect(() => {
+    void loadScreenTime();
+  }, []);
+  const day = today();
+  const todayApps = Object.entries(screenTime[day] ?? {}).sort((a, b) => b[1] - a[1]);
+  const todayTotal = todayApps.reduce((sum, [, seconds]) => sum + seconds, 0);
+  const longest = Math.max(1, ...todayApps.map(([, seconds]) => seconds));
+  const week = Array.from({ length: 7 }, (_, back) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - back));
+    const total = Object.values(screenTime[today(date)] ?? {}).reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+    return { label: date.toLocaleDateString([], { weekday: "short" }), total };
+  });
+  const busiestDay = Math.max(1, ...week.map((entry) => entry.total));
   const byBrowser = browser?.activity.minutesThisMonth ?? [];
   const busiest = Math.max(1, ...byBrowser.map((entry) => entry.minutes));
   const limits = billing?.plan.limits;
@@ -67,6 +134,56 @@ export default function UsageApp() {
   return (
     <div className="ap-body">
       <div className="ap-main ap-usage-app">
+        <div className="ap-ut-head">
+          <div>
+            <h2 className="ap-ut-h">Today</h2>
+            <span className="ap-hint">{duration(todayTotal)} of screen time on this desktop</span>
+          </div>
+          <Button size="sm" onClick={() => void resetScreenTime()}>
+            Reset
+          </Button>
+        </div>
+        <section className="ap-fc-card" aria-label="Screen time this week">
+          <ol className="ap-fc-chart" aria-label="Screen time each day">
+            {week.map((entry, index) => (
+              <li key={index} aria-label={`${entry.label}: ${duration(entry.total)}`}>
+                <i
+                  style={{ height: `${String(Math.max(3, (entry.total / busiestDay) * 100))}%` }}
+                />
+                <span aria-hidden="true">{entry.label}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
+        <section className="ap-fc-card" aria-label="Screen time by app today">
+          {todayApps.length === 0 ? (
+            <p className="ap-hint">
+              Apps you use today show here, with how long each was in front.
+            </p>
+          ) : (
+            <ul className="ap-ut-apps">
+              {todayApps.map(([key, seconds]) => {
+                const shown = appShown(key);
+                return (
+                  <li key={key}>
+                    {shown.icon}
+                    <span className="ap-ut-main">
+                      <span className="ap-ut-row">
+                        <span>{shown.name}</span>
+                        <span>{duration(seconds)}</span>
+                      </span>
+                      <span className="ap-bar" aria-hidden="true">
+                        <i
+                          style={{ width: `${String(Math.max(3, (seconds / longest) * 100))}%` }}
+                        />
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
         {billing && (
           <p className="ap-note">
             {billing.plan.name} plan{billing.team ? `, from the team “${billing.team.name}”` : ""}.

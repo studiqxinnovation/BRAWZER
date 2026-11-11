@@ -17,11 +17,15 @@ export default function WebStoreApp() {
   }, []);
   return (
     <div className="ap-body">
-      <div className="ap-main">
-        <p className="ap-note">
-          Open-source extensions Brawzer has reviewed, each pinned to a release and installed into a
-          profile’s browser when its session starts. They run in the cloud, never on this computer.
-        </p>
+      <div className="ap-main ap-ws-main">
+        <div className="ap-ws-hero">
+          <b>Extensions for your browsers</b>
+          <span>
+            Open-source extensions Brawzer has reviewed, each pinned to a release and installed into
+            a profile’s browser when its session starts. They run in the cloud, so nothing is added
+            to this computer.
+          </span>
+        </div>
         {failed ? (
           <p className="ap-empty">
             The extensions couldn’t be read. Close this window and open it again.

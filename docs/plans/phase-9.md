@@ -25,6 +25,7 @@ never reach the browser.
 | 9.6 | App Store and web apps, Web Store, Passwords, Usage, Screenshot, Send to Phone, Terminal      | **Done** 2026-11-11 |
 | 9.7 | Assistant and Study Notes                                                                     | **Done** 2026-11-11 |
 | 9.8 | The prototype's look, exactly: lock screen, Dock, menus, style picker, desktop icons, Wipe    | **Done** 2026-11-11 |
+| 9.9 | The apps inside, as on the prototype, and screen time per app                                 | **Done** 2026-11-11 |
 
 ## 9.1 The desktop
 
@@ -253,6 +254,41 @@ account, the Dock tile, the desktop's menu making a file on the desktop, a
 title bar's Snap, ⌘M, Leave no trace, Wipe), `e2e/lock.spec.ts`, with axe
 audits in both themes. The browser tests run with reduced motion, which the
 desktop's animations follow.
+
+## 9.9 The apps inside, as on the prototype
+
+Inside every app window the prototype's window palette and compact scale
+apply: the UI kit reads its colours, type sizes and spacing from CSS
+variables, and the app windows set them to the prototype's values
+(`apps.css`). Each app then takes the prototype's layout, with Brawzer's
+real behaviour behind it:
+
+- **Files**: the Drive sidebar with coloured folder tiles, Icons and List,
+  Upload, file tiles. **Notepad**, **Writer** (the "Body text" style menu,
+  Copy text) and **Calc** (cell and formula in one row) as single toolbar
+  rows. **Calculator** without a memory row, as the prototype's.
+- **Music**: the library down the side, artwork, seek bar, back, play and
+  forward, volume, and "Add songs…" into Drive's Music folder.
+- **Settings**: Appearance, Desktop and dock (choose the Dock's apps),
+  Browsers, Privacy and security, Storage and About, as cards.
+- **App Store**: categories, a banner, search, packs that install several
+  web apps at once, and app cards. **Web Store** gets the banner.
+- **Send to Phone**: "Text or link" draws a QR code in the page (the text
+  goes nowhere else), beside "File from Drive".
+- **Photos** (Import photos), **Screenshot** (its three tiles),
+  **Assistant** (suggestions; it says when it isn't turned on),
+  **Templates**, **PDF Viewer**, **Focus Timer** (Focus, Short break, Long
+  break, the week's chart), **Assignments** (To do, Done, All), **Money**
+  (the last six months), **Invoices** (waiting and paid), **Exam Mode** and
+  **Citations** (one column) follow the prototype's screens.
+- **Usage** shows today's screen time and each app's share, as the
+  prototype does. The desktop counts it: every 15 seconds, the app in front
+  while the tab is visible and not locked. It's kept with the account (the
+  `usage` app record, the last 14 days), and Reset forgets it.
+
+Not copied: the prototype's PDF form filling and signing, and its Code
+playground that runs pages, which Brawzer's strict script policy rules out
+in the page; Code stays an editor that saves to Drive.
 
 ## Not built, and why
 

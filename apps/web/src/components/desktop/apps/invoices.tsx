@@ -491,12 +491,43 @@ export default function InvoicesApp() {
             </section>
           ) : (
             loaded !== "loading" && (
-              <div className="ap-empty">
-                <p>
-                  {value.invoices.length === 0
-                    ? "Make your first invoice or quote. Add your business’s details first, so they appear at the top."
-                    : "Choose an invoice or quote on the left."}
-                </p>
+              <div className="ap-iv-overview">
+                <div className="ap-iv-totals">
+                  <div className="ap-iv-total">
+                    <span>Waiting to be paid</span>
+                    <b>
+                      {money(
+                        value.invoices
+                          .filter(
+                            (invoice) => invoice.kind === "invoice" && invoice.status !== "paid",
+                          )
+                          .reduce((sum, invoice) => sum + totals(invoice).total, 0),
+                      )}
+                    </b>
+                  </div>
+                  <div className="ap-iv-total">
+                    <span>Paid</span>
+                    <b>
+                      {money(
+                        value.invoices
+                          .filter(
+                            (invoice) => invoice.kind === "invoice" && invoice.status === "paid",
+                          )
+                          .reduce((sum, invoice) => sum + totals(invoice).total, 0),
+                      )}
+                    </b>
+                  </div>
+                </div>
+                <div className="ap-iv-list">
+                  {value.invoices.length === 0 ? (
+                    <p>
+                      No invoices for {business.name || "your business"} yet. Add your business’s
+                      details first, so they appear at the top, then make an invoice or a quote.
+                    </p>
+                  ) : (
+                    <p>Choose an invoice or quote on the left to edit it or save it as a PDF.</p>
+                  )}
+                </div>
               </div>
             )
           )}

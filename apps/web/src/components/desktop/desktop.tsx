@@ -44,6 +44,7 @@ import {
 } from "@/lib/desktop-prefs";
 import { currentExam, endExam, examAllows, loadExam, subscribeToExam } from "@/lib/exam";
 import { isLocked, lockNow, subscribeToLock } from "@/lib/lock";
+import { add as addScreenTime, flushScreenTime, loadScreenTime } from "@/lib/screen-time";
 import { playSound } from "@/lib/sounds";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
 import { clearClipboard, endEverySession, wipeThisComputer } from "@/lib/wipe";
@@ -109,6 +110,14 @@ const useDark = () =>
 /** What Exam Mode calls a window's content: "app:notepad", "browser:chrome". */
 const examTarget = (content: WindowContent) =>
   content.kind === "browser" ? `browser:${content.session.engine}` : `app:${content.app}`;
+/** What screen time counts a window as: "files", "browser:chrome". */
+const focusedWindowKey = (entry: DesktopWindow | undefined) =>
+  entry
+    ? entry.content.kind === "browser"
+      ? `browser:${entry.content.session.engine}`
+      : entry.content.app
+    : null;
+
 /** The Dock or taskbar icon a window flies to when it's minimised. */
 const dockKey = (content: WindowContent) =>
   content.kind === "browser" ? `browser:${content.session.engine}` : `app:${content.app}`;
@@ -641,6 +650,38 @@ export function DesktopShell({
       window.removeEventListener("message", onMessage);
     };
   }, []);
+
+  // Screen time: every 15 seconds the app in front is counted (Usage shows it), while this
+  // tab is seen and not locked; it's written to the account about once a minute.
+  const frontApp =
+    focused === "dashboard"
+      ? "brawzer"
+      : focusedWindowKey(windows.find((entry) => entry.id === focused));
+  const frontRef = useRef(frontApp);
+  useEffect(() => {
+    frontRef.current = frontApp;
+  });
+  useEffect(() => {
+    if (!active) return;
+    void loadScreenTime();
+    let ticks = 0;
+    const timer = setInterval(() => {
+      if (isLocked() || document.visibilityState !== "visible") return;
+      const app = frontRef.current;
+      if (app) addScreenTime(app, 15);
+      ticks += 1;
+      if (ticks % 4 === 0) void flushScreenTime();
+    }, 15_000);
+    const flush = () => {
+      if (document.visibilityState === "hidden") void flushScreenTime();
+    };
+    document.addEventListener("visibilitychange", flush);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", flush);
+      void flushScreenTime();
+    };
+  }, [active]);
 
   // The menu bar names the app in front, as a Mac's does.
   const focusedWindow = windows.find((entry) => entry.id === focused);

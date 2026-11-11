@@ -5,18 +5,16 @@ import { useAppWindow } from "./app-window";
 import { Tile } from "./registry";
 import { templates } from "./templates";
 
-/** Each template's tile, as the prototype colours them. */
-const TILES: readonly (readonly [GlyphName, TileColour])[] = [
-  ["doc", "blue"],
-  ["grid", "purple"],
-  ["table", "green"],
-  ["table", "pink"],
-  ["note", "yellow"],
-  ["clock", "teal"],
-  ["pen", "orange"],
-  ["table", "blue"],
-  ["doc", "indigo"],
-  ["table", "red"],
+/** Each template's tile: a document or a sheet, in the prototype's colours. */
+const COLOURS: readonly TileColour[] = [
+  "blue",
+  "purple",
+  "pink",
+  "orange",
+  "teal",
+  "indigo",
+  "green",
+  "red",
 ];
 
 /**
@@ -34,7 +32,8 @@ export default function TemplatesApp() {
         </p>
         <ul className="ap-tp-grid" aria-label="Templates">
           {templates.map((entry, index) => {
-            const [glyph, colour] = TILES[index % TILES.length] ?? ["doc", "blue"];
+            const glyph: GlyphName = entry.app === "writer" ? "doc" : "table";
+            const colour = COLOURS[index % COLOURS.length] ?? "blue";
             return (
               <li key={entry.id}>
                 <button

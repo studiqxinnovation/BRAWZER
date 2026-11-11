@@ -14,6 +14,7 @@ export const appRecordApps = [
   "money",
   "invoices",
   "study-notes",
+  "usage",
 ] as const;
 export const appRecordAppSchema = z.enum(appRecordApps, {
   error: "That isn’t an app with records.",

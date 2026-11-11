@@ -72,6 +72,21 @@ export default function MoneyApp() {
   ).sort((a, b) => b[1] - a[1]);
   const categories = [...new Set(value.entries.map((entry) => entry.category).filter(Boolean))];
 
+  // The prototype's "Last 6 months": money in and out, month by month, up to the one shown.
+  const months = Array.from({ length: 6 }, (_, back) => {
+    const [year = 2000, number = 1] = month.split("-").map(Number);
+    const date = new Date(year, number - 1 - (5 - back), 1);
+    const key = `${String(date.getFullYear())}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const these = value.entries.filter((entry) => entry.date.startsWith(key));
+    return {
+      key,
+      label: date.toLocaleDateString([], { month: "short" }),
+      in: sum(these.filter((entry) => entry.kind === "income").map((entry) => entry.amount)),
+      out: sum(these.filter((entry) => entry.kind === "expense").map((entry) => entry.amount)),
+    };
+  });
+  const tallest = Math.max(1, ...months.flatMap((entry) => [entry.in, entry.out]));
+
   function add(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -179,6 +194,35 @@ export default function MoneyApp() {
             <span>Left over</span>
             <b>{formatMoney(sum([income, -expenses]), currency)}</b>
           </div>
+          <section className="ap-fc-card" aria-labelledby="money-months">
+            <div className="ap-fc-head">
+              <h2 id="money-months">Last 6 months</h2>
+              <span>
+                <i className="ap-dot" data-tone="good" /> In{" "}
+                <i className="ap-dot" data-tone="bad" /> Out
+              </span>
+            </div>
+            <ol className="ap-mo-chart" aria-label="Money in and out, month by month">
+              {months.map((entry) => (
+                <li
+                  key={entry.key}
+                  aria-label={`${entry.label}: in ${formatMoney(entry.in, currency)}, out ${formatMoney(entry.out, currency)}`}
+                >
+                  <span className="ap-mo-bars" aria-hidden="true">
+                    <i
+                      data-tone="good"
+                      style={{ height: `${String(Math.max(2, (entry.in / tallest) * 100))}%` }}
+                    />
+                    <i
+                      data-tone="bad"
+                      style={{ height: `${String(Math.max(2, (entry.out / tallest) * 100))}%` }}
+                    />
+                  </span>
+                  <span aria-hidden="true">{entry.label}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
         </div>
 
         <form
