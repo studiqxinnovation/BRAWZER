@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { z } from "zod";
 import { Unavailable } from "@/components/app-shell/page";
 import { BrowserWorkspace } from "@/components/browser/workspace";
+import { isWebUrl } from "@/lib/web-url";
 import { serverGet, signInAgain } from "@/lib/server-api";
 
 export const metadata: Metadata = {
@@ -21,8 +22,12 @@ async function Workspace({ searchParams }: Pick<PageProps<"/app/browser/window">
         : null,
     launcher: params.new === "1",
   };
-  // Framed by the desktop as one of its windows.
+  // Framed by the desktop as one of its windows, perhaps to open a site or the browser's own page.
   const embedded = params.embedded === "1";
+  const openUrl =
+    typeof params.open === "string" && isWebUrl(params.open) ? params.open : undefined;
+  const openPage =
+    params.page === "passwords" || params.page === "account" ? params.page : undefined;
   const [overview, profiles, proxies] = await Promise.all([
     serverGet("/browser", browserOverviewSchema),
     serverGet("/profiles", profileListSchema),
@@ -52,6 +57,7 @@ async function Workspace({ searchParams }: Pick<PageProps<"/app/browser/window">
       select={select}
       mode="window"
       embedded={embedded}
+      openOnStart={openUrl || openPage ? { url: openUrl, page: openPage } : undefined}
       initial={overview.data}
       profiles={profiles.data.profiles}
       proxies={proxies.data.proxies.map(({ id, name, protocol }) => ({ id, name, protocol }))}

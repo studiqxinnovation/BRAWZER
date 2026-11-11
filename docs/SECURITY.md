@@ -170,6 +170,15 @@ A database lock ensures only one API instance runs it at a time.
 - **Limits follow the plan** from one reader; downgrades delete nothing. The monthly browsing cap is checked when a session starts.
 - **Administrators are configuration.** `ADMIN_EMAILS` grants the role at account creation and at every start; nothing in the API can grant it. Every admin route needs a recent sign-in; the Admin page is a 404 for everyone else. A plan set by hand carries a reason and is recorded in the target account's security history, where the person sees it. Administrators see addresses, plans and usage, nothing more.
 
+### The desktop's apps (Phase 9, [plan](plans/phase-9.md))
+
+- **App records** (assignments, money, invoices, the Dock) are sealed per record with their own data key, bound to the account, the app and the record, and are in the data export; nothing an app keeps stays on the computer.
+- **Writer** cleans any document it opens down to safe tags (no scripts, styles, embeds, event handlers or non-web links) and pastes text as plain text; Drive serves files so they can never run as a page.
+- **Money's CSV** prefixes cells that start with `=`, `+`, `-` or `@` so a spreadsheet won't run them as formulas; Calc's own CSV keeps the person's formulas, as that is the sheet they wrote.
+- **Send to Phone** shows a link to Drive's page for the file; it opens only after signing in on the phone.
+- **Exam Mode** is a focus tool kept with the account, not proctoring: ending it early takes the password.
+- **The Assistant and Study Notes** send what the person writes to Anthropic's API only when they ask, through Brawzer's API with the operator's key (never in the browser). Brawzer stores and logs none of it; the notes inside a Study Notes request are framed as material, not instructions; each account is limited to 60 requests an hour.
+
 ### Drive (Phase 4, [ADR 0011](adr/0011-drive-encryption-and-scanning.md))
 
 - **The object store sees only ciphertext.** Every file has its own random 256-bit key, wrapped by the key service and bound to the account and object. Content is encrypted in 1 MiB AES-256-GCM chunks whose index, file ID and last-chunk flag are authenticated, so chunks can't be dropped, reordered or swapped between files. Downloads verify each chunk before sending it.

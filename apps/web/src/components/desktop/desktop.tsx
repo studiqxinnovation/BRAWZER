@@ -48,9 +48,22 @@ import { subscribeToClock } from "@/lib/clock";
 import { currentExam, endExam, examAllows, loadExam, subscribeToExam } from "@/lib/exam";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
 import { type AppWindowApi, AppWindowContext } from "./apps/app-window";
-import { type AppId, AppIcon, apps, defaultPinnedApps } from "./apps/registry";
+import { type AppId, AppIcon, apps } from "./apps/registry";
+import { type WebApp, webAppById } from "./apps/web-apps";
+import { useLaunchBrowser } from "@/lib/browser/use-launch";
+import {
+  defaultDesktopPrefs,
+  loadDesktopPrefs,
+  readDesktopPrefs,
+  subscribeToDesktopPrefs,
+} from "@/lib/desktop-prefs";
 import { ControlCentre } from "./control-centre";
-import { type DesktopApi, DesktopContext, type DesktopMessage } from "./desktop-context";
+import {
+  type BrowserOpen,
+  type DesktopApi,
+  DesktopContext,
+  type DesktopMessage,
+} from "./desktop-context";
 import { Dock, Taskbar } from "./dock";
 import { AppLauncher } from "./launchpad";
 import { WindowSwitcher } from "./switcher";
@@ -92,6 +105,14 @@ const useDark = () =>
     () => resolveTheme() === "dark",
     () => false,
   );
+
+/** A browser window's page, and what it should open once its stream is up. */
+function frameSource(sessionId: string, open?: BrowserOpen): string {
+  const params = new URLSearchParams({ session: sessionId, embedded: "1" });
+  if (open?.url) params.set("open", open.url);
+  if (open?.page) params.set("page", open.page);
+  return `/app/browser/window?${params.toString()}`;
+}
 
 /** A title bar's height (2.375rem) and a little more: how far each new window steps. */
 const CASCADE_Y = 42;
@@ -140,6 +161,8 @@ export function DesktopShell({
   const shellRef = useRef<HTMLDivElement>(null);
   const zTop = useRef(10);
   const appCount = useRef(0);
+  /** Each browser window's frame, to pass it what to open. */
+  const frames = useRef(new Map<string, HTMLIFrameElement>());
   const [dragging, setDragging] = useState(false);
   const [windows, setWindows] = useState<DesktopWindow[]>([]);
   const [dashboard, setDashboard] = useState<DashboardState>({
@@ -157,7 +180,23 @@ export function DesktopShell({
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [controlOpen, setControlOpen] = useState(false);
   const [switcher, setSwitcher] = useState<number | null>(null);
-  const pinned = defaultPinnedApps;
+  // The dock as the account keeps it: pinned apps and installed web apps.
+  const prefs = useSyncExternalStore(
+    subscribeToDesktopPrefs,
+    readDesktopPrefs,
+    defaultDesktopPrefs,
+  );
+  const pinned = prefs.pinned;
+  const installedWebApps = prefs.webApps.flatMap((id) => {
+    const app = webAppById(id);
+    return app ? [app] : [];
+  });
+  const { launch } = useLaunchBrowser();
+  const openWebApp = (app: WebApp) => {
+    void launch(engines.includes("bee") ? "bee" : (engines[0] ?? "bee"), undefined, {
+      open: { url: app.url },
+    });
+  };
 
   const bounds = useCallback(
     () => shellRef.current?.getBoundingClientRect() ?? new DOMRect(0, 0, 1280, 800),
@@ -205,8 +244,25 @@ export function DesktopShell({
               : undefined;
         if (existing) {
           target = existing.id;
+          // An open window keeps its frame: what to open is passed to it instead.
+          if (content.kind === "browser" && content.open) {
+            const open = content.open;
+            queueMicrotask(() => {
+              frames.current
+                .get(existing.id)
+                ?.contentWindow?.postMessage(
+                  { type: "brawzer:open", open },
+                  window.location.origin,
+                );
+            });
+          }
+          // The frame's address stays as it was, so the window doesn't reload.
+          const kept =
+            content.kind === "browser" && existing.content.kind === "browser"
+              ? { ...content, open: existing.content.open }
+              : content;
           return current.map((entry) =>
-            entry === existing ? { ...entry, content, min: false, z } : entry,
+            entry === existing ? { ...entry, content: kept, min: false, z } : entry,
           );
         }
         const size = content.kind === "app" ? apps[content.app] : undefined;
@@ -232,11 +288,17 @@ export function DesktopShell({
   );
 
   const openSession = useCallback(
-    (session: BrowserSession) => {
-      openWindow({ kind: "browser", session });
+    (session: BrowserSession, open?: BrowserOpen) => {
+      openWindow({ kind: "browser", session, open });
     },
     [openWindow],
   );
+
+  const screenshot = useCallback((sessionId: string) => {
+    frames.current
+      .get(sessionId)
+      ?.contentWindow?.postMessage({ type: "brawzer:screenshot" }, window.location.origin);
+  }, []);
 
   const openApp = useCallback(
     (app: AppId, params: Record<string, string> = {}) => {
@@ -272,6 +334,7 @@ export function DesktopShell({
   const api = useMemo<DesktopApi>(
     () => ({
       openSession,
+      screenshot,
       openApp,
       showDashboard,
       showDesktop,
@@ -281,6 +344,7 @@ export function DesktopShell({
     }),
     [
       openSession,
+      screenshot,
       openApp,
       showDashboard,
       showDesktop,
@@ -341,9 +405,11 @@ export function DesktopShell({
     };
   }, [active, apply]);
 
-  // Exam Mode: read on arrival; when it starts, what it doesn't allow is tucked away.
+  // Exam Mode and the dock's apps: read on arrival. When Exam Mode starts, what it doesn't allow is tucked away.
   useEffect(() => {
-    if (active) void loadExam();
+    if (!active) return;
+    void loadExam();
+    void loadDesktopPrefs();
   }, [active]);
   useEffect(
     () =>
@@ -562,6 +628,8 @@ export function DesktopShell({
       openApp(app);
     },
     onLaunchpad: openLauncher,
+    webApps: installedWebApps,
+    onWebApp: openWebApp,
   };
 
   return (
@@ -695,8 +763,12 @@ export function DesktopShell({
                     <div className="dt-frame" />
                   ) : (
                     <iframe
+                      ref={(element) => {
+                        if (element) frames.current.set(entry.id, element);
+                        else frames.current.delete(entry.id);
+                      }}
                       title={`${label}, streamed from Brawzer’s cloud`}
-                      src={`/app/browser/window?session=${entry.id}&embedded=1`}
+                      src={frameSource(entry.id, entry.content.open)}
                       className="dt-frame"
                       allow="clipboard-read; clipboard-write; autoplay; fullscreen"
                     />
@@ -741,6 +813,8 @@ export function DesktopShell({
           open={launcherOpen}
           onOpenChange={setLauncherOpen}
           engines={engines}
+          webApps={installedWebApps}
+          onWebApp={openWebApp}
           onOpenApp={(app) => {
             openApp(app);
           }}

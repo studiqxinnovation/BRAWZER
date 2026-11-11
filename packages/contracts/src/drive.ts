@@ -78,6 +78,18 @@ export const driveFolderSchema = z.object({
   updatedAt: z.iso.datetime(),
 });
 
+/**
+ * Send to Phone (Phase 9): a link to the file in Brawzer's Drive, and its QR
+ * code. Opening it needs a sign-in on the phone; the link itself grants
+ * nothing.
+ */
+export const drivePhoneLinkSchema = z.object({
+  url: z.url(),
+  /** The QR code as SVG markup, drawn by the server. */
+  qrSvg: z.string(),
+});
+export type DrivePhoneLink = z.infer<typeof drivePhoneLinkSchema>;
+
 /** How long a file stays in Trash before it's removed for good. */
 export const DRIVE_TRASH_DAYS = 30;
 

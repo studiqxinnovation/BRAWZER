@@ -85,6 +85,8 @@ test.describe("passkeys", () => {
     await expireIdentityConfirmation(email);
 
     await page.reload();
+    // The page works once its scripts run; the session keeper marks that.
+    await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
     await page.getByRole("button", { name: /^Remove Passkey on / }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Remove passkey" }).click();
     const confirm = page.getByRole("dialog", { name: "Confirm it’s you" });

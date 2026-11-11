@@ -44,7 +44,12 @@ import { encodeCanvas, screenshotName } from "@/lib/browser/picture";
 import { AudioPlayer } from "@/lib/browser/audio";
 import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/stream";
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
-import { postToDesktop, useDesktop } from "@/components/desktop/desktop-context";
+import {
+  type BrowserOpen,
+  parseDesktopRequest,
+  postToDesktop,
+  useDesktop,
+} from "@/components/desktop/desktop-context";
 import { desktopActive, subscribeToDesktop } from "@/lib/desktop";
 import { isLocked, subscribeToLock } from "@/lib/lock";
 import { examAllows } from "@/lib/exam";
@@ -188,8 +193,11 @@ export function BrowserWorkspace({
   proxies,
   mode = "page",
   embedded = false,
+  openOnStart,
   select = { session: null, launcher: false },
 }: {
+  /** What to open once the stream is up: a site in a new tab, or the browser's own passwords or account page. */
+  openOnStart?: BrowserOpen;
   /** "window": the pop-out, with nothing around it but the browser's own chrome. */
   mode?: "page" | "window";
   /** A window on Brawzer's desktop (framed): the desktop switches and closes browsers. */
@@ -302,6 +310,7 @@ export function BrowserWorkspace({
   const attempts = useRef(0);
   /** Set while this page ends the session itself: the server's own notice then says less. */
   const endingRef = useRef(false);
+  const pendingOpen = useRef<BrowserOpen | undefined>(openOnStart);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   // Stream events are handled outside React's render cycle: read the latest tabs from a ref.
@@ -373,6 +382,10 @@ export function BrowserWorkspace({
         setPhase((current) =>
           current.kind === "connecting" ? { kind: "live", session: current.session } : current,
         );
+        if (pendingOpen.current) {
+          openNow(pendingOpen.current);
+          pendingOpen.current = undefined;
+        }
         return;
       case "tabs":
         setTabs(message.tabs);
@@ -879,6 +892,39 @@ export function BrowserWorkspace({
       errorCode: tab?.error && tab.error.code !== "" ? tab.error.code : null,
     });
   }
+
+  /** A site in a new tab, or the browser's own page, as the desktop asked. */
+  function openNow(open: BrowserOpen) {
+    if (open.url) stream.send({ type: "new-tab", url: open.url });
+    if (open.page) stream.send({ type: "open-browser-page", page: open.page });
+  }
+
+  // The desktop around a framed window asks it to open things and take screenshots.
+  const latest = useRef({ saveScreenshot, live: phase.kind === "live" });
+  useEffect(() => {
+    latest.current = { saveScreenshot, live: phase.kind === "live" };
+  });
+  useEffect(() => {
+    if (!embedded) return;
+    const onMessage = (event: MessageEvent<unknown>) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent) return;
+      const message = parseDesktopRequest(event.data);
+      if (!message) return;
+      if (message.type === "brawzer:screenshot") {
+        void latest.current.saveScreenshot();
+      } else if (latest.current.live) {
+        openNow(message.open);
+      } else {
+        pendingOpen.current = message.open;
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+    };
+    // openNow only uses the stream, which doesn't change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded]);
 
   /** A pop-out closes itself; a desktop window asks the desktop to close it. */
   function closeWindow(sessionId: string) {

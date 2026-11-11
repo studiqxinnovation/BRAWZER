@@ -594,6 +594,15 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
               <button
                 type="button"
                 className="ap-text-button"
+                onClick={() => {
+                  window.openApp("send-to-phone", { file: current.id, name: current.name });
+                }}
+              >
+                Send to Phone
+              </button>
+              <button
+                type="button"
+                className="ap-text-button"
                 onClick={() => void moveToTrash(current)}
               >
                 Move to Trash

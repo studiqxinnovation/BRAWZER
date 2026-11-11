@@ -12,6 +12,8 @@ import { lockNow } from "@/lib/lock";
 import { signOut } from "@/lib/session-channel";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
 import { type AppId, AppIcon, apps } from "./apps/registry";
+import { WebAppIcon } from "./apps/web-app-icon";
+import type { WebApp } from "./apps/web-apps";
 import { type DesktopWindow, windowLabel } from "./windows";
 
 const useDark = () =>
@@ -45,6 +47,9 @@ export interface DockActions {
   onMinimise: (id: string) => void;
   onOpenApp: (app: AppId) => void;
   onLaunchpad: () => void;
+  /** Web apps installed from the App Store: each opens its site in a cloud browser. */
+  webApps: readonly WebApp[];
+  onWebApp: (app: WebApp) => void;
 }
 
 /** Clicking a browser or app: open it, bring it forward, or tuck it away if it's in front. */
@@ -156,6 +161,18 @@ export function Dock(actions: DockActions) {
           }}
         >
           <AppIcon app={app} size={46} />
+        </DockItem>
+      ))}
+      {actions.webApps.map((app) => (
+        <DockItem
+          key={`web-${app.id}`}
+          label={app.name}
+          running={false}
+          onClick={() => {
+            actions.onWebApp(app);
+          }}
+        >
+          <WebAppIcon app={app} size={46} />
         </DockItem>
       ))}
       {minimised.length > 0 && <span className="dt-sep" aria-hidden="true" />}
@@ -301,6 +318,20 @@ export function Taskbar(
             </button>
           );
         })}
+        {actions.webApps.map((app) => (
+          <button
+            key={`web-${app.id}`}
+            type="button"
+            className="dt-task"
+            aria-label={app.name}
+            title={app.name}
+            onClick={() => {
+              actions.onWebApp(app);
+            }}
+          >
+            <WebAppIcon app={app} size={24} />
+          </button>
+        ))}
       </div>
       <div className="dt-tray">
         <button

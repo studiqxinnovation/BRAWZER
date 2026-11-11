@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { fetchBrowserOverview, startBrowserSession } from "@/lib/api/browser";
 import { fetchProfiles } from "@/lib/api/profiles";
-import { useDesktop } from "@/components/desktop/desktop-context";
+import { type BrowserOpen, useDesktop } from "@/components/desktop/desktop-context";
 import { desktopActive } from "@/lib/desktop";
 import { examAllows } from "@/lib/exam";
 import { leaveSignedInArea } from "@/lib/session-channel";
@@ -31,9 +31,9 @@ export function useLaunchBrowser() {
   const [opening, setOpening] = useState<BrowserEngine | null>(null);
 
   /** On the desktop, a window of its own; elsewhere, the Browser page. */
-  function show(session: BrowserSession) {
+  function show(session: BrowserSession, open?: BrowserOpen) {
     if (desktop && desktopActive()) {
-      desktop.openSession(session);
+      desktop.openSession(session, open);
       setOpening(null);
       return;
     }
@@ -46,9 +46,15 @@ export function useLaunchBrowser() {
     else toast.add({ type: "error", title, description });
   }
 
+  /**
+   * Opens the browser, or goes back to it if it's open. `open`: a site or the
+   * browser's own page to show there (on the desktop); `profileId`: this
+   * profile rather than the browser's first free one.
+   */
   async function launch(
     engine: BrowserEngine,
     known?: { profiles: readonly Profile[]; sessions: readonly BrowserSession[] },
+    options: { open?: BrowserOpen; profileId?: string } = {},
   ) {
     const short = engineDetails[engine].short;
     if (!examAllows(`browser:${engine}`)) {
@@ -75,12 +81,16 @@ export function useLaunchBrowser() {
       profiles = list.data.profiles;
       sessions = overview.data.sessions;
     }
-    const running = sessions.find((session) => session.engine === engine);
+    const running = sessions.find((session) =>
+      options.profileId ? session.profileId === options.profileId : session.engine === engine,
+    );
     if (running) {
-      show(running);
+      show(running, options.open);
       return;
     }
-    let profile = defaultProfile(engine, profiles, new Set(sessions.map((s) => s.profileId)));
+    let profile = options.profileId
+      ? profiles.find((candidate) => candidate.id === options.profileId)
+      : defaultProfile(engine, profiles, new Set(sessions.map((s) => s.profileId)));
     if (!profile) {
       const created = await makeProfileFor(engine, profiles);
       if (!created.ok) {
@@ -94,7 +104,7 @@ export function useLaunchBrowser() {
       failed(started.status, `${short} couldn’t open`, started.error.message);
       return;
     }
-    show(started.data);
+    show(started.data, options.open);
   }
 
   return { opening, launch };

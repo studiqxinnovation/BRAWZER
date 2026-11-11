@@ -145,11 +145,21 @@ export function CommandPalette() {
   ];
 
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = commands.filter((command) =>
-    words.every((word) =>
-      `${command.label} ${command.hint} ${command.words}`.toLowerCase().includes(word),
-    ),
-  );
+  // Names that start with what's typed come first, then names containing it, then the rest.
+  const rank = (command: Command) => {
+    const label = command.label.toLowerCase();
+    const first = words[0] ?? "";
+    return label.startsWith(first) ? 0 : label.includes(first) ? 1 : 2;
+  };
+  const matches = commands
+    .filter((command) =>
+      words.every((word) =>
+        `${command.label} ${command.hint} ${command.words}`.toLowerCase().includes(word),
+      ),
+    )
+    .map((command, index) => ({ command, index }))
+    .sort((a, b) => rank(a.command) - rank(b.command) || a.index - b.index)
+    .map((entry) => entry.command);
   const current = Math.min(active, Math.max(0, matches.length - 1));
 
   function go(command: Command | undefined) {

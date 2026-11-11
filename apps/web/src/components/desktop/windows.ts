@@ -1,10 +1,11 @@
 import { type BrowserSession, engineDetails } from "@brawzer/contracts";
 import { type AppId, apps } from "./apps/registry";
+import type { BrowserOpen } from "./desktop-context";
 import type { Rect } from "./window-chrome";
 
 /** What a desktop window shows: a cloud browser's stream, or one of the apps. */
 export type WindowContent =
-  | { kind: "browser"; session: BrowserSession }
+  | { kind: "browser"; session: BrowserSession; open?: BrowserOpen }
   | { kind: "app"; app: AppId; params: Readonly<Record<string, string>> };
 
 export interface DesktopWindow {

@@ -50,6 +50,27 @@ async function uploadFile(
 const list = (page: Page) => page.getByRole("list", { name: "Files and folders" });
 
 test.describe("drive", () => {
+  test("a deleted file waits in Trash, and comes back from it", async ({ page, baseURL }) => {
+    await signedIn(page, baseURL, "drive-trash");
+    // The page has finished arriving before anything is uploaded to it.
+    await expect(page.getByText("Nothing in Drive yet")).toBeVisible();
+    await uploadFile(page, "packing.txt", Buffer.from("Socks\nCharger\n"), "text/plain");
+    await list(page).getByRole("button", { name: "Actions for packing.txt" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
+    const confirm = page.getByRole("alertdialog", { name: "Move “packing.txt” to Trash?" });
+    await expect(confirm).toContainText("stays in Trash for 30 days");
+    await confirm.getByRole("button", { name: "Move to Trash" }).click();
+    await expect(page.getByText("Nothing in Drive yet")).toBeVisible();
+
+    await page.getByText("Kept 30 days, then removed").click();
+    const trash = page.getByRole("list", { name: "In Trash" });
+    await expect(trash).toContainText("packing.txt");
+    expect(await wcagViolations(page)).toEqual([]);
+    await trash.getByRole("button", { name: "Put back" }).click();
+    await expect(page.getByText("“packing.txt” is back")).toBeVisible();
+    await expect(list(page).getByText("packing.txt")).toBeVisible();
+  });
+
   test("upload, organise, preview, save and delete files", async ({ page, baseURL }) => {
     const email = await signedIn(page, baseURL, "drive");
     await expect(page.getByText("Nothing in Drive yet")).toBeVisible();

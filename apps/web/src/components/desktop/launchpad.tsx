@@ -7,6 +7,8 @@ import { useState } from "react";
 import { AppIconArt } from "@/components/browser/engine-logo";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
 import { type AppCategory, type AppId, AppIcon, appIds, apps } from "./apps/registry";
+import { WebAppIcon } from "./apps/web-app-icon";
+import type { WebApp } from "./apps/web-apps";
 import { PowerButtons } from "./dock";
 
 const CATEGORIES: readonly AppCategory[] = ["Brawzer", "Productivity", "Education", "Business"];
@@ -21,12 +23,16 @@ export function AppLauncher({
   open,
   onOpenChange,
   engines,
+  webApps,
+  onWebApp,
   onOpenApp,
 }: {
   variant: "launchpad" | "start";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   engines: readonly BrowserEngine[];
+  webApps: readonly WebApp[];
+  onWebApp: (app: WebApp) => void;
   onOpenApp: (app: AppId) => void;
 }) {
   const { launch } = useLaunchBrowser();
@@ -47,6 +53,12 @@ export function AppLauncher({
 
   const groups = [
     { label: "Browsers", items: browsers.map((engine) => ({ kind: "browser" as const, engine })) },
+    {
+      label: "Web apps",
+      items: webApps
+        .filter((app) => matches(`${app.name} ${app.description} web`))
+        .map((app) => ({ kind: "web" as const, app })),
+    },
     ...CATEGORIES.map((category) => ({
       label: category,
       items: found
@@ -88,7 +100,22 @@ export function AppLauncher({
               <h2 className="dt-lp-heading">{group.label}</h2>
               <ul className="dt-lp-grid">
                 {group.items.map((item) =>
-                  item.kind === "browser" ? (
+                  item.kind === "web" ? (
+                    <li key={item.app.id}>
+                      <button
+                        type="button"
+                        className="dt-lp-item"
+                        title={item.app.description}
+                        onClick={() => {
+                          close();
+                          onWebApp(item.app);
+                        }}
+                      >
+                        <WebAppIcon app={item.app} size={variant === "launchpad" ? 64 : 40} />
+                        <span>{item.app.name}</span>
+                      </button>
+                    </li>
+                  ) : item.kind === "browser" ? (
                     <li key={item.engine}>
                       <button
                         type="button"

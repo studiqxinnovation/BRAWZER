@@ -229,6 +229,64 @@ test.describe("desktop", () => {
     expect(await wcagViolations(page)).toEqual([]);
   });
 
+  test("a web app opens its site in a cloud browser window, and Screenshot saves the page to Drive", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "Starts a real browser on the desktop.");
+    test.setTimeout(120_000);
+    await signedIn(page, baseURL, "desktop-web-app");
+    await page
+      .getByRole("navigation", { name: "Dock" })
+      .getByRole("button", { name: "App Store" })
+      .click();
+    const store = page.getByRole("region", { name: "App Store window" });
+    await store.getByRole("tab", { name: "Web apps" }).click();
+    await store
+      .getByRole("listitem")
+      .filter({ hasText: "Wikipedia" })
+      .getByRole("button", { name: "Open", exact: true })
+      .click();
+    const window = page.getByRole("region", { name: "Bee Browser window" });
+    await expect(window).toBeVisible({ timeout: 60_000 });
+    await expect(window.locator("iframe")).toHaveAttribute(
+      "src",
+      /open=https%3A%2F%2Fwww\.wikipedia\.org%2F/,
+    );
+    const viewport = window.frameLocator("iframe").getByTestId("browser-viewport");
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 60_000 })
+      .not.toBe("0");
+
+    await page
+      .getByRole("navigation", { name: "Dock" })
+      .getByRole("button", { name: "Launchpad" })
+      .click();
+    await page.getByRole("dialog", { name: "Launchpad" }).getByRole("searchbox").fill("screenshot");
+    await page
+      .getByRole("dialog", { name: "Launchpad" })
+      .getByRole("button", { name: "Screenshot" })
+      .click();
+    await page
+      .getByRole("region", { name: "Screenshot window" })
+      .getByRole("button", { name: "Take screenshot" })
+      .click();
+    await expect
+      .poll(
+        async () =>
+          (
+            (await (await page.request.get("/api/v1/drive/files?kind=images")).json()) as {
+              files: { name: string }[];
+            }
+          ).files.length,
+        { timeout: 30_000 },
+      )
+      .toBe(1);
+    await window.getByRole("button", { name: "Close Bee Browser" }).click();
+    await expect(page.getByText("Bee Browser closed")).toBeVisible({ timeout: 30_000 });
+  });
+
   test("a browser opens from the dock in a window that streams it, minimises and closes", async ({
     page,
     baseURL,

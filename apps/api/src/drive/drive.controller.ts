@@ -5,6 +5,8 @@ import {
   downloadTicketSchema,
   type DriveFile,
   type DriveFileList,
+  type DrivePhoneLink,
+  drivePhoneLinkSchema,
   driveFileListSchema,
   driveFileQuerySchema,
   driveFileSchema,
@@ -324,6 +326,24 @@ export class DriveController {
     @Req() request: FastifyRequest,
   ): Promise<void> {
     await this.drive.emptyTrash(auth, query.space, requestMeta(request));
+  }
+
+  @Get("files/:id/phone-link")
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: drivePhoneLinkSchema })
+  @ApiOperation({
+    summary: "A link to the file for a phone",
+    description:
+      "Drive's page for the file and its QR code. Opening it needs a sign-in; the link grants nothing by itself.",
+  })
+  @ApiOkResponse({ description: "The link.", standardSchema: drivePhoneLinkSchema })
+  @ApiNotFoundResponse({ description: "No such file on this account." })
+  phoneLink(
+    @Param("id", { schema: idSchema }) id: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<DrivePhoneLink> {
+    return this.drive.phoneLink(auth.user.id, id);
   }
 
   @Get("files/:id/preview")

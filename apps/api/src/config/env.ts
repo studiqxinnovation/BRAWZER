@@ -203,11 +203,23 @@ export const envSchema = z.object({
   ADMIN_EMAILS: z.string().optional(),
   /** Bearer token a scraper presents at GET /api/metrics; required in production (Phase 8, idea 17). */
   METRICS_TOKEN: z.string().min(16).optional(),
+  /** The Assistant and Study Notes (Phase 9): off unless set. Server-side only. */
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  ASSISTANT_MODEL: z.string().min(1).default("claude-opus-5-5"),
+  /** Tests point the client at a local stand-in. */
+  ANTHROPIC_BASE_URL: z.url().optional(),
   BUILD_SHA: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/, "must be a git commit SHA")
     .optional(),
 });
+
+export interface AssistantConfig {
+  /** Null: the Assistant is off. */
+  readonly apiKey: string | null;
+  readonly model: string;
+  readonly baseUrl: string | null;
+}
 
 export interface BillingConfig {
   readonly stripeSecretKey: string | null;
@@ -327,6 +339,7 @@ export interface AppConfig {
     readonly loopbackHost: string | null;
   };
   readonly billing: BillingConfig;
+  readonly assistant: AssistantConfig;
   /** Lower-cased addresses of administrators. */
   readonly adminEmails: readonly string[];
   readonly metricsToken: string | null;
@@ -601,6 +614,11 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       webhookSecret: values.STRIPE_WEBHOOK_SECRET ?? null,
       stripeApiBase: values.STRIPE_API_BASE ?? null,
       plans,
+    }),
+    assistant: Object.freeze({
+      apiKey: values.ANTHROPIC_API_KEY ?? null,
+      model: values.ASSISTANT_MODEL,
+      baseUrl: values.ANTHROPIC_BASE_URL ?? null,
     }),
     adminEmails,
     metricsToken: values.METRICS_TOKEN ?? null,

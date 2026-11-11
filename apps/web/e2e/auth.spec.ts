@@ -227,6 +227,10 @@ test.describe("accessibility of account pages", () => {
 
     const email = uniqueEmail("a11y");
     await createConfirmedAccount(request, baseURL ?? "", email, PASSWORD);
+    // A returning visitor: Home's notices don't slide in while the audit runs.
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
+    });
     await page.goto("/sign-in");
     await emailField(page).fill(email);
     await passwordField(page).fill(PASSWORD);

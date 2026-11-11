@@ -15,16 +15,15 @@ never reach the browser.
 
 ## Milestones
 
-| #   | Milestone                                                                       | Status                                                                                       |
-| --- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| 9.1 | The desktop: windows, dock and taskbar, wallpapers, both styles                 | **Done** 2026-11-10                                                                          |
-| 9.2 | The lock screen                                                                 | **Done** 2026-11-11                                                                          |
-| 9.3 | Control Centre, a window switcher, Launchpad and Start                          | Next                                                                                         |
-| 9.4 | Files, Trash, Photos, PDF Viewer and Screenshot, over Drive                     | Planned; Trash needs Drive to keep deleted files for a while                                 |
-| 9.5 | Notepad, Writer, Calc, Code and Calculator, saving to Drive                     | Planned                                                                                      |
-| 9.6 | App Store: web apps that open in a cloud browser window; extensions per browser | Planned; extensions come from the existing catalogue (ADR 0018)                              |
-| 9.7 | Study and business apps                                                         | Planned; each keeps its records on the server, per account                                   |
-| 9.8 | Assistant                                                                       | Planned; only when the operator configures a model provider's key, which stays on the server |
+| #   | Milestone                                                                                     | Status              |
+| --- | --------------------------------------------------------------------------------------------- | ------------------- |
+| 9.1 | The desktop: windows, dock and taskbar, wallpapers, both styles                               | **Done** 2026-11-10 |
+| 9.2 | The lock screen                                                                               | **Done** 2026-11-11 |
+| 9.3 | Apps in windows, Launchpad and Start, Control Centre, the window switcher                     | **Done** 2026-11-11 |
+| 9.4 | Apps that keep records: Assignments, Citations, Focus Timer, Exam Mode, Money, Invoices       | **Done** 2026-11-11 |
+| 9.5 | Drive's apps: Files, Trash, Photos, PDF Viewer, Music, Notepad, Writer, Calc, Code, Templates | **Done** 2026-11-11 |
+| 9.6 | App Store and web apps, Web Store, Passwords, Usage, Screenshot, Send to Phone, Terminal      | **Done** 2026-11-11 |
+| 9.7 | Assistant and Study Notes                                                                     | **Done** 2026-11-11 |
 
 ## 9.1 The desktop
 
@@ -112,28 +111,95 @@ menu bar, a reload while locked, a wrong and a right password, every tab
 locking together, signing out from the lock screen, a desktop window's stream
 stopping and coming back), with axe audits.
 
-## 9.3 to 9.8
+## 9.3 Apps in windows
 
-- **Control Centre, the window switcher, Launchpad and Start (9.3).** Control
-  Centre holds only real switches: theme, style, wallpaper, lock, and the ad
-  blocker. A window switcher (a key within the desktop) and a Launchpad and
-  Start menu of apps.
-- **Files and the media apps (9.4)** are views over Drive, so files stay
-  encrypted and scanned. Trash needs Drive to keep deleted files for a set
-  time before removing them. Screenshot uses the cloud browser's existing
-  "Save a screenshot to Drive". Send to Phone shows a link and QR code for a
-  Drive file that opens only after signing in on the phone.
-- **Documents (9.5)** are files in Drive, edited in a window and saved back.
-  The calculator needs no storage.
-- **App Store (9.6)** lists web apps (shortcuts that open a site in a cloud
-  browser window with a chosen profile) and each browser's extensions from
-  Brawzer's reviewed catalogue.
-- **Study and business apps (9.7)**: Study Notes, Citations, Assignments, a
-  Focus Timer, Exam Mode (a profile that only opens allowed sites, using
-  Site rules), Invoices, Money and Templates. Each keeps its records per
-  account on the server.
-- **Assistant (9.8)** answers with a model provider's API, through Brawzer's
-  API, only when the operator sets a key. It is off otherwise.
+The desktop's windows are one list: cloud browsers and apps. Apps come from
+a registry (name, icon on a coloured tile, category, size, one window or
+many) and load when first opened. The dock and taskbar show the account's
+pinned apps, the web apps installed from the App Store, open apps and
+minimised windows. Launchpad (Mac style, the whole screen) and Start
+(Windows style, above the taskbar, with Lock and Sign out) list every
+browser and app, found by typing; quick launch (⌘K) finds apps too.
+Control Centre has only switches that do something here: dark mode, the
+style, wallpaper, show the desktop, the cloud browsers open with "End all",
+Lock, Sign out and the classic layout. Alt+` (Option+` on a Mac) switches
+windows.
+
+## 9.4 Apps that keep records
+
+What these apps keep is stored with the account, not on the computer: the
+`app_records` table holds each app's JSON sealed with its own data key
+(SecretBox, bound to the account, the app and the key), up to 256 KB a
+record and 500 per app (`GET/PUT/DELETE /apps/:app/records/:key`), and it's
+in the account's data export.
+
+- **Assignments**: coursework by due date: late, this week, later, done.
+- **Citations**: Harvard (Cite Them Right), APA 7 and MLA 9 references for
+  web pages, books and journal articles, and a sorted list to copy.
+- **Focus Timer**: focus and break lengths; finished focus time logged by
+  subject, with this week's totals.
+- **Exam Mode**: for a set time, only the chosen apps and browsers open on
+  the desktop (windows, the launcher and the Browser page keep to it), the
+  classic layout stays off, a reload keeps to it, and ending early takes the
+  password. It's for the person's own focus, not proctoring.
+- **Money**: income and expenses by month and category; a month saved to
+  Drive as CSV, with cells that look like formulas made safe.
+- **Invoices**: invoices and quotes with the business's details, lines, tax
+  and status, saved to Drive as PDFs written by Brawzer's own small PDF
+  writer.
+
+## 9.5 Drive's apps
+
+Drive gains Trash (a deleted clean file waits 30 days, still counting
+towards storage, to be put back or removed; the retention job purges it),
+saving a new version in place (`PUT /drive/files/:id/content`: same id,
+name and folder, scanned and encrypted with a new key), playable audio
+(MP3, M4A, AAC, OGG, WAV, FLAC), and listing every clean file of a kind
+(`?kind=images|pdfs|audio|text`).
+
+- **Files** and **Trash**: folders, icons or a list, upload, rename, open each
+  file in its app, move to Trash, put back, empty.
+- **Photos**, **PDF Viewer** (the browser's own viewer) and **Music** (a
+  playlist of Drive's audio).
+- **Notepad** and **Code** (line numbers, indenting), **Writer** (headings,
+  lists, emphasis; saved as HTML, and anything opened is cleaned to safe
+  tags first), **Calc** (references, ranges, SUM, AVERAGE, MIN, MAX, COUNT,
+  ROUND, ABS; saved as CSV with formulas kept) and **Templates** (business
+  plan, pitch, meeting notes, cover letter, essay plan, cash-flow forecast,
+  budget, grade tracker).
+
+## 9.6 The account's tools
+
+- **App Store**: Brawzer's apps to keep in the Dock, and web apps (Gmail,
+  Outlook, WhatsApp, Google Docs, Microsoft 365, Canva, YouTube and more)
+  that open the site in a cloud browser window. The Dock is kept with the
+  account. Web apps show the name's initial on a colour, not the site's
+  logo, and Brawzer holds no account with any of them.
+- **Web Store**: the reviewed extension catalogue, per profile (ADR 0018).
+- **Passwords**: where the person's passwords are: each profile's browser
+  account (its own passwords page opens in the browser) and password
+  managers' websites. Brawzer keeps none.
+- **Usage**: browsing time by browser this month, and the plan's limits.
+- **Screenshot**: a browser window's page saved to Drive as a PNG.
+- **Send to Phone**: a QR code of Drive's page for a file; opening it needs a
+  sign-in on the phone, so the code gives nothing away.
+- **Terminal**: Brawzer's own commands (ls, cd, cat, open, mkdir, rm,
+  browsers, start, end, storage, lock) acting on the account as the apps
+  do. It is not a shell on Brawzer's servers.
+
+## 9.7 Assistant and Study Notes
+
+The **Assistant** is a conversation with Claude (`claude-opus-5-5`, set by
+`ASSISTANT_MODEL`) through `POST /assistant/chat`; **Study Notes** turns notes
+into a summary, flashcards or a multiple-choice quiz through
+`POST /assistant/study`, using structured outputs and only what the notes
+say. Both are off unless the operator sets `ANTHROPIC_API_KEY`, which stays on
+the server; `GET /assistant` says whether they're on, and the apps say so in
+words when they aren't. Nothing sent or answered is stored or logged by
+Brawzer; Study Notes keeps the notes and the latest result as its app
+record. A refusal is retried on another model by the API's server-side
+fallback; one that still refuses says it plainly. Each account can make 60
+requests an hour.
 
 ## Not built, and why
 
@@ -148,8 +214,9 @@ copy them:
   measures.
 - **Exit locations and a VPN.** Brawzer has no network of exit locations.
   Browsing goes direct or through a proxy the person saves (Proxy page).
-- **A pretend inbox and a pretend terminal.** Mail needs a real mail
-  service. A terminal on Brawzer's hosts would break the isolation the
-  runtime depends on (ADR 0012).
-- **Music with bundled tracks.** Brawzer has no licensed music. Playing the
-  person's own audio files from Drive could come with 9.3.
+- **A pretend inbox, and a shell on Brawzer's servers.** Mail is a web app
+  (Gmail, Outlook) in a cloud browser; Brawzer runs no mail service. The
+  Terminal runs Brawzer's own commands; a shell on its hosts would break the
+  isolation the runtime depends on (ADR 0012).
+- **Music with bundled tracks.** Brawzer has no licensed music; Music plays
+  the person's own audio files from Drive.

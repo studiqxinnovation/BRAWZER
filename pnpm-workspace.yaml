@@ -13,6 +13,7 @@ minimumReleaseAge: 10080
 # One exact version per dependency for the whole workspace.
 # Packages reference these with "catalog:" so upgrades happen in one place.
 catalog:
+  "@anthropic-ai/sdk": 1.4.0
   "@aws-sdk/client-s3": 3.1161.0
   "@aws-sdk/lib-storage": 3.1161.0
   "@axe-core/playwright": 4.14.0

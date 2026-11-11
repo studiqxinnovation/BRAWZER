@@ -5,6 +5,7 @@ import {
   driveFileListSchema,
   driveFileSchema,
   driveFolderSchema,
+  drivePhoneLinkSchema,
   driveOverviewSchema,
 } from "@brawzer/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -503,6 +504,18 @@ describe("Trash and saving new versions", () => {
     const played = await client.get(`/drive/files/${song.id}/preview`);
     expect(played.statusCode).toBe(200);
     expect(played.headers["content-type"]).toBe("audio/mpeg");
+  });
+
+  it("gives a phone a link to the file and its QR code, which grant nothing without a sign-in", async () => {
+    const { client } = await account("drive-phone");
+    const file = await upload(client, "boarding pass.pdf", PDF);
+    const response = await client.get(`/drive/files/${file.id}/phone-link`);
+    expect(response.statusCode, response.body).toBe(200);
+    const link = drivePhoneLinkSchema.parse(response.json());
+    expect(link.url).toBe(`${h.config.webOrigin}/app/drive?q=boarding+pass.pdf`);
+    expect(link.qrSvg).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);
+    const { client: stranger } = await account("drive-phone-stranger");
+    expect((await stranger.get(`/drive/files/${file.id}/phone-link`)).statusCode).toBe(404);
   });
 
   it("saves a new version in place: same id and name, new content and key", async () => {

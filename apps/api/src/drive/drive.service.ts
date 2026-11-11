@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import QRCode from "qrcode";
 import type { Readable } from "node:stream";
 import {
   type DriveFile,
   type DriveFileKind,
+  type DrivePhoneLink,
   type DriveFileSource,
   type DriveFolder,
   type DriveOverview,
@@ -986,6 +988,15 @@ export class DriveService implements OnModuleInit {
       meta,
     });
     return toFile(updated, scope);
+  }
+
+  /** Send to Phone: Drive's page for the file, which needs a sign-in, and its QR code. */
+  async phoneLink(userId: string, id: string): Promise<DrivePhoneLink> {
+    const { row } = await this.findFile(userId, id);
+    const params = new URLSearchParams({ q: row.name });
+    const url = `${this.config.webOrigin}/app/drive?${params.toString()}`;
+    const qrSvg = await QRCode.toString(url, { type: "svg", errorCorrectionLevel: "M", margin: 1 });
+    return { url, qrSvg };
   }
 
   /** Removes objects whose records are gone. Failures are logged, never surfaced. */

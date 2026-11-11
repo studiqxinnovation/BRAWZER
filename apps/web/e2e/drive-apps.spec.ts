@@ -143,3 +143,117 @@ test.describe("Drive's apps", () => {
     expect(await wcagViolations(page)).toEqual([]);
   });
 });
+
+test.describe("the account's tools", () => {
+  test.skip(({ isMobile }) => isMobile, "The apps are the desktop's.");
+
+  test.beforeEach(async ({ page, baseURL }, info) => {
+    const email = uniqueEmail(`tools-${String(info.parallelIndex)}`);
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
+      if (!sessionStorage.getItem("brawzer:desktop-style")) {
+        sessionStorage.setItem("brawzer:desktop-style", "mac");
+      }
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await createConfirmedAccount(page.request, baseURL ?? "", email, PASSWORD);
+    await signIn(page.context(), baseURL ?? "", email, PASSWORD);
+    await page.goto("/app");
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
+  });
+
+  test("the App Store keeps the Dock with the account, and Terminal runs Brawzer's commands", async ({
+    page,
+  }) => {
+    const store = await openApp(page, "App Store");
+    await store.getByRole("button", { name: "Keep in Dock: Terminal" }).click();
+    await store.getByRole("tab", { name: "Web apps" }).click();
+    await store.getByRole("button", { name: "Keep in Dock: Wikipedia" }).click();
+    expect(await wcagViolations(page)).toEqual([]);
+    const dock = page.getByRole("navigation", { name: "Dock" });
+    await expect(dock.getByRole("button", { name: "Terminal", exact: true })).toBeVisible();
+    await expect(dock.getByRole("button", { name: "Wikipedia" })).toBeVisible();
+
+    // The dock comes back the same after a reload: it's kept with the account.
+    await page.reload();
+    await expect(dock.getByRole("button", { name: "Wikipedia" })).toBeVisible();
+    await dock.getByRole("button", { name: "Terminal", exact: true }).click();
+    const terminal = page.getByRole("region", { name: "Terminal window" });
+    const command = terminal.getByRole("textbox", { name: "Command" });
+    for (const line of ["mkdir Projects", "cd Projects", "pwd"]) {
+      await command.fill(line);
+      await command.press("Enter");
+    }
+    const output = terminal.getByRole("log", { name: "Terminal output" });
+    await expect(output).toContainText("/Projects");
+    await command.fill("frobnicate");
+    await command.press("Enter");
+    await expect(output).toContainText("frobnicate: not a Brawzer command");
+    expect(await wcagViolations(page)).toEqual([]);
+  });
+
+  test("Usage, Passwords, Web Store, Screenshot and Send to Phone", async ({ page, baseURL }) => {
+    const usage = await openApp(page, "Usage");
+    await expect(usage.getByRole("meter", { name: "Drive storage" })).toBeVisible();
+    await expect(usage).toContainText("No browsing yet this month.");
+
+    const passwords = await openApp(page, "Passwords");
+    await expect(
+      passwords.getByRole("heading", { name: "Password managers on the web" }),
+    ).toBeVisible();
+    await expect(passwords).toContainText("Bitwarden");
+
+    const webStore = await openApp(page, "Web Store");
+    await expect(webStore).toContainText("uBlock Origin");
+
+    const screenshot = await openApp(page, "Screenshot");
+    await expect(screenshot).toContainText("Open a browser first");
+    expect(await wcagViolations(page)).toEqual([]);
+
+    await upload(page, baseURL ?? "", "ticket.pdf", PDF, "application/pdf");
+    const files = await openApp(page, "Files");
+    await files.getByRole("button", { name: /^ticket\.pdf/ }).click();
+    await files.getByRole("button", { name: "Send to Phone" }).click();
+    const phone = page.getByRole("region", { name: "Send to Phone window" });
+    await expect(
+      phone.getByRole("img", { name: "QR code for “ticket.pdf” in Drive" }),
+    ).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+  });
+});
+
+test.describe("the assistant's apps", () => {
+  test.skip(({ isMobile }) => isMobile, "The apps are the desktop's.");
+
+  test("say plainly when the assistant isn't turned on, and Study Notes still keeps the notes", async ({
+    page,
+    baseURL,
+  }) => {
+    const email = uniqueEmail("assistant-off");
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
+      sessionStorage.setItem("brawzer:desktop-style", "mac");
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await createConfirmedAccount(page.request, baseURL ?? "", email, PASSWORD);
+    await signIn(page.context(), baseURL ?? "", email, PASSWORD);
+    await page.goto("/app");
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
+    // This installation runs without a Claude key.
+    const status = (await (await page.request.get("/api/v1/assistant")).json()) as {
+      available: boolean;
+    };
+    test.skip(status.available, "The assistant is turned on here.");
+
+    const assistant = await openApp(page, "Assistant");
+    await expect(assistant).toContainText("isn’t turned on for this Brawzer");
+
+    const study = await openApp(page, "Study Notes");
+    await study
+      .getByRole("textbox", { name: "Your notes" })
+      .fill("Photosynthesis turns light into chemical energy.");
+    await expect(study).toContainText("which isn’t turned on for this Brawzer");
+    await expect(study.getByRole("status").last()).toHaveText("Saved with your account");
+    expect(await wcagViolations(page)).toEqual([]);
+  });
+});

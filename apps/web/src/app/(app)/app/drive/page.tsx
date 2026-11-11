@@ -8,6 +8,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { z } from "zod";
 import { PageContainer, PageHeader, Panel, Unavailable } from "@/components/app-shell/page";
+import { TrashPanel } from "@/components/drive/trash-panel";
 import { DriveManager } from "@/components/drive/drive-manager";
 import { serverGet, signInAgain } from "@/lib/server-api";
 import { getSession } from "@/lib/session";
@@ -66,17 +67,20 @@ async function Contents({ searchParams }: Pick<PageProps<"/app/drive">, "searchP
   }
 
   return (
-    <DriveManager
-      folders={overview.data.folders}
-      files={files.data.files}
-      usage={overview.data.usage}
-      currentFolderId={query ? null : folderId}
-      query={query}
-      sharedComputer={!state.data.session.persistent}
-      renderedAt={files.receivedAt}
-      space={overview.data.space}
-      team={overview.data.team}
-    />
+    <>
+      <DriveManager
+        folders={overview.data.folders}
+        files={files.data.files}
+        usage={overview.data.usage}
+        currentFolderId={query ? null : folderId}
+        query={query}
+        sharedComputer={!state.data.session.persistent}
+        renderedAt={files.receivedAt}
+        space={overview.data.space}
+        team={overview.data.team}
+      />
+      <TrashPanel space={overview.data.space} />
+    </>
   );
 }
 
