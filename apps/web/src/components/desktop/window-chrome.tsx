@@ -112,6 +112,7 @@ export function TitleBar({
   onDragStart,
   onMenu,
   children,
+  trailing,
   className,
 }: {
   /** What the window is, for the buttons' names: "Chrome", "Brawzer". */
@@ -126,6 +127,8 @@ export function TitleBar({
   /** Right-click on the title bar: the window's menu. */
   onMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
   children?: ReactNode;
+  /** After the title, before Windows' controls: the dashboard's search, bell and Start. */
+  trailing?: ReactNode;
   className?: string;
 }) {
   return (
@@ -178,6 +181,7 @@ export function TitleBar({
         {icon}
         <span className="truncate">{title}</span>
       </span>
+      {trailing}
       <span className="dt-controls">
         <button
           type="button"

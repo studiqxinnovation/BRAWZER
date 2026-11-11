@@ -13,11 +13,10 @@ import {
   usageWarnings,
 } from "@brawzer/contracts";
 import { Badge } from "@brawzer/ui/components/badge";
-import { Button } from "@brawzer/ui/components/button";
 import { FormMessage } from "@brawzer/ui/components/form-message";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
 import { cn } from "@brawzer/ui/lib/cn";
-import { ArrowRight, Play, TriangleAlert } from "lucide-react";
+import { ArrowRight, TriangleAlert } from "lucide-react";
 import type { Metadata, Route } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -27,12 +26,13 @@ import { textLinkClassName } from "@/components/auth/auth-ui";
 import { AdBlockerSwitch } from "@/components/home/ad-blocker-switch";
 import { CountUp } from "@/components/home/count-up";
 import { Greeting } from "@/components/home/greeting";
-import { type Notice, Notifications, SearchButton } from "@/components/home/header-actions";
+import { HomeActions } from "@/components/home/home-actions";
+import { HomeApps } from "@/components/home/home-apps";
+import { toNotices } from "@/components/home/notices";
 import { HomeBrowsers } from "@/components/home/home-browsers";
 import { LaunchedAgo } from "@/components/home/launched-ago";
 import { SessionsToday } from "@/components/home/sessions-today";
 import "@/components/home/home.css";
-import { describeEvent } from "@/content/app";
 import { formatBytes } from "@/lib/drive";
 import { serverGet, signInAgain } from "@/lib/server-api";
 import { getSession } from "@/lib/session";
@@ -96,21 +96,6 @@ function warningText(warning: UsageWarning): { title: string; body: string } {
         body: "Delete files you no longer need to make room.",
       };
   }
-}
-
-/** Where a security-history entry comes from, as a notification names it. */
-function noticeSource(type: string, tone: string): Pick<Notice, "source" | "emoji" | "tone"> {
-  if (type.startsWith("browser."))
-    return { source: "Brawzer · Sessions", emoji: "▶️", tone: "success" };
-  if (type.startsWith("drive.")) return { source: "Brawzer · Drive", emoji: "📁", tone: "accent" };
-  if (type.startsWith("profile"))
-    return { source: "Brawzer · Profiles", emoji: "👤", tone: "accent" };
-  if (type.startsWith("team.")) return { source: "Brawzer · Team", emoji: "👥", tone: "accent" };
-  return {
-    source: "Shield · Security",
-    emoji: tone === "warning" || tone === "danger" ? "⚠️" : "🔔",
-    tone: tone === "success" ? "success" : "danger",
-  };
 }
 
 /** "45 min", "2 h 5 min". */
@@ -237,23 +222,11 @@ async function Dashboard() {
   const blocked = rules.filter((rule) => rule.kind === "block").length;
   const allowed = rules.length - blocked;
   const issues = shield?.recommendations.length ?? 0;
-  const notices: Notice[] =
-    activity.kind === "ok"
-      ? activity.data.events.map((event) => {
-          const { title, tone } = describeEvent(event);
-          return {
-            id: event.id,
-            ...noticeSource(event.type, tone),
-            title,
-            when: timeAgo(event.occurredAt, now),
-            at: event.occurredAt,
-          };
-        })
-      : [];
+  const notices = activity.kind === "ok" ? toNotices(activity.data.events, now) : [];
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+      <header className="ad-page-head flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1.5">
           <Greeting />
           <p className="flex items-center gap-2 text-callout text-ink-secondary">
@@ -266,18 +239,7 @@ async function Dashboard() {
               : "The cloud browser can’t be reached right now"}
           </p>
         </div>
-        <div className="flex items-center gap-1.5">
-          <SearchButton />
-          <Notifications notices={notices} />
-          <Button
-            variant="primary"
-            className="ml-1.5 h-10 rounded-xl px-4 shadow-[0_0_16px_color-mix(in_oklab,var(--color-accent)_45%,transparent)] hover:-translate-y-px"
-            render={<Link href="/app/browser" />}
-          >
-            <Play aria-hidden="true" className="fill-current" />
-            Start browsing
-          </Button>
-        </div>
+        <HomeActions notices={notices} />
       </header>
 
       {!current.persistent && (
@@ -420,6 +382,8 @@ async function Dashboard() {
           </p>
         )}
       </Panel>
+
+      <HomeApps />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel title="Shield" emoji="🛡️" link={{ href: "/app/shield", label: "Open" }}>

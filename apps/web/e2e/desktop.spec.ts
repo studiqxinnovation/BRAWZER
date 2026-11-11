@@ -39,9 +39,12 @@ test.describe("desktop", () => {
     // The dashboard is a window of its own, with its title, controls and status.
     const dashboard = page.getByRole("button", { name: "Close Brawzer" });
     await expect(dashboard).toBeVisible();
-    await expect(page.getByText("Brawzer — Home")).toBeVisible();
+    // As on the prototype: the page's name in the title bar, and the status bar below.
+    const title = page.locator(".dt-chrome .dt-title");
+    await expect(title).toHaveText(/^Overview/);
     await expect(page.getByLabel("Status")).toContainText("Cloud connected");
-    await expect(page.getByLabel("Status")).toContainText("0 of 3 browsers open");
+    await expect(page.getByLabel("Status")).toContainText("0 of 3 browsers running");
+    await expect(page.getByRole("navigation", { name: "Main" })).toBeHidden();
     const dock = page.getByRole("navigation", { name: "Dock" });
     await expect(dock.getByRole("button", { name: "Brawzer, open" })).toBeVisible();
     for (const name of ["Bee Browser", "Chrome", "Firefox", "Chromium"]) {
@@ -54,14 +57,13 @@ test.describe("desktop", () => {
     }
     await page.emulateMedia({ colorScheme: "light" });
 
-    // Its title follows the page, and back goes back.
-    await page
-      .getByRole("navigation", { name: "Main" })
-      .getByRole("link", { name: "Drive" })
-      .click();
-    await expect(page.getByText("Brawzer — Drive")).toBeVisible();
+    // The title bar's menus are the pages; its title follows the page, and back goes back.
+    await page.getByRole("button", { name: "Browse", exact: true }).click();
+    expect(await wcagViolations(page)).toEqual([]);
+    await page.getByRole("menuitem", { name: /^Drive/ }).click();
+    await expect(title).toHaveText(/^Drive/);
     await page.getByRole("button", { name: "Back", exact: true }).click();
-    await expect(page.getByText("Brawzer — Home")).toBeVisible();
+    await expect(title).toHaveText(/^Overview/);
 
     // Closing it leaves the desktop; the dock brings it back.
     await dashboard.click();
@@ -71,18 +73,19 @@ test.describe("desktop", () => {
 
     // Dragged by its title bar it moves; Zoom fills the desktop, and again goes back.
     const window = page.locator(".dt-dash");
-    const filled = await window.boundingBox();
-    const title = await page.getByText("Brawzer — Home").boundingBox();
-    if (filled && title) {
-      await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
+    const placed = await window.boundingBox();
+    const bar = await title.boundingBox();
+    if (placed && bar) {
+      const moved = Math.round(placed.x + 120);
+      await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2);
       await page.mouse.down();
-      await page.mouse.move(title.x + title.width / 2 + 120, title.y + 90, { steps: 8 });
+      await page.mouse.move(bar.x + bar.width / 2 + 120, bar.y + 90, { steps: 8 });
       await page.mouse.up();
-      await expect.poll(async () => Math.round((await window.boundingBox())?.x ?? 0)).toBe(126);
+      await expect.poll(async () => Math.round((await window.boundingBox())?.x ?? 0)).toBe(moved);
       await page.getByRole("button", { name: "Zoom Brawzer" }).click();
-      await expect.poll(async () => (await window.boundingBox())?.x).toBe(filled.x);
+      await expect.poll(async () => Math.round((await window.boundingBox())?.x ?? 0)).toBe(6);
       await page.getByRole("button", { name: "Zoom Brawzer" }).click();
-      await expect.poll(async () => Math.round((await window.boundingBox())?.x ?? 0)).toBe(126);
+      await expect.poll(async () => Math.round((await window.boundingBox())?.x ?? 0)).toBe(moved);
     }
 
     // A wallpaper, kept for this tab.
@@ -413,7 +416,7 @@ test.describe("desktop", () => {
     // A window holds the browser alone: no sidebar or launcher of the app in it.
     await expect(frame.getByRole("navigation", { name: "Main" })).toHaveCount(0);
     await expect(dock.getByRole("button", { name: "Bee Browser, open" })).toBeVisible();
-    await expect(page.getByLabel("Status")).toContainText("1 of 3 browsers open");
+    await expect(page.getByLabel("Status")).toContainText("1 of 3 browsers running");
     expect(await wcagViolations(page)).toEqual([]);
 
     // Minimised, it waits in the dock; its icon brings it back.
@@ -447,6 +450,6 @@ test.describe("desktop", () => {
     await window.getByRole("button", { name: "Close Bee Browser" }).click();
     await expect(window).toBeHidden();
     await expect(page.getByText("Bee Browser closed")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByLabel("Status")).toContainText("0 of 3 browsers open");
+    await expect(page.getByLabel("Status")).toContainText("0 of 3 browsers running");
   });
 });

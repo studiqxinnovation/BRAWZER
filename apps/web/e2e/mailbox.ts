@@ -145,8 +145,22 @@ export async function otherDevice(
 export async function signOut(page: Page): Promise<void> {
   // The session keeper marks <html> after hydration; clicking earlier does nothing.
   await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await clickSignOut(page);
   await expect(page).toHaveURL(/\/sign-in\?signed_out=1$/);
+}
+
+/**
+ * "Sign out": the sidebar's button in the classic layout and on phones; on
+ * the desktop, as on the prototype, it's in the dashboard's Account menu.
+ */
+export async function clickSignOut(page: Page): Promise<void> {
+  const button = page.getByRole("button", { name: "Sign out", exact: true });
+  if (await button.isVisible()) {
+    await button.click();
+    return;
+  }
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
 }
 
 /** The page's own cookie is signed in as `email`: asked of the API, not read off the page. */

@@ -50,9 +50,8 @@ test.describe("home", () => {
     const shield = page.getByRole("region", { name: "Shield" });
     await expect(shield).toContainText("2 to do");
     if (!isMobile) {
-      await expect(
-        page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /^Shield/ }),
-      ).toHaveAccessibleName("Shield 2 to look at");
+      // On the desktop, the title bar's Protect menu counts them, as the prototype does.
+      await expect(page.getByRole("button", { name: "Protect 2" })).toBeVisible();
     }
     // The blocker installs uBlock Origin into the profile for its next session.
     const blocker = shield.getByRole("switch", { name: "Ad and tracker blocker in “Personal”" });

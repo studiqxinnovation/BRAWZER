@@ -59,6 +59,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       <SkipLink />
       <DesktopShell
         email={lock?.email ?? ""}
+        admin={session.kind === "ok" && session.data.account.role === "admin"}
         menuBar={<MenuBar />}
         overlays={
           <>

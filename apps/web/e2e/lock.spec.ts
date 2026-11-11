@@ -73,17 +73,17 @@ test.describe("lock screen", () => {
     expect((await eventTypes(page)).slice(0, 2)).toEqual(["session.unlocked", "session.locked"]);
 
     // Locked in place, unlocking keeps the page as it was.
-    await page
-      .getByRole("navigation", { name: "Main" })
-      .getByRole("link", { name: "Drive" })
-      .click();
-    await expect(page.getByText("Brawzer — Drive")).toBeVisible();
+    // Unlocking loads the page again; its menus work once it's interactive.
+    await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
+    await page.getByRole("button", { name: "Browse", exact: true }).click();
+    await page.getByRole("menuitem", { name: /^Drive/ }).click();
+    await expect(page.locator(".dt-chrome .dt-title")).toHaveText(/^Drive/);
     await page.getByRole("menuitem", { name: "File", exact: true }).click();
     await page.getByRole("menuitem", { name: "Lock screen" }).click();
     await lockScreen(page).getByLabel("Password", { exact: true }).fill(PASSWORD);
     await page.keyboard.press("Enter");
     await expect(lockScreen(page)).toBeHidden();
-    await expect(page.getByText("Brawzer — Drive")).toBeVisible();
+    await expect(page.locator(".dt-chrome .dt-title")).toHaveText(/^Drive/);
     await expect(page).toHaveURL(/\/app\/drive$/);
   });
 

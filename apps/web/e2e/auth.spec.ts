@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { horizontalOverflow, wcagViolations } from "./accessibility";
 import {
+  clickSignOut,
   createConfirmedAccount,
   expectSignedInAs,
   GREETING,
@@ -78,7 +79,7 @@ test.describe("account journey", () => {
 
     // The session keeper marks <html> after hydration; clicking earlier does nothing.
     await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
-    await page.getByRole("button", { name: "Sign out" }).click();
+    await clickSignOut(page);
     await expect(page).toHaveURL(/\/sign-in\?signed_out=1$/);
     await expect(page.getByText("You’ve signed out")).toBeVisible();
     expect(await sessionCookie(page)).toBeUndefined();
@@ -315,7 +316,7 @@ test.describe("sign in with your phone", () => {
 
     // The computer is in, with a shared-computer session.
     await expect(page).toHaveURL(/\/app$/, { timeout: 15_000 });
-    await expect(page.getByText("Shared-computer mode").first()).toBeVisible();
+    await expect(page.getByText("Shared-computer mode is on")).toBeVisible();
     await phone.close();
   });
 });

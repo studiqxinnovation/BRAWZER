@@ -1,7 +1,14 @@
 import { expect, type Page, test } from "@playwright/test";
 import { horizontalOverflow, wcagViolations } from "./accessibility";
 import { expireIdentityConfirmation } from "./database";
-import { createConfirmedAccount, GREETING, otherDevice, signIn, uniqueEmail } from "./mailbox";
+import {
+  clickSignOut,
+  createConfirmedAccount,
+  GREETING,
+  otherDevice,
+  signIn,
+  uniqueEmail,
+} from "./mailbox";
 
 // The signed-in app against the real API, Postgres, Valkey and Mailpit.
 
@@ -41,6 +48,10 @@ test.describe("navigation", () => {
     isMobile,
   }) => {
     test.skip(isMobile, "phones use the drawer");
+    // The classic layout keeps the sidebar; the desktop has the title bar's menus instead.
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:desktop", "off");
+    });
     await signedIn(page, baseURL, "nav");
     await page.goto("/app");
     const nav = page.getByRole("navigation", { name: "Main" });
@@ -299,7 +310,7 @@ test.describe("shared-computer safety", () => {
     await page.goto("/app");
     await keeperReady(page);
 
-    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await clickSignOut(page);
     await expect(page).toHaveURL(/\/sign-in\?signed_out=1$/);
     await expect(second).toHaveURL(/\/sign-in\?signed_out=1$/);
   });

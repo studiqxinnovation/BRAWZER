@@ -26,6 +26,12 @@ export type MenuEntry =
       disabled?: boolean;
       checked?: boolean;
       shortcut?: string;
+      /** A second line, smaller: what the page is for. */
+      sub?: string;
+      /** A count beside it, as the Protect menu shows Shield's. */
+      badge?: string;
+      /** The page that's open: marked, as a navigation menu marks it (not a checkbox). */
+      current?: boolean;
       icon?: ReactNode;
       danger?: boolean;
       children?: readonly MenuEntry[];
@@ -179,6 +185,7 @@ function MenuList({
             key={index}
             role={entry.checked === undefined ? "menuitem" : "menuitemcheckbox"}
             aria-checked={entry.checked}
+            aria-current={entry.current ? "page" : undefined}
             aria-disabled={entry.disabled ? true : undefined}
             aria-haspopup={hasChildren ? "menu" : undefined}
             aria-expanded={hasChildren ? sub?.index === index : undefined}
@@ -211,14 +218,18 @@ function MenuList({
             }}
           >
             <span className="dt-cm-ck" aria-hidden="true">
-              {entry.checked && (
+              {(entry.checked ?? entry.current) && (
                 <svg viewBox="0 0 24 24">
                   <path d="M20 6 9 17l-5-5" />
                 </svg>
               )}
             </span>
             {entry.icon && <span className="dt-cm-ico">{entry.icon}</span>}
-            <span className="dt-cm-l">{entry.label}</span>
+            <span className="dt-cm-l">
+              {entry.label}
+              {entry.sub && <small>{entry.sub}</small>}
+            </span>
+            {entry.badge && <span className="dt-cm-badge">{entry.badge}</span>}
             {entry.shortcut && <span className="dt-cm-k">{entry.shortcut}</span>}
             {hasChildren && (
               <span className="dt-cm-k" aria-hidden="true">

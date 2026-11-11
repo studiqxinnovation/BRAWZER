@@ -15,17 +15,18 @@ never reach the browser.
 
 ## Milestones
 
-| #   | Milestone                                                                                     | Status              |
-| --- | --------------------------------------------------------------------------------------------- | ------------------- |
-| 9.1 | The desktop: windows, dock and taskbar, wallpapers, both styles                               | **Done** 2026-11-10 |
-| 9.2 | The lock screen                                                                               | **Done** 2026-11-11 |
-| 9.3 | Apps in windows, Launchpad and Start, Control Centre, the window switcher                     | **Done** 2026-11-11 |
-| 9.4 | Apps that keep records: Assignments, Citations, Focus Timer, Exam Mode, Money, Invoices       | **Done** 2026-11-11 |
-| 9.5 | Drive's apps: Files, Trash, Photos, PDF Viewer, Music, Notepad, Writer, Calc, Code, Templates | **Done** 2026-11-11 |
-| 9.6 | App Store and web apps, Web Store, Passwords, Usage, Screenshot, Send to Phone, Terminal      | **Done** 2026-11-11 |
-| 9.7 | Assistant and Study Notes                                                                     | **Done** 2026-11-11 |
-| 9.8 | The prototype's look, exactly: lock screen, Dock, menus, style picker, desktop icons, Wipe    | **Done** 2026-11-11 |
-| 9.9 | The apps inside, as on the prototype, and screen time per app                                 | **Done** 2026-11-11 |
+| #    | Milestone                                                                                     | Status              |
+| ---- | --------------------------------------------------------------------------------------------- | ------------------- |
+| 9.1  | The desktop: windows, dock and taskbar, wallpapers, both styles                               | **Done** 2026-11-10 |
+| 9.2  | The lock screen                                                                               | **Done** 2026-11-11 |
+| 9.3  | Apps in windows, Launchpad and Start, Control Centre, the window switcher                     | **Done** 2026-11-11 |
+| 9.4  | Apps that keep records: Assignments, Citations, Focus Timer, Exam Mode, Money, Invoices       | **Done** 2026-11-11 |
+| 9.5  | Drive's apps: Files, Trash, Photos, PDF Viewer, Music, Notepad, Writer, Calc, Code, Templates | **Done** 2026-11-11 |
+| 9.6  | App Store and web apps, Web Store, Passwords, Usage, Screenshot, Send to Phone, Terminal      | **Done** 2026-11-11 |
+| 9.7  | Assistant and Study Notes                                                                     | **Done** 2026-11-11 |
+| 9.8  | The prototype's look, exactly: lock screen, Dock, menus, style picker, desktop icons, Wipe    | **Done** 2026-11-11 |
+| 9.9  | The apps inside, as on the prototype, and screen time per app                                 | **Done** 2026-11-11 |
+| 9.10 | The dashboard as the prototype's app window, and the start-up screen                          | **Done** 2026-11-11 |
 
 ## 9.1 The desktop
 
@@ -289,6 +290,29 @@ real behaviour behind it:
 Not copied: the prototype's PDF form filling and signing, and its Code
 playground that runs pages, which Brawzer's strict script policy rules out
 in the page; Code stays an editor that saves to Drive.
+
+## 9.10 The dashboard as an app window, and the start-up screen
+
+The dashboard is drawn as the prototype's own app window ("Dashboard as a
+native app window"):
+
+- **No sidebar on the desktop.** The pages are in the title bar's
+  **Browse**, **Protect** (with Shield's count) and **Account** menus, each
+  page with what it's for, plus Open Files, All apps, Lock screen, Wipe,
+  Settings, App Store and Sign out. The title bar shows the page's name and
+  what it's for, then search (⌘K), the bell and **Start Browsing** (which
+  opens Bee Browser). Each page's own title is kept for screen readers.
+  The classic layout and phones keep the sidebar.
+- **The status bar**: "Cloud connected" with how long the last check took,
+  the browsers running, Drive's use and Shield's count (each opens its page).
+- **The window** opens centred, up to 1240 by 880, as the prototype places
+  it, with the prototype's compact type and spacing inside.
+- **Home** gets the prototype's **Apps** card (Music, Writer, Calc,
+  Notepad, Calculator, and All apps).
+- **The start-up screen**: black, Brawzer's logo and a filling bar, once
+  per tab when the desktop first opens (after a wipe, again). The theme
+  script decides it before the first paint, so it never flashes; it's left
+  out with reduced motion, on phones and in browser windows.
 
 ## Not built, and why
 

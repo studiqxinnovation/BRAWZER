@@ -3,9 +3,9 @@
 import type { BrowserEngine, BrowserSession, DriveFile } from "@brawzer/contracts";
 import { useToast } from "@brawzer/ui/components/toast";
 import { cn } from "@brawzer/ui/lib/cn";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Logo } from "@brawzer/ui/brand";
 import type { Route } from "next";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -19,9 +19,9 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { EngineLogo } from "@/components/browser/engine-logo";
-import { appNav } from "@/content/app";
 import { endBrowserSession, fetchBrowserOverview } from "@/lib/api/browser";
-import { emptyTrash, listFilesInFolder } from "@/lib/api/drive";
+import { emptyTrash, fetchDriveOverview, listFilesInFolder } from "@/lib/api/drive";
+import { fetchSecurityOverview } from "@/lib/api/security";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
 import { subscribeToClock } from "@/lib/clock";
 import {
@@ -33,6 +33,7 @@ import {
   subscribeToDesktop,
 } from "@/lib/desktop";
 import { setFocusedName } from "@/lib/desktop-focus";
+import { formatBytes } from "@/lib/drive";
 import {
   chooseDesktopStyle,
   defaultDesktopPrefs,
@@ -54,6 +55,7 @@ import { appFor } from "./apps/open-with";
 import { type AppId, AppIcon, apps, dockSystemApps, Tile } from "./apps/registry";
 import { type WebApp, webAppById } from "./apps/web-apps";
 import { ContextMenuHost, type MenuEntry, openContextMenu } from "./context-menu";
+import { DashboardBar } from "./dashboard-bar";
 import { ControlCentre } from "./control-centre";
 import {
   type BrowserOpen,
@@ -174,12 +176,15 @@ export function DesktopShell({
   menuBar,
   overlays,
   email,
+  admin = false,
   children,
 }: {
   menuBar: ReactNode;
   overlays?: ReactNode;
   /** The account's, for Start. */
   email: string;
+  /** Whether the Account menu offers Admin. */
+  admin?: boolean;
   children: ReactNode;
 }) {
   const toast = useToast();
@@ -216,6 +221,10 @@ export function DesktopShell({
   const [engines, setEngines] = useState<readonly BrowserEngine[]>([]);
   const [limit, setLimit] = useState(3);
   const [cloud, setCloud] = useState<"available" | "unavailable" | null>(null);
+  /** How long the last check of the cloud took, there and back. */
+  const [latency, setLatency] = useState<number | null>(null);
+  const [issues, setIssues] = useState(0);
+  const [drive, setDrive] = useState<{ used: number; limit: number } | null>(null);
   const [deskFiles, setDeskFiles] = useState<readonly DriveFile[]>([]);
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
   const [launcherOpen, setLauncherOpen] = useState(false);
@@ -596,8 +605,19 @@ export function DesktopShell({
     if (!active) return;
     let cancelled = false;
     const load = () => {
+      const started = performance.now();
       void fetchBrowserOverview().then((result) => {
-        if (!cancelled) apply(result);
+        if (cancelled) return;
+        if (result.ok) setLatency(Math.round(performance.now() - started));
+        apply(result);
+      });
+      void fetchSecurityOverview().then((result) => {
+        if (!cancelled && result.ok) setIssues(result.data.recommendations.length);
+      });
+      void fetchDriveOverview().then((result) => {
+        if (!cancelled && result.ok) {
+          setDrive({ used: result.data.usage.usedBytes, limit: result.data.usage.limitBytes });
+        }
       });
       loadDesk();
     };
@@ -608,6 +628,17 @@ export function DesktopShell({
       clearInterval(timer);
     };
   }, [active, apply, loadDesk]);
+
+  // The start-up screen plays once; afterwards it's taken away.
+  useEffect(() => {
+    if (!document.documentElement.dataset.boot) return;
+    const timer = setTimeout(() => {
+      delete document.documentElement.dataset.boot;
+    }, 2_000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
 
   // Exam Mode and the dock's apps: read on arrival. When Exam Mode starts, what it doesn't allow is tucked away.
   useEffect(() => {
@@ -1484,6 +1515,9 @@ export function DesktopShell({
         >
           <DashboardBar
             focused={focused === "dashboard"}
+            issues={issues}
+            admin={admin}
+            engines={engines}
             onClose={hideDashboard}
             onZoom={zoomDashboard}
             onDragStart={(event) => {
@@ -1497,6 +1531,12 @@ export function DesktopShell({
                 { label: "Close", onSelect: hideDashboard },
               ]);
             }}
+            onPage={showDashboard}
+            onOpenApp={(app) => {
+              openApp(app);
+            }}
+            onLauncher={openLauncher}
+            onWipe={askWipe}
           />
           <div className="dt-dash-body lg:grid lg:min-h-0 lg:flex-1 lg:grid-cols-[15.5rem_minmax(0,1fr)]">
             {children}
@@ -1510,11 +1550,37 @@ export function DesktopShell({
                   cloud === "unavailable" ? "bg-danger-fill" : "bg-success",
                 )}
               />
-              {cloud === "unavailable" ? "Cloud unreachable" : "Cloud connected"}
+              {cloud === "unavailable"
+                ? "Cloud unreachable"
+                : `Cloud connected${latency === null ? "" : ` · ${String(latency)} ms`}`}
             </span>
             <span>
-              {String(browserCount)} of {String(limit)} browsers open
+              {String(browserCount)} of {String(limit)} browsers running
             </span>
+            <span className="flex-1" />
+            {drive && (
+              <button
+                type="button"
+                className="dt-status-link"
+                onClick={() => {
+                  router.push("/app/drive");
+                  showDashboard();
+                }}
+              >
+                Drive {formatBytes(drive.used)} of {formatBytes(drive.limit)}
+              </button>
+            )}
+            <button
+              type="button"
+              className="dt-status-link"
+              data-tone={issues > 0 ? "warning" : "good"}
+              onClick={() => {
+                router.push("/app/shield");
+                showDashboard();
+              }}
+            >
+              Shield: {issues > 0 ? `${String(issues)} to do` : "all clear"}
+            </button>
           </div>
           <span
             aria-hidden="true"
@@ -1727,6 +1793,13 @@ export function DesktopShell({
             style={{ opacity: ((100 - prefs.brightness) / 100) * 0.85 }}
           />
         )}
+        {/* The prototype's start-up: shown once per tab, chosen before first paint (see the theme script). */}
+        <div className="dt-boot" aria-hidden="true">
+          <Logo size={40} className="text-white" />
+          <span className="dt-boot-bar">
+            <i />
+          </span>
+        </div>
         <ContextMenuHost />
         {overlays}
       </div>
@@ -1778,69 +1851,3 @@ function AppWindowFrame({
 }
 
 const EMPTY_PARAMS: Readonly<Record<string, string>> = {};
-
-/** The dashboard's title bar: what page this is, and back and forward. */
-function DashboardBar({
-  focused,
-  onClose,
-  onZoom,
-  onDragStart,
-  onMenu,
-}: {
-  focused: boolean;
-  onClose: () => void;
-  onZoom: () => void;
-  onDragStart: (event: ReactPointerEvent<HTMLElement>) => void;
-  onMenu: (event: ReactMouseEvent<HTMLElement>) => void;
-}) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const page =
-    appNav
-      .flatMap((group) => group.items)
-      .filter((item) =>
-        item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href),
-      )
-      .at(-1)?.label ?? "Brawzer";
-  return (
-    <TitleBar
-      className="dt-chrome"
-      label="Brawzer"
-      title={
-        <>
-          <b className="font-semibold text-ink">Brawzer</b>
-          <span className="text-ink-tertiary"> — {page}</span>
-        </>
-      }
-      focused={focused}
-      onClose={onClose}
-      onMinimise={onClose}
-      onZoom={onZoom}
-      onDragStart={onDragStart}
-      onMenu={onMenu}
-    >
-      <span className="dt-nav">
-        <button
-          type="button"
-          className="dt-nav-button"
-          aria-label="Back"
-          onClick={() => {
-            router.back();
-          }}
-        >
-          <ChevronLeft aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="dt-nav-button"
-          aria-label="Forward"
-          onClick={() => {
-            router.forward();
-          }}
-        >
-          <ChevronRight aria-hidden="true" />
-        </button>
-      </span>
-    </TitleBar>
-  );
-}

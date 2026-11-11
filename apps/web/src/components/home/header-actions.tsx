@@ -69,7 +69,14 @@ function markSeen() {
  * (since the person last looked) are counted on the bell and shown once on
  * arrival; each can be dismissed.
  */
-export function Notifications({ notices }: { notices: readonly Notice[] }) {
+export function Notifications({
+  notices,
+  compact = false,
+}: {
+  notices: readonly Notice[];
+  /** The dashboard title bar's smaller bell. */
+  compact?: boolean;
+}) {
   const panelId = useId();
   const [open, setOpen] = useState(false);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
@@ -80,7 +87,8 @@ export function Notifications({ notices }: { notices: readonly Notice[] }) {
   // New notices arrive once, on their own, and step back after a few seconds.
   const arrived = useRef(false);
   useEffect(() => {
-    if (arrived.current || !Number.isFinite(seenAt)) return;
+    // Notices fetched after the page (the dashboard title bar's) arrive a moment later.
+    if (arrived.current || !Number.isFinite(seenAt) || notices.length === 0) return;
     arrived.current = true;
     if (!notices.some((notice) => new Date(notice.at).getTime() > seenAt)) return;
     const show = setTimeout(() => {
@@ -122,7 +130,7 @@ export function Notifications({ notices }: { notices: readonly Notice[] }) {
       <Button
         variant="ghost"
         size="icon"
-        className="relative size-10 rounded-xl border border-line"
+        className={compact ? "dw-tb relative" : "relative size-10 rounded-xl border border-line"}
         aria-label={fresh > 0 ? `Notifications, ${String(fresh)} new` : "Notifications"}
         aria-expanded={open}
         aria-controls={panelId}
