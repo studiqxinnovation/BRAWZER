@@ -1,38 +1,24 @@
 "use client";
 
-import { type BrowserEngine, type BrowserSession, engineDetails } from "@brawzer/contracts";
-import { Mark } from "@brawzer/ui/brand";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@brawzer/ui/components/dialog";
-import { Button } from "@brawzer/ui/components/button";
+import type { BrowserEngine, BrowserSession } from "@brawzer/contracts";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuTrigger,
-  Menu,
-  MenuContent,
-  MenuGroup,
-  MenuGroupLabel,
   MenuItem,
   MenuSeparator,
-  MenuTrigger,
 } from "@brawzer/ui/components/menu";
 import { useToast } from "@brawzer/ui/components/toast";
 import { cn } from "@brawzer/ui/lib/cn";
 import {
-  AppWindow,
   ChevronLeft,
   ChevronRight,
   Image as ImageIcon,
   LayoutDashboard,
+  LayoutGrid,
   Lock,
-  LogOut,
   Moon,
-  Search,
+  SlidersHorizontal,
   Sun,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -46,40 +32,38 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { openCommandPalette } from "@/components/app-shell/command-palette";
-import { AppIconArt, EngineLogo } from "@/components/browser/engine-logo";
+import { EngineLogo } from "@/components/browser/engine-logo";
 import { appNav } from "@/content/app";
 import { endBrowserSession, fetchBrowserOverview } from "@/lib/api/browser";
-import { useLaunchBrowser } from "@/lib/browser/use-launch";
-import { subscribeToClock, taskbarClock } from "@/lib/clock";
 import {
   type DesktopStyle,
   desktopActive,
   readDesktopStyle,
-  readWallpaper,
   setDesktopOn,
   setDesktopStyle,
-  setWallpaper,
   subscribeToDesktop,
-  type Wallpaper,
-  wallpapers,
 } from "@/lib/desktop";
 import { isLocked, lockNow, subscribeToLock } from "@/lib/lock";
-import { signOut } from "@/lib/session-channel";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
+import { type AppWindowApi, AppWindowContext } from "./apps/app-window";
+import { type AppId, AppIcon, apps, defaultPinnedApps } from "./apps/registry";
+import { ControlCentre } from "./control-centre";
 import { type DesktopApi, DesktopContext, type DesktopMessage } from "./desktop-context";
+import { Dock, Taskbar } from "./dock";
+import { AppLauncher } from "./launchpad";
+import { WindowSwitcher } from "./switcher";
+import { WallpaperDialog } from "./wallpaper";
 import { type Rect, type Snap, snapRect, TitleBar, trackPointer } from "./window-chrome";
+import {
+  type DesktopWindow,
+  isBrowserWindow,
+  type WindowContent,
+  windowLabel,
+  windowTitle,
+} from "./windows";
 import "@/components/browser/launcher.css";
 import "./desktop.css";
-
-interface BrowserWindow {
-  session: BrowserSession;
-  min: boolean;
-  /** The rectangle to go back to after a zoom or snap. */
-  restore: Rect | null;
-  rect: Rect;
-  z: number;
-}
+import "./apps/apps.css";
 
 interface DashboardState {
   hidden: boolean;
@@ -101,17 +85,18 @@ const useDark = () =>
     () => false,
   );
 
-const sessionLabel = (session: BrowserSession) => engineDetails[session.engine].short;
+/** A title bar's height (2.375rem) and a little more: how far each new window steps. */
+const CASCADE_Y = 42;
 
 /**
  * Where the nth new window goes: cascaded down and right by a title bar's
  * height, so every window behind keeps its title and buttons in view.
  */
-function cascade(area: Rect, index: number): Rect {
+function cascade(area: Rect, index: number, size?: { width: number; height: number }): Rect {
   const step = index % 4;
   const top = area.top + CASCADE_Y * (step + 1);
-  const width = Math.min(1180, area.width - 80);
-  const height = Math.min(780, area.height - (top - area.top) - 8);
+  const width = Math.min(size?.width ?? 1180, area.width - 80);
+  const height = Math.min(size?.height ?? 780, area.height - (top - area.top) - 8);
   return {
     left: Math.max(area.left, area.left + (area.width - width) / 2 - 60 + step * 30),
     top,
@@ -119,15 +104,14 @@ function cascade(area: Rect, index: number): Rect {
     height,
   };
 }
-/** A title bar's height (2.375rem) and a little more. */
-const CASCADE_Y = 42;
 
 /**
  * The signed-in app as a desktop (wide screens, unless switched off): the
- * dashboard (the app's pages) in a window of its own, each cloud browser in
- * a window that streams its session, a dock (Mac style) or taskbar (Windows
- * style), and a wallpaper. On phones and with the desktop off, the app is as
- * it was: these extras are hidden by the stylesheet.
+ * dashboard (the app's pages) in a window of its own, each cloud browser and
+ * each app in a window, a dock (Mac style) or taskbar (Windows style),
+ * Launchpad or Start, Control Centre, a window switcher and a wallpaper. On
+ * phones and with the desktop off, the app is as it was: the stylesheet
+ * hides these extras.
  */
 export function DesktopShell({
   menuBar,
@@ -142,10 +126,12 @@ export function DesktopShell({
   const active = useDesktopActive();
   // Locked, no window streams: the frames come back, and reconnect, on unlocking.
   const locked = useLocked();
+  const style = useStyle();
   const shellRef = useRef<HTMLDivElement>(null);
   const zTop = useRef(10);
+  const appCount = useRef(0);
   const [dragging, setDragging] = useState(false);
-  const [windows, setWindows] = useState<BrowserWindow[]>([]);
+  const [windows, setWindows] = useState<DesktopWindow[]>([]);
   const [dashboard, setDashboard] = useState<DashboardState>({
     hidden: false,
     rect: null,
@@ -154,9 +140,14 @@ export function DesktopShell({
   });
   const [focused, setFocused] = useState<string>("dashboard");
   const [engines, setEngines] = useState<readonly BrowserEngine[]>([]);
+  const [sessions, setSessions] = useState<readonly BrowserSession[]>([]);
   const [limit, setLimit] = useState(3);
   const [cloud, setCloud] = useState<"available" | "unavailable" | null>(null);
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
+  const [launcherOpen, setLauncherOpen] = useState(false);
+  const [controlOpen, setControlOpen] = useState(false);
+  const [switcher, setSwitcher] = useState<number | null>(null);
+  const pinned = defaultPinnedApps;
 
   const bounds = useCallback(
     () => shellRef.current?.getBoundingClientRect() ?? new DOMRect(0, 0, 1280, 800),
@@ -176,25 +167,64 @@ export function DesktopShell({
     return zTop.current;
   };
 
-  const openSession = useCallback(
-    (session: BrowserSession) => {
+  /** Opens a window for the content, or brings its window forward. */
+  const openWindow = useCallback(
+    (content: WindowContent) => {
+      zTop.current += 1;
+      const z = zTop.current;
+      // A new app window's id is decided here, so it can be focused at once.
+      const newId =
+        content.kind === "browser" ? content.session.id : `app-${String((appCount.current += 1))}`;
+      let target = newId;
       setWindows((current) => {
-        const existing = current.find((entry) => entry.session.id === session.id);
-        zTop.current += 1;
-        const z = zTop.current;
+        const existing =
+          content.kind === "browser"
+            ? current.find((entry) => entry.id === content.session.id)
+            : apps[content.app].single
+              ? current.find(
+                  (entry) => entry.content.kind === "app" && entry.content.app === content.app,
+                )
+              : undefined;
         if (existing) {
+          target = existing.id;
           return current.map((entry) =>
-            entry === existing ? { ...entry, session, min: false, z } : entry,
+            entry === existing ? { ...entry, content, min: false, z } : entry,
           );
         }
+        const size = content.kind === "app" ? apps[content.app] : undefined;
         return [
           ...current,
-          { session, min: false, restore: null, z, rect: cascade(workArea(), current.length) },
+          {
+            id: newId,
+            content,
+            title: null,
+            min: false,
+            restore: null,
+            z,
+            rect: cascade(workArea(), current.length, size),
+          },
         ];
       });
-      setFocused(session.id);
+      // The single-instance window's id is known once the update above has run.
+      queueMicrotask(() => {
+        setFocused(target);
+      });
     },
     [workArea],
+  );
+
+  const openSession = useCallback(
+    (session: BrowserSession) => {
+      openWindow({ kind: "browser", session });
+    },
+    [openWindow],
+  );
+
+  const openApp = useCallback(
+    (app: AppId, params: Record<string, string> = {}) => {
+      openWindow({ kind: "app", app, params });
+    },
+    [openWindow],
   );
 
   const showDashboard = useCallback(() => {
@@ -213,9 +243,33 @@ export function DesktopShell({
     setWallpaperOpen(true);
   }, [setWallpaperOpen]);
 
+  const toggleControlCentre = useCallback(() => {
+    setControlOpen((current) => !current);
+  }, [setControlOpen]);
+
+  const openLauncher = useCallback(() => {
+    setLauncherOpen(true);
+  }, [setLauncherOpen]);
+
   const api = useMemo<DesktopApi>(
-    () => ({ openSession, showDashboard, showDesktop, chooseWallpaper }),
-    [openSession, showDashboard, showDesktop, chooseWallpaper],
+    () => ({
+      openSession,
+      openApp,
+      showDashboard,
+      showDesktop,
+      chooseWallpaper,
+      toggleControlCentre,
+      openLauncher,
+    }),
+    [
+      openSession,
+      openApp,
+      showDashboard,
+      showDesktop,
+      chooseWallpaper,
+      toggleControlCentre,
+      openLauncher,
+    ],
   );
 
   // What's offered and what's running: running browsers come back as windows in the dock.
@@ -226,17 +280,22 @@ export function DesktopShell({
         return;
       }
       setEngines(result.data.engines);
+      setSessions(result.data.sessions);
       setLimit(result.data.limits.liveSessions);
       setCloud(result.data.runtime);
       setWindows((current) => {
         const live = new Set(result.data.sessions.map((session) => session.id));
-        const kept = current.filter((entry) => live.has(entry.session.id));
-        const known = new Set(kept.map((entry) => entry.session.id));
+        const kept = current.filter(
+          (entry) => entry.content.kind !== "browser" || live.has(entry.id),
+        );
+        const known = new Set(kept.map((entry) => entry.id));
         const area = workArea();
         const added = result.data.sessions
           .filter((session) => !known.has(session.id))
-          .map((session, index) => ({
-            session,
+          .map((session, index): DesktopWindow => ({
+            id: session.id,
+            content: { kind: "browser", session },
+            title: null,
             min: true,
             restore: null,
             z: 1,
@@ -270,7 +329,7 @@ export function DesktopShell({
       if (event.origin !== window.location.origin) return;
       const message = event.data;
       if (message.type === "brawzer:close-window") {
-        setWindows((current) => current.filter((entry) => entry.session.id !== message.session));
+        setWindows((current) => current.filter((entry) => entry.id !== message.session));
       }
     };
     window.addEventListener("message", onMessage);
@@ -280,16 +339,20 @@ export function DesktopShell({
   }, []);
 
   function focusWindow(id: string) {
+    if (id === "dashboard") {
+      showDashboard();
+      return;
+    }
     const z = raise();
     setWindows((current) =>
-      current.map((entry) => (entry.session.id === id ? { ...entry, min: false, z } : entry)),
+      current.map((entry) => (entry.id === id ? { ...entry, min: false, z } : entry)),
     );
     setFocused(id);
   }
 
   function minimise(id: string) {
     setWindows((current) =>
-      current.map((entry) => (entry.session.id === id ? { ...entry, min: true } : entry)),
+      current.map((entry) => (entry.id === id ? { ...entry, min: true } : entry)),
     );
     setFocused("dashboard");
   }
@@ -297,20 +360,21 @@ export function DesktopShell({
   function zoom(id: string) {
     setWindows((current) =>
       current.map((entry) => {
-        if (entry.session.id !== id) return entry;
+        if (entry.id !== id) return entry;
         if (entry.restore) return { ...entry, rect: entry.restore, restore: null };
         return { ...entry, restore: entry.rect, rect: workArea() };
       }),
     );
   }
 
-  async function close(entry: BrowserWindow) {
-    setWindows((current) => current.filter((candidate) => candidate !== entry));
-    const result = await endBrowserSession(entry.session.id);
+  async function close(entry: DesktopWindow) {
+    setWindows((current) => current.filter((candidate) => candidate.id !== entry.id));
+    if (!isBrowserWindow(entry)) return;
+    const result = await endBrowserSession(entry.content.session.id);
     if (result.ok || result.status === 404) {
       toast.add({
         type: "success",
-        title: `${sessionLabel(entry.session)} closed`,
+        title: `${windowLabel(entry)} closed`,
         description: "Its session has ended; a profile that keeps its data saved it.",
       });
     } else {
@@ -318,21 +382,21 @@ export function DesktopShell({
     }
   }
 
-  function snapped(snap: Snap | null, apply: (rect: Rect) => void) {
-    if (snap) apply(snapRect(snap, workArea()));
+  function snapped(snap: Snap | null, then: (rect: Rect) => void) {
+    if (snap) then(snapRect(snap, workArea()));
   }
 
   function dragWindow(
     event: ReactPointerEvent<HTMLElement>,
-    entry: BrowserWindow,
+    entry: DesktopWindow,
     kind: "move" | "resize",
   ) {
-    focusWindow(entry.session.id);
+    focusWindow(entry.id);
     setDragging(true);
     const set = (rect: Rect) => {
       setWindows((current) =>
         current.map((candidate) =>
-          candidate.session.id === entry.session.id ? { ...candidate, rect } : candidate,
+          candidate.id === entry.id ? { ...candidate, rect } : candidate,
         ),
       );
     };
@@ -341,9 +405,7 @@ export function DesktopShell({
       snapped(snap, (rect) => {
         setWindows((current) =>
           current.map((candidate) =>
-            candidate.session.id === entry.session.id
-              ? { ...candidate, restore: candidate.rect, rect }
-              : candidate,
+            candidate.id === entry.id ? { ...candidate, restore: candidate.rect, rect } : candidate,
           ),
         );
       });
@@ -391,7 +453,68 @@ export function DesktopShell({
     );
   }
 
-  const runningEngines = new Set(windows.map((entry) => entry.session.engine));
+  // The window switcher: the dashboard and every window, most recently used first.
+  const switchable = useMemo(() => {
+    const entries: { z: number; entry: "dashboard" | DesktopWindow }[] = [
+      ...(dashboard.hidden ? [] : [{ z: dashboard.z, entry: "dashboard" as const }]),
+      ...windows.map((entry) => ({ z: entry.min ? 0 : entry.z, entry })),
+    ];
+    return entries.sort((a, b) => b.z - a.z).map((item) => item.entry);
+  }, [windows, dashboard]);
+  const switchRef = useRef({ switchable, switcher, focusWindow });
+  useEffect(() => {
+    switchRef.current = { switchable, switcher, focusWindow };
+  });
+
+  useEffect(() => {
+    if (!active) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.altKey || event.code !== "Backquote" || isLocked()) return;
+      event.preventDefault();
+      const { switchable: list, switcher: current } = switchRef.current;
+      if (list.length === 0) return;
+      const step = event.shiftKey ? -1 : 1;
+      setSwitcher(((current ?? 0) + step + list.length) % list.length);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      const { switchable: list, switcher: current, focusWindow: focus } = switchRef.current;
+      if (current === null) return;
+      if (event.key === "Escape") {
+        setSwitcher(null);
+        return;
+      }
+      if (event.key !== "Alt") return;
+      const chosen = list[current];
+      setSwitcher(null);
+      if (chosen === "dashboard") focus("dashboard");
+      else if (chosen) focus(chosen.id);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [active]);
+
+  const browserCount = windows.filter(isBrowserWindow).length;
+  const dockActions = {
+    windows,
+    focused,
+    engines,
+    pinned,
+    dashboardHidden: dashboard.hidden,
+    onDashboard: () => {
+      if (dashboard.hidden || focused !== "dashboard") showDashboard();
+      else setDashboard((current) => ({ ...current, hidden: true }));
+    },
+    onFocus: focusWindow,
+    onMinimise: minimise,
+    onOpenApp: (app: AppId) => {
+      openApp(app);
+    },
+    onLaunchpad: openLauncher,
+  };
 
   return (
     <DesktopContext.Provider value={api}>
@@ -406,10 +529,10 @@ export function DesktopShell({
             if (dashboard.hidden) showDashboard();
             else setDashboard((current) => ({ ...current, hidden: true }));
           }}
-          onWallpaper={() => {
-            setWallpaperOpen(true);
-          }}
+          onWallpaper={chooseWallpaper}
           onShowDesktop={showDesktop}
+          onLauncher={openLauncher}
+          onControlCentre={toggleControlCentre}
         />
         {menuBar}
 
@@ -462,7 +585,7 @@ export function DesktopShell({
               {cloud === "unavailable" ? "Cloud unreachable" : "Cloud connected"}
             </span>
             <span>
-              {String(windows.length)} of {String(limit)} browsers open
+              {String(browserCount)} of {String(limit)} browsers open
             </span>
           </div>
           <span
@@ -476,13 +599,14 @@ export function DesktopShell({
 
         {active &&
           windows.map((entry) => {
-            const label = sessionLabel(entry.session);
-            const isFocused = focused === entry.session.id;
+            const label = windowLabel(entry);
+            const isFocused = focused === entry.id;
             return (
               <section
-                key={entry.session.id}
+                key={entry.id}
                 aria-label={`${label} window`}
                 className="dt-win"
+                data-kind={entry.content.kind}
                 data-min={entry.min || undefined}
                 data-focused={isFocused || undefined}
                 style={{
@@ -493,33 +617,54 @@ export function DesktopShell({
                   height: entry.rect.height,
                 }}
                 onPointerDownCapture={() => {
-                  if (!isFocused) focusWindow(entry.session.id);
+                  if (!isFocused) focusWindow(entry.id);
                 }}
               >
                 <TitleBar
                   label={label}
-                  title={`${engineDetails[entry.session.engine].name} · in Brawzer’s cloud`}
-                  icon={<EngineLogo engine={entry.session.engine} size="sm" />}
+                  title={windowTitle(entry)}
+                  icon={
+                    entry.content.kind === "browser" ? (
+                      <EngineLogo engine={entry.content.session.engine} size="sm" />
+                    ) : (
+                      <AppIcon app={entry.content.app} size={16} />
+                    )
+                  }
                   focused={isFocused}
                   onClose={() => void close(entry)}
                   onMinimise={() => {
-                    minimise(entry.session.id);
+                    minimise(entry.id);
                   }}
                   onZoom={() => {
-                    zoom(entry.session.id);
+                    zoom(entry.id);
                   }}
                   onDragStart={(event) => {
                     dragWindow(event, entry, "move");
                   }}
                 />
-                {locked ? (
-                  <div className="dt-frame" />
+                {entry.content.kind === "browser" ? (
+                  locked ? (
+                    <div className="dt-frame" />
+                  ) : (
+                    <iframe
+                      title={`${label}, streamed from Brawzer’s cloud`}
+                      src={`/app/browser/window?session=${entry.id}&embedded=1`}
+                      className="dt-frame"
+                      allow="clipboard-read; clipboard-write; autoplay; fullscreen"
+                    />
+                  )
                 ) : (
-                  <iframe
-                    title={`${engineDetails[entry.session.engine].name}, streamed from Brawzer’s cloud`}
-                    src={`/app/browser/window?session=${entry.session.id}&embedded=1`}
-                    className="dt-frame"
-                    allow="clipboard-read; clipboard-write; autoplay; fullscreen"
+                  <AppWindowFrame
+                    entry={entry}
+                    onTitle={(title) => {
+                      setWindows((current) =>
+                        current.map((candidate) =>
+                          candidate.id === entry.id ? { ...candidate, title } : candidate,
+                        ),
+                      );
+                    }}
+                    onClose={() => void close(entry)}
+                    onOpenApp={openApp}
                   />
                 )}
                 <span
@@ -533,38 +678,85 @@ export function DesktopShell({
             );
           })}
 
-        <Dock
-          engines={engines}
-          windows={windows}
-          running={runningEngines}
-          focused={focused}
-          dashboardHidden={dashboard.hidden}
-          onDashboard={() => {
-            if (dashboard.hidden || focused !== "dashboard") showDashboard();
-            else setDashboard((current) => ({ ...current, hidden: true }));
-          }}
-          onFocus={focusWindow}
-          onMinimise={minimise}
-        />
+        <Dock {...dockActions} />
         <Taskbar
-          engines={engines}
-          windows={windows}
-          running={runningEngines}
-          focused={focused}
-          onDashboard={showDashboard}
-          onFocus={focusWindow}
-          onMinimise={minimise}
+          {...dockActions}
+          startOpen={launcherOpen && style === "windows"}
+          onStart={() => {
+            setLauncherOpen((current) => !current);
+          }}
+          onControlCentre={toggleControlCentre}
           onShowDesktop={showDesktop}
-          onWallpaper={() => {
-            setWallpaperOpen(true);
+        />
+        <AppLauncher
+          variant={style === "windows" ? "start" : "launchpad"}
+          open={launcherOpen}
+          onOpenChange={setLauncherOpen}
+          engines={engines}
+          onOpenApp={(app) => {
+            openApp(app);
           }}
         />
+        <ControlCentre
+          open={controlOpen}
+          onOpenChange={setControlOpen}
+          sessions={sessions}
+          limit={limit}
+          onWallpaper={chooseWallpaper}
+          onShowDesktop={showDesktop}
+        />
+        {switcher !== null && <WindowSwitcher entries={switchable} selected={switcher} />}
         <WallpaperDialog open={wallpaperOpen} onOpenChange={setWallpaperOpen} />
         {overlays}
       </div>
     </DesktopContext.Provider>
   );
 }
+
+/** An app's window body: the app, told which window it's in. */
+function AppWindowFrame({
+  entry,
+  onTitle,
+  onClose,
+  onOpenApp,
+}: {
+  entry: DesktopWindow;
+  onTitle: (title: string | null) => void;
+  onClose: () => void;
+  onOpenApp: (app: AppId, params?: Record<string, string>) => void;
+}) {
+  const content = entry.content;
+  const handlers = useRef({ onTitle, onClose });
+  useEffect(() => {
+    handlers.current = { onTitle, onClose };
+  });
+  const params = content.kind === "app" ? content.params : EMPTY_PARAMS;
+  const api = useMemo<AppWindowApi>(
+    () => ({
+      id: entry.id,
+      params,
+      setTitle: (title) => {
+        handlers.current.onTitle(title);
+      },
+      close: () => {
+        handlers.current.onClose();
+      },
+      openApp: onOpenApp,
+    }),
+    [entry.id, params, onOpenApp],
+  );
+  if (content.kind !== "app") return null;
+  const App = apps[content.app].component;
+  return (
+    <div className="dt-app">
+      <AppWindowContext.Provider value={api}>
+        <App />
+      </AppWindowContext.Provider>
+    </div>
+  );
+}
+
+const EMPTY_PARAMS: Readonly<Record<string, string>> = {};
 
 /** The dashboard's title bar: what page this is, and back and forward. */
 function DashboardBar({
@@ -629,292 +821,22 @@ function DashboardBar({
   );
 }
 
-/** Brawzer's own icon, for the dock and taskbar: its mark on the accent colour. */
-function BrawzerIcon({ size }: { size: number }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="dt-brand"
-      style={{ width: size, height: size, borderRadius: Math.round(size * 0.24) }}
-    >
-      <Mark size={Math.round(size * 0.52)} />
-    </span>
-  );
-}
-
-/** Clicking a browser: open it, bring it forward, or tuck it away if it's in front. */
-function useBrowserClick(
-  windows: readonly BrowserWindow[],
-  focused: string,
-  onFocus: (id: string) => void,
-  onMinimise: (id: string) => void,
-) {
-  const { launch } = useLaunchBrowser();
-  return (engine: BrowserEngine) => {
-    const own = windows.filter((entry) => entry.session.engine === engine);
-    if (own.length === 0) {
-      void launch(engine);
-      return;
-    }
-    const front = [...own].filter((entry) => !entry.min).sort((a, b) => b.z - a.z)[0];
-    const target = front ?? own.at(-1);
-    if (!target) return;
-    if (front?.session.id === focused) onMinimise(target.session.id);
-    else onFocus(target.session.id);
-  };
-}
-
-/** Mac style: the dock along the bottom, magnifying under the pointer. */
-function Dock({
-  engines,
-  windows,
-  running,
-  focused,
-  dashboardHidden,
-  onDashboard,
-  onFocus,
-  onMinimise,
-}: {
-  engines: readonly BrowserEngine[];
-  windows: readonly BrowserWindow[];
-  running: ReadonlySet<BrowserEngine>;
-  focused: string;
-  dashboardHidden: boolean;
-  onDashboard: () => void;
-  onFocus: (id: string) => void;
-  onMinimise: (id: string) => void;
-}) {
-  const click = useBrowserClick(windows, focused, onFocus, onMinimise);
-  const minimised = windows.filter((entry) => entry.min);
-  return (
-    <nav aria-label="Dock" className="dt-dock">
-      <DockItem label="Brawzer" running={!dashboardHidden} onClick={onDashboard}>
-        <BrawzerIcon size={46} />
-      </DockItem>
-      <span className="dt-sep" aria-hidden="true" />
-      {engines.map((engine) => (
-        <DockItem
-          key={engine}
-          label={engineDetails[engine].short}
-          running={running.has(engine)}
-          onClick={() => {
-            click(engine);
-          }}
-        >
-          <span className="dt-dock-art">
-            <AppIconArt engine={engine} />
-          </span>
-        </DockItem>
-      ))}
-      {minimised.length > 0 && <span className="dt-sep" aria-hidden="true" />}
-      {minimised.map((entry) => (
-        <DockItem
-          key={entry.session.id}
-          label={`${sessionLabel(entry.session)}, minimised`}
-          running={false}
-          onClick={() => {
-            onFocus(entry.session.id);
-          }}
-        >
-          <span className="dt-thumb" aria-hidden="true">
-            <span className="dt-thumb-bar">
-              <i />
-              <i />
-              <i />
-            </span>
-            <EngineLogo engine={entry.session.engine} size="sm" />
-          </span>
-        </DockItem>
-      ))}
-    </nav>
-  );
-}
-
-function DockItem({
-  label,
-  running,
-  onClick,
-  children,
-}: {
-  label: string;
-  running: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className="dt-dock-item"
-      data-running={running || undefined}
-      aria-label={running ? `${label}, open` : label}
-      onClick={onClick}
-    >
-      {children}
-      <span className="dt-tip" aria-hidden="true">
-        {label}
-      </span>
-    </button>
-  );
-}
-
-/** Windows style: the taskbar, the Start menu, search and the tray. */
-function Taskbar({
-  engines,
-  windows,
-  running,
-  focused,
-  onDashboard,
-  onFocus,
-  onMinimise,
-  onShowDesktop,
-  onWallpaper,
-}: {
-  engines: readonly BrowserEngine[];
-  windows: readonly BrowserWindow[];
-  running: ReadonlySet<BrowserEngine>;
-  focused: string;
-  onDashboard: () => void;
-  onFocus: (id: string) => void;
-  onMinimise: (id: string) => void;
-  onShowDesktop: () => void;
-  onWallpaper: () => void;
-}) {
-  const router = useRouter();
-  const click = useBrowserClick(windows, focused, onFocus, onMinimise);
-  const dark = useDark();
-  const [time, date] = useSyncExternalStore(subscribeToClock, taskbarClock, () => "|").split("|");
-  const focusedEngine = windows.find((entry) => entry.session.id === focused)?.session.engine;
-  return (
-    <nav aria-label="Taskbar" className="dt-taskbar">
-      <div className="dt-taskbar-middle">
-        <Menu>
-          <MenuTrigger className="dt-task" aria-label="Start">
-            <BrawzerIcon size={26} />
-          </MenuTrigger>
-          <MenuContent side="top" align="start" className="w-72">
-            <MenuGroup>
-              <MenuGroupLabel>Browsers</MenuGroupLabel>
-              {engines.map((engine) => (
-                <MenuItem
-                  key={engine}
-                  icon={<EngineLogo engine={engine} size="sm" />}
-                  onClick={() => {
-                    click(engine);
-                  }}
-                >
-                  {engineDetails[engine].short}
-                </MenuItem>
-              ))}
-            </MenuGroup>
-            <MenuSeparator />
-            <MenuGroup>
-              <MenuGroupLabel>Brawzer</MenuGroupLabel>
-              {appNav
-                .flatMap((group) => group.items)
-                .map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <MenuItem
-                      key={item.href}
-                      icon={<Icon />}
-                      onClick={() => {
-                        onDashboard();
-                        router.push(item.href);
-                      }}
-                    >
-                      {item.label}
-                    </MenuItem>
-                  );
-                })}
-            </MenuGroup>
-            <MenuSeparator />
-            <MenuItem icon={<ImageIcon />} onClick={onWallpaper}>
-              Change wallpaper…
-            </MenuItem>
-            <MenuItem
-              icon={<AppWindow />}
-              onClick={() => {
-                setDesktopStyle("mac");
-              }}
-            >
-              Use the Mac style
-            </MenuItem>
-            <MenuItem icon={<Lock />} onClick={() => void lockNow()}>
-              Lock
-            </MenuItem>
-            <MenuItem icon={<LogOut />} onClick={() => void signOut("user")}>
-              Sign out
-            </MenuItem>
-          </MenuContent>
-        </Menu>
-        <button type="button" className="dt-search" onClick={openCommandPalette}>
-          <Search aria-hidden="true" />
-          Search
-        </button>
-        <button type="button" className="dt-task" aria-label="Brawzer" onClick={onDashboard}>
-          <BrawzerIcon size={26} />
-        </button>
-        {engines.map((engine) => (
-          <button
-            key={engine}
-            type="button"
-            className="dt-task"
-            data-running={running.has(engine) || undefined}
-            data-active={focusedEngine === engine || undefined}
-            aria-label={
-              running.has(engine)
-                ? `${engineDetails[engine].short}, open`
-                : engineDetails[engine].short
-            }
-            title={engineDetails[engine].short}
-            onClick={() => {
-              click(engine);
-            }}
-          >
-            <EngineLogo engine={engine} size="md" />
-          </button>
-        ))}
-      </div>
-      <div className="dt-tray">
-        <button
-          type="button"
-          className="dt-tray-button"
-          aria-label={dark ? "Use the light theme" : "Use the dark theme"}
-          onClick={() => {
-            setThemePreference(dark ? "light" : "dark");
-          }}
-        >
-          {dark ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
-        </button>
-        <span className="dt-clock">
-          <span>{time}</span>
-          <span>{date}</span>
-        </span>
-        <button
-          type="button"
-          className="dt-show-desktop"
-          aria-label="Show the desktop"
-          title="Show the desktop"
-          onClick={onShowDesktop}
-        />
-      </div>
-    </nav>
-  );
-}
-
 /** The wallpaper, and the desktop's own right-click menu. */
 function DesktopBackground({
   dashboardHidden,
   onToggleDashboard,
   onWallpaper,
   onShowDesktop,
+  onLauncher,
+  onControlCentre,
 }: {
   dashboardHidden: boolean;
   onToggleDashboard: () => void;
   onWallpaper: () => void;
   onShowDesktop: () => void;
+  onLauncher: () => void;
+  onControlCentre: () => void;
 }) {
-  const router = useRouter();
   const style = useStyle();
   const dark = useDark();
   return (
@@ -924,13 +846,8 @@ function DesktopBackground({
         <MenuItem icon={<LayoutDashboard />} onClick={onToggleDashboard}>
           {dashboardHidden ? "Show Brawzer" : "Hide Brawzer"}
         </MenuItem>
-        <MenuItem
-          icon={<AppWindow />}
-          onClick={() => {
-            router.push("/app/browser?new=1");
-          }}
-        >
-          Open a browser…
+        <MenuItem icon={<LayoutGrid />} onClick={onLauncher}>
+          {style === "mac" ? "Open Launchpad" : "Open Start"}
         </MenuItem>
         <MenuItem onClick={onShowDesktop}>Show the desktop</MenuItem>
         <MenuSeparator />
@@ -952,6 +869,9 @@ function DesktopBackground({
         >
           {dark ? "Light theme" : "Dark theme"}
         </MenuItem>
+        <MenuItem icon={<SlidersHorizontal />} onClick={onControlCentre}>
+          Control Centre
+        </MenuItem>
         <MenuSeparator />
         <MenuItem icon={<Lock />} onClick={() => void lockNow()}>
           Lock screen
@@ -965,55 +885,5 @@ function DesktopBackground({
         </MenuItem>
       </ContextMenuContent>
     </ContextMenu>
-  );
-}
-
-/** The wallpapers, each a preview to pick. Kept for this tab, like the theme. */
-function WallpaperDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const current = useSyncExternalStore<Wallpaper>(
-    subscribeToDesktop,
-    readWallpaper,
-    () => "brawzer",
-  );
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(34rem,calc(100vw-2rem))]">
-        <DialogTitle>Wallpaper</DialogTitle>
-        <DialogDescription>Kept for this tab only, like the theme.</DialogDescription>
-        <div role="radiogroup" aria-label="Wallpapers" className="mt-5 grid grid-cols-3 gap-2.5">
-          {(Object.keys(wallpapers) as Wallpaper[]).map((key) => (
-            <button
-              key={key}
-              type="button"
-              role="radio"
-              aria-checked={current === key}
-              className="dt-wp-tile"
-              data-wallpaper-preview={key}
-              onClick={() => {
-                setWallpaper(key);
-              }}
-            >
-              <span>{wallpapers[key].name}</span>
-            </button>
-          ))}
-        </div>
-        <div className="mt-6 flex justify-end">
-          <Button
-            variant="primary"
-            onClick={() => {
-              onOpenChange(false);
-            }}
-          >
-            Done
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }

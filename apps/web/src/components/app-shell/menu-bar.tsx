@@ -26,8 +26,10 @@ import {
   MonitorSmartphone,
   Moon,
   Plus,
+  LayoutGrid,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Sun,
 } from "lucide-react";
 import type { Route } from "next";
@@ -113,6 +115,8 @@ export function MenuBar() {
   const [sessions, setSessions] = useState<readonly BrowserSession[] | null>(null);
   const go = (href: string) => {
     router.push(href as Route);
+    // On the desktop, the page shows in Brawzer's window: bring it forward.
+    desktop?.showDashboard();
   };
 
   return (
@@ -209,6 +213,12 @@ export function MenuBar() {
               <MenuGroupLabel>Desktop</MenuGroupLabel>
               {desktopOn && desktop && (
                 <>
+                  <MenuItem icon={<LayoutGrid />} onClick={desktop.openLauncher}>
+                    {style === "mac" ? "Launchpad" : "Start"}
+                  </MenuItem>
+                  <MenuItem icon={<SlidersHorizontal />} onClick={desktop.toggleControlCentre}>
+                    Control Centre
+                  </MenuItem>
                   <MenuItem icon={<ImageIcon />} onClick={desktop.chooseWallpaper}>
                     Change wallpaper…
                   </MenuItem>
@@ -342,6 +352,16 @@ export function MenuBar() {
       </Menubar>
 
       <div className="ml-auto flex items-center gap-3">
+        {desktop && (
+          <button
+            type="button"
+            onClick={desktop.toggleControlCentre}
+            aria-label="Control Centre"
+            className="grid size-[1.375rem] place-items-center rounded-md text-ink outline-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-focus [&_svg]:size-3.5"
+          >
+            <SlidersHorizontal aria-hidden="true" />
+          </button>
+        )}
         <Clock />
         <ThemeSwitch />
       </div>

@@ -2,6 +2,7 @@
 
 import type { BrowserSession } from "@brawzer/contracts";
 import { createContext, useContext } from "react";
+import type { AppId } from "./apps/registry";
 
 /** What the rest of the app may ask of the desktop. */
 export interface DesktopApi {
@@ -13,6 +14,12 @@ export interface DesktopApi {
   showDesktop: () => void;
   /** Opens the wallpaper picker. */
   chooseWallpaper: () => void;
+  /** Opens one of the desktop's apps, or brings its window forward. */
+  openApp: (app: AppId, params?: Record<string, string>) => void;
+  /** Shows or hides Control Centre. */
+  toggleControlCentre: () => void;
+  /** Opens Launchpad (Mac style) or Start (Windows style). */
+  openLauncher: () => void;
 }
 
 export const DesktopContext = createContext<DesktopApi | null>(null);

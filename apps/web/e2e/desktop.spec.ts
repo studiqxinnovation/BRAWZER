@@ -110,9 +110,18 @@ test.describe("desktop", () => {
     await expect(page.getByRole("combobox", { name: "Launch a browser or search" })).toBeFocused();
     await page.keyboard.press("Escape");
     await taskbar.getByRole("button", { name: "Start" }).click();
-    await expect(page.getByRole("menuitem", { name: "Bee Browser" })).toBeVisible();
-    await page.getByRole("menuitem", { name: "Use the Mac style" }).click();
+    const start = page.getByRole("dialog", { name: "Start" });
+    await expect(start.getByRole("button", { name: "Bee Browser" })).toBeVisible();
+    await expect(start.getByRole("button", { name: "Lock" })).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await taskbar.getByRole("button", { name: "Control Centre" }).click();
+    await page
+      .getByRole("dialog", { name: "Control Centre" })
+      .getByRole("button", { name: "Use Mac style" })
+      .click();
     await expect(html).toHaveAttribute("data-desktop-style", "mac");
+    await page.keyboard.press("Escape");
     await expect(dock).toBeVisible();
 
     // The classic layout: the app as a page again, without the desktop.
@@ -124,6 +133,74 @@ test.describe("desktop", () => {
     expect(await wcagViolations(page)).toEqual([]);
     await viewMenu(page, "Use the desktop");
     await expect(dock).toBeVisible();
+  });
+
+  test("apps open in windows from Launchpad, the dock and quick launch, beside Control Centre and the switcher", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The apps are the desktop's.");
+    await signedIn(page, baseURL, "desktop-apps");
+    const dock = page.getByRole("navigation", { name: "Dock" });
+
+    // Launchpad lists the browsers and the apps, found by typing.
+    await dock.getByRole("button", { name: "Launchpad" }).click();
+    const launchpad = page.getByRole("dialog", { name: "Launchpad" });
+    await expect(launchpad.getByRole("region", { name: "Browsers" })).toContainText("Bee Browser");
+    expect(await wcagViolations(page)).toEqual([]);
+    await launchpad.getByRole("searchbox").fill("calc");
+    await expect(launchpad.getByRole("region", { name: "Browsers" })).toHaveCount(0);
+    await launchpad.getByRole("button", { name: "Calculator" }).click();
+    await expect(launchpad).toBeHidden();
+
+    // The calculator, by keyboard and by pointer.
+    const calculator = page.getByRole("region", { name: "Calculator window" });
+    await expect(calculator).toBeVisible();
+    await calculator.getByRole("button", { name: "7" }).click();
+    await page.keyboard.type("*6-2=");
+    await expect(calculator.getByRole("status", { name: "Result" })).toHaveText("40");
+    await calculator.getByRole("button", { name: "Divide" }).click();
+    await calculator.getByRole("button", { name: "0", exact: true }).click();
+    await calculator.getByRole("button", { name: "Equals" }).click();
+    await expect(calculator.getByRole("status", { name: "Result" })).toHaveText("Error");
+    await expect(dock.getByRole("button", { name: "Calculator, open" })).toBeVisible();
+
+    // Settings from quick launch; it changes the desktop's style.
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByRole("combobox", { name: "Launch a browser or search" }).fill("settings");
+    await page.keyboard.press("Enter");
+    const settings = page.getByRole("region", { name: "Settings window" });
+    await expect(settings).toBeVisible();
+    await settings.getByRole("button", { name: "Desktop" }).click();
+    await expect(settings.getByRole("radio", { name: "Mac: menu bar and dock" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(await wcagViolations(page)).toEqual([]);
+
+    // The switcher goes back to the calculator.
+    await page.keyboard.down("Alt");
+    await page.keyboard.press("Backquote");
+    await expect(page.getByRole("listbox", { name: "Windows" })).toBeVisible();
+    await expect(page.getByRole("option", { selected: true })).toHaveText("Calculator");
+    await page.keyboard.up("Alt");
+    await expect(page.getByRole("listbox", { name: "Windows" })).toBeHidden();
+    await expect(calculator).toHaveAttribute("data-focused", "true");
+
+    // Control Centre's switches are real: dark mode.
+    await page.getByRole("button", { name: "Control Centre" }).click();
+    const control = page.getByRole("dialog", { name: "Control Centre" });
+    await expect(control).toContainText("0 of 3 open");
+    await control.getByRole("button", { name: "Dark mode" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    expect(await wcagViolations(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+
+    // Closing an app's window closes just it.
+    await calculator.getByRole("button", { name: "Close Calculator" }).click();
+    await expect(calculator).toBeHidden();
+    await expect(dock.getByRole("button", { name: "Calculator", exact: true })).toBeVisible();
   });
 
   test("the style follows the device's own system until one is chosen", async ({ page }) => {

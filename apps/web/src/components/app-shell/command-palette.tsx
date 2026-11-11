@@ -8,6 +8,8 @@ import { Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { EngineLogo } from "@/components/browser/engine-logo";
+import { useDesktop } from "@/components/desktop/desktop-context";
+import { AppIcon, appIds, apps } from "@/components/desktop/apps/registry";
 import { appNav } from "@/content/app";
 import { fetchBrowserOverview } from "@/lib/api/browser";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
@@ -62,6 +64,7 @@ export function CommandPalette() {
   const router = useRouter();
   const listId = useId();
   const { launch } = useLaunchBrowser();
+  const desktop = useDesktop();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -113,6 +116,19 @@ export function CommandPalette() {
         run: () => void launch(engine),
       };
     }),
+    // The desktop's apps, where there is a desktop to open them on.
+    ...(desktop
+      ? appIds.map((app) => ({
+          key: `app:${app}`,
+          label: apps[app].name,
+          hint: "Open app",
+          words: `${apps[app].description} ${apps[app].category} app`,
+          icon: <AppIcon app={app} size={28} />,
+          run: () => {
+            desktop.openApp(app);
+          },
+        }))
+      : []),
     ...appNav.flatMap((group) =>
       group.items.map((item) => ({
         key: item.href,
@@ -122,6 +138,7 @@ export function CommandPalette() {
         icon: <PageIcon icon={item.icon} />,
         run: () => {
           router.push(item.href);
+          desktop?.showDashboard();
         },
       })),
     ),
