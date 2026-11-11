@@ -218,6 +218,13 @@
       "when": 1794381744296,
       "tag": "0030_session_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794387172554,
+      "tag": "0031_app_records",
+      "breakpoints": true
     }
   ]
 }

@@ -141,6 +141,15 @@ export const accountExportSchema = z.object({
       endReason: z.string().nullable(),
     }),
   ),
+  /** What the desktop's apps keep: assignments, money, invoices and the rest. */
+  appRecords: z.array(
+    z.object({
+      app: z.string(),
+      key: z.string(),
+      data: z.json(),
+      updatedAt: z.iso.datetime(),
+    }),
+  ),
 });
 
 export const recommendationSchema = z.object({

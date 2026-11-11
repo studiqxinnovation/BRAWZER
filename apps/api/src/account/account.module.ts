@@ -6,6 +6,7 @@ import { DriveModule } from "../drive/drive.module.js";
 import { ProfilesModule } from "../profiles/profiles.module.js";
 import { ProxiesModule } from "../proxies/proxies.module.js";
 import { SiteRulesModule } from "../site-rules/site-rules.module.js";
+import { AppRecordsModule } from "../app-records/app-records.module.js";
 import { ReportsModule } from "../reports/reports.module.js";
 import { TeamsModule } from "../teams/teams.module.js";
 import { HistoryModule } from "../history/history.module.js";
@@ -27,6 +28,7 @@ import { AccountService } from "./account.service.js";
     ProfilesModule,
     ProxiesModule,
     SiteRulesModule,
+    AppRecordsModule,
     ReportsModule,
     TeamsModule,
     HistoryModule,

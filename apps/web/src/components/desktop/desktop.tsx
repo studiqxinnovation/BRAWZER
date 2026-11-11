@@ -44,6 +44,8 @@ import {
   subscribeToDesktop,
 } from "@/lib/desktop";
 import { isLocked, lockNow, subscribeToLock } from "@/lib/lock";
+import { subscribeToClock } from "@/lib/clock";
+import { currentExam, endExam, examAllows, loadExam, subscribeToExam } from "@/lib/exam";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
 import { type AppWindowApi, AppWindowContext } from "./apps/app-window";
 import { type AppId, AppIcon, apps, defaultPinnedApps } from "./apps/registry";
@@ -76,6 +78,12 @@ interface DashboardState {
 
 const useDesktopActive = () => useSyncExternalStore(subscribeToDesktop, desktopActive, () => false);
 const useLocked = () => useSyncExternalStore(subscribeToLock, isLocked, () => false);
+const useExam = () => useSyncExternalStore(subscribeToExam, currentExam, () => null);
+const quarterMinute = () => Math.floor(Date.now() / 15_000);
+
+/** What Exam Mode calls a window's content: "app:notepad", "browser:chrome". */
+const examTarget = (content: WindowContent) =>
+  content.kind === "browser" ? `browser:${content.session.engine}` : `app:${content.app}`;
 const useStyle = () =>
   useSyncExternalStore<DesktopStyle>(subscribeToDesktop, readDesktopStyle, () => "mac");
 const useDark = () =>
@@ -127,6 +135,8 @@ export function DesktopShell({
   // Locked, no window streams: the frames come back, and reconnect, on unlocking.
   const locked = useLocked();
   const style = useStyle();
+  const exam = useExam();
+  const examTick = useSyncExternalStore(subscribeToClock, quarterMinute, () => 0);
   const shellRef = useRef<HTMLDivElement>(null);
   const zTop = useRef(10);
   const appCount = useRef(0);
@@ -170,6 +180,14 @@ export function DesktopShell({
   /** Opens a window for the content, or brings its window forward. */
   const openWindow = useCallback(
     (content: WindowContent) => {
+      if (!examAllows(examTarget(content))) {
+        toast.add({
+          type: "info",
+          title: "Not during Exam Mode",
+          description: "Only the apps and browsers you chose open until its time is up.",
+        });
+        return;
+      }
       zTop.current += 1;
       const z = zTop.current;
       // A new app window's id is decided here, so it can be focused at once.
@@ -210,7 +228,7 @@ export function DesktopShell({
         setFocused(target);
       });
     },
-    [workArea],
+    [workArea, toast],
   );
 
   const openSession = useCallback(
@@ -323,6 +341,27 @@ export function DesktopShell({
     };
   }, [active, apply]);
 
+  // Exam Mode: read on arrival; when it starts, what it doesn't allow is tucked away.
+  useEffect(() => {
+    if (active) void loadExam();
+  }, [active]);
+  useEffect(
+    () =>
+      subscribeToExam(() => {
+        if (!currentExam()) return;
+        setWindows((current) =>
+          current.map((entry) =>
+            examAllows(examTarget(entry.content)) ? entry : { ...entry, min: true },
+          ),
+        );
+      }),
+    [],
+  );
+  const examLeft = exam ? Math.max(0, Math.ceil((exam.endsAt - examTick * 15_000) / 60_000)) : 0;
+  useEffect(() => {
+    if (exam && examTick * 15_000 >= exam.endsAt) void endExam();
+  }, [exam, examTick]);
+
   // Framed browser windows say when they're done.
   useEffect(() => {
     const onMessage = (event: MessageEvent<DesktopMessage>) => {
@@ -341,6 +380,15 @@ export function DesktopShell({
   function focusWindow(id: string) {
     if (id === "dashboard") {
       showDashboard();
+      return;
+    }
+    const target = windows.find((entry) => entry.id === id);
+    if (target && !examAllows(examTarget(target.content))) {
+      toast.add({
+        type: "info",
+        title: "Not during Exam Mode",
+        description: "It stays minimised until Exam Mode ends.",
+      });
       return;
     }
     const z = raise();
@@ -706,6 +754,17 @@ export function DesktopShell({
           onShowDesktop={showDesktop}
         />
         {switcher !== null && <WindowSwitcher entries={switchable} selected={switcher} />}
+        {exam && active && (
+          <button
+            type="button"
+            className="dt-exam"
+            onClick={() => {
+              openApp("exam-mode");
+            }}
+          >
+            Exam Mode · {examLeft} min left
+          </button>
+        )}
         <WallpaperDialog open={wallpaperOpen} onOpenChange={setWallpaperOpen} />
         {overlays}
       </div>

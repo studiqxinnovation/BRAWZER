@@ -47,6 +47,7 @@ import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
 import { postToDesktop, useDesktop } from "@/components/desktop/desktop-context";
 import { desktopActive, subscribeToDesktop } from "@/lib/desktop";
 import { isLocked, subscribeToLock } from "@/lib/lock";
+import { examAllows } from "@/lib/exam";
 import {
   AddressBar,
   BookmarkStar,
@@ -482,6 +483,13 @@ export function BrowserWorkspace({
 
   async function start(profileId: string | null, resume = false, engine?: BrowserEngine) {
     setStartError(null);
+    const chosen = engine ?? profiles.find((profile) => profile.id === profileId)?.engine;
+    if (chosen && !examAllows(`browser:${chosen}`)) {
+      setStartError(
+        `${engineDetails[chosen].short} is off during Exam Mode, until its time is up.`,
+      );
+      return;
+    }
     setPhase({ kind: "starting" });
     const result = await startBrowserSession(
       profileId ? { profileId, resume } : engine ? { engine } : {},

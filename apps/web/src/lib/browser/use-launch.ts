@@ -14,6 +14,7 @@ import { fetchBrowserOverview, startBrowserSession } from "@/lib/api/browser";
 import { fetchProfiles } from "@/lib/api/profiles";
 import { useDesktop } from "@/components/desktop/desktop-context";
 import { desktopActive } from "@/lib/desktop";
+import { examAllows } from "@/lib/exam";
 import { leaveSignedInArea } from "@/lib/session-channel";
 import { defaultProfile, makeProfileFor } from "./launch";
 
@@ -50,6 +51,14 @@ export function useLaunchBrowser() {
     known?: { profiles: readonly Profile[]; sessions: readonly BrowserSession[] },
   ) {
     const short = engineDetails[engine].short;
+    if (!examAllows(`browser:${engine}`)) {
+      toast.add({
+        type: "info",
+        title: `${short} is off during Exam Mode`,
+        description: "Only the apps and browsers you chose open until its time is up.",
+      });
+      return;
+    }
     setOpening(engine);
     let profiles = known?.profiles;
     let sessions = known?.sessions;

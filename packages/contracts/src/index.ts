@@ -16,3 +16,4 @@ export * from "./extensions.ts";
 export * from "./reports.ts";
 export * from "./teams.ts";
 export * from "./history.ts";
+export * from "./app-records.ts";

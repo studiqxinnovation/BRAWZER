@@ -1,3 +1,5 @@
+import { currentExam } from "./exam";
+
 /**
  * The desktop's look, per tab like the theme (sessionStorage: a shared
  * computer keeps nothing): Mac or Windows style, the wallpaper, and whether
@@ -63,6 +65,8 @@ export function readDesktopOn(): boolean {
 }
 
 export function setDesktopOn(on: boolean) {
+  // Exam Mode keeps to the desktop until its time is up.
+  if (!on && currentExam()) return;
   if (on) delete document.documentElement.dataset.desktop;
   else document.documentElement.dataset.desktop = "off";
   remember("brawzer:desktop", on ? null : "off");

@@ -1,7 +1,17 @@
 "use client";
 
 import { cn } from "@brawzer/ui/lib/cn";
-import { Calculator, type LucideIcon, Settings } from "lucide-react";
+import {
+  Calculator,
+  ClipboardList,
+  type LucideIcon,
+  Quote,
+  ReceiptText,
+  Settings,
+  ShieldCheck,
+  Timer,
+  Wallet,
+} from "lucide-react";
 import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
 
@@ -10,7 +20,16 @@ import type { ComponentType } from "react";
  * it makes in Drive or in the account's encrypted app records, never on this
  * computer. An app is listed here only once it works.
  */
-export const appIds = ["calculator", "settings"] as const;
+export const appIds = [
+  "settings",
+  "calculator",
+  "assignments",
+  "citations",
+  "focus-timer",
+  "exam-mode",
+  "money",
+  "invoices",
+] as const;
 export type AppId = (typeof appIds)[number];
 
 export type AppTone =
@@ -70,6 +89,78 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     height: 560,
     single: true,
     component: dynamic(() => import("./settings"), { loading }),
+  },
+  assignments: {
+    id: "assignments",
+    name: "Assignments",
+    description: "Coursework and due dates, grouped as they come up.",
+    category: "Education",
+    icon: ClipboardList,
+    tone: "blue",
+    width: 720,
+    height: 560,
+    single: true,
+    component: dynamic(() => import("./assignments"), { loading }),
+  },
+  citations: {
+    id: "citations",
+    name: "Citations",
+    description: "Harvard, APA and MLA references, and the list they go into.",
+    category: "Education",
+    icon: Quote,
+    tone: "orange",
+    width: 900,
+    height: 620,
+    single: true,
+    component: dynamic(() => import("./citations"), { loading }),
+  },
+  "focus-timer": {
+    id: "focus-timer",
+    name: "Focus Timer",
+    description: "Focus, then a break; your study time logged by subject.",
+    category: "Education",
+    icon: Timer,
+    tone: "red",
+    width: 520,
+    height: 660,
+    single: true,
+    component: dynamic(() => import("./focus-timer"), { loading }),
+  },
+  "exam-mode": {
+    id: "exam-mode",
+    name: "Exam Mode",
+    description: "For a set time, only the apps and browsers you choose open.",
+    category: "Education",
+    icon: ShieldCheck,
+    tone: "purple",
+    width: 520,
+    height: 620,
+    single: true,
+    component: dynamic(() => import("./exam-mode"), { loading }),
+  },
+  money: {
+    id: "money",
+    name: "Money",
+    description: "Income and expenses, each month at a glance.",
+    category: "Business",
+    icon: Wallet,
+    tone: "green",
+    width: 860,
+    height: 640,
+    single: true,
+    component: dynamic(() => import("./money"), { loading }),
+  },
+  invoices: {
+    id: "invoices",
+    name: "Invoices",
+    description: "Invoices and quotes, saved to Drive as PDFs.",
+    category: "Business",
+    icon: ReceiptText,
+    tone: "teal",
+    width: 960,
+    height: 660,
+    single: true,
+    component: dynamic(() => import("./invoices"), { loading }),
   },
 };
 
