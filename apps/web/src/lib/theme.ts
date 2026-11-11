@@ -22,7 +22,7 @@ const CHANGE_EVENT = "brawzer:appearance-change";
  * Inlined in <head> so a stored preference applies before first paint and the
  * page never flashes the wrong theme. Plain ES2017 for older browsers.
  */
-export const themeBootstrapScript = `(function(){try{var s=window.sessionStorage,d=document.documentElement,t=s.getItem("${THEME_KEY}"),a=s.getItem("${ACCENT_KEY}");if(t==="light"||t==="dark")d.dataset.theme=t;if(${JSON.stringify(accentNames)}.indexOf(a)!==-1)d.dataset.accent=a}catch(e){}})();`;
+export const themeBootstrapScript = `(function(){var d=document.documentElement;d.dataset.desktopStyle=/Mac|iPhone|iPad/.test(navigator.platform)?"mac":"windows";try{var s=window.sessionStorage,t=s.getItem("${THEME_KEY}"),a=s.getItem("${ACCENT_KEY}"),o=s.getItem("brawzer:desktop-style"),w=s.getItem("brawzer:wallpaper");if(t==="light"||t==="dark")d.dataset.theme=t;if(${JSON.stringify(accentNames)}.indexOf(a)!==-1)d.dataset.accent=a;if(o==="mac"||o==="windows")d.dataset.desktopStyle=o;if(s.getItem("brawzer:desktop")==="off")d.dataset.desktop="off";if(w&&/^[a-z]{1,20}$/.test(w))d.dataset.wallpaper=w}catch(e){}})();`;
 
 export function isThemePreference(value: unknown): value is ThemePreference {
   return themePreferences.some((preference) => preference === value);

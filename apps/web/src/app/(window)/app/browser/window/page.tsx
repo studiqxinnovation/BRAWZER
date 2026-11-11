@@ -21,6 +21,8 @@ async function Workspace({ searchParams }: Pick<PageProps<"/app/browser/window">
         : null,
     launcher: params.new === "1",
   };
+  // Framed by the desktop as one of its windows.
+  const embedded = params.embedded === "1";
   const [overview, profiles, proxies] = await Promise.all([
     serverGet("/browser", browserOverviewSchema),
     serverGet("/profiles", profileListSchema),
@@ -49,6 +51,7 @@ async function Workspace({ searchParams }: Pick<PageProps<"/app/browser/window">
       key={select.launcher ? "launcher" : (select.session ?? "newest")}
       select={select}
       mode="window"
+      embedded={embedded}
       initial={overview.data}
       profiles={profiles.data.profiles}
       proxies={proxies.data.proxies.map(({ id, name, protocol }) => ({ id, name, protocol }))}

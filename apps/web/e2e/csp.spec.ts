@@ -69,6 +69,30 @@ test.describe("strict script policy", () => {
     expect(first).not.toBe(second);
   });
 
+  test("only a browser window may be framed, and only by Brawzer's own desktop", async ({
+    page,
+    baseURL,
+  }) => {
+    const email = uniqueEmail("csp-frame");
+    await createConfirmedAccount(page.request, baseURL ?? "", email, "violet-harbor-lantern");
+    await signIn(page.context(), baseURL ?? "", email, "violet-harbor-lantern");
+    const framing = async (path: string) => {
+      const headers = (await page.request.get(path, { maxRedirects: 0 })).headers();
+      const ancestors = (headers["content-security-policy"] ?? "")
+        .split(";")
+        .map((part) => part.trim())
+        .find((part) => part.startsWith("frame-ancestors "));
+      return [ancestors, headers["x-frame-options"]];
+    };
+    for (const path of ["/", "/sign-in", "/app", "/app/browser", "/app/account"]) {
+      expect(await framing(path), path).toEqual(["frame-ancestors 'none'", "DENY"]);
+    }
+    expect(await framing("/app/browser/window?session=x&embedded=1")).toEqual([
+      "frame-ancestors 'self'",
+      "SAMEORIGIN",
+    ]);
+  });
+
   test("account pages load without violations and block injected markup", async ({ page }) => {
     const violations = await watchViolations(page);
     for (const path of [

@@ -81,6 +81,12 @@ const nextConfig: NextConfig = {
     Promise.resolve([
       { source: "/:path*", headers: securityHeaders },
       {
+        // The desktop shows cloud browsers in windows by framing this page
+        // (src/proxy.ts sets its policy's frame-ancestors to 'self' as well).
+        source: "/app/browser/window",
+        headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }],
+      },
+      {
         // Signed-in pages show account data: never cache them (a shared
         // computer's next user must not see them) and never index them.
         source: "/app/:path*",

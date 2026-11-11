@@ -29,18 +29,18 @@ Brawzer's marketing and interface must never claim to be "100% invisible",
 
 ### Web app
 
-- **Content Security Policy:** only Brawzer's own origin; no third-party scripts, fonts or connections; framing forbidden; no `eval` in production.
+- **Content Security Policy:** only Brawzer's own origin; no third-party scripts, fonts or connections; framing forbidden, except a cloud browser's window (`/app/browser/window`), which only Brawzer's own desktop may frame (`frame-ancestors 'self'`, `X-Frame-Options: SAMEORIGIN`; [Phase 9](plans/phase-9.md)); no `eval` in production.
   - **Account pages and the signed-in app** are rendered per request with a strict policy: a fresh nonce on every response, `'strict-dynamic'`, the theme script allowed by its hash, and no `'unsafe-inline'`. Injected markup such as `<img onerror=…>` can't run there. Links from the public site enter these pages with a full page load, because a browser keeps the first page's policy during client-side navigation ([ADR 0007](adr/0007-content-security-policy.md)).
   - **Public pages** are prerendered and still allow inline scripts (see Remaining risks).
 - **Other headers:**
   - `Referrer-Policy: no-referrer`
   - `X-Content-Type-Options: nosniff`
-  - `X-Frame-Options: DENY`
+  - `X-Frame-Options: DENY` (`SAMEORIGIN` for a browser window)
   - `Cross-Origin-Opener-Policy: same-origin`
   - a `Permissions-Policy` that disables camera, microphone, location, payment, USB, serial, HID and Bluetooth
   - HSTS and `upgrade-insecure-requests` whenever the site is served over HTTPS (`NEXT_PUBLIC_SITE_URL` starts with `https://`)
 - **Fonts:** downloaded at build time and served from Brawzer's origin, so the browser never contacts a font provider.
-- **Appearance preferences:** theme and accent are kept in `sessionStorage`, so they disappear when the browser closes. No cookies or `localStorage` are used.
+- **Appearance preferences:** theme, accent and the desktop's style and wallpaper are kept in `sessionStorage`, so they disappear when the browser closes. No cookies or `localStorage` are used.
 - **Search engines:** every page is `noindex` and `robots.txt` disallows everything until launch (`SITE_INDEXING=enabled` turns indexing on). Account pages and signed-in pages are always `noindex`.
 - **Signed-in pages** (`/app`) are sent with `Cache-Control: no-store` and `X-Robots-Tag: noindex`. Visitors without a session cookie are redirected to sign in before anything renders; the page itself asks the API whether the session is valid.
 - **Account forms:** password fields are hidden by default (show/hide is opt-in) and warn when Caps Lock is on. "Keep me signed in" is off by default. After sign-in and sign-out the page fully reloads, because Next.js keeps recently visited pages mounted in memory; sign-out also replaces the history entry so Back doesn't return to the signed-in page.

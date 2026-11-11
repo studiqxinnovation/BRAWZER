@@ -124,38 +124,50 @@ test.describe("home", () => {
     }
   });
 
-  test("opens a browser from Home, and goes back to it", async ({ page, baseURL, isMobile }) => {
+  test("opens a browser from Home in a window of its own, and goes back to it", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
     test.skip(isMobile, "Starts a real browser; one run covers it.");
     test.setTimeout(120_000);
     await signedIn(page, baseURL, "home-open");
     const dock = page.getByRole("list", { name: "Your browsers" });
     await dock.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
-    await expect(page).toHaveURL(/\/app\/browser\?session=/, { timeout: 60_000 });
-    const viewport = page.getByTestId("browser-viewport");
+    // On the desktop it opens in a window that streams it, and Home stays where it is.
+    const window = page.getByRole("region", { name: "Bee Browser window" });
+    await expect(window).toBeVisible({ timeout: 60_000 });
+    await expect(page).toHaveURL(/\/app$/);
+    const viewport = window.frameLocator("iframe").getByTestId("browser-viewport");
     await expect
       .poll(() => viewport.getAttribute("data-frames"), { timeout: 60_000 })
       .not.toBe("0");
-    const sessionUrl = page.url();
 
     // Home now counts it and offers the way back to it.
-    await page.goto("/app");
+    await window.getByRole("button", { name: "Minimise Bee Browser" }).click();
+    await expect(window).toBeHidden();
+    await page.reload();
     await expect(page.getByRole("region", { name: "Sessions today" })).toContainText("1 open now");
-    await expect(page.getByRole("region", { name: "Sessions today" })).toContainText("1");
     await dock.getByRole("button", { name: "Go back to Bee Browser" }).click();
-    await expect(page).toHaveURL(sessionUrl);
-
+    await expect(window).toBeVisible();
     await expect
       .poll(() => viewport.getAttribute("data-frames"), { timeout: 60_000 })
       .not.toBe("0");
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "End session" }).click();
-    await page
-      .getByRole("alertdialog", { name: "End this browser session?" })
-      .getByRole("button", { name: "End session" })
-      .click();
-    await expect(page.getByText("You ended this browser session.")).toBeVisible({
-      timeout: 30_000,
-    });
+
+    // Closing its window ends the session.
+    await window.getByRole("button", { name: "Close Bee Browser" }).click();
+    await expect(window).toBeHidden();
+    await expect(page.getByText("Bee Browser closed")).toBeVisible({ timeout: 30_000 });
+    await expect
+      .poll(
+        async () =>
+          (
+            (await (await page.request.get("/api/v1/browser")).json()) as {
+              sessions: unknown[];
+            }
+          ).sessions.length,
+      )
+      .toBe(0);
   });
 });
 

@@ -1,0 +1,192 @@
+import { expect, type Page, test } from "@playwright/test";
+import { horizontalOverflow, wcagViolations } from "./accessibility";
+import { createConfirmedAccount, GREETING, signIn, uniqueEmail } from "./mailbox";
+
+const PASSWORD = "violet-harbor-lantern";
+
+async function signedIn(page: Page, baseURL: string | undefined, tag: string) {
+  // A returning visitor: nothing new arrives on its own, so the audits see a still page.
+  await page.addInitScript(() => {
+    localStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
+  });
+  const email = uniqueEmail(tag);
+  await createConfirmedAccount(page.request, baseURL ?? "", email, PASSWORD);
+  await signIn(page.context(), baseURL ?? "", email, PASSWORD);
+  await page.goto("/app");
+  await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
+  await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
+}
+
+const viewMenu = async (page: Page, item: string) => {
+  await page.getByRole("menuitem", { name: "View" }).click();
+  await page.getByRole("menuitem", { name: item }).click();
+};
+
+test.describe("desktop", () => {
+  test("the app as a desktop: its window, the dock, wallpapers, both styles and the classic layout", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "Phones keep the plain layout; see the next test.");
+    await signedIn(page, baseURL, "desktop");
+    const html = page.locator("html");
+
+    // The dashboard is a window of its own, with its title, controls and status.
+    const dashboard = page.getByRole("button", { name: "Close Brawzer" });
+    await expect(dashboard).toBeVisible();
+    await expect(page.getByText("Brawzer — Home")).toBeVisible();
+    await expect(page.getByLabel("Status")).toContainText("Cloud connected");
+    await expect(page.getByLabel("Status")).toContainText("0 of 3 browsers open");
+    const dock = page.getByRole("navigation", { name: "Dock" });
+    await expect(dock.getByRole("button", { name: "Brawzer, open" })).toBeVisible();
+    for (const name of ["Bee Browser", "Chrome", "Firefox", "Chromium"]) {
+      await expect(dock.getByRole("button", { name, exact: true })).toBeVisible();
+    }
+    await expect(page.getByRole("navigation", { name: "Taskbar" })).toBeHidden();
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      expect(await wcagViolations(page), colorScheme).toEqual([]);
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+
+    // Its title follows the page, and back goes back.
+    await page
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("link", { name: "Drive" })
+      .click();
+    await expect(page.getByText("Brawzer — Drive")).toBeVisible();
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page.getByText("Brawzer — Home")).toBeVisible();
+
+    // Closing it leaves the desktop; the dock brings it back.
+    await dashboard.click();
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeHidden();
+    await dock.getByRole("button", { name: "Brawzer", exact: true }).click();
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
+
+    // Dragged by its title bar it moves; Zoom fills the desktop, and again goes back.
+    const window = page.locator(".dt-dash");
+    const filled = await window.boundingBox();
+    const title = await page.getByText("Brawzer — Home").boundingBox();
+    if (filled && title) {
+      await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(title.x + title.width / 2 + 120, title.y + 90, { steps: 8 });
+      await page.mouse.up();
+      await expect.poll(async () => Math.round((await window.boundingBox())?.x ?? 0)).toBe(126);
+      await page.getByRole("button", { name: "Zoom Brawzer" }).click();
+      await expect.poll(async () => (await window.boundingBox())?.x).toBe(filled.x);
+      await page.getByRole("button", { name: "Zoom Brawzer" }).click();
+      await expect.poll(async () => Math.round((await window.boundingBox())?.x ?? 0)).toBe(126);
+    }
+
+    // A wallpaper, kept for this tab.
+    await viewMenu(page, "Change wallpaper…");
+    const wallpapers = page.getByRole("dialog", { name: "Wallpaper" });
+    await expect(wallpapers.getByRole("radio", { name: "Brawzer" })).toBeChecked();
+    expect(await wcagViolations(page)).toEqual([]);
+    await wallpapers.getByRole("radio", { name: "Ocean" }).click();
+    await expect(wallpapers.getByRole("radio", { name: "Ocean" })).toBeChecked();
+    await expect(html).toHaveAttribute("data-wallpaper", "ocean");
+    await wallpapers.getByRole("button", { name: "Done" }).click();
+    await page.reload();
+    await expect(html).toHaveAttribute("data-wallpaper", "ocean");
+
+    // Windows style: a taskbar with Start, search and the tray instead of the dock.
+    await viewMenu(page, "Use the Windows style");
+    await expect(html).toHaveAttribute("data-desktop-style", "windows");
+    const taskbar = page.getByRole("navigation", { name: "Taskbar" });
+    await expect(taskbar).toBeVisible();
+    await expect(dock).toBeHidden();
+    await expect(page.getByRole("menubar", { name: "Brawzer menu bar" })).toBeHidden();
+    await expect(page.getByRole("button", { name: "Maximise Brawzer" })).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+    await taskbar.getByRole("button", { name: "Search" }).click();
+    await expect(page.getByRole("combobox", { name: "Launch a browser or search" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await taskbar.getByRole("button", { name: "Start" }).click();
+    await expect(page.getByRole("menuitem", { name: "Bee Browser" })).toBeVisible();
+    await page.getByRole("menuitem", { name: "Use the Mac style" }).click();
+    await expect(html).toHaveAttribute("data-desktop-style", "mac");
+    await expect(dock).toBeVisible();
+
+    // The classic layout: the app as a page again, without the desktop.
+    await viewMenu(page, "Use the classic layout");
+    await expect(html).toHaveAttribute("data-desktop", "off");
+    await expect(dock).toBeHidden();
+    await expect(page.getByRole("button", { name: "Close Brawzer" })).toBeHidden();
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
+    expect(await wcagViolations(page)).toEqual([]);
+    await viewMenu(page, "Use the desktop");
+    await expect(dock).toBeVisible();
+  });
+
+  test("phones keep the plain layout", async ({ page, baseURL, isMobile }) => {
+    test.skip(!isMobile, "The desktop needs a wide screen.");
+    await signedIn(page, baseURL, "desktop-phone");
+    await expect(page.getByRole("navigation", { name: "Dock" })).toBeHidden();
+    await expect(page.getByRole("navigation", { name: "Taskbar" })).toBeHidden();
+    await expect(page.getByRole("button", { name: "Close Brawzer" })).toBeHidden();
+    expect(await horizontalOverflow(page)).toBe(0);
+    expect(await wcagViolations(page)).toEqual([]);
+  });
+
+  test("a browser opens from the dock in a window that streams it, minimises and closes", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "Starts a real browser on the desktop.");
+    test.setTimeout(120_000);
+    await signedIn(page, baseURL, "desktop-window");
+    const dock = page.getByRole("navigation", { name: "Dock" });
+    await dock.getByRole("button", { name: "Bee Browser", exact: true }).click();
+
+    const window = page.getByRole("region", { name: "Bee Browser window" });
+    await expect(window).toBeVisible({ timeout: 60_000 });
+    const frame = window.frameLocator("iframe");
+    const viewport = frame.getByTestId("browser-viewport");
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 60_000 })
+      .not.toBe("0");
+    // A window holds the browser alone: no sidebar or launcher of the app in it.
+    await expect(frame.getByRole("navigation", { name: "Main" })).toHaveCount(0);
+    await expect(dock.getByRole("button", { name: "Bee Browser, open" })).toBeVisible();
+    await expect(page.getByLabel("Status")).toContainText("1 of 3 browsers open");
+    expect(await wcagViolations(page)).toEqual([]);
+
+    // Minimised, it waits in the dock; its icon brings it back.
+    await window.getByRole("button", { name: "Minimise Bee Browser" }).click();
+    await expect(window).toBeHidden();
+    await dock.getByRole("button", { name: "Bee Browser, minimised" }).click();
+    await expect(window).toBeVisible();
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 60_000 })
+      .not.toBe("0");
+
+    // Dragged by its title bar to the left edge, it fills that half.
+    const bar = window.locator(".dt-title");
+    const box = await bar.boundingBox();
+    const desk = page.viewportSize();
+    if (box && desk) {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x - 200, box.y + 40, { steps: 6 });
+      await page.mouse.move(1, box.y + 40, { steps: 6 });
+      await page.mouse.up();
+      await expect
+        .poll(async () => {
+          const rect = await window.boundingBox();
+          return rect ? Math.round(rect.x) <= 10 && rect.width < desk.width / 2 + 10 : false;
+        })
+        .toBe(true);
+    }
+
+    // Closing its window ends the session.
+    await window.getByRole("button", { name: "Close Bee Browser" }).click();
+    await expect(window).toBeHidden();
+    await expect(page.getByText("Bee Browser closed")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByLabel("Status")).toContainText("0 of 3 browsers open");
+  });
+});

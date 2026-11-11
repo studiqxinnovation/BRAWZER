@@ -44,6 +44,8 @@ import { encodeCanvas, screenshotName } from "@/lib/browser/picture";
 import { AudioPlayer } from "@/lib/browser/audio";
 import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/stream";
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
+import { postToDesktop, useDesktop } from "@/components/desktop/desktop-context";
+import { desktopActive, subscribeToDesktop } from "@/lib/desktop";
 import {
   AddressBar,
   BookmarkStar,
@@ -181,10 +183,13 @@ export function BrowserWorkspace({
   profiles: loadedProfiles,
   proxies,
   mode = "page",
+  embedded = false,
   select = { session: null, launcher: false },
 }: {
   /** "window": the pop-out, with nothing around it but the browser's own chrome. */
   mode?: "page" | "window";
+  /** A window on Brawzer's desktop (framed): the desktop switches and closes browsers. */
+  embedded?: boolean;
   initial: BrowserOverview;
   profiles: readonly Profile[];
   /** The account's saved proxies, for naming the one a session uses. */
@@ -193,6 +198,11 @@ export function BrowserWorkspace({
   select?: { session: string | null; launcher: boolean };
 }) {
   const toast = useToast();
+  const desktop = useDesktop();
+  const desktopOn = useSyncExternalStore(subscribeToDesktop, desktopActive, () => false);
+  const onDesktop = mode === "page" && desktop !== null && desktopOn;
+  /** The launcher reads what's open when it mounts; a new key reads it again. */
+  const [launcherVersion, setLauncherVersion] = useState(0);
   // The page's profiles, and any the launcher makes for a browser while this page is open.
   const [profiles, setProfiles] = useState(loadedProfiles);
   const base = mode === "window" ? "/app/browser/window" : "/app/browser";
@@ -471,6 +481,13 @@ export function BrowserWorkspace({
       setStartError(result.error.message);
       return;
     }
+    // On the desktop, each browser opens in a window of its own.
+    if (mode === "page" && desktop && desktopActive()) {
+      desktop.openSession(result.data);
+      setPhase({ kind: "idle" });
+      setLauncherVersion((version) => version + 1);
+      return;
+    }
     attempts.current = 0;
     setLastProfileId(result.data.profileId);
     // The address says which browser this is, so a reload comes back to it.
@@ -579,8 +596,13 @@ export function BrowserWorkspace({
     }
   }
 
-  // Reattach to a session that was already running when the page loaded.
+  // Reattach to a session that was already running when the page loaded. On
+  // the desktop, the browser is in its own window: this page is the launcher.
   useEffect(() => {
+    if (mode === "page" && desktop && desktopActive()) {
+      if (select.session && attachTo) desktop.openSession(attachTo);
+      return;
+    }
     if (attachTo?.status === "running") void connect(attachTo);
     return () => {
       stream.close();
@@ -814,6 +836,12 @@ export function BrowserWorkspace({
     });
   }
 
+  /** A pop-out closes itself; a desktop window asks the desktop to close it. */
+  function closeWindow(sessionId: string) {
+    if (embedded) postToDesktop({ type: "brawzer:close-window", session: sessionId });
+    else window.close();
+  }
+
   function popOut() {
     const current = phaseRef.current;
     if (current.kind !== "live" && current.kind !== "connecting") return;
@@ -847,9 +875,34 @@ export function BrowserWorkspace({
     viewportRef.current?.focus();
   }
 
-  if (phase.kind === "idle" || phase.kind === "starting") {
+  if (embedded && (phase.kind === "idle" || phase.kind === "starting")) {
+    // A desktop window shows one browser; opening others is the desktop's.
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+        <p className="text-callout text-ink-secondary">
+          {startError ?? "This browser isn’t running any more."}
+        </p>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            closeWindow(select.session ?? "");
+          }}
+        >
+          Close window
+        </Button>
+      </div>
+    );
+  }
+
+  // On the desktop, a running browser is in its own window: this page is the launcher.
+  if (
+    phase.kind === "idle" ||
+    phase.kind === "starting" ||
+    (onDesktop && (phase.kind === "connecting" || phase.kind === "live"))
+  ) {
     return (
       <Launcher
+        key={launcherVersion}
         profiles={profiles}
         proxies={proxies}
         overview={initial}
@@ -912,16 +965,28 @@ export function BrowserWorkspace({
             : "Nothing from it is kept."}
         </FormMessage>
         <div>
-          <Button
-            variant="primary"
-            size="lg"
-            onClick={() => {
-              setStartError(null);
-              setPhase({ kind: "idle" });
-            }}
-          >
-            Open a browser
-          </Button>
+          {embedded ? (
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={() => {
+                closeWindow(select.session ?? "");
+              }}
+            >
+              Close window
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={() => {
+                setStartError(null);
+                setPhase({ kind: "idle" });
+              }}
+            >
+              Open a browser
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -954,13 +1019,15 @@ export function BrowserWorkspace({
       />
 
       <div className="flex items-center gap-2 border-b border-line bg-canvas px-3 py-2">
-        <SessionSwitcher
-          current={session}
-          engine={session.engine}
-          profiles={profiles}
-          hrefFor={sessionHref}
-          launcherHref={launcherHref}
-        />
+        {!embedded && (
+          <SessionSwitcher
+            current={session}
+            engine={session.engine}
+            profiles={profiles}
+            hrefFor={sessionHref}
+            launcherHref={launcherHref}
+          />
+        )}
         <NavButtons
           tab={activeTab}
           onBack={() => {
@@ -1056,7 +1123,7 @@ export function BrowserWorkspace({
           onCloseWindow={
             mode === "window"
               ? () => {
-                  window.close();
+                  closeWindow(session.id);
                 }
               : undefined
           }

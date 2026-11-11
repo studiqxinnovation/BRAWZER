@@ -15,6 +15,7 @@ import {
   AppWindow,
   FileText,
   HardDriveUpload,
+  Image as ImageIcon,
   House,
   Keyboard,
   Layers,
@@ -36,6 +37,16 @@ import { useThemePreference } from "@/components/appearance-controls";
 import { fetchBrowserOverview } from "@/lib/api/browser";
 import { signOut } from "@/lib/session-channel";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
+import { useDesktop } from "@/components/desktop/desktop-context";
+import {
+  type DesktopStyle,
+  desktopActive,
+  readDesktopOn,
+  readDesktopStyle,
+  setDesktopOn,
+  setDesktopStyle,
+  subscribeToDesktop,
+} from "@/lib/desktop";
 import { openCommandPalette } from "./command-palette";
 
 const TRIGGER =
@@ -90,6 +101,13 @@ function ThemeSwitch() {
 export function MenuBar() {
   const router = useRouter();
   const theme = useThemePreference();
+  const desktop = useDesktop();
+  const desktopOn = useSyncExternalStore(subscribeToDesktop, readDesktopOn, () => true);
+  const style = useSyncExternalStore<DesktopStyle>(
+    subscribeToDesktop,
+    readDesktopStyle,
+    () => "mac",
+  );
   const [sessions, setSessions] = useState<readonly BrowserSession[] | null>(null);
   const go = (href: string) => {
     router.push(href as Route);
@@ -181,6 +199,34 @@ export function MenuBar() {
                 </MenuItem>
               ))}
             </MenuGroup>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuGroupLabel>Desktop</MenuGroupLabel>
+              {desktopOn && desktop && (
+                <>
+                  <MenuItem icon={<ImageIcon />} onClick={desktop.chooseWallpaper}>
+                    Change wallpaper…
+                  </MenuItem>
+                  <MenuItem icon={<AppWindow />} onClick={desktop.showDesktop}>
+                    Show the desktop
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      setDesktopStyle(style === "mac" ? "windows" : "mac");
+                    }}
+                  >
+                    {style === "mac" ? "Use the Windows style" : "Use the Mac style"}
+                  </MenuItem>
+                </>
+              )}
+              <MenuItem
+                onClick={() => {
+                  setDesktopOn(!desktopOn);
+                }}
+              >
+                {desktopOn ? "Use the classic layout" : "Use the desktop"}
+              </MenuItem>
+            </MenuGroup>
           </MenuContent>
         </Menu>
 
@@ -206,7 +252,8 @@ export function MenuBar() {
                     key={session.id}
                     icon={<EngineLogo engine={session.engine} size="sm" />}
                     onClick={() => {
-                      go(`/app/browser?session=${session.id}`);
+                      if (desktop && desktopActive()) desktop.openSession(session);
+                      else go(`/app/browser?session=${session.id}`);
                     }}
                   >
                     {engineDetails[session.engine].short}

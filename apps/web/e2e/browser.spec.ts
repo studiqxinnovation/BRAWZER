@@ -27,6 +27,14 @@ async function clickPage(page: Page, x: number, y: number) {
 const tab = (page: Page, name: string) => page.getByRole("tab", { name, exact: true });
 
 test.describe("browser", () => {
+  // These drive the Browser page itself, so they use the classic layout; on the
+  // desktop a browser opens in a window of its own (desktop.spec.ts).
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:desktop", "off");
+    });
+  });
+
   test("starts a cloud browser, browses the test site and ends the session", async ({
     page,
     baseURL,
@@ -389,6 +397,9 @@ test.describe("browser", () => {
     await expect(page.getByText("You handed this session off.")).toBeVisible({ timeout: 30_000 });
 
     const other = await browser.newContext({ baseURL });
+    await other.addInitScript(() => {
+      sessionStorage.setItem("brawzer:desktop", "off");
+    });
     await signIn(other, baseURL ?? "", email, PASSWORD);
     const phone = await other.newPage();
     await phone.goto("/app/browser");

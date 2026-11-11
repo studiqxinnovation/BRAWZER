@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AccountPanel, AccountPanelSkeleton } from "@/components/app-shell/account-panel";
 import { CommandPalette } from "@/components/app-shell/command-palette";
+import { DesktopShell } from "@/components/desktop/desktop";
 import { MenuBar } from "@/components/app-shell/menu-bar";
 import "@/components/app-shell/desktop.css";
 import { ConfirmIdentityProvider } from "@/components/app-shell/confirm-identity";
@@ -36,11 +37,19 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     ),
   };
   return (
-    <div className="ad-shell min-h-dvh lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden">
+    <>
       <SkipLink />
-      <MenuBar />
-
-      <div className="ad-window lg:grid lg:min-h-0 lg:flex-1 lg:grid-cols-[15.5rem_minmax(0,1fr)]">
+      <DesktopShell
+        menuBar={<MenuBar />}
+        overlays={
+          <>
+            <Suspense fallback={null}>
+              <SessionKeeperLoader />
+            </Suspense>
+            <CommandPalette />
+          </>
+        }
+      >
         <aside className="ad-sidebar hidden border-r border-line lg:flex lg:min-h-0 lg:flex-col">
           <div className="px-5 pt-5 pb-6">
             <Link href="/app" aria-label="Brawzer home" className="inline-flex rounded-md">
@@ -81,12 +90,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             <ConfirmIdentityProvider>{children}</ConfirmIdentityProvider>
           </main>
         </div>
-      </div>
-
-      <Suspense fallback={null}>
-        <SessionKeeperLoader />
-      </Suspense>
-      <CommandPalette />
-    </div>
+      </DesktopShell>
+    </>
   );
 }

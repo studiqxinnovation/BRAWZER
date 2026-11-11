@@ -12,6 +12,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { fetchBrowserOverview, startBrowserSession } from "@/lib/api/browser";
 import { fetchProfiles } from "@/lib/api/profiles";
+import { useDesktop } from "@/components/desktop/desktop-context";
+import { desktopActive } from "@/lib/desktop";
 import { leaveSignedInArea } from "@/lib/session-channel";
 import { defaultProfile, makeProfileFor } from "./launch";
 
@@ -24,7 +26,18 @@ import { defaultProfile, makeProfileFor } from "./launch";
 export function useLaunchBrowser() {
   const router = useRouter();
   const toast = useToast();
+  const desktop = useDesktop();
   const [opening, setOpening] = useState<BrowserEngine | null>(null);
+
+  /** On the desktop, a window of its own; elsewhere, the Browser page. */
+  function show(session: BrowserSession) {
+    if (desktop && desktopActive()) {
+      desktop.openSession(session);
+      setOpening(null);
+      return;
+    }
+    router.push(`/app/browser?session=${session.id}` as Route);
+  }
 
   function failed(status: number, title: string, description: string) {
     setOpening(null);
@@ -55,7 +68,7 @@ export function useLaunchBrowser() {
     }
     const running = sessions.find((session) => session.engine === engine);
     if (running) {
-      router.push(`/app/browser?session=${running.id}` as Route);
+      show(running);
       return;
     }
     let profile = defaultProfile(engine, profiles, new Set(sessions.map((s) => s.profileId)));
@@ -72,7 +85,7 @@ export function useLaunchBrowser() {
       failed(started.status, `${short} couldn’t open`, started.error.message);
       return;
     }
-    router.push(`/app/browser?session=${started.data.id}` as Route);
+    show(started.data);
   }
 
   return { opening, launch };
