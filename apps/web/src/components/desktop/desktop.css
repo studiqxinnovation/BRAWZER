@@ -137,8 +137,8 @@
       border-radius: 12px;
     }
 
-    /* Each page's title is in the title bar; here it's kept for screen readers. */
-    :root:not([data-desktop="off"]) .dt-dash .ad-page-head {
+    /* Home's greeting is in the title bar ("Overview"), as the prototype hides its top bar. */
+    :root:not([data-desktop="off"]) .dt-dash .ad-home-head {
       position: absolute;
       width: 1px;
       height: 1px;
@@ -2031,6 +2031,16 @@ div:has(> .dt-os) > :not(.dt-os) {
   }
 }
 
+.ad-crumb {
+  display: none;
+  margin-bottom: 4px;
+  color: var(--color-ink-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 /* ── The dashboard window's title bar, as the prototype's (.dw-bar) ─────── */
 
 .dt-bar.dt-chrome {
@@ -2293,6 +2303,35 @@ div:has(> .dt-os) > :not(.dt-os) {
 
   :root:not([data-desktop="off"]) .dt-dash-body {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The prototype's page heads and page padding, inside the dashboard window. */
+  :root:not([data-desktop="off"]) .dt-dash .ad-page {
+    max-width: none;
+    padding: 18px 22px 24px;
+  }
+
+  :root:not([data-desktop="off"]) .dt-dash .ad-page-head {
+    margin-bottom: 18px;
+  }
+
+  :root:not([data-desktop="off"]) .dt-dash .ad-page-head h1 {
+    color: var(--color-ink);
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.25;
+  }
+
+  :root:not([data-desktop="off"]) .dt-dash .ad-page-head h1 + div {
+    margin-top: 4px;
+    max-width: none;
+    color: var(--color-ink-secondary);
+    font-size: 12px;
+  }
+
+  :root:not([data-desktop="off"]) .dt-dash .ad-crumb {
+    display: block;
   }
 
   /* Home's own search, bell and Start: on the desktop they're the title bar's (also before scripts run). */

@@ -226,7 +226,7 @@ async function Dashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="ad-page-head flex flex-wrap items-start justify-between gap-4">
+      <header className="ad-home-head flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1.5">
           <Greeting />
           <p className="flex items-center gap-2 text-callout text-ink-secondary">
@@ -538,7 +538,7 @@ async function Dashboard() {
 
 export default function HomePage() {
   return (
-    <div className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 sm:py-10">
+    <div className="ad-page mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 sm:py-10">
       <Suspense fallback={<HomeSkeleton />}>
         <Dashboard />
       </Suspense>
