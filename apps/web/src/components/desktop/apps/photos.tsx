@@ -1,14 +1,62 @@
 "use client";
 
+import { Button } from "@brawzer/ui/components/button";
+import { useToast } from "@brawzer/ui/components/toast";
 import { ChevronLeft, ChevronRight, LayoutGrid } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppWindow } from "./app-window";
+import { saveToDrive } from "./drive-save";
+import { EmptyState } from "./empty-state";
 import { preview, useDriveKind } from "./media";
 
 /** Photos: every picture in Drive, and one at a time, larger. */
 export default function PhotosApp() {
   const window = useAppWindow();
-  const photos = useDriveKind("images");
+  const toast = useToast();
+  const [version, setVersion] = useState(0);
+  const photos = useDriveKind("images", version);
+  const picker = useRef<HTMLInputElement>(null);
+
+  /** Import photos: into Drive's Photos folder, scanned and encrypted like any upload. */
+  async function importPhotos(files: FileList | null) {
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      const result = await saveToDrive({
+        name: file.name,
+        content: file,
+        type: file.type,
+        folder: "Photos",
+      });
+      if (!result.ok) {
+        toast.add({
+          type: "error",
+          title: `Couldn’t import “${file.name}”`,
+          description: result.error.message,
+        });
+      }
+    }
+    setVersion((value) => value + 1);
+  }
+  const importButton = (
+    <>
+      <Button size="sm" variant="primary" onClick={() => picker.current?.click()}>
+        Import photos
+      </Button>
+      <input
+        ref={picker}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={(event) => {
+          void importPhotos(event.target.files);
+          event.target.value = "";
+        }}
+      />
+    </>
+  );
   const [shown, setShown] = useState<string | null>(window.params.file ?? null);
   const index = photos?.findIndex((photo) => photo.id === shown) ?? -1;
   const current = index >= 0 ? photos?.[index] : undefined;
@@ -81,11 +129,25 @@ export default function PhotosApp() {
 
   return (
     <div className="ap-body">
+      <div className="ap-toolbar">
+        <h2 className="ap-place">Library</h2>
+        <span className="flex-1" />
+        {importButton}
+      </div>
       <div className="ap-main">
         {photos === null ? null : photos.length === 0 ? (
-          <p className="ap-empty">
-            No photos in Drive yet. Upload some in Files, or save pictures from a cloud browser.
-          </p>
+          <EmptyState
+            glyph="image"
+            colour="pink"
+            title="No photos yet"
+            action={
+              <Button size="sm" variant="primary" onClick={() => picker.current?.click()}>
+                Import photos
+              </Button>
+            }
+          >
+            Import photos from your computer or take a screenshot. They’re kept in your Drive.
+          </EmptyState>
         ) : (
           <ul className="ap-photo-grid" aria-label="Photos">
             {photos.map((photo) => (
@@ -105,10 +167,6 @@ export default function PhotosApp() {
             ))}
           </ul>
         )}
-      </div>
-      <div className="ap-statusbar">
-        <span>{photos?.length ?? 0} photos</span>
-        <span>From your Drive</span>
       </div>
     </div>
   );

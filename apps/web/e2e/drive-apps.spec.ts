@@ -177,8 +177,8 @@ test.describe("the account's tools", () => {
   }) => {
     const store = await openApp(page, "App Store");
     await store.getByRole("button", { name: "Keep in Dock: Terminal" }).click();
-    await store.getByRole("tab", { name: "Web apps" }).click();
-    await store.getByRole("button", { name: "Keep in Dock: Wikipedia" }).click();
+    await store.getByRole("button", { name: "Web apps", exact: true }).click();
+    await store.getByRole("button", { name: "Install Wikipedia" }).click();
     expect(await wcagViolations(page)).toEqual([]);
     const dock = page.getByRole("navigation", { name: "Dock" });
     await expect(dock.getByRole("button", { name: "Terminal", exact: true })).toBeVisible();

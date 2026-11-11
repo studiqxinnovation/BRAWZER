@@ -1,48 +1,60 @@
 "use client";
 
-import { FileSpreadsheet, FileText } from "lucide-react";
+import type { GlyphName, TileColour } from "../glyphs";
 import { useAppWindow } from "./app-window";
+import { Tile } from "./registry";
 import { templates } from "./templates";
 
-/** Templates: ready-made documents and sheets, opened as new files in Writer or Calc. */
+/** Each template's tile, as the prototype colours them. */
+const TILES: readonly (readonly [GlyphName, TileColour])[] = [
+  ["doc", "blue"],
+  ["grid", "purple"],
+  ["table", "green"],
+  ["table", "pink"],
+  ["note", "yellow"],
+  ["clock", "teal"],
+  ["pen", "orange"],
+  ["table", "blue"],
+  ["doc", "indigo"],
+  ["table", "red"],
+];
+
+/**
+ * Templates, as the prototype's: "Start from a template", each a card that
+ * opens a new document in Writer or a new sheet in Calc.
+ */
 export default function TemplatesApp() {
   const window = useAppWindow();
-  const groups = (["Business", "Study", "Personal"] as const).map((category) => ({
-    category,
-    items: templates.filter((entry) => entry.category === category),
-  }));
   return (
     <div className="ap-body">
-      <div className="ap-main">
-        {groups.map((group) => (
-          <section key={group.category} aria-label={group.category} className="ap-group">
-            <h2 className="ap-group-title">{group.category}</h2>
-            <ul className="ap-template-grid">
-              {group.items.map((entry) => (
-                <li key={entry.id}>
-                  <button
-                    type="button"
-                    className="ap-template"
-                    onClick={() => {
-                      window.openApp(entry.app, { template: entry.id });
-                    }}
-                  >
-                    {entry.app === "writer" ? (
-                      <FileText aria-hidden="true" />
-                    ) : (
-                      <FileSpreadsheet aria-hidden="true" />
-                    )}
+      <div className="ap-tp-main">
+        <h2 className="ap-tp-h">Start from a template</h2>
+        <p className="ap-tp-sub">
+          Each one makes a new file you can edit, then save to your Drive.
+        </p>
+        <ul className="ap-tp-grid" aria-label="Templates">
+          {templates.map((entry, index) => {
+            const [glyph, colour] = TILES[index % TILES.length] ?? ["doc", "blue"];
+            return (
+              <li key={entry.id}>
+                <button
+                  type="button"
+                  className="ap-tp-card"
+                  title={entry.description}
+                  onClick={() => {
+                    window.openApp(entry.app, { template: entry.id });
+                  }}
+                >
+                  <Tile glyph={glyph} colour={colour} size={38} />
+                  <span>
                     <b>{entry.name}</b>
-                    <span>{entry.description}</span>
-                    <span className="ap-template-app">
-                      Opens in {entry.app === "writer" ? "Writer" : "Calc"}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
+                    <span>{entry.app === "writer" ? "Document" : "Spreadsheet"}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </div>
   );

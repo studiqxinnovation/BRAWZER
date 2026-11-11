@@ -1,9 +1,16 @@
 "use client";
 
 import { Button } from "@brawzer/ui/components/button";
-import { ArrowUp, RotateCcw, Sparkles } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { askAssistant, fetchAssistantStatus } from "@/lib/api/assistant";
+import { Tile } from "./registry";
+
+const IDEAS = [
+  "Write a polite email asking for a day off",
+  "Explain compound interest simply",
+  "Make a weekly shopping list",
+  "How do I stay safe on a shared computer?",
+];
 
 interface Turn {
   role: "user" | "assistant";
@@ -62,16 +69,7 @@ export default function AssistantApp() {
     }
   }
 
-  if (available === false) {
-    return (
-      <div className="ap-body">
-        <div className="ap-empty">
-          <Sparkles aria-hidden="true" className="size-8" />
-          <p>The assistant isn’t turned on for this Brawzer. Its operator can turn it on.</p>
-        </div>
-      </div>
-    );
-  }
+  const off = available === false;
 
   return (
     <div className="ap-body ap-chat">
@@ -84,15 +82,32 @@ export default function AssistantApp() {
       >
         {turns.length === 0 && (
           <div className="ap-chat-hello">
-            <span className="ap-chat-mark" aria-hidden="true">
-              <Sparkles />
-            </span>
-            <h2>What can I help with?</h2>
+            <Tile glyph="sparkle" colour="purple" size={52} />
+            <h2>Hi, how can I help?</h2>
             <p>
-              Ask about anything: an idea to explain, an email to write, a plan to make. What you
-              write goes to Claude, by Anthropic, to answer it; Brawzer doesn’t keep the
-              conversation.
+              I can write, explain and plan. What you write goes to Claude, by Anthropic, to answer
+              it; Brawzer doesn’t keep the conversation.
             </p>
+            <div className="ap-chat-ideas">
+              {IDEAS.map((idea) => (
+                <button
+                  key={idea}
+                  type="button"
+                  className="ap-chat-idea"
+                  disabled={off || available === null}
+                  onClick={() => {
+                    setDraft(idea);
+                  }}
+                >
+                  {idea}
+                </button>
+              ))}
+            </div>
+            {off && (
+              <p className="ap-chat-off">
+                The assistant isn’t turned on for this Brawzer. Its operator can turn it on.
+              </p>
+            )}
           </div>
         )}
         {turns.map((turn, index) => (
@@ -128,39 +143,38 @@ export default function AssistantApp() {
         <textarea
           id="assistant-message"
           className="ap-input ap-chat-input"
-          rows={2}
+          rows={1}
           value={draft}
-          placeholder="Message the assistant"
-          disabled={available === null}
+          placeholder="Ask anything, or ask me to write something for you"
+          disabled={available !== true}
           onChange={(event) => {
             setDraft(event.target.value);
           }}
           onKeyDown={onKeyDown}
         />
-        <div className="flex flex-col gap-1.5">
+        <span className="ap-row">
+          {turns.length > 0 && (
+            <Button
+              size="sm"
+              disabled={waiting}
+              onClick={() => {
+                setTurns([]);
+                setFailure(null);
+              }}
+            >
+              New
+            </Button>
+          )}
           <Button
             type="submit"
+            size="sm"
             variant="primary"
-            size="icon"
-            aria-label="Send"
             loading={waiting}
-            disabled={!draft.trim()}
+            disabled={!draft.trim() || available !== true}
           >
-            <ArrowUp aria-hidden="true" />
+            Send
           </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="New conversation"
-            disabled={turns.length === 0 || waiting}
-            onClick={() => {
-              setTurns([]);
-              setFailure(null);
-            }}
-          >
-            <RotateCcw aria-hidden="true" />
-          </Button>
-        </div>
+        </span>
       </form>
     </div>
   );

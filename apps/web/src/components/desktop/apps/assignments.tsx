@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@brawzer/ui/components/button";
-import { CalendarClock, Check, Plus, Trash2 } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
 import { type SubmitEvent, useId, useState } from "react";
 import { z } from "zod";
 import { RecordStatus } from "./record-status";
@@ -44,6 +44,7 @@ export default function AssignmentsApp() {
     assignments: [],
   });
   const [error, setError] = useState<string | null>(null);
+  const [show, setShow] = useState<"todo" | "done" | "all">("todo");
   const now = today();
 
   function add(event: SubmitEvent<HTMLFormElement>) {
@@ -80,39 +81,69 @@ export default function AssignmentsApp() {
       items: sorted.filter((item) => !item.done && dayOf(item.due) >= now + 7 * DAY),
     },
     { label: "Done", items: sorted.filter((item) => item.done) },
-  ].filter((group) => group.items.length > 0);
+  ]
+    .filter((group) =>
+      show === "todo" ? group.label !== "Done" : show === "done" ? group.label === "Done" : true,
+    )
+    .filter((group) => group.items.length > 0);
 
   return (
     <div className="ap-body">
-      <form method="post" id={formId} className="ap-toolbar ap-form-row" onSubmit={add} noValidate>
-        <label className="ap-field ap-grow">
-          <span>Assignment</span>
-          <input className="ap-input" name="title" placeholder="Essay on…" required />
-        </label>
-        <label className="ap-field">
-          <span>Module</span>
-          <input className="ap-input" name="module" placeholder="Optional" />
-        </label>
-        <label className="ap-field">
-          <span>Due</span>
-          <input className="ap-input" name="due" type="date" required />
-        </label>
-        <Button type="submit" variant="primary">
-          <Plus aria-hidden="true" />
-          Add
-        </Button>
-        {error && (
-          <p className="ap-error" role="alert">
-            {error}
-          </p>
-        )}
-      </form>
-      <div className="ap-main">
+      <div className="ap-main ap-as-main">
+        <form method="post" id={formId} className="ap-card-form" onSubmit={add} noValidate>
+          <label className="ap-grow">
+            <span className="sr-only">Assignment</span>
+            <input
+              className="ap-input ap-grow"
+              name="title"
+              placeholder="Assignment, e.g. Essay 2"
+              required
+            />
+          </label>
+          <label>
+            <span className="sr-only">Module</span>
+            <input className="ap-input" name="module" placeholder="Module" />
+          </label>
+          <label>
+            <span className="sr-only">Due</span>
+            <input className="ap-input" name="due" type="date" required />
+          </label>
+          <Button type="submit" size="sm" variant="primary">
+            Add
+          </Button>
+          {error && (
+            <p className="ap-error ap-full" role="alert">
+              {error}
+            </p>
+          )}
+        </form>
+        <div className="ap-filter-card">
+          <span className="ap-segment" role="radiogroup" aria-label="Show">
+            {(
+              [
+                ["todo", "To do"],
+                ["done", "Done"],
+                ["all", "All"],
+              ] as const
+            ).map(([option, label]) => (
+              <button
+                key={option}
+                type="button"
+                role="radio"
+                aria-checked={show === option}
+                onClick={() => {
+                  setShow(option);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
+        </div>
         {loaded === "loading" ? null : groups.length === 0 ? (
-          <div className="ap-empty">
-            <CalendarClock aria-hidden="true" className="size-8" />
-            <p>Nothing due. Add your coursework above to see what’s coming up.</p>
-          </div>
+          <p className="ap-caught-up">
+            {show === "done" ? "Nothing done yet." : "You’re all caught up."}
+          </p>
         ) : (
           groups.map((group) => (
             <section key={group.label} aria-label={group.label} className="ap-group">

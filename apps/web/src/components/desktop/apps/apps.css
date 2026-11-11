@@ -637,50 +637,86 @@
 
   /* ── Focus Timer ────────────────────────────────────────────────────── */
 
+  /* The Focus Timer, as the prototype's (.fc). */
   .ap-focus {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1rem;
-  }
-  .ap-focus-ring {
-    --ap-progress: 0;
-    display: grid;
-    width: 13rem;
-    height: 13rem;
-    flex-shrink: 0;
-    place-content: center;
-    border-radius: 999px;
-    background:
-      radial-gradient(closest-side, var(--color-canvas) 86%, transparent 87%),
-      conic-gradient(
-        var(--color-accent) calc(var(--ap-progress) * 360deg),
-        var(--color-canvas-subtle) 0
-      );
-    text-align: center;
-  }
-  .ap-focus-mode {
-    color: var(--color-ink-secondary);
-    font-size: 0.8rem;
-    font-weight: 650;
+    gap: 12px;
+    padding: 16px;
   }
   .ap-focus-time {
-    font-size: 2.75rem;
+    margin: 4px 0;
+    color: var(--color-ink);
+    font-size: 64px;
     font-variant-numeric: tabular-nums;
-    font-weight: 300;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
   }
   .ap-focus-subject {
-    width: min(20rem, 100%);
+    width: 180px;
+  }
+  .ap-focus-go {
+    min-width: 104px;
   }
   .ap-focus-lengths {
     display: flex;
-    gap: 0.75rem;
+    align-items: center;
+    gap: 10px;
+    color: var(--color-ink-tertiary);
+    font-size: 11px;
   }
   .ap-focus-lengths .ap-input {
-    width: 7rem;
+    width: 4.5rem;
   }
-  .ap-focus-stats {
+  .ap-fc-card {
     width: 100%;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    background: var(--color-surface-raised);
+    padding: 12px;
+  }
+  .ap-fc-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .ap-fc-head h2 {
+    color: var(--color-ink);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .ap-fc-head span {
+    color: var(--color-ink-tertiary);
+    font-size: 10.5px;
+  }
+  .ap-fc-chart {
+    display: grid;
+    height: 110px;
+    grid-template-columns: repeat(7, 1fr);
+    align-items: end;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ap-fc-chart li {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 6px;
+    color: var(--color-ink-tertiary);
+    font-size: 10px;
+    text-align: center;
+  }
+  .ap-fc-chart i {
+    display: block;
+    border-radius: 3px;
+    background: var(--p-accent, #2563eb);
   }
 
   /* ── Exam Mode ──────────────────────────────────────────────────────── */
@@ -1479,24 +1515,63 @@
 
   /* ── Send to Phone ──────────────────────────────────────────────────── */
 
-  .ap-phone {
+  /* Send to Phone, as the prototype's (.sp). */
+  .ap-sp-body {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    gap: 18px;
+    overflow: auto;
+    padding: 18px;
+  }
+  .ap-sp-left {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .ap-sp-text {
+    min-height: 160px;
+    resize: none;
+    line-height: 1.5;
+  }
+  .ap-sp-file {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--color-ink);
+    font-size: 12.5px;
+  }
+  .ap-sp-qr {
+    display: flex;
+    width: 250px;
+    height: 250px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+  }
+  .ap-sp-qr img {
+    width: 220px;
+    height: 220px;
+  }
+  .ap-sp-ph {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
+    gap: 10px;
+    padding: 20px;
+    color: #555;
+    font-size: 12px;
     text-align: center;
   }
-  .ap-qr {
-    width: 13rem;
-    height: 13rem;
-    border-radius: 0.75rem;
-    background: #fff;
-    padding: 0.5rem;
-    box-shadow: 0 4px 18px rgb(15 23 42 / 0.12);
-  }
-  .ap-phone-name {
-    font-size: 0.9rem;
-    font-weight: 600;
+  .ap-hint {
+    color: var(--color-ink-tertiary);
+    font-size: 11.5px;
+    line-height: 1.5;
   }
 
   /* ── Terminal ───────────────────────────────────────────────────────── */
@@ -1562,21 +1637,50 @@
     overflow-y: auto;
     padding: 1rem;
   }
+  /* The Assistant's welcome, as the prototype's (.as). */
   .ap-chat-hello {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
+    gap: 8px;
     margin: auto;
-    max-width: 26rem;
-    color: var(--color-ink-secondary);
-    font-size: 0.85rem;
+    max-width: 400px;
+    color: var(--color-ink-tertiary);
+    font-size: 11px;
+    line-height: 1.45;
     text-align: center;
   }
   .ap-chat-hello h2 {
+    margin-top: 6px;
     color: var(--color-ink);
-    font-size: 1.15rem;
-    font-weight: 650;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .ap-chat-ideas {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .ap-chat-idea {
+    border: 1px solid var(--color-line-strong);
+    border-radius: 999px;
+    background: var(--color-surface-raised);
+    padding: 6px 12px;
+    color: var(--color-ink);
+    font-size: 11.5px;
+  }
+  .ap-chat-idea:hover:not(:disabled) {
+    background: var(--color-hover);
+  }
+  .ap-chat-idea:disabled {
+    cursor: default;
+  }
+  .ap-chat-off {
+    margin-top: 4px;
+    color: var(--color-ink-tertiary);
+    font-size: 11px;
   }
   .ap-chat-mark {
     display: grid;
@@ -1640,10 +1744,11 @@
   }
   .ap-chat-form {
     display: flex;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 8px;
     border-top: 1px solid var(--color-line);
     background: var(--color-surface);
-    padding: 0.625rem 0.75rem;
+    padding: 10px;
   }
   .ap-chat-input {
     flex: 1;
@@ -1829,6 +1934,296 @@
     grid-column: span 2;
     padding-left: 26px;
     text-align: left;
+  }
+
+  /* ── App Store, as the prototype's (.sto) ───────────────────────────── */
+
+  .ap-sto-main {
+    min-width: 0;
+    flex: 1;
+    overflow: auto;
+    padding: 20px 22px;
+  }
+  .ap-sto-hero {
+    display: block;
+    margin-bottom: 16px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #0a84ff, #5e5ce6);
+    padding: 20px 22px;
+    color: #fff;
+  }
+  .ap-sto-hero b {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 20px;
+    letter-spacing: -0.02em;
+  }
+  .ap-sto-hero span {
+    font-size: 12px;
+  }
+  .ap-sto-q {
+    width: 100%;
+    margin-bottom: 14px;
+  }
+  .ap-sto-packs {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .ap-sto-pack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    background:
+      linear-gradient(160deg, color-mix(in srgb, var(--pc) 24%, transparent), transparent 70%),
+      var(--color-surface-raised);
+    padding: 14px;
+  }
+  .ap-sto-pack b {
+    font-size: 13px;
+  }
+  .ap-sto-pack-i {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin: 6px 0 10px;
+  }
+  .ap-sto-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ap-sto-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    background: var(--color-surface-raised);
+    padding: 14px;
+  }
+  .ap-sto-art {
+    display: block;
+    width: 52px;
+    height: 52px;
+    flex-shrink: 0;
+  }
+  .ap-sto-art > * {
+    width: 100%;
+    height: 100%;
+  }
+  .ap-sto-text {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+  .ap-sto-text b {
+    font-size: 13px;
+  }
+  .ap-sto-cat {
+    color: var(--color-ink-tertiary);
+    font-size: 11px;
+  }
+  .ap-sto-desc {
+    margin: 3px 0 9px;
+    color: var(--color-ink-secondary);
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+  .ap-sto-pill {
+    border-radius: 999px;
+    background: var(--color-hover);
+    padding: 2px 8px;
+    color: var(--color-ink-secondary);
+    font-size: 10.5px;
+    font-weight: 600;
+  }
+
+  /* Screenshot, as the prototype's (.ss). */
+  .ap-ss-body {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 14px;
+    overflow: auto;
+    padding: 16px;
+  }
+  .ap-ss-modes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .ap-ss-mode {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    background: var(--color-surface-raised);
+    padding: 16px 10px;
+    text-align: center;
+  }
+  .ap-ss-mode:hover:not(:disabled) {
+    background: var(--color-hover);
+  }
+  .ap-ss-mode:disabled {
+    opacity: 0.55;
+  }
+  .ap-ss-mode b {
+    margin-top: 6px;
+    color: var(--color-ink);
+    font-size: 12.5px;
+  }
+  .ap-ss-mode span {
+    color: var(--color-ink-tertiary);
+    font-size: 10.5px;
+  }
+  .ap-ss-drop {
+    display: flex;
+    min-height: 180px;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    border: 1px dashed var(--color-line-strong);
+    border-radius: 12px;
+    padding: 16px;
+    color: var(--color-ink-secondary);
+    font-size: 12px;
+  }
+  .ap-ss-list {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ap-ss-list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-radius: 10px;
+    background: var(--color-surface-raised);
+    padding: 8px 10px;
+  }
+
+  /* Templates, as the prototype's. */
+  .ap-tp-main {
+    min-height: 0;
+    flex: 1;
+    overflow: auto;
+    padding: 16px;
+  }
+  .ap-tp-h {
+    color: var(--color-ink);
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .ap-tp-sub {
+    margin-bottom: 12px;
+    color: var(--color-ink-tertiary);
+    font-size: 11px;
+  }
+  .ap-tp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ap-tp-card {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    background: var(--color-surface-raised);
+    padding: 12px;
+    text-align: left;
+  }
+  .ap-tp-card:hover {
+    background: var(--color-hover);
+  }
+  .ap-tp-card b {
+    display: block;
+    color: var(--color-ink);
+    font-size: 12.5px;
+  }
+  .ap-tp-card span span {
+    color: var(--color-ink-tertiary);
+    font-size: 11px;
+  }
+
+  /* Assignments, as the prototype's: the form in a card, then To do, Done and All. */
+  .ap-as-main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+  }
+  .ap-card-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    background: var(--color-surface-raised);
+    padding: 12px;
+  }
+  .ap-card-form .ap-full {
+    flex-basis: 100%;
+  }
+  .ap-filter-card {
+    border: 1px solid var(--color-line);
+    border-radius: 10px;
+    background: var(--color-surface-raised);
+    padding: 3px;
+  }
+  .ap-filter-card .ap-segment {
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+  .ap-caught-up {
+    padding: 20px;
+    color: var(--color-ink-tertiary);
+    font-size: 11.5px;
+    text-align: center;
+  }
+
+  /* The prototype's empty screens. */
+  .ap-blank {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin: auto;
+    padding: 60px 24px;
+    text-align: center;
+  }
+  .ap-blank b {
+    margin-top: 4px;
+    color: var(--color-ink);
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .ap-blank p {
+    max-width: 380px;
+    color: var(--color-ink-tertiary);
+    font-size: 11.5px;
+    line-height: 1.45;
   }
 
   /* ── Settings ───────────────────────────────────────────────────────── */

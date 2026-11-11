@@ -2,7 +2,6 @@
 
 import { Button } from "@brawzer/ui/components/button";
 import { useToast } from "@brawzer/ui/components/toast";
-import { Pause, Play, RotateCcw } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { z } from "zod";
 import { RecordStatus } from "./record-status";
@@ -20,7 +19,9 @@ const stateSchema = z.object({
   log: z.array(logSchema),
 });
 
-type Mode = "focus" | "break";
+type Mode = "focus" | "break" | "long";
+/** A long break, as the prototype offers after a few focus sessions. */
+const LONG_BREAK_MINUTES = 15;
 type Run = { mode: Mode; endsAt: number } | { mode: Mode; paused: number };
 
 const second = (changed: () => void) => {
@@ -47,9 +48,15 @@ export default function FocusTimerApp() {
   });
   const [subject, setSubject] = useState("");
   const [run, setRun] = useState<Run | null>(null);
+  const [chosen, setChosen] = useState<Mode>("focus");
   const tick = useSyncExternalStore(second, now, () => 0);
-  const mode = run?.mode ?? "focus";
-  const total = (mode === "focus" ? value.focusMinutes : value.breakMinutes) * 60_000;
+  const mode = run?.mode ?? chosen;
+  const total =
+    (mode === "focus"
+      ? value.focusMinutes
+      : mode === "long"
+        ? LONG_BREAK_MINUTES
+        : value.breakMinutes) * 60_000;
   const left = run === null ? total : "endsAt" in run ? Math.max(0, run.endsAt - tick) : run.paused;
   const finished = run !== null && "endsAt" in run && left === 0;
 
@@ -85,7 +92,6 @@ export default function FocusTimerApp() {
 
   const minutes = Math.floor(left / 60_000);
   const seconds = Math.floor((left % 60_000) / 1000);
-  const progress = total === 0 ? 0 : 1 - left / total;
   const running = run !== null && "endsAt" in run;
 
   const startOfWeek = (() => {
@@ -108,25 +114,61 @@ export default function FocusTimerApp() {
   const most = bySubject[0]?.[1] ?? 0;
   const subjects = [...new Set(value.log.map((entry) => entry.subject))].slice(-12);
 
+  // The last seven days, today last, for the week's chart.
+  const days = Array.from({ length: 7 }, (_, back) => {
+    const start = startOfDay - (6 - back) * 86_400_000;
+    const minutesThatDay = value.log
+      .filter((entry) => {
+        const at = Date.parse(entry.at);
+        return at >= start && at < start + 86_400_000;
+      })
+      .reduce((sum, entry) => sum + entry.minutes, 0);
+    return {
+      label: new Date(start).toLocaleDateString([], { weekday: "short" }),
+      minutes: minutesThatDay,
+    };
+  });
+  const busiest = Math.max(1, ...days.map((day) => day.minutes));
+  const weekMinutes = days.reduce((sum, day) => sum + day.minutes, 0);
+
   return (
     <div className="ap-body">
       <div className="ap-main ap-focus">
-        <div
-          className="ap-focus-ring"
-          style={{ "--ap-progress": String(progress) } as React.CSSProperties}
-        >
-          <span className="ap-focus-mode">{mode === "focus" ? "Focus" : "Break"}</span>
-          <span className="ap-focus-time" role="timer" aria-label="Time left">
-            {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
-          </span>
-        </div>
-        <label className="ap-field ap-focus-subject">
-          <span>Subject</span>
+        <span className="ap-segment" role="tablist" aria-label="Timer">
+          {(
+            [
+              ["focus", "Focus"],
+              ["break", "Short break"],
+              ["long", "Long break"],
+            ] as const
+          ).map(([option, label]) => (
+            <button
+              key={option}
+              type="button"
+              role="tab"
+              aria-selected={mode === option}
+              disabled={run !== null}
+              onClick={() => {
+                setChosen(option);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </span>
+        <span className="ap-focus-time" role="timer" aria-label="Time left">
+          {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
+        </span>
+        <span className="ap-row">
+          <label className="sr-only" htmlFor="focus-subject">
+            Subject
+          </label>
           <input
-            className="ap-input"
+            id="focus-subject"
+            className="ap-input ap-focus-subject"
             list="focus-subjects"
             value={subject}
-            placeholder="What are you studying?"
+            placeholder="Subject"
             onChange={(event) => {
               setSubject(event.target.value);
             }}
@@ -136,33 +178,32 @@ export default function FocusTimerApp() {
               <option key={name} value={name} />
             ))}
           </datalist>
-        </label>
-        <div className="flex gap-2">
+        </span>
+        <span className="ap-row">
           <Button
             variant="primary"
-            size="lg"
+            size="sm"
+            className="ap-focus-go"
             onClick={() => {
               if (running) setRun({ mode, paused: left });
               else setRun({ mode, endsAt: Date.now() + left });
             }}
           >
-            {running ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
             {running ? "Pause" : run ? "Resume" : "Start"}
           </Button>
           <Button
-            size="lg"
+            size="sm"
             disabled={run === null}
             onClick={() => {
               setRun(null);
             }}
           >
-            <RotateCcw aria-hidden="true" />
             Reset
           </Button>
-        </div>
-        <div className="ap-focus-lengths">
-          <label className="ap-field">
-            <span>Focus (minutes)</span>
+        </span>
+        <span className="ap-focus-lengths">
+          <label className="ap-field ap-inline">
+            <span>Focus</span>
             <input
               className="ap-input"
               type="number"
@@ -176,8 +217,8 @@ export default function FocusTimerApp() {
               }}
             />
           </label>
-          <label className="ap-field">
-            <span>Break (minutes)</span>
+          <label className="ap-field ap-inline">
+            <span>Break</span>
             <input
               className="ap-input"
               type="number"
@@ -191,17 +232,30 @@ export default function FocusTimerApp() {
               }}
             />
           </label>
-        </div>
-        <section className="ap-card ap-focus-stats" aria-labelledby="focus-week">
-          <h2 id="focus-week" className="ap-group-title">
-            This week{" "}
-            <span>{minutesLabel(week.reduce((sum, entry) => sum + entry.minutes, 0))}</span>
-          </h2>
-          <p className="text-footnote text-ink-secondary">Today: {minutesLabel(todayMinutes)}</p>
+          <span>minutes</span>
+        </span>
+        <section className="ap-fc-card" aria-labelledby="focus-week">
+          <div className="ap-fc-head">
+            <h2 id="focus-week">This week</h2>
+            <span>
+              {(weekMinutes / 60).toFixed(1)} hours studied · today {minutesLabel(todayMinutes)}
+            </span>
+          </div>
+          <ol className="ap-fc-chart" aria-label="Minutes each day">
+            {days.map((day, index) => (
+              <li key={index} aria-label={`${day.label}: ${minutesLabel(day.minutes)}`}>
+                <i style={{ height: `${String(Math.max(3, (day.minutes / busiest) * 100))}%` }} />
+                <span aria-hidden="true">{day.label}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
+        <section className="ap-fc-card" aria-labelledby="focus-subjects-h">
+          <div className="ap-fc-head">
+            <h2 id="focus-subjects-h">By subject</h2>
+          </div>
           {bySubject.length === 0 ? (
-            <p className="text-footnote text-ink-secondary">
-              Finished focus sessions are logged here by subject.
-            </p>
+            <p className="ap-hint">Finish a focus session to log study time.</p>
           ) : (
             <ul className="ap-bars">
               {bySubject.map(([name, sum]) => (

@@ -347,7 +347,7 @@ test.describe("desktop", () => {
       .getByRole("button", { name: "App Store" })
       .click();
     const store = page.getByRole("region", { name: "App Store window" });
-    await store.getByRole("tab", { name: "Web apps" }).click();
+    await store.getByRole("button", { name: "Web apps", exact: true }).click();
     await store
       .getByRole("listitem")
       .filter({ hasText: "Wikipedia" })
