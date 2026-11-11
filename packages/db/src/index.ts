@@ -42,6 +42,7 @@ export {
   inArray,
   isNotNull,
   isNull,
+  like,
   lt,
   ne,
   or,

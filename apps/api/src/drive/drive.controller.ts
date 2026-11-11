@@ -28,6 +28,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -138,6 +139,7 @@ export class DriveController {
       files: await this.drive.listFiles(auth.user.id, {
         folderId: query.folderId ?? null,
         q: query.q === "" ? undefined : query.q,
+        kind: query.kind,
         space: query.space,
       }),
     };
@@ -210,7 +212,8 @@ export class DriveController {
   @ApiCookieAuth(SESSION_AUTH)
   @ApiOperation({
     summary: "Delete a file",
-    description: "Immediate; the stored object is removed.",
+    description:
+      "Moves it to Trash, where it's kept 30 days (and still counts towards storage). A quarantined file is removed at once.",
   })
   @ApiNoContentResponse({ description: "Deleted." })
   @ApiNotFoundResponse({ description: "No such file on this account." })
@@ -220,6 +223,107 @@ export class DriveController {
     @Req() request: FastifyRequest,
   ): Promise<void> {
     await this.drive.deleteFile(auth, id, requestMeta(request));
+  }
+
+  @Put("files/:id/content")
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @ApiConsumes("multipart/form-data")
+  @SerializeOptions({ schema: driveFileSchema })
+  @ApiOperation({
+    summary: "Save a new version of a file",
+    description:
+      "Replaces the file's content, keeping its name, folder and id. Scanned and encrypted like an upload.",
+  })
+  @ApiOkResponse({ description: "Saved.", standardSchema: driveFileSchema })
+  @ApiNotFoundResponse({ description: "No such file on this account." })
+  @ApiPayloadTooLargeResponse({ description: "Over the per-file limit." })
+  @ApiServiceUnavailableResponse({ description: "The scanner is unavailable; nothing changed." })
+  async replaceContent(
+    @Param("id", { schema: idSchema }) id: string,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<DriveFile> {
+    if (!request.isMultipart()) {
+      throw new ApiException(
+        "unsupported_media_type",
+        415,
+        "Send the file as multipart form data.",
+      );
+    }
+    const part = await request.file();
+    if (!part) {
+      throw new ApiException("validation_failed", 400, "Choose a file to upload.", {
+        details: ["file: Choose a file to upload."],
+      });
+    }
+    return this.drive.replaceContent(
+      auth,
+      id,
+      { filename: part.filename, stream: part.file },
+      requestMeta(request),
+    );
+  }
+
+  @Get("trash")
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: driveFileListSchema })
+  @ApiOperation({
+    summary: "What's in Trash",
+    description:
+      "Deleted files, newest first. Each is removed for good 30 days after it was deleted.",
+  })
+  @ApiOkResponse({ description: "The files.", standardSchema: driveFileListSchema })
+  async trash(
+    @Query({ schema: driveSpaceQuerySchema }) query: z.output<typeof driveSpaceQuerySchema>,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<DriveFileList> {
+    return { files: await this.drive.listTrash(auth.user.id, query.space) };
+  }
+
+  @Post("files/:id/restore")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: driveFileSchema })
+  @ApiOperation({ summary: "Put a file back from Trash" })
+  @ApiOkResponse({ description: "Back in its folder.", standardSchema: driveFileSchema })
+  @ApiNotFoundResponse({ description: "No such file in Trash." })
+  restore(
+    @Param("id", { schema: idSchema }) id: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<DriveFile> {
+    return this.drive.restoreFile(auth, id);
+  }
+
+  @Delete("trash/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @ApiOperation({ summary: "Delete a file in Trash for good" })
+  @ApiNoContentResponse({ description: "Deleted." })
+  @ApiNotFoundResponse({ description: "No such file in Trash." })
+  async deleteForever(
+    @Param("id", { schema: idSchema }) id: string,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<void> {
+    await this.drive.deleteForever(auth, id, requestMeta(request));
+  }
+
+  @Delete("trash")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @ApiOperation({ summary: "Empty Trash" })
+  @ApiNoContentResponse({ description: "Emptied." })
+  async emptyTrash(
+    @Query({ schema: driveSpaceQuerySchema }) query: z.output<typeof driveSpaceQuerySchema>,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<void> {
+    await this.drive.emptyTrash(auth, query.space, requestMeta(request));
   }
 
   @Get("files/:id/preview")

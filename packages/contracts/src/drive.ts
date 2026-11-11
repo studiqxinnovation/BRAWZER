@@ -24,7 +24,22 @@ export const PREVIEWABLE_TYPES = [
   "image/avif",
   "application/pdf",
   "text/plain",
+  // Audio, for Music (Phase 9): it plays, and can't run as a page.
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/aac",
+  "audio/ogg",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/vnd.wave",
+  "audio/flac",
+  "audio/x-flac",
 ] as const;
+
+/** What the desktop's viewers list across Drive: Photos, PDF Viewer, Music, the editors. */
+export const driveFileKinds = ["images", "pdfs", "audio", "text"] as const;
+export type DriveFileKind = (typeof driveFileKinds)[number];
 
 export const isPreviewable = (contentType: string): boolean =>
   (PREVIEWABLE_TYPES as readonly string[]).includes(contentType);
@@ -63,6 +78,9 @@ export const driveFolderSchema = z.object({
   updatedAt: z.iso.datetime(),
 });
 
+/** How long a file stays in Trash before it's removed for good. */
+export const DRIVE_TRASH_DAYS = 30;
+
 export const driveFileSchema = z.object({
   id: z.uuid(),
   name: z.string(),
@@ -81,6 +99,8 @@ export const driveFileSchema = z.object({
   canDelete: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+  /** In Trash since then; it's removed for good DRIVE_TRASH_DAYS later. */
+  trashedAt: z.iso.datetime().nullable(),
 });
 
 export const driveUsageSchema = z.object({
@@ -114,6 +134,8 @@ export const driveFileListSchema = z.object({
 export const driveFileQuerySchema = z.object({
   folderId: z.uuid({ error: "That isn’t a folder ID." }).optional(),
   q: z.string().trim().max(100, "Use at most 100 characters.").optional(),
+  /** Every clean file of this kind, wherever it is (the desktop's viewers). */
+  kind: z.enum(driveFileKinds, { error: "That isn’t a kind of file." }).optional(),
   /** For the top level and searches; a folder belongs to its own space. */
   space: driveSpaceSchema.default("personal"),
 });

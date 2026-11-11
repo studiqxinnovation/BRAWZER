@@ -418,3 +418,113 @@ describe("the account", () => {
     for (const key of keys) expect(await store.get(key)).toBeNull();
   });
 });
+
+/** One file as multipart form data, for a raw request. */
+function multipart(name: string, content: Buffer) {
+  const boundary = `----brawzer${String(Date.now())}`;
+  const body = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
+    ),
+    content,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  return { body, headers: { "content-type": `multipart/form-data; boundary=${boundary}` } };
+}
+
+describe("Trash and saving new versions", () => {
+  it("keeps deleted files in Trash until restored or removed, and frees their names", async () => {
+    const { client, email } = await account("drive-trash");
+    const notes = await upload(client, "notes.txt", Buffer.from("first draft"));
+    expect((await client.delete(`/drive/files/${notes.id}`)).statusCode).toBe(204);
+    expect(await filesIn(client)).toEqual([]);
+    // Its name is free again, and it can't be opened from Trash.
+    const again = await upload(client, "notes.txt", Buffer.from("second draft"));
+    expect(again.name).toBe("notes.txt");
+    expect((await client.get(`/drive/files/${notes.id}/preview`)).statusCode).toBe(404);
+
+    const trash = driveFileListSchema.parse((await client.get("/drive/trash")).json()).files;
+    expect(trash.map((file) => [file.id, file.name])).toEqual([[notes.id, "notes.txt"]]);
+    expect(trash[0]?.trashedAt).not.toBeNull();
+    // Still counted in the storage used, and its object still kept.
+    expect(await objectKeysOf(email)).toHaveLength(2);
+
+    // Restored beside the new one, it takes the next free name.
+    const restored = await client.post(`/drive/files/${notes.id}/restore`);
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(driveFileSchema.parse(restored.json())).toMatchObject({
+      name: "notes (2).txt",
+      trashedAt: null,
+    });
+
+    // Deleting it again, then for good, removes its object.
+    await client.delete(`/drive/files/${notes.id}`);
+    expect((await client.delete(`/drive/trash/${notes.id}`)).statusCode).toBe(204);
+    expect(await objectKeysOf(email)).toHaveLength(1);
+    expect((await client.delete(`/drive/trash/${again.id}`)).statusCode).toBe(404);
+
+    // Emptying removes everything in it; another account can't reach any of it.
+    await client.delete(`/drive/files/${again.id}`);
+    const { client: stranger } = await account("drive-trash-stranger");
+    expect((await stranger.post(`/drive/files/${again.id}/restore`)).statusCode).toBe(404);
+    expect(driveFileListSchema.parse((await stranger.get("/drive/trash")).json()).files).toEqual(
+      [],
+    );
+    expect((await client.delete("/drive/trash")).statusCode).toBe(204);
+    expect(driveFileListSchema.parse((await client.get("/drive/trash")).json()).files).toEqual([]);
+    expect(await objectKeysOf(email)).toEqual([]);
+  });
+
+  it("lists every clean file of a kind across folders, and plays audio", async () => {
+    const { client } = await account("drive-kinds");
+    const folder = await createFolder(client, "Holiday");
+    await upload(client, "beach.png", PNG, folder.id);
+    await upload(client, "ticket.pdf", PDF);
+    await upload(client, "notes.txt", Buffer.from("Packing list"));
+    // An MP3: its ID3 tag, then the first frame's header.
+    const song = await upload(
+      client,
+      "song.mp3",
+      Buffer.concat([
+        Buffer.from("ID3\x04\x00\x00\x00\x00\x00\x00\xff\xfb\x90\x64", "latin1"),
+        Buffer.alloc(4096, 0),
+      ]),
+    );
+    expect(song).toMatchObject({ contentType: "audio/mpeg", previewable: true });
+    const names = async (kind: string) =>
+      driveFileListSchema
+        .parse((await client.get(`/drive/files?kind=${kind}`)).json())
+        .files.map((file) => file.name);
+    expect(await names("images")).toEqual(["beach.png"]);
+    expect(await names("pdfs")).toEqual(["ticket.pdf"]);
+    expect(await names("audio")).toEqual(["song.mp3"]);
+    expect(await names("text")).toEqual(["notes.txt"]);
+    expect((await client.get("/drive/files?kind=videos")).statusCode).toBe(400);
+    const played = await client.get(`/drive/files/${song.id}/preview`);
+    expect(played.statusCode).toBe(200);
+    expect(played.headers["content-type"]).toBe("audio/mpeg");
+  });
+
+  it("saves a new version in place: same id and name, new content and key", async () => {
+    const { client, email } = await account("drive-version");
+    const file = await upload(client, "essay.txt", Buffer.from("Version one"));
+    const [before] = await objectKeysOf(email);
+    const { body, headers } = multipart("ignored.txt", Buffer.from("Version two, longer"));
+    const saved = await client.raw("PUT", `/drive/files/${file.id}/content`, body, headers);
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(driveFileSchema.parse(saved.json())).toMatchObject({
+      id: file.id,
+      name: "essay.txt",
+      size: "Version two, longer".length,
+    });
+    const after = await objectKeysOf(email);
+    expect(after).toHaveLength(1);
+    expect(after[0]).not.toBe(before);
+    expect((await client.get(`/drive/files/${file.id}/preview`)).body).toBe("Version two, longer");
+
+    const { client: stranger } = await account("drive-version-stranger");
+    expect(
+      (await stranger.raw("PUT", `/drive/files/${file.id}/content`, body, headers)).statusCode,
+    ).toBe(404);
+  });
+});

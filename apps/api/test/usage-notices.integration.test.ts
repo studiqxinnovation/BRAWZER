@@ -90,6 +90,8 @@ describe("usage notices", () => {
     expect(await sentTo("storage")).toEqual([80]);
     await h.waitForEmail(email, "You’ve used 90% of your Drive storage");
     expect((await client.delete(`/drive/files/${file.id}`)).statusCode).toBe(204);
+    // Trash still counts; removing it for good frees the space.
+    expect((await client.delete(`/drive/trash/${file.id}`)).statusCode).toBe(204);
     await notices.run();
     expect(await sentTo("storage")).toEqual([]);
     await upload();

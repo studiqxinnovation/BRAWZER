@@ -1,6 +1,12 @@
 "use client";
 
-import type { DriveFile, DriveFolder, DriveSpace, DriveUsage } from "@brawzer/contracts";
+import {
+  DRIVE_TRASH_DAYS,
+  type DriveFile,
+  type DriveFolder,
+  type DriveSpace,
+  type DriveUsage,
+} from "@brawzer/contracts";
 import { Badge } from "@brawzer/ui/components/badge";
 import { Button } from "@brawzer/ui/components/button";
 import { EmptyState } from "@brawzer/ui/components/empty-state";
@@ -261,10 +267,26 @@ function FileRow({
       <DeleteDialog
         open={action === "delete"}
         onOpenChange={close}
-        title={`Delete “${shortName(file.name)}”?`}
-        description="It is removed from Drive straight away. There is no bin to get it back from."
-        confirmLabel="Delete file"
-        onConfirm={() => deleteFile(file.id).then(after(`Deleted “${shortName(file.name)}”`))}
+        title={
+          file.status === "clean"
+            ? `Move “${shortName(file.name)}” to Trash?`
+            : `Delete “${shortName(file.name)}”?`
+        }
+        description={
+          file.status === "clean"
+            ? `It stays in Trash for ${String(DRIVE_TRASH_DAYS)} days, where you can put it back, then it’s removed for good. Until then it counts towards your storage.`
+            : "It is removed from Drive straight away."
+        }
+        confirmLabel={file.status === "clean" ? "Move to Trash" : "Delete file"}
+        onConfirm={() =>
+          deleteFile(file.id).then(
+            after(
+              file.status === "clean"
+                ? `Moved “${shortName(file.name)}” to Trash`
+                : `Deleted “${shortName(file.name)}”`,
+            ),
+          )
+        }
       />
     </li>
   );

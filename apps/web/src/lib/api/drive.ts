@@ -3,6 +3,7 @@ import {
   type CreateFolderRequest,
   downloadTicketSchema,
   type DriveFile,
+  type DriveFileKind,
   driveFileListSchema,
   driveOverviewSchema,
   driveFileSchema,
@@ -19,10 +20,11 @@ export const fetchDriveOverview = (space: DriveSpace = "personal") =>
 
 /** One folder's files (the top level without `folderId`), or a search everywhere with `q`. */
 export const listDriveFiles = (
-  query: { folderId?: string | null; q?: string; space?: DriveSpace } = {},
+  query: { folderId?: string | null; q?: string; kind?: DriveFileKind; space?: DriveSpace } = {},
 ) => {
   const params = new URLSearchParams();
-  if (query.q) params.set("q", query.q);
+  if (query.kind) params.set("kind", query.kind);
+  else if (query.q) params.set("q", query.q);
   else if (query.folderId) params.set("folderId", query.folderId);
   if (query.space === "team") params.set("space", "team");
   const search = params.toString();
@@ -51,6 +53,74 @@ export const updateFile = (id: string, body: UpdateFileRequest) =>
 
 export const deleteFile = (id: string) =>
   apiRequest<undefined>(`/drive/files/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+/** Saves a new version of a file: same name, folder and id. */
+export async function replaceDriveFile(id: string, file: File): Promise<ApiResult<DriveFile>> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1/drive/files/${encodeURIComponent(id)}/content`, {
+      method: "PUT",
+      body: form,
+      headers: { accept: "application/json" },
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, status: 0, error: unreachable };
+  }
+  const payload: unknown = await response.json().catch(() => undefined);
+  if (!response.ok) {
+    const parsed = apiErrorSchema.safeParse(payload);
+    return {
+      ok: false,
+      status: response.status,
+      error: parsed.success ? parsed.data.error : unexpected,
+    };
+  }
+  const parsed = driveFileSchema.safeParse(payload);
+  return parsed.success
+    ? { ok: true, status: response.status, data: parsed.data }
+    : { ok: false, status: response.status, error: unexpected };
+}
+
+/** What's in Trash, newest first. */
+export const fetchTrash = (space: DriveSpace = "personal") =>
+  apiRequest(space === "team" ? "/drive/trash?space=team" : "/drive/trash", {
+    schema: driveFileListSchema,
+  });
+
+export const restoreFile = (id: string) =>
+  apiRequest(`/drive/files/${encodeURIComponent(id)}/restore`, {
+    method: "POST",
+    schema: driveFileSchema,
+  });
+
+export const deleteForever = (id: string) =>
+  apiRequest<undefined>(`/drive/trash/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+export const emptyTrash = (space: DriveSpace = "personal") =>
+  apiRequest<undefined>(space === "team" ? "/drive/trash?space=team" : "/drive/trash", {
+    method: "DELETE",
+  });
+
+/** A clean file's text, read through the preview route (same origin, session cookie). */
+export async function readDriveText(id: string): Promise<ApiResult<string>> {
+  try {
+    const response = await fetch(previewUrl(id), { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        error: { code: "not_found", message: "That file can’t be opened here." },
+      };
+    }
+    return { ok: true, status: response.status, data: await response.text() };
+  } catch {
+    return { ok: false, status: 0, error: unreachable };
+  }
+}
 
 /** A single-use link to save the file to this computer. Needs a recent sign-in. */
 export const requestDownloadTicket = (id: string) =>

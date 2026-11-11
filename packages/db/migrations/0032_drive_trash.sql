@@ -1,0 +1,3 @@
+DROP INDEX "drive_files_owner_sibling_name_unique";--> statement-breakpoint
+ALTER TABLE "drive_files" ADD COLUMN "trashed_at" timestamp with time zone;--> statement-breakpoint
+CREATE UNIQUE INDEX "drive_files_owner_sibling_name_unique" ON "drive_files" USING btree (coalesce("team_id", "user_id"),coalesce("folder_id", '00000000-0000-0000-0000-000000000000'::uuid),lower("name")) WHERE "drive_files"."trashed_at" is null;

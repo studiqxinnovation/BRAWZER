@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 import {
   type DriveFile,
+  type DriveFileKind,
   type DriveFileSource,
   type DriveFolder,
   type DriveOverview,
@@ -17,9 +18,12 @@ import {
   type DatabaseHandle,
   type DriveFileRow,
   type DriveFolderRow,
+  desc,
   eq,
   ilike,
   inArray,
+  like,
+  isNotNull,
   isNull,
   or,
   schema,
@@ -137,8 +141,20 @@ function toFile(row: DriveFileRow, scope: DriveScope): DriveFile {
     canDelete: mayDelete(scope, row),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    trashedAt: row.trashedAt?.toISOString() ?? null,
   };
 }
+
+const KIND_TYPES: Record<DriveFileKind, string> = {
+  images: "image/%",
+  pdfs: "application/pdf",
+  audio: "audio/%",
+  text: "text/plain",
+};
+const kindFilter = (kind: DriveFileKind) => like(schema.driveFiles.contentType, KIND_TYPES[kind]);
+
+/** Files in their folders, not in Trash. */
+const notTrashed = isNull(schema.driveFiles.trashedAt);
 
 const filesIn = (scope: DriveScope) =>
   scope.kind === "team"
@@ -315,7 +331,12 @@ export class DriveService implements OnModuleInit {
   /** The files in one folder (null: the top level), or every file matching `q`, in a space. */
   async listFiles(
     userId: string,
-    query: { folderId: string | null; q?: string | undefined; space?: DriveSpace },
+    query: {
+      folderId: string | null;
+      q?: string | undefined;
+      kind?: DriveFileKind | undefined;
+      space?: DriveSpace;
+    },
   ): Promise<DriveFile[]> {
     let scope: DriveScope;
     if (query.folderId && !query.q) {
@@ -327,14 +348,22 @@ export class DriveService implements OnModuleInit {
       const team = query.space === "team" && (await this.teams.membership(userId)) !== null;
       scope = await this.scopeFor(userId, team ? "team" : "personal");
     }
-    const where = query.q
-      ? and(filesIn(scope), ilike(schema.driveFiles.name, `%${escapeLike(query.q)}%`))
-      : and(
+    const where = query.kind
+      ? and(
           filesIn(scope),
-          query.folderId
-            ? eq(schema.driveFiles.folderId, query.folderId)
-            : isNull(schema.driveFiles.folderId),
-        );
+          notTrashed,
+          eq(schema.driveFiles.status, "clean"),
+          kindFilter(query.kind),
+        )
+      : query.q
+        ? and(filesIn(scope), notTrashed, ilike(schema.driveFiles.name, `%${escapeLike(query.q)}%`))
+        : and(
+            filesIn(scope),
+            notTrashed,
+            query.folderId
+              ? eq(schema.driveFiles.folderId, query.folderId)
+              : isNull(schema.driveFiles.folderId),
+          );
     const rows = await this.database.db
       .select()
       .from(schema.driveFiles)
@@ -343,10 +372,11 @@ export class DriveService implements OnModuleInit {
     return rows.map((row) => toFile(row, scope));
   }
 
-  /** A file the person may see: their own, or their team's. */
+  /** A file the person may see: their own, or their team's; in Trash only when asked for. */
   private async findFile(
     userId: string,
     id: string,
+    where: "files" | "trash" = "files",
   ): Promise<{ row: DriveFileRow; scope: DriveScope }> {
     const [row] = await this.database.db
       .select()
@@ -354,7 +384,7 @@ export class DriveService implements OnModuleInit {
       .where(eq(schema.driveFiles.id, id))
       .limit(1);
     const scope = row ? await this.scopeOfRow(userId, row) : null;
-    if (!row || !scope) throw fileNotFound();
+    if (!row || !scope || (row.trashedAt !== null) !== (where === "trash")) throw fileNotFound();
     return { row, scope };
   }
 
@@ -530,6 +560,7 @@ export class DriveService implements OnModuleInit {
       .where(
         and(
           filesIn(scope),
+          notTrashed,
           folderId ? eq(schema.driveFiles.folderId, folderId) : isNull(schema.driveFiles.folderId),
         ),
       );
@@ -768,10 +799,88 @@ export class DriveService implements OnModuleInit {
     return toFile(row, scope);
   }
 
+  /**
+   * Moves a file to Trash, where it waits DRIVE_TRASH_DAYS (still counting
+   * towards storage) before it's removed for good. A quarantined file is
+   * removed at once: there's nothing to get back.
+   */
   async deleteFile(auth: AuthContext, id: string, meta: RequestMeta): Promise<void> {
     const userId = auth.user.id;
     const { row, scope } = await this.findFile(userId, id);
     if (!mayDelete(scope, row)) throw cannotDelete();
+    if (row.status === "clean") {
+      await this.database.db
+        .update(schema.driveFiles)
+        .set({ trashedAt: new Date() })
+        .where(eq(schema.driveFiles.id, row.id));
+      await this.events.record({
+        type: "drive.file_deleted",
+        userId,
+        sessionId: auth.session.id,
+        meta,
+        metadata: { kind: "trash" },
+      });
+      return;
+    }
+    await this.removeFile(auth, row, meta);
+  }
+
+  /** What's in Trash in this space, newest first. */
+  async listTrash(userId: string, space: DriveSpace = "personal"): Promise<DriveFile[]> {
+    const team = space === "team" && (await this.teams.membership(userId)) !== null;
+    const scope = await this.scopeFor(userId, team ? "team" : "personal");
+    const rows = await this.database.db
+      .select()
+      .from(schema.driveFiles)
+      .where(and(filesIn(scope), isNotNull(schema.driveFiles.trashedAt)))
+      .orderBy(desc(schema.driveFiles.trashedAt));
+    return rows.map((row) => toFile(row, scope));
+  }
+
+  /** Puts a file back in its folder, renamed "name (2)" if the name is taken meanwhile. */
+  async restoreFile(auth: AuthContext, id: string): Promise<DriveFile> {
+    const userId = auth.user.id;
+    const { row, scope } = await this.findFile(userId, id, "trash");
+    if (!mayDelete(scope, row)) throw cannotDelete();
+    const restored = await this.database.db.transaction(async (tx) => {
+      await this.lockScope(tx, scope);
+      const name = await this.freeName(tx, scope, row.folderId, row.name);
+      const [updated] = await tx
+        .update(schema.driveFiles)
+        .set({ trashedAt: null, name })
+        .where(eq(schema.driveFiles.id, row.id))
+        .returning();
+      if (!updated) throw fileNotFound();
+      return updated;
+    });
+    return toFile(restored, scope);
+  }
+
+  /** Removes a file in Trash for good. */
+  async deleteForever(auth: AuthContext, id: string, meta: RequestMeta): Promise<void> {
+    const { row, scope } = await this.findFile(auth.user.id, id, "trash");
+    if (!mayDelete(scope, row)) throw cannotDelete();
+    await this.removeFile(auth, row, meta);
+  }
+
+  /** Removes everything in Trash this person may delete, in this space. */
+  async emptyTrash(auth: AuthContext, space: DriveSpace, meta: RequestMeta): Promise<number> {
+    const files = await this.listTrash(auth.user.id, space);
+    let removed = 0;
+    for (const file of files.filter((entry) => entry.canDelete)) {
+      const { row } = await this.findFile(auth.user.id, file.id, "trash");
+      await this.removeFile(auth, row, meta);
+      removed += 1;
+    }
+    return removed;
+  }
+
+  private async removeFile(
+    auth: { user: { id: string }; session: { id: string } },
+    row: DriveFileRow,
+    meta: RequestMeta,
+  ): Promise<void> {
+    const userId = auth.user.id;
     const deleted = await this.database.db
       .delete(schema.driveFiles)
       .where(eq(schema.driveFiles.id, row.id))
@@ -784,6 +893,99 @@ export class DriveService implements OnModuleInit {
       sessionId: auth.session.id,
       meta,
     });
+  }
+
+  /**
+   * Saves a new version of a file, keeping its name, folder and id (the
+   * desktop's editors save this way). The content is scanned and encrypted
+   * with a new key like any upload; the old object is removed once the new
+   * one is recorded. A file only its owner may delete may only be saved by
+   * them too.
+   */
+  async replaceContent(
+    auth: { user: { id: string }; session: { id: string } },
+    id: string,
+    input: UploadInput,
+    meta: RequestMeta,
+  ): Promise<DriveFile> {
+    const userId = auth.user.id;
+    await this.limiter.enforce(RATE_LIMITS.driveUploadsPerAccount, userId);
+    const { row, scope } = await this.findFile(userId, id);
+    if (!mayDelete(scope, row)) throw cannotDelete();
+
+    const objectId = randomUUID();
+    const objectKey = objectKeyFor(scope, objectId);
+    const key = generateFileKey();
+    let stored;
+    try {
+      stored = await storeUpload({
+        source: input.stream,
+        objectKey,
+        objectId,
+        key,
+        maxBytes: this.config.drive.maxFileBytes,
+        store: this.store,
+        scanner: this.scanner,
+      });
+    } catch (error) {
+      key.fill(0);
+      await this.removeObjects([objectKey]);
+      if (error instanceof FileTooLargeError) {
+        throw new ApiException(
+          "payload_too_large",
+          413,
+          `Files can be up to ${formatBytes(error.maxBytes)} while Brawzer is in development.`,
+        );
+      }
+      if (error instanceof ScannerUnavailableError) {
+        throw new ApiException(
+          "service_unavailable",
+          503,
+          "Brawzer’s malware scanner isn’t available right now, so the file wasn’t saved. Try again in a few minutes.",
+          { headers: { "Retry-After": "60" } },
+        );
+      }
+      throw error;
+    }
+    const wrappedKey = await this.box.seal(key.toString("base64"), keyContext(row, objectId));
+    key.fill(0);
+
+    let updated: DriveFileRow;
+    try {
+      updated = await this.database.db.transaction(async (tx) => {
+        await this.lockScope(tx, scope);
+        const usage = await this.usage(scope, tx);
+        if (usage.usedBytes - row.size + stored.size > usage.limitBytes) {
+          throw this.driveFull(usage.limitBytes, scope);
+        }
+        const [saved] = await tx
+          .update(schema.driveFiles)
+          .set({
+            size: stored.size,
+            contentType: stored.contentType,
+            status: stored.verdict.verdict,
+            threat: stored.verdict.verdict === "infected" ? stored.verdict.signature : null,
+            wrappedKey,
+            objectKey,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(schema.driveFiles.id, row.id), notTrashed))
+          .returning();
+        if (!saved) throw fileNotFound();
+        return saved;
+      });
+    } catch (error) {
+      await this.removeObjects([objectKey]);
+      throw error;
+    }
+    await this.removeObjects([row.objectKey]);
+    await this.events.record({
+      type: updated.status === "infected" ? "drive.file_quarantined" : "drive.file_uploaded",
+      userId,
+      sessionId: auth.session.id,
+      meta,
+    });
+    return toFile(updated, scope);
   }
 
   /** Removes objects whose records are gone. Failures are logged, never surfaced. */

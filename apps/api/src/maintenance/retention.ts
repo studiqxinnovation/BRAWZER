@@ -1,4 +1,9 @@
-import { CLOSED_REPORT_DAYS, HISTORY_LIMITS, REPORT_PICTURE_DAYS } from "@brawzer/contracts";
+import {
+  CLOSED_REPORT_DAYS,
+  DRIVE_TRASH_DAYS,
+  HISTORY_LIMITS,
+  REPORT_PICTURE_DAYS,
+} from "@brawzer/contracts";
 import type { DatabaseHandle } from "@brawzer/db";
 import {
   Inject,
@@ -27,6 +32,8 @@ export const RETENTION = {
   /** A reported page's picture (Phase 8, idea 12), when nobody closed the report sooner. */
   reportPictureDays: REPORT_PICTURE_DAYS,
   closedReportDays: CLOSED_REPORT_DAYS,
+  /** Drive files in Trash; their objects go with the orphan sweep. */
+  trashedFileDays: DRIVE_TRASH_DAYS,
 } as const;
 
 /** Session-level advisory lock, so only one API instance runs the job at a time. */
@@ -44,6 +51,7 @@ export interface RetentionResult {
   teamInvitations: number;
   historyEntries: number;
   savedTabs: number;
+  trashedFiles: number;
 }
 
 const logger = new Logger("Retention");
@@ -158,6 +166,9 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
         const reports = await client.query("delete from page_reports where closed_at < $1", [
           before(RETENTION.closedReportDays),
         ]);
+        const trashed = await client.query("delete from drive_files where trashed_at < $1", [
+          before(RETENTION.trashedFileDays),
+        ]);
         const invitations = await client.query(
           "delete from team_invitations where expires_at < $1",
           [now],
@@ -192,6 +203,7 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
           teamInvitations: invitations.rowCount ?? 0,
           historyEntries: (stale.rowCount ?? 0) + (overflow.rowCount ?? 0),
           savedTabs: tabs.rowCount ?? 0,
+          trashedFiles: trashed.rowCount ?? 0,
         };
       } finally {
         await client.query("select pg_advisory_unlock($1)", [LOCK_KEY]);

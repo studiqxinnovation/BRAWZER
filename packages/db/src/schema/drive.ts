@@ -81,13 +81,18 @@ export const driveFiles = pgTable(
     objectKey: text().notNull().unique("drive_files_object_key_unique"),
     createdAt: timestamptz().notNull().defaultNow(),
     updatedAt: timestamptz().notNull().defaultNow(),
+    /** Moved to Trash (Phase 9): hidden from its folder, removed for good 30 days later. */
+    trashedAt: timestamptz(),
   },
   (table) => [
-    uniqueIndex("drive_files_owner_sibling_name_unique").on(
-      sql`coalesce(${table.teamId}, ${table.userId})`,
-      sql`coalesce(${table.folderId}, ${ROOT})`,
-      sql`lower(${table.name})`,
-    ),
+    // Names are unique among the files not in Trash, so a trashed file's name can be used again.
+    uniqueIndex("drive_files_owner_sibling_name_unique")
+      .on(
+        sql`coalesce(${table.teamId}, ${table.userId})`,
+        sql`coalesce(${table.folderId}, ${ROOT})`,
+        sql`lower(${table.name})`,
+      )
+      .where(sql`${table.trashedAt} is null`),
     index("drive_files_user_idx").on(table.userId),
     index("drive_files_team_idx").on(table.teamId),
     index("drive_files_folder_idx").on(table.folderId),
