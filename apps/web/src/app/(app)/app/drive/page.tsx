@@ -7,7 +7,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { z } from "zod";
-import { PageContainer, PageHeader, Panel, Unavailable } from "@/components/app-shell/page";
+import {
+  PageContainer,
+  PageHeader,
+  Panel,
+  StatCard,
+  StatCards,
+  Unavailable,
+} from "@/components/app-shell/page";
+import { formatBytes } from "@/lib/drive";
 import { TrashPanel } from "@/components/drive/trash-panel";
 import { DriveManager } from "@/components/drive/drive-manager";
 import { serverGet, signInAgain } from "@/lib/server-api";
@@ -66,8 +74,36 @@ async function Contents({ searchParams }: Pick<PageProps<"/app/drive">, "searchP
     );
   }
 
+  const usage = overview.data.usage;
   return (
     <>
+      <StatCards>
+        <StatCard label="Storage used" value={formatBytes(usage.usedBytes)}>
+          <span
+            className="ad-stat-bar"
+            role="meter"
+            aria-label="Drive storage used"
+            aria-valuemin={0}
+            aria-valuemax={usage.limitBytes}
+            aria-valuenow={usage.usedBytes}
+          >
+            <span
+              style={{
+                width: `${String(Math.min(100, (usage.usedBytes / usage.limitBytes) * 100))}%`,
+              }}
+            />
+          </span>
+          {formatBytes(Math.max(0, usage.limitBytes - usage.usedBytes))} free of{" "}
+          {formatBytes(usage.limitBytes)}
+        </StatCard>
+        <StatCard label="Files" value={String(usage.fileCount)}>
+          Downloads, saved pages, screenshots and uploads, in {String(usage.folderCount)} folder
+          {usage.folderCount === 1 ? "" : "s"}
+        </StatCard>
+        <StatCard label="Safety" value="Scanned">
+          Every file is checked for malware and stored encrypted, each with its own key.
+        </StatCard>
+      </StatCards>
       <DriveManager
         folders={overview.data.folders}
         files={files.data.files}

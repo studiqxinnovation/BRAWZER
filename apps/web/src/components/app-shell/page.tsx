@@ -41,6 +41,30 @@ export function SectionHeading({ id, children }: { id: string; children: ReactNo
   );
 }
 
+/** The prototype's row of stat cards at the top of a page (.pg-grid). */
+export function StatCards({ children }: { children: ReactNode }) {
+  return <div className="ad-stats">{children}</div>;
+}
+
+/** One stat card (.pg-card): a label, a big figure, and a line or a bar under it. */
+export function StatCard({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <section className="ad-stat" aria-label={label}>
+      <h2 className="ad-stat-label">{label}</h2>
+      <p className="ad-stat-big">{value}</p>
+      {children && <div className="ad-stat-small">{children}</div>}
+    </section>
+  );
+}
+
 /** A plain bordered surface for one block of content. */
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
   return (

@@ -26,6 +26,7 @@ import { textLinkClassName } from "@/components/auth/auth-ui";
 import { AdBlockerSwitch } from "@/components/home/ad-blocker-switch";
 import { CountUp } from "@/components/home/count-up";
 import { Greeting } from "@/components/home/greeting";
+import { Tile } from "@/components/desktop/apps/registry";
 import { HomeActions } from "@/components/home/home-actions";
 import { HomeApps } from "@/components/home/home-apps";
 import { toNotices } from "@/components/home/notices";
@@ -136,7 +137,7 @@ function StatCard({
 function Panel({
   title,
   heading,
-  emoji,
+  icon,
   link,
   className,
   children,
@@ -144,7 +145,8 @@ function Panel({
   title: string;
   /** What the heading shows, when it's more than the title. */
   heading?: ReactNode;
-  emoji: string;
+  /** The prototype's tile beside the heading; none for the browsers. */
+  icon?: ReactNode;
   link?: { href: Route; label: string };
   className?: string;
   children: ReactNode;
@@ -153,9 +155,11 @@ function Panel({
     <section aria-label={title} className={cn("hm-card hm-rise flex flex-col", className)}>
       <div className="hm-panel-head">
         <h2 className="flex items-center gap-2 text-body font-semibold text-ink">
-          <span aria-hidden="true" className="hm-emoji">
-            {emoji}
-          </span>
+          {icon && (
+            <span aria-hidden="true" className="flex">
+              {icon}
+            </span>
+          )}
           {heading ?? title}
         </h2>
         {link && (
@@ -358,7 +362,6 @@ async function Dashboard() {
       <Panel
         title="Your browsers"
         heading={<LaunchedAgo since={overview?.activity.recentStarts[0] ?? null} />}
-        emoji="🖥️"
         link={{ href: "/app/browser?new=1" as Route, label: "Manage" }}
       >
         <p className="px-5 pt-4 text-footnote text-ink-secondary">
@@ -386,7 +389,11 @@ async function Dashboard() {
       <HomeApps />
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Panel title="Shield" emoji="🛡️" link={{ href: "/app/shield", label: "Open" }}>
+        <Panel
+          title="Shield"
+          icon={<Tile glyph="shield" colour="blue" size={24} />}
+          link={{ href: "/app/shield", label: "Open" }}
+        >
           <div className="hm-rows py-2">
             <div>
               <span>Security status</span>
@@ -430,7 +437,11 @@ async function Dashboard() {
           </div>
         </Panel>
 
-        <Panel title="Network" emoji="🌐" link={{ href: "/app/proxy", label: "Configure" }}>
+        <Panel
+          title="Network"
+          icon={<Tile glyph="globe" colour="teal" size={24} />}
+          link={{ href: "/app/proxy", label: "Configure" }}
+        >
           <div className="hm-rows py-2">
             <div>
               <span className="min-w-0">
@@ -483,7 +494,11 @@ async function Dashboard() {
           </div>
         </Panel>
 
-        <Panel title="Usage" emoji="📊" link={{ href: "/app/account", label: "Report" }}>
+        <Panel
+          title="Usage"
+          icon={<Tile glyph="chart" colour="orange" size={24} />}
+          link={{ href: "/app/account", label: "Report" }}
+        >
           <div className="flex flex-1 flex-col gap-4 px-5 py-4">
             <h3 className="hm-eyebrow">Browsing time by browser, this month</h3>
             {minutes.length > 0 ? (
