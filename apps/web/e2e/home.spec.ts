@@ -21,7 +21,7 @@ test.describe("home", () => {
   }) => {
     // A returning visitor: nothing new arrives on its own, so the audits see a still page.
     await page.addInitScript(() => {
-      localStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
+      sessionStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
     });
     await signedIn(page, baseURL, "home");
     await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();

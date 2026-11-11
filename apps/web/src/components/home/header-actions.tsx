@@ -44,11 +44,12 @@ export interface Notice {
   at: string;
 }
 
+/** When the person last looked, kept for this tab only: a shared computer keeps nothing. */
 const SEEN_KEY = "brawzer:notices-seen";
 
 function readSeen(): number {
   try {
-    return Number(localStorage.getItem(SEEN_KEY) ?? "0") || 0;
+    return Number(sessionStorage.getItem(SEEN_KEY) ?? "0") || 0;
   } catch {
     return 0;
   }
@@ -56,7 +57,7 @@ function readSeen(): number {
 
 function markSeen() {
   try {
-    localStorage.setItem(SEEN_KEY, String(Date.now()));
+    sessionStorage.setItem(SEEN_KEY, String(Date.now()));
   } catch {
     // Storage blocked: everything counts as new next time, which is harmless.
   }

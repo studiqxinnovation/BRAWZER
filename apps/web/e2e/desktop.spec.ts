@@ -7,7 +7,7 @@ const PASSWORD = "violet-harbor-lantern";
 async function signedIn(page: Page, baseURL: string | undefined, tag: string) {
   await page.addInitScript(() => {
     // A returning visitor: nothing new arrives on its own, so the audits see a still page.
-    localStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
+    sessionStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
     // Mac style to begin with, whatever system runs the tests (the default follows it).
     if (!sessionStorage.getItem("brawzer:desktop-style")) {
       sessionStorage.setItem("brawzer:desktop-style", "mac");
