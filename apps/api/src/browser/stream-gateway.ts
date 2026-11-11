@@ -105,7 +105,10 @@ interface IncomingTransfer {
  */
 @Injectable()
 export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutdown {
-  private readonly relays = new Map<string, { close(code: number, reason: string): void }>();
+  private readonly relays = new Map<
+    string,
+    { authSessionId: string; close(code: number, reason: string): void }
+  >();
   /** Figures for the metrics: how often a download had to pause its agent. */
   readonly stats = { transferPauses: 0 };
   private subscriber: Redis | null = null;
@@ -122,6 +125,13 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
   ) {
     this.browser.events.on("ended", (sessionId: string) => {
       this.relays.get(sessionId)?.close(STREAM_CLOSE_CODES.ended, "ended");
+    });
+    // A sign-in locked here stops its streams now; on other instances, the
+    // periodic check stops them within CHECK_INTERVAL_MS.
+    this.browser.onSignInLocked((authSessionId) => {
+      for (const relay of [...this.relays.values()]) {
+        if (relay.authSessionId === authSessionId) relay.close(STREAM_CLOSE_CODES.locked, "locked");
+      }
     });
   }
 
@@ -247,15 +257,17 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
       }
       void this.browser.touch(id).catch(() => undefined);
     };
-    const relay = { close };
+    const relay = { authSessionId: claims.authSessionId, close };
 
     // Only one viewer per session: a new one replaces the old one.
     this.relays.get(id)?.close(STREAM_CLOSE_CODES.replaced, "replaced");
     this.relays.set(id, relay);
 
     const check = setInterval(() => {
-      void this.browser.viewerAllowed(id, claims.authSessionId).then((allowed) => {
-        if (!allowed) {
+      void this.browser.viewerState(id, claims.authSessionId).then((state) => {
+        if (state === "locked") {
+          close(STREAM_CLOSE_CODES.locked, "locked");
+        } else if (state === "ended") {
           sendError(client, "ended", "This browser session has ended.");
           close(STREAM_CLOSE_CODES.ended, "ended");
         }

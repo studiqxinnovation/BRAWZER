@@ -127,6 +127,10 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
       return { title: "Password changed", tone: "success" };
     case "reauthenticated":
       return { title: "Confirmed it’s you", tone: "neutral" };
+    case "session.locked":
+      return { title: "Locked Brawzer", tone: "neutral" };
+    case "session.unlocked":
+      return { title: "Unlocked Brawzer", tone: "neutral" };
     case "passkey.added":
       return { title: "Passkey added", tone: "success" };
     case "passkey.removed":

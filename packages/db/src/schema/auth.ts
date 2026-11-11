@@ -75,6 +75,12 @@ export const authSessions = pgTable(
     expiresAt: timestamptz().notNull(),
     revokedAt: timestamptz(),
     revokedReason: text(),
+    /**
+     * Set while the owner has locked this sign-in (the desktop's lock
+     * screen); cleared when they confirm it's them. Nothing counts as
+     * activity meanwhile, so a locked shared computer still times out.
+     */
+    lockedAt: timestamptz(),
   },
   (table) => [
     index("auth_sessions_user_id_idx").on(table.userId),
@@ -172,6 +178,8 @@ export const securityEventType = pgEnum("security_event_type", [
   "team.deleted",
   "team.invitation_sent",
   "profile.history_cleared",
+  "session.locked",
+  "session.unlocked",
 ]);
 
 /**

@@ -273,6 +273,18 @@ export class AuthService {
     );
   }
 
+  /** Locks this sign-in until its owner confirms it's them (the desktop's lock screen). */
+  async lock(auth: AuthContext, meta: RequestMeta): Promise<void> {
+    if (auth.session.lockedAt) return;
+    await this.sessions.lock(auth.session.id);
+    await this.events.record({
+      type: "session.locked",
+      userId: auth.user.id,
+      sessionId: auth.session.id,
+      meta,
+    });
+  }
+
   /** Ends the session the request belongs to. Always succeeds, so the cookie can always be cleared. */
   async logout(token: string | undefined, meta: RequestMeta): Promise<void> {
     const context = await this.sessions.validate(token);
@@ -458,7 +470,8 @@ export class AuthService {
     await this.limiter.reset(RATE_LIMITS.reauthFailures, user.id);
     const at = await this.sessions.confirmIdentity(session.id, "password");
     await this.events.record({
-      type: "reauthenticated",
+      // Confirming on a locked session is what unlocks it.
+      type: session.lockedAt ? "session.unlocked" : "reauthenticated",
       userId: user.id,
       sessionId: session.id,
       meta,

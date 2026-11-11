@@ -82,17 +82,31 @@ export class SessionService {
     this.revocations.on("revoked", listener);
   }
 
+  /** Called with each session id this instance locks. */
+  onLocked(listener: (sessionId: string) => void): void {
+    this.revocations.on("locked", listener);
+  }
+
   private announceRevoked(ids: readonly { id: string }[]): void {
     for (const { id } of ids) this.revocations.emit("revoked", id);
   }
 
   /** Still signed in: not revoked, not expired, not idle for too long. Doesn't count as activity. */
   async isActive(sessionId: string): Promise<boolean> {
+    return (await this.viewerState(sessionId)) !== "ended";
+  }
+
+  /**
+   * For a stream's viewer: "active", "locked" (signed in, but the lock
+   * screen is up), or "ended". Doesn't count as activity.
+   */
+  async viewerState(sessionId: string): Promise<"active" | "locked" | "ended"> {
     const now = new Date();
     const [row] = await this.database.db
       .select({
         persistent: schema.authSessions.persistent,
         lastSeenAt: schema.authSessions.lastSeenAt,
+        lockedAt: schema.authSessions.lockedAt,
       })
       .from(schema.authSessions)
       .where(
@@ -103,10 +117,11 @@ export class SessionService {
         ),
       )
       .limit(1);
-    if (!row) return false;
-    return (
-      now.getTime() - row.lastSeenAt.getTime() <= sessionLifetime(row.persistent).idleSeconds * 1000
-    );
+    if (!row) return "ended";
+    const idle =
+      now.getTime() - row.lastSeenAt.getTime() > sessionLifetime(row.persistent).idleSeconds * 1000;
+    if (idle) return "ended";
+    return row.lockedAt ? "locked" : "active";
   }
 
   /** `__Host-brawzer_session` over HTTPS; `brawzer_session` on plain-HTTP localhost. */
@@ -183,8 +198,14 @@ export class SessionService {
     }
 
     let session = row.session;
-    // Passive checks (is this session still valid?) must not keep it alive.
-    if (options.recordActivity !== false && idleMs > ACTIVITY_WRITE_INTERVAL_SECONDS * 1000) {
+    // Passive checks (is this session still valid?) must not keep it alive,
+    // and nor does anything while it's locked: a locked shared computer
+    // still signs out after its idle time.
+    if (
+      options.recordActivity !== false &&
+      session.lockedAt === null &&
+      idleMs > ACTIVITY_WRITE_INTERVAL_SECONDS * 1000
+    ) {
       await this.database.db
         .update(schema.authSessions)
         .set({ lastSeenAt: now })
@@ -217,14 +238,38 @@ export class SessionService {
     return session ? { token, session } : null;
   }
 
-  /** Records that the owner just proved who they are, and how (see RecentAuthGuard). */
+  /**
+   * Records that the owner just proved who they are, and how (see
+   * RecentAuthGuard). That also unlocks a locked session, and counts as
+   * activity.
+   */
   async confirmIdentity(sessionId: string, method: "password" | "passkey"): Promise<Date> {
     const now = new Date();
     await this.database.db
       .update(schema.authSessions)
-      .set({ reauthenticatedAt: now, reauthMethod: method })
+      .set({ reauthenticatedAt: now, reauthMethod: method, lockedAt: null, lastSeenAt: now })
       .where(eq(schema.authSessions.id, sessionId));
     return now;
+  }
+
+  /**
+   * Locks a session (the desktop's lock screen): until its owner confirms
+   * it's them, the API answers only unlocking and signing out, and its
+   * streams close. Its cloud browsers keep running.
+   */
+  async lock(sessionId: string): Promise<void> {
+    const locked = await this.database.db
+      .update(schema.authSessions)
+      .set({ lockedAt: new Date() })
+      .where(
+        and(
+          eq(schema.authSessions.id, sessionId),
+          isNull(schema.authSessions.revokedAt),
+          isNull(schema.authSessions.lockedAt),
+        ),
+      )
+      .returning({ id: schema.authSessions.id });
+    for (const { id } of locked) this.revocations.emit("locked", id);
   }
 
   async revoke(sessionId: string, reason: RevocationReason): Promise<void> {
@@ -368,6 +413,7 @@ export class SessionService {
       expiresAt: session.expiresAt.toISOString(),
       idleTimeoutMinutes: sessionLifetime(session.persistent).idleSeconds / 60,
       authMethod: toAuthMethod(session.authMethod),
+      locked: session.lockedAt !== null,
     };
   }
 }

@@ -110,6 +110,8 @@ export function describeClose(code: number): { message: string; retry: boolean }
       return { message: "The stream link expired before it was used.", retry: true };
     case STREAM_CLOSE_CODES.runtimeClosed:
       return { message: "The cloud browser stopped.", retry: false };
+    case STREAM_CLOSE_CODES.locked:
+      return { message: "Brawzer is locked.", retry: false };
     case STREAM_CLOSE_CODES.badMessage:
       return { message: "The connection was closed because of a bad message.", retry: true };
     case 1000:

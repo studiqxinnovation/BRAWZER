@@ -86,6 +86,7 @@ Brawzer's marketing and interface must never claim to be "100% invisible",
 - Sign-out revokes the session, clears the cookie and sends `Clear-Site-Data`. Signing in again from a browser that still holds a session revokes the old one.
 - A password reset signs out every device.
 - **Signed-in devices** (Sessions): every active session with its device, IP address and last activity. Any other device can be signed out individually, or all of them at once; the session ends immediately on the server.
+- **Locking** (the desktop's lock screen, [Phase 9](plans/phase-9.md#92-the-lock-screen)): the sign-in is locked on the server. Until its owner confirms it's them, every route but unlocking, reading who is signed in and signing out answers 423, its browser streams close and no new stream starts, and nothing counts as activity, so the idle sign-out still happens. Other devices aren't affected.
 - **Changing the password** needs the current one (5 wrong tries per 15 minutes, then a lockout), signs out every other device, cancels outstanding reset links, gives this one a new token and emails a notice.
 
 **Sign-up and email links**

@@ -285,7 +285,8 @@ export class PasskeyService {
     });
     const at = await this.sessions.confirmIdentity(auth.session.id, "passkey");
     await this.events.record({
-      type: "reauthenticated",
+      // Confirming on a locked session is what unlocks it.
+      type: auth.session.lockedAt ? "session.unlocked" : "reauthenticated",
       userId: auth.user.id,
       sessionId: auth.session.id,
       meta,

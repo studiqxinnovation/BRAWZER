@@ -15,7 +15,10 @@ const REASONS: readonly unknown[] = [
 type SessionMessage =
   | { type: "activity"; at: number }
   | { type: "reported"; at: number }
-  | { type: "signed-out"; reason: SignOutReason };
+  | { type: "signed-out"; reason: SignOutReason }
+  /** The sign-in was locked or unlocked (the desktop's lock screen); every tab follows. */
+  | { type: "locked" }
+  | { type: "unlocked" };
 
 let channel: BroadcastChannel | null | undefined;
 
@@ -32,6 +35,7 @@ function isSessionMessage(value: unknown): value is SessionMessage {
   if (message.type === "activity" || message.type === "reported") {
     return typeof message.at === "number";
   }
+  if (message.type === "locked" || message.type === "unlocked") return true;
   return message.type === "signed-out" && REASONS.includes(message.reason);
 }
 

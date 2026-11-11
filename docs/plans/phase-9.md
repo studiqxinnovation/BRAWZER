@@ -18,12 +18,13 @@ never reach the browser.
 | #   | Milestone                                                                       | Status                                                                                       |
 | --- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | 9.1 | The desktop: windows, dock and taskbar, wallpapers, both styles                 | **Done** 2026-11-10                                                                          |
-| 9.2 | Lock screen and wipe, Control Centre, a window switcher, Launchpad and Start    | Next                                                                                         |
-| 9.3 | Files, Trash, Photos, PDF Viewer and Screenshot, over Drive                     | Planned; Trash needs Drive to keep deleted files for a while                                 |
-| 9.4 | Notepad, Writer, Calc, Code and Calculator, saving to Drive                     | Planned                                                                                      |
-| 9.5 | App Store: web apps that open in a cloud browser window; extensions per browser | Planned; extensions come from the existing catalogue (ADR 0018)                              |
-| 9.6 | Study and business apps                                                         | Planned; each keeps its records on the server, per account                                   |
-| 9.7 | Assistant                                                                       | Planned; only when the operator configures a model provider's key, which stays on the server |
+| 9.2 | The lock screen                                                                 | **Done** 2026-11-11                                                                          |
+| 9.3 | Control Centre, a window switcher, Launchpad and Start                          | Next                                                                                         |
+| 9.4 | Files, Trash, Photos, PDF Viewer and Screenshot, over Drive                     | Planned; Trash needs Drive to keep deleted files for a while                                 |
+| 9.5 | Notepad, Writer, Calc, Code and Calculator, saving to Drive                     | Planned                                                                                      |
+| 9.6 | App Store: web apps that open in a cloud browser window; extensions per browser | Planned; extensions come from the existing catalogue (ADR 0018)                              |
+| 9.7 | Study and business apps                                                         | Planned; each keeps its records on the server, per account                                   |
+| 9.8 | Assistant                                                                       | Planned; only when the operator configures a model provider's key, which stays on the server |
 
 ## 9.1 The desktop
 
@@ -75,30 +76,63 @@ closes), `e2e/home.spec.ts` (a browser opened from Home opens in a window),
 with axe audits of each state. `e2e/browser.spec.ts` drives the Browser page
 itself and runs in the classic layout.
 
-## 9.2 to 9.7
+## 9.2 The lock screen
 
-- **Lock screen and wipe (9.2).** Locking is enforced by the server: a locked
-  session gets nothing but the unlock request until the password or a
-  passkey is given again, and the streams pause. "Wipe" signs out and clears
-  the tab's state. Control Centre holds only real switches: theme, sound,
-  style, wallpaper, the shared-computer timeout and the ad blocker. A window
-  switcher (Alt+Tab within the desktop) and a Launchpad and Start menu of
-  apps.
-- **Files and the media apps (9.3)** are views over Drive, so files stay
+"Lock screen" (File in the menu bar, the desktop's right-click menu, Start in
+Windows style) locks the sign-in on the server, not just the page:
+
+- **The server holds the lock.** `POST /auth/session/lock` sets the sign-in's
+  `locked_at`. Until its owner confirms it's them, every route answers 423
+  `session_locked`, except reading who is signed in, confirming (password,
+  with the authenticator's code when the account has one, or a passkey),
+  locking again and signing out. Confirming is what unlocks; wrong passwords
+  count towards the same lockout as any confirmation. Other devices of the
+  account aren't affected.
+- **Nothing counts as activity while locked**, so a locked shared computer
+  still signs out after its 30 idle minutes, on the server and in the page.
+- **Streams stop.** The relay closes a locked sign-in's streams at once
+  (close code 4006) on the instance that locked it, and within its 10-second
+  check on any other. No new stream ticket is issued while locked. The cloud
+  browsers wait, for up to their 15 minutes without a viewer, and stream
+  again on unlocking.
+- **Every tab follows.** Locking and unlocking reach the account's other tabs
+  and the desktop's windows over the session channel, and any 423 answer
+  shows the lock screen. Behind it the page is `inert`. A page loaded while
+  locked is sent only the lock screen, and unlocking loads it again; locked in
+  place, unlocking leaves the desktop as it was and reads its data again.
+- **"Wipe" is signing out**, which the lock screen offers: it ends the
+  sign-in's cloud browsers and clears the site's storage (`Clear-Site-Data`).
+- The security history records "Locked Brawzer" and "Unlocked Brawzer".
+
+Tests: `test/auth.integration.test.ts` (what a locked session may do, no
+activity, unlocking, signing out, the idle end),
+`test/browser.integration.test.ts` (the stream closes on lock, no ticket while
+locked, the same browser streams after unlocking), `e2e/lock.spec.ts` (the
+menu bar, a reload while locked, a wrong and a right password, every tab
+locking together, signing out from the lock screen, a desktop window's stream
+stopping and coming back), with axe audits.
+
+## 9.3 to 9.8
+
+- **Control Centre, the window switcher, Launchpad and Start (9.3).** Control
+  Centre holds only real switches: theme, style, wallpaper, lock, and the ad
+  blocker. A window switcher (a key within the desktop) and a Launchpad and
+  Start menu of apps.
+- **Files and the media apps (9.4)** are views over Drive, so files stay
   encrypted and scanned. Trash needs Drive to keep deleted files for a set
   time before removing them. Screenshot uses the cloud browser's existing
   "Save a screenshot to Drive". Send to Phone shows a link and QR code for a
   Drive file that opens only after signing in on the phone.
-- **Documents (9.4)** are files in Drive, edited in a window and saved back.
+- **Documents (9.5)** are files in Drive, edited in a window and saved back.
   The calculator needs no storage.
-- **App Store (9.5)** lists web apps (shortcuts that open a site in a cloud
+- **App Store (9.6)** lists web apps (shortcuts that open a site in a cloud
   browser window with a chosen profile) and each browser's extensions from
   Brawzer's reviewed catalogue.
-- **Study and business apps (9.6)**: Study Notes, Citations, Assignments, a
+- **Study and business apps (9.7)**: Study Notes, Citations, Assignments, a
   Focus Timer, Exam Mode (a profile that only opens allowed sites, using
   Site rules), Invoices, Money and Templates. Each keeps its records per
   account on the server.
-- **Assistant (9.7)** answers with a model provider's API, through Brawzer's
+- **Assistant (9.8)** answers with a model provider's API, through Brawzer's
   API, only when the operator sets a key. It is off otherwise.
 
 ## Not built, and why

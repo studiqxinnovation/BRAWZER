@@ -60,6 +60,8 @@ export const securityEventTypes = [
   "team.deleted",
   "team.invitation_sent",
   "profile.history_cleared",
+  "session.locked",
+  "session.unlocked",
 ] as const;
 
 export const securityEventTypeSchema = z.enum(securityEventTypes);

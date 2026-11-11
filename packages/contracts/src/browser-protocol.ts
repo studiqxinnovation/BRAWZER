@@ -321,6 +321,8 @@ export const STREAM_CLOSE_CODES = {
   ended: 4003,
   runtimeClosed: 4004,
   badMessage: 4005,
+  /** The viewer's sign-in was locked; the browser keeps running for when it's unlocked. */
+  locked: 4006,
 } as const;
 
 // ── Binary messages ────────────────────────────────────────────────────────

@@ -29,6 +29,7 @@ import {
   ChevronRight,
   Image as ImageIcon,
   LayoutDashboard,
+  Lock,
   LogOut,
   Moon,
   Search,
@@ -50,6 +51,7 @@ import { AppIconArt, EngineLogo } from "@/components/browser/engine-logo";
 import { appNav } from "@/content/app";
 import { endBrowserSession, fetchBrowserOverview } from "@/lib/api/browser";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
+import { subscribeToClock, taskbarClock } from "@/lib/clock";
 import {
   type DesktopStyle,
   desktopActive,
@@ -62,6 +64,7 @@ import {
   type Wallpaper,
   wallpapers,
 } from "@/lib/desktop";
+import { isLocked, lockNow, subscribeToLock } from "@/lib/lock";
 import { signOut } from "@/lib/session-channel";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
 import { type DesktopApi, DesktopContext, type DesktopMessage } from "./desktop-context";
@@ -88,6 +91,7 @@ interface DashboardState {
 }
 
 const useDesktopActive = () => useSyncExternalStore(subscribeToDesktop, desktopActive, () => false);
+const useLocked = () => useSyncExternalStore(subscribeToLock, isLocked, () => false);
 const useStyle = () =>
   useSyncExternalStore<DesktopStyle>(subscribeToDesktop, readDesktopStyle, () => "mac");
 const useDark = () =>
@@ -136,6 +140,8 @@ export function DesktopShell({
 }) {
   const toast = useToast();
   const active = useDesktopActive();
+  // Locked, no window streams: the frames come back, and reconnect, on unlocking.
+  const locked = useLocked();
   const shellRef = useRef<HTMLDivElement>(null);
   const zTop = useRef(10);
   const [dragging, setDragging] = useState(false);
@@ -506,12 +512,16 @@ export function DesktopShell({
                     dragWindow(event, entry, "move");
                   }}
                 />
-                <iframe
-                  title={`${engineDetails[entry.session.engine].name}, streamed from Brawzer’s cloud`}
-                  src={`/app/browser/window?session=${entry.session.id}&embedded=1`}
-                  className="dt-frame"
-                  allow="clipboard-read; clipboard-write; autoplay; fullscreen"
-                />
+                {locked ? (
+                  <div className="dt-frame" />
+                ) : (
+                  <iframe
+                    title={`${engineDetails[entry.session.engine].name}, streamed from Brawzer’s cloud`}
+                    src={`/app/browser/window?session=${entry.session.id}&embedded=1`}
+                    className="dt-frame"
+                    allow="clipboard-read; clipboard-write; autoplay; fullscreen"
+                  />
+                )}
                 <span
                   aria-hidden="true"
                   className="dt-resize"
@@ -747,18 +757,6 @@ function DockItem({
   );
 }
 
-/** The time and date, as the taskbar shows them, every 15 seconds. */
-function subscribeToClock(changed: () => void) {
-  const timer = setInterval(changed, 15_000);
-  return () => {
-    clearInterval(timer);
-  };
-}
-const clockText = () => {
-  const now = new Date();
-  return `${now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}|${now.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}`;
-};
-
 /** Windows style: the taskbar, the Start menu, search and the tray. */
 function Taskbar({
   engines,
@@ -784,7 +782,7 @@ function Taskbar({
   const router = useRouter();
   const click = useBrowserClick(windows, focused, onFocus, onMinimise);
   const dark = useDark();
-  const [time, date] = useSyncExternalStore(subscribeToClock, clockText, () => "|").split("|");
+  const [time, date] = useSyncExternalStore(subscribeToClock, taskbarClock, () => "|").split("|");
   const focusedEngine = windows.find((entry) => entry.session.id === focused)?.session.engine;
   return (
     <nav aria-label="Taskbar" className="dt-taskbar">
@@ -840,6 +838,9 @@ function Taskbar({
               }}
             >
               Use the Mac style
+            </MenuItem>
+            <MenuItem icon={<Lock />} onClick={() => void lockNow()}>
+              Lock
             </MenuItem>
             <MenuItem icon={<LogOut />} onClick={() => void signOut("user")}>
               Sign out
@@ -952,6 +953,9 @@ function DesktopBackground({
           {dark ? "Light theme" : "Dark theme"}
         </MenuItem>
         <MenuSeparator />
+        <MenuItem icon={<Lock />} onClick={() => void lockNow()}>
+          Lock screen
+        </MenuItem>
         <MenuItem
           onClick={() => {
             setDesktopOn(false);

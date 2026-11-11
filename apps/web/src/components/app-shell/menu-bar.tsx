@@ -20,6 +20,7 @@ import {
   Keyboard,
   Layers,
   ListFilter,
+  Lock,
   LogOut,
   Monitor,
   MonitorSmartphone,
@@ -35,6 +36,7 @@ import { useState, useSyncExternalStore } from "react";
 import { EngineLogo } from "@/components/browser/engine-logo";
 import { useThemePreference } from "@/components/appearance-controls";
 import { fetchBrowserOverview } from "@/lib/api/browser";
+import { lockNow } from "@/lib/lock";
 import { signOut } from "@/lib/session-channel";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
 import { useDesktop } from "@/components/desktop/desktop-context";
@@ -151,6 +153,9 @@ export function MenuBar() {
               Upload to Drive…
             </MenuItem>
             <MenuSeparator />
+            <MenuItem icon={<Lock />} onClick={() => void lockNow()}>
+              Lock screen
+            </MenuItem>
             <MenuItem icon={<LogOut />} onClick={() => void signOut("user")}>
               Sign out
             </MenuItem>

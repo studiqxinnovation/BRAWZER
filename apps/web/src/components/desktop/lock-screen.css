@@ -1,0 +1,156 @@
+/*
+ * The lock screen (class names start with lk-): the time over the chosen
+ * wallpaper, darkened so it reads, and a card to unlock. Above everything,
+ * including dialogs and notices.
+ */
+
+@layer components {
+  .lk-root {
+    --lk-wallpaper: var(--wp-brawzer);
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+  }
+
+  :root[data-wallpaper="aurora"] .lk-root {
+    --lk-wallpaper: var(--wp-aurora);
+  }
+  :root[data-wallpaper="dusk"] .lk-root {
+    --lk-wallpaper: var(--wp-dusk);
+  }
+  :root[data-wallpaper="ocean"] .lk-root {
+    --lk-wallpaper: var(--wp-ocean);
+  }
+  :root[data-wallpaper="forest"] .lk-root {
+    --lk-wallpaper: var(--wp-forest);
+  }
+  :root[data-wallpaper="sunrise"] .lk-root {
+    --lk-wallpaper: var(--wp-sunrise);
+  }
+  :root[data-wallpaper="graphite"] .lk-root {
+    --lk-wallpaper: var(--wp-graphite);
+  }
+  :root[data-wallpaper="sand"] .lk-root {
+    --lk-wallpaper: var(--wp-sand);
+  }
+
+  .lk-screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2rem;
+    overflow-y: auto;
+    padding: max(8vh, 2rem) 1rem max(6vh, 1.5rem);
+    background: linear-gradient(rgb(2 6 23 / 0.4), rgb(2 6 23 / 0.4)), var(--lk-wallpaper, #0f1f35);
+    color: #fff;
+    animation: lk-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .lk-clock {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+    text-shadow: 0 2px 24px rgb(0 0 0 / 0.35);
+  }
+
+  .lk-time {
+    font-size: clamp(4rem, 12vw, 7.5rem);
+    font-variant-numeric: tabular-nums;
+    font-weight: 250;
+    letter-spacing: -0.04em;
+    line-height: 1;
+  }
+
+  .lk-date {
+    font-size: 1.15rem;
+    font-weight: 500;
+  }
+
+  .lk-card {
+    display: flex;
+    width: min(22rem, 100%);
+    flex-direction: column;
+    align-items: center;
+    gap: 0.875rem;
+    border: 1px solid rgb(255 255 255 / 0.16);
+    border-radius: 1.5rem;
+    background: var(--color-surface);
+    box-shadow: 0 30px 80px rgb(0 0 0 / 0.35);
+    padding: 1.75rem 1.5rem 1.25rem;
+    color: var(--color-ink);
+    animation: lk-rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .lk-avatar {
+    display: grid;
+    width: 4.5rem;
+    height: 4.5rem;
+    place-items: center;
+    border-radius: 999px;
+    background: linear-gradient(
+      135deg,
+      var(--color-accent),
+      color-mix(in oklab, var(--color-accent) 55%, #7b5cff)
+    );
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.22);
+    color: var(--color-on-accent);
+    font-size: 1.75rem;
+    font-weight: 650;
+  }
+
+  .lk-title {
+    font-size: 1.125rem;
+    font-weight: 650;
+  }
+
+  .lk-email {
+    margin-top: -0.5rem;
+    color: var(--color-ink-secondary);
+    font-size: 0.875rem;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  .lk-row {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .lk-row > :first-child {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .lk-note {
+    color: var(--color-ink-secondary);
+    font-size: 0.8rem;
+    line-height: 1.45;
+    text-align: center;
+  }
+
+  @keyframes lk-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes lk-rise {
+    from {
+      opacity: 0;
+      transform: translateY(16px) scale(0.98);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lk-screen,
+    .lk-card {
+      animation: none;
+    }
+  }
+}

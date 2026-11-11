@@ -25,6 +25,7 @@ const defaultMessages: Record<ApiErrorCode, string> = {
   email_not_verified: "Confirm your email address first.",
   token_invalid: "This link has expired or has already been used.",
   reauthentication_required: "Confirm it’s you to continue.",
+  session_locked: "Brawzer is locked. Unlock it to continue.",
   forbidden: "You don't have permission to do that.",
   not_found: "We couldn't find what you were looking for.",
   method_not_allowed: "That action isn't supported here.",

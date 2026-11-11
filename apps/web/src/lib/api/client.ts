@@ -3,6 +3,9 @@ import type { z } from "zod";
 
 export type ApiFailure = ApiError["error"];
 
+/** Dispatched on `window` whenever the API answers that the sign-in is locked. */
+export const LOCKED_EVENT = "brawzer:session-locked";
+
 export type ApiResult<T> =
   { ok: true; status: number; data: T } | { ok: false; status: number; error: ApiFailure };
 
@@ -51,6 +54,15 @@ export async function apiRequest<T>(
 
   if (!response.ok) {
     const parsed = apiErrorSchema.safeParse(payload);
+    // The sign-in is locked: the lock screen shows (see lib/lock.ts).
+    if (
+      response.status === 423 &&
+      parsed.success &&
+      parsed.data.error.code === "session_locked" &&
+      typeof window !== "undefined"
+    ) {
+      window.dispatchEvent(new Event(LOCKED_EVENT));
+    }
     // A gateway error page (the API is down behind the web server) has no envelope.
     const fallback = response.status >= 502 && response.status <= 504 ? unreachable : unexpected;
     return {

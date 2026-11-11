@@ -89,6 +89,11 @@ export const sessionInfoSchema = z.object({
   /** Minutes of inactivity after which the session ends. */
   idleTimeoutMinutes: z.number().int().positive(),
   authMethod: authMethodSchema,
+  /**
+   * Locked from the desktop: until the owner confirms it's them, the API
+   * answers nothing but unlocking and signing out, and no browser streams.
+   */
+  locked: z.boolean(),
 });
 
 export const currentSessionResponseSchema = z.object({

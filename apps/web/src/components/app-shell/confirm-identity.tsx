@@ -31,25 +31,29 @@ type Confirm = (options?: { passkeyOnly?: boolean }) => Promise<boolean>;
 
 const ConfirmIdentityContext = createContext<Confirm | null>(null);
 
-function ConfirmIdentityDialog({
-  open,
-  passkeyOnly,
-  onDone,
-}: {
-  open: boolean;
-  passkeyOnly: boolean;
-  onDone: (confirmed: boolean) => void;
-}) {
-  const formRef = useRef<HTMLFormElement>(null);
+/**
+ * Confirming it's you, with a password (and the authenticator's code when the
+ * account asks for one) or a passkey. Shared by the "Confirm it's you" dialog
+ * and the lock screen, where confirming is what unlocks.
+ */
+export function useIdentityCheck(onConfirmed: () => void) {
   const [error, setError] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [needsCode, setNeedsCode] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [passkeyPending, setPasskeyPending] = useState(false);
-  const passkeysSupported = usePasskeysSupported();
 
-  async function confirmWithPasskey() {
+  function reset() {
+    setError(null);
+    setCodeError(null);
+    setNeedsCode(false);
+    setFailure(null);
+    setPending(false);
+    setPasskeyPending(false);
+  }
+
+  async function withPasskey() {
     setFailure(null);
     setPasskeyPending(true);
     const options = await confirmationOptions();
@@ -70,22 +74,14 @@ function ConfirmIdentityDialog({
       response: ceremony.response,
     });
     setPasskeyPending(false);
-    if (result.ok) finish(true);
-    else if (result.status === 401) leaveSignedInArea("expired");
+    if (result.ok) {
+      reset();
+      onConfirmed();
+    } else if (result.status === 401) leaveSignedInArea("expired");
     else setFailure(result.error.message);
   }
 
-  function finish(confirmed: boolean) {
-    setError(null);
-    setCodeError(null);
-    setNeedsCode(false);
-    setFailure(null);
-    setPending(false);
-    setPasskeyPending(false);
-    onDone(confirmed);
-  }
-
-  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const password = form.get("password");
@@ -103,7 +99,8 @@ function ConfirmIdentityDialog({
       typeof code === "string" && code ? code : undefined,
     );
     if (result.ok) {
-      finish(true);
+      reset();
+      onConfirmed();
       return;
     }
     setPending(false);
@@ -116,6 +113,53 @@ function ConfirmIdentityDialog({
       } else setError("That isn’t your password.");
     } else setFailure(result.error.message);
   }
+
+  return {
+    error,
+    codeError,
+    needsCode,
+    failure,
+    pending,
+    passkeyPending,
+    reset,
+    submit,
+    withPasskey,
+  };
+}
+
+/** The authenticator's code, once the server says the account needs one. */
+export function CodeField({ error }: { error: string | null }) {
+  return (
+    <Field name="code" invalid={error !== null}>
+      <FieldLabel>Authentication code</FieldLabel>
+      <Input name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} required />
+      {error && <FieldError match>{error}</FieldError>}
+    </Field>
+  );
+}
+
+function ConfirmIdentityDialog({
+  open,
+  passkeyOnly,
+  onDone,
+}: {
+  open: boolean;
+  passkeyOnly: boolean;
+  onDone: (confirmed: boolean) => void;
+}) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const passkeysSupported = usePasskeysSupported();
+  const check = useIdentityCheck(() => {
+    onDone(true);
+  });
+  const { error, codeError, needsCode, failure, pending, passkeyPending } = check;
+
+  function finish(confirmed: boolean) {
+    check.reset();
+    onDone(confirmed);
+  }
+  const confirmWithPasskey = check.withPasskey;
+  const handleSubmit = check.submit;
 
   return (
     <Dialog
@@ -171,19 +215,7 @@ function ConfirmIdentityDialog({
               )}
             </>
           )}
-          {needsCode && (
-            <Field name="code" invalid={codeError !== null}>
-              <FieldLabel>Authentication code</FieldLabel>
-              <Input
-                name="code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                required
-              />
-              {codeError && <FieldError match>{codeError}</FieldError>}
-            </Field>
-          )}
+          {needsCode && <CodeField error={codeError} />}
           <DialogFooter className="mt-2">
             <Button
               variant="secondary"

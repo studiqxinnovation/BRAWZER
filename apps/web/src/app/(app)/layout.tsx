@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { AccountPanel, AccountPanelSkeleton } from "@/components/app-shell/account-panel";
 import { CommandPalette } from "@/components/app-shell/command-palette";
 import { DesktopShell } from "@/components/desktop/desktop";
+import { LockedPage, LockScreen } from "@/components/desktop/lock-screen";
 import { MenuBar } from "@/components/app-shell/menu-bar";
 import "@/components/app-shell/desktop.css";
 import { ConfirmIdentityProvider } from "@/components/app-shell/confirm-identity";
@@ -26,10 +27,27 @@ export const instant = false;
 /** The signed-in app: sidebar on wide screens, a top bar with a drawer on small ones. */
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   await connection();
-  // Not awaited: the shell renders at once, and the admin entry joins when the session is known.
-  const admin = getSession().then(
-    (session) => session.kind === "ok" && session.data.account.role === "admin",
-  );
+  const session = await getSession();
+  const lock =
+    session.kind === "ok"
+      ? {
+          email: session.data.account.email,
+          persistent: session.data.session.persistent,
+          idleTimeoutMinutes: session.data.session.idleTimeoutMinutes,
+        }
+      : null;
+  // Loaded while locked: nothing of the app, only the lock screen (the API answers nothing else).
+  if (session.kind === "ok" && session.data.session.locked && lock) {
+    return (
+      <>
+        <LockedPage {...lock} />
+        <Suspense fallback={null}>
+          <SessionKeeperLoader />
+        </Suspense>
+      </>
+    );
+  }
+  const admin = Promise.resolve(session.kind === "ok" && session.data.account.role === "admin");
   // Shield's count of things to do, beside it in the navigation; nothing if it can't be read.
   const counts = {
     "/app/shield": serverGet("/security/overview", securityOverviewSchema).then((result) =>
@@ -47,6 +65,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               <SessionKeeperLoader />
             </Suspense>
             <CommandPalette />
+            {lock && <LockScreen {...lock} />}
           </>
         }
       >

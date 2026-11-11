@@ -46,6 +46,7 @@ import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/st
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
 import { postToDesktop, useDesktop } from "@/components/desktop/desktop-context";
 import { desktopActive, subscribeToDesktop } from "@/lib/desktop";
+import { isLocked, subscribeToLock } from "@/lib/lock";
 import {
   AddressBar,
   BookmarkStar,
@@ -85,7 +86,9 @@ type Phase =
   | { kind: "live"; session: BrowserSession }
   | { kind: "ended"; message: string }
   /** Another window or tab took the stream; the session runs on there. */
-  | { kind: "elsewhere"; session: BrowserSession };
+  | { kind: "elsewhere"; session: BrowserSession }
+  /** The sign-in is locked: the stream stopped, and comes back on unlocking. */
+  | { kind: "locked"; session: BrowserSession };
 
 const REFUSALS: Record<RefusedAction, { title: string; description: string }> = {
   download: {
@@ -324,6 +327,13 @@ export function BrowserWorkspace({
         if (current.kind !== "live" && current.kind !== "connecting") return;
         // Ending it from here: end() says so once the session is saved and gone.
         if (endingRef.current) return;
+        // Locked (here or in another tab): it waits for unlocking.
+        if (event.code === STREAM_CLOSE_CODES.locked) {
+          setPhase({ kind: "locked", session: current.session });
+          setDialog(null);
+          setChooser(null);
+          return;
+        }
         // Another window took it: the session runs on there, and can be brought back.
         if (event.code === STREAM_CLOSE_CODES.replaced) {
           setPhase({ kind: "elsewhere", session: current.session });
@@ -455,6 +465,10 @@ export function BrowserWorkspace({
     if (!ticket.ok) {
       if (ticket.status === 401) {
         leaveSignedInArea("expired");
+        return;
+      }
+      if (ticket.status === 423) {
+        setPhase({ kind: "locked", session });
         return;
       }
       setPhase({
@@ -617,6 +631,28 @@ export function BrowserWorkspace({
       onSessionMessage((message) => {
         if (message.type === "signed-out") stream.close();
       }),
+    [stream],
+  );
+
+  // Locking stops the stream at once (the server closes it too); unlocking
+  // brings the same session back.
+  useEffect(
+    () =>
+      subscribeToLock(() => {
+        const current = phaseRef.current;
+        if (isLocked()) {
+          if (current.kind !== "live" && current.kind !== "connecting") return;
+          stream.close();
+          setDialog(null);
+          setChooser(null);
+          setPhase({ kind: "locked", session: current.session });
+        } else if (current.kind === "locked") {
+          attempts.current = 0;
+          void connect(current.session);
+        }
+      }),
+    // connect only uses refs and setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [stream],
   );
 
@@ -919,6 +955,17 @@ export function BrowserWorkspace({
     );
   }
 
+  if (phase.kind === "locked") {
+    return (
+      <div className="flex h-full flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+        <p className="text-callout font-semibold text-ink">Brawzer is locked</p>
+        <p className="text-callout text-ink-secondary">
+          {engineDetails[phase.session.engine].short} comes back here when it’s unlocked.
+        </p>
+      </div>
+    );
+  }
+
   if (phase.kind === "elsewhere") {
     const elsewhere = phase.session;
     return (
@@ -943,7 +990,7 @@ export function BrowserWorkspace({
               variant="secondary"
               size="lg"
               onClick={() => {
-                window.close();
+                closeWindow(elsewhere.id);
               }}
             >
               Close this window

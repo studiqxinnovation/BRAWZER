@@ -9,6 +9,8 @@ export const apiErrorCodeSchema = z.enum([
   "email_not_verified",
   "token_invalid",
   "reauthentication_required",
+  /** The session is locked (423): only unlocking or signing out works until it's unlocked. */
+  "session_locked",
   "forbidden",
   "not_found",
   "method_not_allowed",

@@ -631,6 +631,36 @@ describe("cloud browser sessions", () => {
     );
     expect(rows.rows[0]).toEqual({ status: "ended", end_reason: "signed_out" });
   }, 60_000);
+
+  it("stops streaming while the sign-in is locked, and the browser waits for it", async () => {
+    const { client } = await account("browser-lock");
+    const session = await startSession(client);
+    const url = `${baseUrl}/api/v1/browser/sessions/${session.id}/stream`;
+    const ticket = await ticketFor(client, session.id);
+    const viewer = new Viewer(url, ticket.ticket, h.origin);
+    await viewer.until(() => viewer.messages.some((m) => m.type === "welcome"), "welcome");
+
+    expect((await client.post("/auth/session/lock")).statusCode).toBe(204);
+    await viewer.until(() => viewer.closeCode !== null, "closed on lock");
+    expect(viewer.closeCode).toBe(STREAM_CLOSE_CODES.locked);
+    // No new stream while locked, but the browser keeps running.
+    expect((await client.post(`/browser/sessions/${session.id}/ticket`, {})).statusCode).toBe(423);
+    const rows = await h.database.pool.query<{ status: string }>(
+      "select status from browser_sessions where id = $1",
+      [session.id],
+    );
+    expect(rows.rows[0]?.status).toBe("running");
+
+    // Unlocked, it streams again.
+    expect(
+      (await client.post("/auth/reauthenticate", { password: "violet-harbor-lantern" })).statusCode,
+    ).toBe(200);
+    const again = await ticketFor(client, session.id);
+    const back = new Viewer(url, again.ticket, h.origin);
+    await back.until(() => back.messages.some((m) => m.type === "welcome"), "welcome again");
+    back.close();
+    await client.delete(`/browser/sessions/${session.id}`);
+  }, 60_000);
 });
 
 describe("files between the cloud browser and Drive", () => {

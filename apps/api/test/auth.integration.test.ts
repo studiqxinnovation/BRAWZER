@@ -892,3 +892,101 @@ describe("confirming it's you", () => {
     expect(locked.statusCode).toBe(429);
   });
 });
+
+describe("locking a session", () => {
+  const sessionOf = (response: LightMyRequestResponse) =>
+    currentSessionResponseSchema.parse(response.json()).session;
+
+  it("answers only unlocking and signing out until the owner confirms it's them", async () => {
+    const email = uniqueEmail("lock");
+    const laptop = browser();
+    const phone = browser(IPHONE_SAFARI);
+    await signUp(laptop, email, "violet-harbor-lantern");
+    await signIn(phone, email, "violet-harbor-lantern");
+    expect(sessionOf(await laptop.get("/auth/session")).locked).toBe(false);
+
+    expect((await laptop.post("/auth/session/lock")).statusCode).toBe(204);
+    // Locking again changes nothing.
+    expect((await laptop.post("/auth/session/lock")).statusCode).toBe(204);
+    expect(sessionOf(await laptop.get("/auth/session")).locked).toBe(true);
+    // Open pages notice from their passive check, which doesn't count as activity either.
+    expect((await laptop.get("/auth/session/status")).statusCode).toBe(423);
+    for (const request of [
+      () => laptop.get("/profiles"),
+      () => laptop.get("/browser"),
+      () => laptop.get("/security/overview"),
+      () => laptop.post("/auth/refresh"),
+    ]) {
+      const refused = await request();
+      expect(refused.statusCode).toBe(423);
+      expect(errorOf(refused).code).toBe("session_locked");
+    }
+    // Only this device is locked.
+    expect((await phone.get("/profiles")).statusCode).toBe(200);
+
+    // Nothing counts as activity while it's locked.
+    const lastSeen = async () =>
+      (
+        await database.pool.query<{ last_seen_at: Date }>(
+          `select s.last_seen_at from auth_sessions s join users u on u.id = s.user_id
+           where u.email = $1 and s.locked_at is not null`,
+          [email],
+        )
+      ).rows[0]?.last_seen_at.getTime();
+    await database.pool.query(
+      `update auth_sessions set last_seen_at = now() - interval '10 minutes'
+       where locked_at is not null and user_id = (select id from users where email = $1)`,
+      [email],
+    );
+    const before = await lastSeen();
+    await laptop.get("/auth/session");
+    await laptop.get("/profiles");
+    expect(await lastSeen()).toBe(before);
+
+    // A wrong password leaves it locked; the right one unlocks it.
+    expect(
+      (await laptop.post("/auth/reauthenticate", { password: "not-my-password" })).statusCode,
+    ).toBe(400);
+    expect(sessionOf(await laptop.get("/auth/session")).locked).toBe(true);
+    const unlocked = await laptop.post("/auth/reauthenticate", {
+      password: "violet-harbor-lantern",
+    });
+    expect(unlocked.statusCode).toBe(200);
+    expect(sessionOf(await laptop.get("/auth/session")).locked).toBe(false);
+    expect((await laptop.get("/profiles")).statusCode).toBe(200);
+
+    const types = await eventTypes(email);
+    expect(types).toContain("session.locked");
+    expect(types).toContain("session.unlocked");
+    expect(types.filter((type) => type === "session.locked")).toHaveLength(1);
+    const history = securityEventPageSchema.parse((await laptop.get("/security/events")).json());
+    expect(history.events.map((event) => event.type).slice(0, 2)).toEqual([
+      "session.unlocked",
+      "session.locked",
+    ]);
+  });
+
+  it("can always sign out, even while locked", async () => {
+    const client = browser();
+    await signUp(client, uniqueEmail("lock-out"), "violet-harbor-lantern");
+    await client.post("/auth/session/lock");
+    const token = client.session;
+    expect((await client.post("/auth/logout")).statusCode).toBe(204);
+    const replay = browser();
+    replay.session = token;
+    expect((await replay.get("/auth/session")).statusCode).toBe(401);
+  });
+
+  it("ends a locked session after its idle time, as an unlocked one", async () => {
+    const email = uniqueEmail("lock-idle");
+    const client = browser();
+    await signUp(client, email, "violet-harbor-lantern");
+    await client.post("/auth/session/lock");
+    await database.pool.query(
+      `update auth_sessions set last_seen_at = now() - interval '31 minutes'
+       where user_id = (select id from users where email = $1)`,
+      [email],
+    );
+    expect((await client.get("/auth/session")).statusCode).toBe(401);
+  });
+});

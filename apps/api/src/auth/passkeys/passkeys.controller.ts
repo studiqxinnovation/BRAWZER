@@ -44,7 +44,7 @@ import { z } from "zod";
 import { requestMeta } from "../../common/request-meta.js";
 import { SESSION_AUTH } from "../auth.controller.js";
 import { RECENT_AUTH_SECONDS, RecentAuthGuard } from "../recent-auth.guard.js";
-import { CurrentAuth, SessionGuard } from "../session.guard.js";
+import { AllowLocked, CurrentAuth, SessionGuard } from "../session.guard.js";
 import { type AuthContext, SessionService } from "../session.service.js";
 import { PasskeyService } from "./passkey.service.js";
 
@@ -151,6 +151,7 @@ export class PasskeysController {
   @Post("confirmation/options")
   @HttpCode(HttpStatus.OK)
   @UseGuards(SessionGuard)
+  @AllowLocked()
   @ApiCookieAuth(SESSION_AUTH)
   @SerializeOptions({ schema: passkeyOptionsResponseSchema })
   @ApiOperation({ summary: "Start confirming it's you with a passkey" })
@@ -165,9 +166,13 @@ export class PasskeysController {
   @Post("confirmation/verify")
   @HttpCode(HttpStatus.OK)
   @UseGuards(SessionGuard)
+  @AllowLocked()
   @ApiCookieAuth(SESSION_AUTH)
   @SerializeOptions({ schema: reauthenticateResponseSchema })
-  @ApiOperation({ summary: "Finish confirming it's you with a passkey" })
+  @ApiOperation({
+    summary: "Finish confirming it's you with a passkey",
+    description: "On a locked session, this unlocks it.",
+  })
   @ApiOkResponse({ description: "Confirmed.", standardSchema: reauthenticateResponseSchema })
   async confirm(
     @Body({ schema: passkeyConfirmationRequestSchema })

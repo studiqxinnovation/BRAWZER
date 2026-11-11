@@ -614,15 +614,24 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
     return { agentAddress: row.agentAddress, secret };
   }
 
-  /** The relay's periodic check: may this viewer keep watching? */
-  async viewerAllowed(id: string, authSessionId: string): Promise<boolean> {
+  /**
+   * The relay's periodic check: may this viewer keep watching? "locked"
+   * while the viewer's sign-in is locked (the browser keeps running), and
+   * "ended" when the browser or the sign-in has ended.
+   */
+  async viewerState(id: string, authSessionId: string): Promise<"active" | "locked" | "ended"> {
     const [row] = await this.database.db
       .select({ status: schema.browserSessions.status })
       .from(schema.browserSessions)
       .where(eq(schema.browserSessions.id, id))
       .limit(1);
-    if (row?.status !== "running") return false;
-    return this.sessions.isActive(authSessionId);
+    if (row?.status !== "running") return "ended";
+    return this.sessions.viewerState(authSessionId);
+  }
+
+  /** Called with each sign-in this instance locks, so its streams close at once. */
+  onSignInLocked(listener: (authSessionId: string) => void): void {
+    this.sessions.onLocked(listener);
   }
 
   /** Someone is watching: postpones the idle timeout. */
