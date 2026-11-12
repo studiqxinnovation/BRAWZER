@@ -208,7 +208,9 @@ export function NotificationCentre({ compact = false }: { compact?: boolean }) {
         <button
           type="button"
           className="ad-mb-b relative"
-          aria-label={fresh > 0 ? `Notifications, ${String(fresh)} new` : "Notifications"}
+          aria-label={
+            fresh > 0 ? `Notification Centre, ${String(fresh)} new` : "Notification Centre"
+          }
           aria-expanded={open}
           aria-controls={panelId}
           onClick={toggle}
@@ -220,7 +222,7 @@ export function NotificationCentre({ compact = false }: { compact?: boolean }) {
       <button
         type="button"
         className="ad-mb-clock-b"
-        aria-label={`${time}. Notification Centre${fresh > 0 ? `, ${String(fresh)} new` : ""}`}
+        aria-label={`${time}, opens Notification Centre${fresh > 0 ? `, ${String(fresh)} new` : ""}`}
         aria-expanded={open}
         aria-controls={panelId}
         onClick={toggle}

@@ -578,7 +578,7 @@ test.describe("desktop as a computer's own", () => {
     ).setFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hello") });
     const banners = page.getByRole("region", { name: "New notifications" });
     await expect(banners).toContainText("Uploaded “notes.txt”");
-    await page.getByRole("button", { name: /Notification Centre/ }).click();
+    await page.getByRole("button", { name: /^Notification Centre/ }).click();
     const centre = page.getByRole("region", { name: "Notification Centre" });
     await expect(centre).toContainText("Uploaded “notes.txt”");
     await expect(centre).toContainText("Files · Drive");
