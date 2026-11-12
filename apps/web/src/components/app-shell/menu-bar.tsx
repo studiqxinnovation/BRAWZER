@@ -33,6 +33,7 @@ import {
 import { readFocusedName, subscribeToFocusedName } from "@/lib/desktop-focus";
 import { chooseDesktopStyle } from "@/lib/desktop-prefs";
 import { lockNow } from "@/lib/lock";
+import { signOut } from "@/lib/session-channel";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
 
 const TRIGGER = "ad-mb-mi";
@@ -180,6 +181,7 @@ export function MenuBar() {
   /** The windows and the one in front, read as their menus open. */
   const [windows, setWindows] = useState<readonly WindowSummary[]>([]);
   const [front, setFront] = useState<WindowSummary | null>(null);
+  const [spaces, setSpaces] = useState({ count: 1, current: 1 });
   const mac = useSyncExternalStore(
     never,
     () => /Mac|iPhone|iPad/.test(navigator.platform),
@@ -295,6 +297,25 @@ export function MenuBar() {
             <MenuItem shortcut="Ctrl+Shift+L" onClick={() => void lockNow()}>
               Lock screen
             </MenuItem>
+            {desktop && desktopOn && (
+              <>
+                <MenuItem
+                  onClick={() => {
+                    desktop.power("restart");
+                  }}
+                >
+                  Restart…
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    desktop.power("shut-down");
+                  }}
+                >
+                  Shut Down…
+                </MenuItem>
+              </>
+            )}
+            <MenuItem onClick={() => void signOut("user")}>Sign Out…</MenuItem>
             {desktop && <MenuItem onClick={desktop.wipe}>Wipe this computer…</MenuItem>}
           </MenuContent>
         </Menu>
@@ -531,7 +552,11 @@ export function MenuBar() {
         {desktop && desktopOn && (
           <Menu
             onOpenChange={(open) => {
-              if (open) setWindows(desktop.listWindows());
+              if (open) {
+                setWindows(desktop.listWindows());
+                setSpaces(desktop.spaces());
+                setFront(desktop.frontWindow());
+              }
             }}
           >
             <MenuTrigger className={TRIGGER}>Window</MenuTrigger>
@@ -574,6 +599,42 @@ export function MenuBar() {
               >
                 Bring all to front
               </MenuItem>
+              <MenuSeparator />
+              <MenuGroup>
+                <MenuGroupLabel className="ad-mb-h">Desktops</MenuGroupLabel>
+                {Array.from({ length: spaces.count }, (_value, index) => index + 1).map((which) => (
+                  <MenuItem
+                    key={which}
+                    icon={<Check on={which === spaces.current} />}
+                    shortcut={which === spaces.current ? undefined : "⌃← ⌃→"}
+                    onClick={() => {
+                      desktop.switchSpace(which);
+                    }}
+                  >
+                    Desktop {which}
+                  </MenuItem>
+                ))}
+                <MenuItem
+                  onClick={() => {
+                    desktop.addSpace();
+                  }}
+                >
+                  New desktop
+                </MenuItem>
+                {front && spaces.count > 1 && (
+                  <MenuItem
+                    onClick={() => {
+                      desktop.moveWindowToSpace(
+                        front.id,
+                        spaces.current >= spaces.count ? 1 : spaces.current + 1,
+                      );
+                    }}
+                  >
+                    Move {front.label} to Desktop{" "}
+                    {String(spaces.current >= spaces.count ? 1 : spaces.current + 1)}
+                  </MenuItem>
+                )}
+              </MenuGroup>
               {windows.length > 0 && <MenuSeparator />}
               {windows.map((entry) => (
                 <MenuItem
@@ -584,6 +645,7 @@ export function MenuBar() {
                   }}
                 >
                   {entry.min ? `${entry.title} (in the Dock)` : entry.title}
+                  {spaces.count > 1 ? ` · Desktop ${String(entry.space)}` : ""}
                 </MenuItem>
               ))}
             </MenuContent>

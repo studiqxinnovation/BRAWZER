@@ -19,6 +19,8 @@ export interface DesktopWindow {
   restore: Rect | null;
   rect: Rect;
   z: number;
+  /** Which desktop (space) it is on, from 1. */
+  space: number;
 }
 
 /** What the window is, for its buttons' names: "Chrome", "Calculator". */

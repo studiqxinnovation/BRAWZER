@@ -7,7 +7,13 @@ import {
   whenLabel,
 } from "./notifications";
 
-const base = { source: "Test", glyph: "bell", colour: "blue", tone: "accent", title: "Hello" } as const;
+const base = {
+  source: "Test",
+  glyph: "bell",
+  colour: "blue",
+  tone: "accent",
+  title: "Hello",
+} as const;
 
 describe("notifications", () => {
   beforeEach(() => {

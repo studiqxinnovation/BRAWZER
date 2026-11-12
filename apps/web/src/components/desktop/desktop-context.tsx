@@ -16,6 +16,7 @@ export interface WindowSummary {
   app: AppId | null;
   min: boolean;
   focused: boolean;
+  space: number;
 }
 
 /** What the rest of the app may ask of the desktop. */
@@ -60,6 +61,16 @@ export interface DesktopApi {
   toggleOverview: () => void;
   /** The window switcher, as Alt+` shows it, for the mouse. */
   showSwitcher: () => void;
+  /** The screen saver, now (Settings' button). */
+  startScreenSaver: () => void;
+  /** Asks to shut down (every window closed, the browsers ended, signed out) or restart. */
+  power: (action: "shut-down" | "restart") => void;
+  /** The desktops (spaces): how many, and which is showing. */
+  spaces: () => { count: number; current: number };
+  switchSpace: (space: number) => void;
+  /** A new desktop, shown at once; a window may be taken along. */
+  addSpace: (withWindow?: string) => void;
+  moveWindowToSpace: (id: string, space: number) => void;
 }
 
 export const DesktopContext = createContext<DesktopApi | null>(null);

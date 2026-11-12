@@ -21,9 +21,11 @@ import {
 import {
   chooseDesktopStyle,
   defaultDesktopPrefs,
+  IDLE_CHOICES,
   readDesktopPrefs,
   setPinned,
   subscribeToDesktopPrefs,
+  updateDesktopPrefs,
 } from "@/lib/desktop-prefs";
 import { lockNow } from "@/lib/lock";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
@@ -249,6 +251,48 @@ export default function SettingsApp() {
                   }}
                 >
                   Use it
+                </Button>
+              </Row>
+            </div>
+            <div className="ap-st-card">
+              <div className="ap-st-t ap-st-cap">When nobody is using it</div>
+              <div className="ap-st-sub">
+                Counted from the last click, key or touch in any Brawzer tab. The lock is the
+                server’s: a locked screen needs your password.
+              </div>
+              {(
+                [
+                  ["dimAfter", "Dim the screen after"],
+                  ["saverAfter", "Start the screen saver after"],
+                  ["lockAfter", "Lock the screen after"],
+                ] as const
+              ).map(([key, label]) => (
+                <Row key={key} label={label}>
+                  <select
+                    className="ap-st-select"
+                    aria-label={label}
+                    value={prefs[key]}
+                    onChange={(event) => {
+                      updateDesktopPrefs({ [key]: Number(event.target.value) });
+                    }}
+                  >
+                    {IDLE_CHOICES.map((minutes) => (
+                      <option key={minutes} value={minutes}>
+                        {minutes === 0
+                          ? "Never"
+                          : minutes === 1
+                            ? "1 minute"
+                            : minutes >= 60
+                              ? `${String(minutes / 60)} hour`
+                              : `${String(minutes)} minutes`}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+              ))}
+              <Row label="Screen saver" sub="Your wallpaper photographs, with the clock">
+                <Button size="sm" onClick={desktop?.startScreenSaver}>
+                  Start now
                 </Button>
               </Row>
             </div>

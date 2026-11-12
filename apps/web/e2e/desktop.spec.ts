@@ -225,7 +225,9 @@ test.describe("desktop", () => {
     await page.keyboard.down("Alt");
     await page.keyboard.press("Backquote");
     await expect(page.getByRole("listbox", { name: "Windows" })).toBeVisible();
-    await expect(page.getByRole("option", { selected: true })).toHaveText("Calculator");
+    await expect(
+      page.getByRole("listbox", { name: "Windows" }).getByRole("option", { selected: true }),
+    ).toHaveText("Calculator");
     await page.keyboard.up("Alt");
     await expect(page.getByRole("listbox", { name: "Windows" })).toBeHidden();
     await expect(calculator).toHaveAttribute("data-focused", "true");
@@ -592,5 +594,130 @@ test.describe("desktop as a computer's own", () => {
     await search.fill("notes");
     await expect(page.getByRole("option", { name: /notes\.txt/ })).toBeVisible({ timeout: 15_000 });
     await page.keyboard.press("Escape");
+  });
+});
+
+test.describe("desktop that rests, restarts and has several desktops", () => {
+  test("windows remember their place, desktops, the screen saver and dimming, Restart and Shut Down", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "Phones keep the plain layout.");
+    test.setTimeout(240_000);
+    await signedIn(page, baseURL, "desktop-rest");
+    const dock = page.getByRole("navigation", { name: "Dock" });
+    const launchpad = page.getByRole("dialog", { name: "Launchpad" });
+    const openFromLaunchpad = async (name: string) => {
+      await dock.getByRole("button", { name: "Launchpad" }).click();
+      await launchpad.getByRole("searchbox").fill(name);
+      await launchpad.getByRole("button", { name, exact: true }).click();
+      await expect(launchpad).toBeHidden();
+    };
+    const menubar = page.getByRole("menubar", { name: "Brawzer menu bar" });
+
+    // A window moved by its title bar opens there again next time (kept with the account).
+    await openFromLaunchpad("Notepad");
+    const notepad = page.getByRole("region", { name: "Notepad window" });
+    await expect(notepad).toBeVisible();
+    // Where the window is, from its own place (its opening animation scales it for a moment).
+    const placeOf = (region: typeof notepad) =>
+      region.evaluate((element) => ({
+        x: Number.parseFloat(element.style.left),
+        y: Number.parseFloat(element.style.top),
+      }));
+    const before = await placeOf(notepad);
+    const bar = notepad.locator(".dt-bar").first();
+    const grip = await bar.boundingBox();
+    if (!grip) throw new Error("no title bar");
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    // Sideways and a little down: a window let go partly off the desktop is brought back in.
+    await page.mouse.move(grip.x + grip.width / 2 + 120, grip.y + grip.height / 2 + 20, {
+      steps: 8,
+    });
+    await page.mouse.up();
+    const moved = await placeOf(notepad);
+    expect(Math.round(moved.x - before.x)).toBeGreaterThan(100);
+    await expect
+      .poll(async () => {
+        const response = await page.request.get("/api/v1/apps/desktop/records");
+        const body = (await response.json()) as {
+          records: { key: string; data: { windowRects?: Record<string, { left: number }> } }[];
+        };
+        return body.records.find((record) => record.key === "state")?.data.windowRects?.notepad
+          ?.left;
+      })
+      .toBeGreaterThan(before.x);
+    await notepad.getByRole("button", { name: "Close Notepad" }).click();
+    await expect(notepad).toBeHidden();
+    await openFromLaunchpad("Notepad");
+    const again = await placeOf(notepad);
+    expect(Math.abs(again.x - moved.x)).toBeLessThan(2);
+    expect(Math.abs(again.y - moved.y)).toBeLessThan(2);
+
+    // Desktops: a new one from the Window menu holds its own windows; Control+arrows move between them.
+    await menubar.getByRole("menuitem", { name: "Window", exact: true }).click();
+    await page.getByRole("menuitem", { name: "New desktop" }).click();
+    await expect(notepad).toBeHidden();
+    await openFromLaunchpad("Calculator");
+    const calculator = page.getByRole("region", { name: "Calculator window" });
+    await expect(calculator).toBeVisible();
+    await page.keyboard.press("F3");
+    const overview = page.getByRole("dialog", { name: "Mission Control" });
+    await expect(overview.getByRole("tab", { name: "Desktop 2" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(overview.getByRole("button", { name: "Calculator", exact: true })).toBeVisible();
+    await expect(overview.getByRole("button", { name: /Notepad$/ })).toHaveCount(0);
+    await overview.getByRole("tab", { name: "Desktop 1" }).click();
+    await expect(overview).toBeHidden();
+    await expect(notepad).toBeVisible();
+    await expect(calculator).toBeHidden();
+    await page.keyboard.press("Control+ArrowRight");
+    await expect(calculator).toBeVisible();
+    await expect(notepad).toBeHidden();
+    // The Dock reaches a window on any desktop.
+    await dock.getByRole("button", { name: "Notepad, open" }).click();
+    await expect(notepad).toBeVisible();
+    await expect(calculator).toBeHidden();
+
+    // The screen saver: the wallpaper photographs with the clock, until the mouse moves.
+    await openFromLaunchpad("Settings");
+    const settings = page.getByRole("region", { name: "Settings window" });
+    await settings.getByRole("button", { name: "Desktop and dock" }).click();
+    await settings.getByRole("button", { name: "Start now" }).click();
+    const saver = page.getByTestId("screen-saver");
+    await expect(saver).toBeVisible();
+    await expect(saver.locator(".dt-saver-time")).toHaveText(/\d/);
+    await page.mouse.move(300, 300);
+    await page.mouse.move(360, 340);
+    await expect(saver).toBeHidden();
+    // Dimming after a minute without use.
+    await settings.getByLabel("Dim the screen after").selectOption("1");
+    await expect(page.getByTestId("screen-dim")).toBeVisible({ timeout: 80_000 });
+    await page.mouse.move(400, 400);
+    await expect(page.getByTestId("screen-dim")).toBeHidden();
+
+    // Restart: the windows close, the screen goes black, and Brawzer starts again.
+    // (The first menu is named after the app in front: Settings, just now.)
+    await menubar.getByRole("menuitem").first().click();
+    await page.getByRole("menuitem", { name: "Restart…" }).click();
+    const ask = page.getByRole("alertdialog");
+    await expect(ask).toContainText("restart your computer now");
+    await ask.getByRole("button", { name: "Restart" }).click();
+    await expect(page.getByTestId("power-screen")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
+
+    // Shut Down signs out.
+    await menubar.getByRole("menuitem").first().click();
+    await page.getByRole("menuitem", { name: "Shut Down…" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Shut Down" }).click();
+    await expect(page.getByTestId("power-screen")).toBeVisible();
+    await expect(page).toHaveURL(/\/sign-in\?signed_out=1/, { timeout: 30_000 });
   });
 });

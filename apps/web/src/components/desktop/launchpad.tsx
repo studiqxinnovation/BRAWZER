@@ -155,11 +155,14 @@ export function StartMenu({
   onWebApp,
   onPage,
   onWipe,
+  onPower,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   engines: readonly BrowserEngine[];
   webApps: readonly WebApp[];
+  /** Start's power buttons: Restart or Shut down. */
+  onPower?: (action: "shut-down" | "restart") => void;
   email: string;
   onOpenApp: (app: AppId) => void;
   onWebApp: (app: WebApp) => void;
@@ -269,6 +272,30 @@ export function StartMenu({
             >
               Lock
             </button>
+            {onPower && (
+              <>
+                <button
+                  type="button"
+                  className="dt-btn"
+                  onClick={() => {
+                    close();
+                    onPower("restart");
+                  }}
+                >
+                  Restart
+                </button>
+                <button
+                  type="button"
+                  className="dt-btn"
+                  onClick={() => {
+                    close();
+                    onPower("shut-down");
+                  }}
+                >
+                  Shut down
+                </button>
+              </>
+            )}
             <button
               type="button"
               className="dt-btn"

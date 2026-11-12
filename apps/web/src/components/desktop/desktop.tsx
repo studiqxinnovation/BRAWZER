@@ -52,6 +52,7 @@ import {
   desktopPrefsLoaded,
   loadDesktopPrefs,
   readDesktopPrefs,
+  rememberWindowRect,
   setPinned,
   subscribeToDesktopPrefs,
   toggleFavourite,
@@ -79,8 +80,11 @@ import {
   type DesktopMessage,
   type WindowSummary,
 } from "./desktop-context";
+import { IdleScreen } from "./idle-screen";
 import { Overview, type OverviewCell } from "./overview";
+import { type PowerAction, PowerDialog, PowerScreen } from "./power";
 import { notify } from "@/lib/notifications";
+import { signOut } from "@/lib/session-channel";
 import { DesktopIcons } from "./desktop-icons";
 import { Dock, type DockActions, Taskbar } from "./dock";
 import { Launchpad, StartMenu } from "./launchpad";
@@ -236,6 +240,21 @@ function cascade(area: Rect, index: number, size?: { width: number; height: numb
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const noop = () => undefined;
 
+/** What a window's place is remembered under: its app, or "browser" for every cloud browser. */
+const windowKey = (content: WindowContent) => (content.kind === "app" ? content.app : "browser");
+
+/** A remembered rectangle brought back inside the desktop, as a smaller screen may need. */
+function fitRect(rect: Rect, area: Rect): Rect {
+  const width = Math.min(rect.width, area.width);
+  const height = Math.min(rect.height, area.height);
+  return {
+    width,
+    height,
+    left: Math.min(Math.max(rect.left, area.left), area.left + area.width - width),
+    top: Math.min(Math.max(rect.top, area.top), area.top + area.height - height),
+  };
+}
+
 /** The prototype's genie: from a window to a Dock icon, as a transform. */
 function flyTransform(from: DOMRect, to: DOMRect): string {
   const dx = to.left + to.width / 2 - (from.left + from.width / 2);
@@ -322,6 +341,18 @@ export function DesktopShell({
   const [switcher, setSwitcher] = useState<number | null>(null);
   /** Mission Control: every window laid out at once, each in its cell, until one is chosen. */
   const [overview, setOverview] = useState<readonly OverviewCell[] | null>(null);
+  /** Counts each "Start screen saver" asked for. */
+  const [saverNow, setSaverNow] = useState(0);
+  /** Desktops (spaces): how many there are and which shows; windows belong to one each. */
+  const [space, setSpace] = useState(1);
+  const [spaceCount, setSpaceCount] = useState(1);
+  const spaceRef = useRef(1);
+  useEffect(() => {
+    spaceRef.current = space;
+  }, [space]);
+  /** Shut Down or Restart being asked about, then under way. */
+  const [powerAsk, setPowerAsk] = useState<PowerAction | null>(null);
+  const [powering, setPowering] = useState<PowerAction | null>(null);
   // The dock as the account keeps it: pinned apps and installed web apps.
   const prefs = useSyncExternalStore(
     subscribeToDesktopPrefs,
@@ -423,8 +454,10 @@ export function DesktopShell({
           );
         }
         added = true;
-        // Browsers open at the prototype's window size; apps at their own.
+        // Browsers open at the prototype's window size; apps at their own,
+        // or where that app's window was last (kept with the account).
         const size = content.kind === "app" ? apps[content.app] : BROWSER_WINDOW;
+        const remembered = readDesktopPrefs().windowRects[windowKey(content)];
         return [
           ...current,
           {
@@ -434,7 +467,10 @@ export function DesktopShell({
             min: false,
             restore: null,
             z,
-            rect: cascade(workArea(), current.length, size),
+            space: spaceRef.current,
+            rect: remembered
+              ? fitRect(remembered, workArea())
+              : cascade(workArea(), current.length, size),
           },
         ];
       });
@@ -677,6 +713,22 @@ export function DesktopShell({
       showSwitcher: () => {
         windowActions.current.showSwitcher();
       },
+      startScreenSaver: () => {
+        setSaverNow((count) => count + 1);
+      },
+      power: (action) => {
+        setPowerAsk(action);
+      },
+      spaces: () => spaceActions.current.spaces(),
+      switchSpace: (to) => {
+        spaceActions.current.switchSpace(to);
+      },
+      addSpace: (withWindow) => {
+        spaceActions.current.addSpace(withWindow);
+      },
+      moveWindowToSpace: (id, to) => {
+        spaceActions.current.moveWindowToSpace(id, to);
+      },
     }),
     [
       openSession,
@@ -694,6 +746,18 @@ export function DesktopShell({
   );
   /** The windows as the menu bar lists them, read when a menu opens (not a render-time value). */
   const windowList = useRef<() => readonly WindowSummary[]>(() => []);
+  /** The desktops' actions, declared further down, reachable from the stable API above. */
+  const spaceActions = useRef<{
+    spaces: () => { count: number; current: number };
+    switchSpace: (to: number) => void;
+    addSpace: (withWindow?: string) => void;
+    moveWindowToSpace: (id: string, to: number) => void;
+  }>({
+    spaces: () => ({ count: 1, current: 1 }),
+    switchSpace: noop,
+    addSpace: noop,
+    moveWindowToSpace: noop,
+  });
   /** Window actions declared further down, reachable from the stable API above. */
   const windowActions = useRef<{
     focus: (id: string) => void;
@@ -737,6 +801,7 @@ export function DesktopShell({
             min: true,
             restore: null,
             z: 1,
+            space: spaceRef.current,
             rect: cascade(area, kept.length + index),
           }));
         return [...kept, ...added];
@@ -967,6 +1032,8 @@ export function DesktopShell({
     const z = raise();
     const wasMin = target?.min ?? false;
     flushSync(() => {
+      // A window on another desktop brings that desktop with it.
+      if (target && target.space !== spaceRef.current) setSpace(target.space);
       setWindows((current) =>
         current.map((entry) => (entry.id === id ? { ...entry, min: false, z } : entry)),
       );
@@ -1045,7 +1112,9 @@ export function DesktopShell({
   ) {
     focusWindow(entry.id);
     setDragging(true);
+    let latest = entry.rect;
     const set = (rect: Rect) => {
+      latest = rect;
       setWindows((current) =>
         current.map((candidate) =>
           candidate.id === entry.id ? { ...candidate, rect } : candidate,
@@ -1061,6 +1130,8 @@ export function DesktopShell({
       (snap) => {
         setDragging(false);
         if (snap) snapWindow(entry.id, snap);
+        // Where it was let go is where this app's window opens next time.
+        else if (latest !== entry.rect) rememberWindowRect(windowKey(entry.content), latest);
       },
       (snap) => {
         setSnapHint(snap ? snapRect(snap, workArea()) : null);
@@ -1116,10 +1187,12 @@ export function DesktopShell({
   const switchable = useMemo(() => {
     const entries: { z: number; entry: "dashboard" | DesktopWindow }[] = [
       ...(dashHidden ? [] : [{ z: dashboard.z, entry: "dashboard" as const }]),
-      ...windows.map((entry) => ({ z: entry.min ? 0 : entry.z, entry })),
+      ...windows
+        .filter((entry) => entry.space === space)
+        .map((entry) => ({ z: entry.min ? 0 : entry.z, entry })),
     ];
     return entries.sort((a, b) => b.z - a.z).map((item) => item.entry);
-  }, [windows, dashboard, dashHidden]);
+  }, [windows, dashboard, dashHidden, space]);
   const keys = useRef<{
     switchable: typeof switchable;
     switcher: number | null;
@@ -1128,6 +1201,7 @@ export function DesktopShell({
     minimise: (id: string) => void;
     hideDashboard: () => void;
     toggleOverview: () => void;
+    stepSpace: (direction: 1 | -1) => void;
   }>({
     switchable,
     switcher,
@@ -1136,6 +1210,7 @@ export function DesktopShell({
     minimise,
     hideDashboard,
     toggleOverview: noop,
+    stepSpace: noop,
   });
 
   // ── Mission Control ────────────────────────────────────────────────────
@@ -1157,7 +1232,7 @@ export function DesktopShell({
     }
     for (const entry of windows) {
       const element = windowElements.current.get(entry.id);
-      if (!entry.min && element) {
+      if (!entry.min && entry.space === space && element) {
         shown.push({
           id: entry.id,
           title: windowTitle(entry),
@@ -1213,6 +1288,94 @@ export function DesktopShell({
     else if (!isLocked()) enterOverview();
   }
 
+  // ── Desktops (spaces) ─────────────────────────────────────────────────
+
+  /** Shows another desktop; the window in front there gets focus, or the desktop itself. */
+  function switchSpace(next: number) {
+    const to = Math.min(spaceCount, Math.max(1, next));
+    if (to === space) return;
+    leaveOverview();
+    setSwitcher(null);
+    setSpace(to);
+    const front = windows
+      .filter((entry) => entry.space === to && !entry.min)
+      .sort((a, b) => b.z - a.z)[0];
+    setFocused(front ? front.id : dashHidden ? "desktop" : "dashboard");
+  }
+
+  function addSpace(withWindow?: string) {
+    const next = spaceCount + 1;
+    setSpaceCount(next);
+    if (withWindow) {
+      setWindows((current) =>
+        current.map((entry) => (entry.id === withWindow ? { ...entry, space: next } : entry)),
+      );
+    }
+    leaveOverview();
+    setSpace(next);
+    setFocused(withWindow ?? (dashHidden ? "desktop" : "dashboard"));
+  }
+
+  function moveWindowToSpace(id: string, to: number) {
+    const target = Math.min(spaceCount, Math.max(1, to));
+    setWindows((current) =>
+      current.map((entry) => (entry.id === id ? { ...entry, space: target } : entry)),
+    );
+    if (focused === id) setFocused(dashHidden ? "desktop" : "dashboard");
+  }
+
+  /** Takes a desktop away; its windows join the first. */
+  function removeSpace(which: number) {
+    if (which <= 1 || spaceCount <= 1) return;
+    leaveOverview();
+    setWindows((current) =>
+      current.map((entry) =>
+        entry.space === which
+          ? { ...entry, space: 1 }
+          : entry.space > which
+            ? { ...entry, space: entry.space - 1 }
+            : entry,
+      ),
+    );
+    setSpaceCount(spaceCount - 1);
+    if (space === which) setSpace(1);
+    else if (space > which) setSpace(space - 1);
+  }
+
+  // ── Shut Down and Restart ─────────────────────────────────────────────
+
+  /**
+   * As a computer does it: the windows close one after another (the
+   * browsers end on a shut-down, as quitting them would), the screen goes
+   * black with the mark, then Brawzer starts again or signs out.
+   */
+  async function powerDown(action: PowerAction) {
+    setPowerAsk(null);
+    leaveOverview();
+    setSwitcher(null);
+    setPowering(action);
+    const open = [...windows].sort((a, b) => b.z - a.z);
+    for (const entry of open) {
+      if (action === "shut-down") {
+        void close(entry);
+      } else if (!isBrowserWindow(entry)) {
+        void close(entry);
+      }
+      if (!reducedMotion()) await new Promise((resolve) => setTimeout(resolve, 90));
+    }
+    await new Promise((resolve) => setTimeout(resolve, reducedMotion() ? 200 : 1_500));
+    if (action === "restart") {
+      try {
+        sessionStorage.removeItem("brawzer:booted");
+      } catch {
+        // No storage: it simply starts without the start-up screen.
+      }
+      window.location.replace("/app");
+      return;
+    }
+    await signOut("user");
+  }
+
   // What the menus and keys reach, as of the latest render (read later, never during one).
   useEffect(() => {
     keys.current = {
@@ -1223,6 +1386,9 @@ export function DesktopShell({
       minimise,
       hideDashboard,
       toggleOverview,
+      stepSpace: (direction) => {
+        switchSpace(Math.min(spaceCount, Math.max(1, space + direction)));
+      },
     };
     windowList.current = () =>
       windows.map((entry) => ({
@@ -1232,7 +1398,14 @@ export function DesktopShell({
         app: entry.content.kind === "app" ? entry.content.app : null,
         min: entry.min,
         focused: focused === entry.id && !entry.min,
+        space: entry.space,
       }));
+    spaceActions.current = {
+      spaces: () => ({ count: spaceCount, current: space }),
+      switchSpace,
+      addSpace,
+      moveWindowToSpace,
+    };
     windowActions.current = {
       focus: focusWindow,
       minimise,
@@ -1259,6 +1432,17 @@ export function DesktopShell({
         event.preventDefault();
         if (front === "dashboard") hide();
         else tuck(front);
+        return;
+      }
+      // Control and the left or right arrow: the desktop beside this one.
+      if (
+        event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        (event.code === "ArrowLeft" || event.code === "ArrowRight")
+      ) {
+        event.preventDefault();
+        keys.current.stepSpace(event.code === "ArrowRight" ? 1 : -1);
         return;
       }
       // F3, or Control and the up arrow: Mission Control (Task View).
@@ -1530,6 +1714,25 @@ export function DesktopShell({
           label: "Fill the screen",
           onSelect: () => {
             snapWindow(entry.id, "max");
+          },
+        },
+      ],
+    },
+    {
+      label: "Move to",
+      children: [
+        ...Array.from({ length: spaceCount }, (_value, index) => index + 1).map((which) => ({
+          label: `Desktop ${String(which)}`,
+          checked: entry.space === which,
+          onSelect: () => {
+            moveWindowToSpace(entry.id, which);
+          },
+        })),
+        "-" as const,
+        {
+          label: "New desktop",
+          onSelect: () => {
+            addSpace(entry.id);
           },
         },
       ],
@@ -2108,6 +2311,7 @@ export function DesktopShell({
                 data-min={entry.min || undefined}
                 data-focused={isFocused || undefined}
                 data-zoomed={entry.restore ? true : undefined}
+                data-away={entry.space !== space || undefined}
                 style={{
                   zIndex: entry.z,
                   left: entry.rect.left,
@@ -2233,6 +2437,9 @@ export function DesktopShell({
             showDashboard();
           }}
           onWipe={askWipe}
+          onPower={(action) => {
+            setPowerAsk(action);
+          }}
         />
         <ControlCentre
           open={controlOpen}
@@ -2266,8 +2473,14 @@ export function DesktopShell({
         {overview && (
           <Overview
             cells={overview}
-            minimised={windows.filter((entry) => entry.min)}
+            minimised={windows.filter((entry) => entry.min && entry.space === space)}
             style={style}
+            spaces={{ count: spaceCount, current: space }}
+            onSpace={switchSpace}
+            onAddSpace={() => {
+              addSpace();
+            }}
+            onRemoveSpace={removeSpace}
             onChoose={(id) => {
               leaveOverview(id);
             }}
@@ -2277,6 +2490,16 @@ export function DesktopShell({
           />
         )}
         {active && <NotificationBanners />}
+        <IdleScreen active={active && !powering} saverNow={saverNow} />
+        <PowerDialog
+          action={powering ? null : powerAsk}
+          sessions={windows.filter(isBrowserWindow).length}
+          onOpenChange={(open) => {
+            if (!open) setPowerAsk(null);
+          }}
+          onConfirm={(action) => void powerDown(action)}
+        />
+        {powering && <PowerScreen action={powering} />}
         {exam && active && (
           <button
             type="button"

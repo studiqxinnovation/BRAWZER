@@ -24,12 +24,21 @@ export function Overview({
   cells,
   minimised,
   style,
+  spaces,
+  onSpace,
+  onAddSpace,
+  onRemoveSpace,
   onChoose,
   onClose,
 }: {
   cells: readonly OverviewCell[];
   minimised: readonly DesktopWindow[];
   style: "mac" | "windows";
+  /** The desktops: how many, which shows. */
+  spaces: { count: number; current: number };
+  onSpace: (space: number) => void;
+  onAddSpace: () => void;
+  onRemoveSpace: (space: number) => void;
   onChoose: (id: string) => void;
   onClose: () => void;
 }) {
@@ -59,6 +68,38 @@ export function Overview({
         aria-label="Back to the desktop"
         onClick={onClose}
       />
+      <div className="dt-ov-spaces" role="tablist" aria-label="Desktops">
+        {Array.from({ length: spaces.count }, (_value, index) => index + 1).map((which) => (
+          <span key={which} className="dt-ov-space">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={which === spaces.current}
+              className="dt-ov-space-b"
+              onClick={() => {
+                onSpace(which);
+              }}
+            >
+              Desktop {which}
+            </button>
+            {which > 1 && (
+              <button
+                type="button"
+                className="dt-ov-space-x"
+                aria-label={`Remove Desktop ${String(which)}; its windows join Desktop 1`}
+                onClick={() => {
+                  onRemoveSpace(which);
+                }}
+              >
+                ×
+              </button>
+            )}
+          </span>
+        ))}
+        <button type="button" className="dt-ov-space-b dt-ov-space-add" onClick={onAddSpace}>
+          + New desktop
+        </button>
+      </div>
       {cells.map((cell, index) => (
         <button
           key={cell.id}

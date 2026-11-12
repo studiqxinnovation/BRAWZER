@@ -18,7 +18,7 @@ real; nothing an account owns is kept on the device.
 | ---- | -------------------------------------------------------------------------------------------------------------------- | ------------------- |
 | 10.1 | The cloud browser as a computer's own: cursor, gestures, site icons and tab previews, fonts, link numbers            | **Done** 2026-11-12 |
 | 10.2 | The app switcher, Mission Control and Task View, Spotlight and Start search, notifications, app menus                | **Done** 2026-11-12 |
-| 10.3 | Idle, screensaver and lock; boot, shut down and restart; several desktops; windows that remember                     | Planned             |
+| 10.3 | Idle, screensaver and lock; boot, shut down and restart; several desktops; windows that remember                     | **Done** 2026-11-12 |
 | 10.4 | Drag and drop across the boundary; faces on the login screen and switching; the stream read aloud; video over WebRTC | Planned             |
 
 ## 10.1 The cloud browser as a computer's own
@@ -78,3 +78,27 @@ real; nothing an account owns is kept on the device.
   About it, a new window, Hide (⌘M) and Quit (or End, for a browser). A
   Window menu offers Minimise, Zoom, Mission Control, Show desktop, Switch
   windows, Bring all to front and every window, the one in front ticked.
+
+## 10.3 A desktop that rests, restarts and has several desktops
+
+- **Idle.** After the minutes chosen in Settings (Desktop and dock: dim,
+  screen saver, lock; each can be Never), counted from the last click, key or
+  touch in any Brawzer tab, the screen dims, then the screen saver shows the
+  wallpaper photographs drifting under the clock (still, with reduced
+  motion), then the screen locks: the server's lock, as Lock screen is.
+  Anything wakes it. "Start now" starts the screen saver at once.
+- **Restart and Shut Down**, in the Brawzer menu and Start, asked about as a
+  Mac asks, going ahead on their own after a minute. Restart closes the app
+  windows one after another, shows the black screen with the mark and starts
+  Brawzer again (the start-up screen included); the cloud browsers wait where
+  they were. Shut Down closes every window, ends the cloud browsers (as
+  quitting them would) and signs out.
+- **Desktops.** Windows belong to a desktop; the Window menu and Mission
+  Control's bar at the top add, choose and remove them (a removed desktop's
+  windows join the first), Control and the left or right arrow move between
+  them, a window's title-bar menu moves it, and the Dock reaches a window on
+  any desktop. Kept for this tab, like the windows themselves.
+- **Windows remember their place.** Where an app's window was last moved or
+  resized is kept with the account (by app; one place for the cloud
+  browsers), and it opens there next time, brought inside a smaller screen
+  if need be.

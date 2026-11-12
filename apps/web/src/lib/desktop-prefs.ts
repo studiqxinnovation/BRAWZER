@@ -34,7 +34,24 @@ export interface DesktopPrefs {
   deskHinted: boolean;
   /** The wallpaper: a name, or "photo:<Drive file id>"; null: Brawzer's own. */
   wallpaper: string | null;
+  /** Minutes without use before the screen dims, the screen saver starts and the screen locks; 0: never. */
+  dimAfter: number;
+  saverAfter: number;
+  lockAfter: number;
+  /** Where each app's window was last, by app id (or "browser"), so it opens there again. */
+  windowRects: Readonly<Record<string, WindowRect>>;
 }
+
+export interface WindowRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** The choices Settings offers for the idle times, in minutes; 0 is never. */
+export const IDLE_CHOICES = [0, 1, 2, 5, 10, 15, 20, 30, 60] as const;
+const MAX_REMEMBERED_WINDOWS = 40;
 
 export interface Favourite {
   id: string;
@@ -66,6 +83,20 @@ const prefsSchema = z.object({
     .optional(),
   deskHinted: z.boolean().optional(),
   wallpaper: z.string().max(60).nullable().optional(),
+  dimAfter: z.number().int().min(0).max(1440).optional(),
+  saverAfter: z.number().int().min(0).max(1440).optional(),
+  lockAfter: z.number().int().min(0).max(1440).optional(),
+  windowRects: z
+    .record(
+      z.string().max(40),
+      z.object({
+        left: z.number(),
+        top: z.number(),
+        width: z.number().min(1),
+        height: z.number().min(1),
+      }),
+    )
+    .optional(),
 });
 
 const DEFAULT: DesktopPrefs = {
@@ -81,6 +112,10 @@ const DEFAULT: DesktopPrefs = {
   favourites: [],
   deskHinted: false,
   wallpaper: null,
+  dimAfter: 10,
+  saverAfter: 15,
+  lockAfter: 20,
+  windowRects: {},
 };
 
 let prefs: DesktopPrefs = DEFAULT;
@@ -127,6 +162,10 @@ export async function loadDesktopPrefs(): Promise<void> {
       favourites: data.favourites ?? [],
       deskHinted: data.deskHinted ?? false,
       wallpaper: data.wallpaper ?? null,
+      dimAfter: data.dimAfter ?? DEFAULT.dimAfter,
+      saverAfter: data.saverAfter ?? DEFAULT.saverAfter,
+      lockAfter: data.lockAfter ?? DEFAULT.lockAfter,
+      windowRects: data.windowRects ?? {},
     };
   }
   loaded = "yes";
@@ -178,5 +217,34 @@ export function toggleFavourite(file: Favourite) {
   updateDesktopPrefs({
     favourites:
       without.length === prefs.favourites.length ? [file, ...without].slice(0, 40) : without,
+  });
+}
+
+/** Keeps where a window was, by its app (or "browser"), the oldest forgotten past the limit. */
+export function rememberWindowRect(key: string, rect: WindowRect) {
+  const current = prefs.windowRects[key];
+  if (
+    current?.left === rect.left &&
+    current.top === rect.top &&
+    current.width === rect.width &&
+    current.height === rect.height
+  ) {
+    return;
+  }
+  const entries = Object.entries(prefs.windowRects).filter(([candidate]) => candidate !== key);
+  const kept = entries.slice(Math.max(0, entries.length - (MAX_REMEMBERED_WINDOWS - 1)));
+  updateDesktopPrefs({
+    windowRects: Object.fromEntries([
+      ...kept,
+      [
+        key,
+        {
+          left: Math.round(rect.left),
+          top: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        },
+      ],
+    ]),
   });
 }
