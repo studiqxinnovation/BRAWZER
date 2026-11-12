@@ -735,3 +735,107 @@ test.describe("browser on a dense screen", () => {
     await sharp();
   });
 });
+
+test.describe("browser across the boundary", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:desktop", "off");
+    });
+  });
+
+  test("a right-click menu for the page, an image saved to Drive, a file dropped on the page, and focus read aloud", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The streamed page is driven with a mouse; phones get the launcher test.");
+    test.setTimeout(180_000);
+    await signedIn(page, baseURL, "browser-boundary");
+    await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
+    const viewport = page.getByTestId("browser-viewport");
+    await expect(viewport).toBeVisible({ timeout: 60_000 });
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 30_000 })
+      .not.toBe("0");
+    const address = page.getByRole("textbox", { name: "Address or search" });
+    await address.fill("http://testsite.invalid/upload");
+    await address.press("Enter");
+    await expect(tab(page, "Upload page")).toBeVisible({ timeout: 30_000 });
+    const canvas = viewport.locator("canvas");
+
+    // The page's own right-click menu, with what is under the pointer: here, a link to the site's icon.
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+    await canvas.hover({ position: { x: 100, y: 60 } });
+    await expect(viewport).toHaveAttribute("data-cursor", "pointer", { timeout: 10_000 });
+    await canvas.click({ button: "right", position: { x: 100, y: 60 } });
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitem", { name: "Open link in new tab" })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Reload" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+
+    // An image, by address, saved to Drive by the container: it arrives in Downloads.
+    await address.fill("http://testsite.invalid/favicon.ico");
+    await address.press("Enter");
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 30_000 })
+      .not.toBe("0");
+    // Chrome shows a lone image in the middle of the page.
+    const box0 = await canvas.boundingBox();
+    if (!box0) throw new Error("no canvas");
+    // The menu knows what is under the pointer once the page has answered; a busy page answers late.
+    await expect(async () => {
+      await canvas.hover({ position: { x: box0.width / 2 - 2, y: box0.height / 2 - 2 } });
+      await canvas.hover({ position: { x: box0.width / 2, y: box0.height / 2 } });
+      await canvas.click({ button: "right", position: { x: box0.width / 2, y: box0.height / 2 } });
+      const save = page.getByRole("menuitem", { name: "Save image to Drive" });
+      try {
+        await expect(save).toBeVisible({ timeout: 2_000 });
+      } catch (error) {
+        await page.keyboard.press("Escape");
+        throw error;
+      }
+    }).toPass({ timeout: 30_000 });
+    await page.getByRole("menuitem", { name: "Save image to Drive" }).click();
+    await expect(page.getByText("“favicon.ico” is in Drive")).toBeVisible({ timeout: 30_000 });
+
+    // Focus is read aloud: Tab moves to the page's first link, and the caption says so.
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Show what has focus" }).click();
+    await clickPage(page, 900, 450);
+    await page.keyboard.press("Tab");
+    const caption = page.getByTestId("focus-caption");
+    await expect(caption).toContainText("link", { timeout: 10_000 });
+    await expect(caption).toContainText("Second page");
+
+    // A file from this computer dropped on the page: Drive first, then the page's drop zone gets it.
+    await address.fill("http://testsite.invalid/upload");
+    await address.press("Enter");
+    await expect(tab(page, "Upload page")).toBeVisible({ timeout: 30_000 });
+    const dropped = await page.evaluateHandle(() => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(["hello from here"], "dropped.txt", { type: "text/plain" }));
+      return transfer;
+    });
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error("no canvas");
+    await canvas.dispatchEvent("dragover", {
+      dataTransfer: dropped,
+      clientX: box.x + 300,
+      clientY: box.y + 300,
+    });
+    await canvas.dispatchEvent("drop", {
+      dataTransfer: dropped,
+      clientX: box.x + 300,
+      clientY: box.y + 300,
+    });
+    await expect(page.getByText("Uploading to Drive first…")).toBeVisible();
+    // The page says what it received (its drop zone writes the names).
+    await expect(page.getByRole("tab", { name: /dropped\.txt/ })).toBeVisible({ timeout: 30_000 });
+  });
+});

@@ -314,7 +314,7 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         if (++bad > MAX_BAD_MESSAGES) close(STREAM_CLOSE_CODES.badMessage, "bad messages");
         return;
       }
-      if (parsed.data.type === "file-chooser") {
+      if (parsed.data.type === "file-chooser" || parsed.data.type === "drop") {
         void this.answerChooser(parsed.data, auth, meta, agent, toAgent);
         return;
       }
@@ -512,7 +512,7 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
    * are opened; anything else is silently left out.
    */
   private async answerChooser(
-    answer: Extract<ClientMessage, { type: "file-chooser" }>,
+    answer: Extract<ClientMessage, { type: "file-chooser" | "drop" }>,
     auth: { user: { id: string }; session: { id: string } },
     meta: RequestMeta,
     agent: WebSocket,
@@ -532,7 +532,18 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
       name: file.file.name,
       bytes: file.file.size,
     }));
-    toAgent({ type: "file-chooser", tabId: answer.tabId, chooserId: answer.chooserId, files });
+    if (answer.type === "drop") {
+      toAgent({
+        type: "drop",
+        tabId: answer.tabId,
+        dropId: answer.dropId,
+        x: answer.x,
+        y: answer.y,
+        files,
+      });
+    } else {
+      toAgent({ type: "file-chooser", tabId: answer.tabId, chooserId: answer.chooserId, files });
+    }
     if (files.length === 0) {
       for (const file of opened) file.body.destroy();
       return;

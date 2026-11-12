@@ -172,7 +172,92 @@ export function pointerScript(x: number, y: number): string {
         if (root ? o !== "hidden" : (o === "auto" || o === "scroll")) { hscroll = true; break; }
       }
     }
-    return JSON.stringify({ cursor, hscroll });
+    const anchor = el.closest("a[href]");
+    let link = null;
+    try { if (anchor && /^https?:/.test(anchor.href)) link = anchor.href.slice(0, 2048); } catch {}
+    let image = null;
+    const img = el.closest("img, picture img") || (el.tagName === "PICTURE" ? el.querySelector("img") : null);
+    if (img && img.currentSrc && /^https?:/.test(img.currentSrc)) image = img.currentSrc.slice(0, 2048);
+    else {
+      const bg = view.getComputedStyle(el).backgroundImage;
+      const m = /url\\(["']?(https?:[^"')]+)["']?\\)/.exec(bg || "");
+      if (m) image = m[1].slice(0, 2048);
+    }
+    const sel = view.getSelection();
+    const selected = !!sel && !sel.isCollapsed && sel.toString().trim() !== "";
+    return JSON.stringify({ cursor, hscroll, link, image, selected });
+  })()`;
+}
+
+/**
+ * What has focus, as a screen reader would say it: its role (the page's own
+ * or the tag's) and its name (label, aria-label, text, alt, placeholder or
+ * title), and a field's value, never a password's. Returns JSON.
+ */
+export const FOCUS_SCRIPT = `(() => {
+  let el = document.activeElement;
+  for (let depth = 0; el && depth < 4; depth++) {
+    const tag = el.tagName;
+    if (tag !== "IFRAME" && tag !== "FRAME") break;
+    let inner = null;
+    try { inner = el.contentDocument; } catch { inner = null; }
+    if (!inner || !inner.activeElement) break;
+    el = inner.activeElement;
+  }
+  if (!el || el === document.body || el === document.documentElement) return JSON.stringify({ role: "document", name: document.title || "", value: null });
+  const text = (node) => (node ? (node.textContent || "").replace(/\\s+/g, " ").trim() : "");
+  const tag = el.tagName.toLowerCase();
+  const type = (el.getAttribute("type") || "text").toLowerCase();
+  let role = el.getAttribute("role") || "";
+  if (!role) {
+    role = tag === "a" && el.hasAttribute("href") ? "link"
+      : tag === "button" || (tag === "input" && /^(button|submit|reset|image)$/.test(type)) ? "button"
+      : tag === "input" && type === "checkbox" ? "checkbox"
+      : tag === "input" && type === "radio" ? "radio"
+      : tag === "input" && type === "range" ? "slider"
+      : tag === "input" || tag === "textarea" ? "text field"
+      : tag === "select" ? "list box"
+      : /^h[1-6]$/.test(tag) ? "heading"
+      : el.isContentEditable ? "text field"
+      : tag;
+  }
+  let name = el.getAttribute("aria-label") || "";
+  if (!name) {
+    const by = el.getAttribute("aria-labelledby");
+    if (by) name = by.split(/\\s+/).map((id) => text(el.ownerDocument.getElementById(id))).filter(Boolean).join(" ");
+  }
+  if (!name && el.labels && el.labels.length) name = text(el.labels[0]);
+  if (!name && el.id) { const l = el.ownerDocument.querySelector('label[for="' + CSS.escape(el.id) + '"]'); if (l) name = text(l); }
+  if (!name) name = el.getAttribute("alt") || el.getAttribute("placeholder") || el.getAttribute("title") || "";
+  if (!name && !(tag === "input" || tag === "textarea" || tag === "select")) name = text(el).slice(0, 200);
+  let value = null;
+  if (tag === "input" && type === "password") value = "\u2022\u2022\u2022";
+  else if (tag === "input" && (type === "checkbox" || type === "radio")) value = el.checked ? "checked" : "not checked";
+  else if (tag === "input" || tag === "textarea") value = String(el.value || "").slice(0, 200);
+  else if (tag === "select") value = text(el.options[el.selectedIndex]);
+  else if (el.isContentEditable) value = text(el).slice(0, 200);
+  return JSON.stringify({ role: role.slice(0, 64), name: name.slice(0, 512), value });
+})()`;
+
+/**
+ * Fetches an image as the page itself could (its cookies apply), returning
+ * its bytes as base64 with its type, or null if the page may not read it
+ * (another origin without CORS) or it is too large. Returns a promise.
+ */
+export function fetchImageScript(url: string, maxBytes: number): string {
+  return `(async () => {
+    try {
+      const res = await fetch(${JSON.stringify(url)}, { credentials: "include", mode: "cors" });
+      if (!res.ok) return null;
+      const type = (res.headers.get("content-type") || "").split(";")[0].trim();
+      if (!/^image\\//.test(type)) return null;
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength === 0 || buf.byteLength > ${String(maxBytes)}) return null;
+      const bytes = new Uint8Array(buf);
+      let s = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return JSON.stringify({ type, data: btoa(s) });
+    } catch { return null; }
   })()`;
 }
 

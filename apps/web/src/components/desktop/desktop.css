@@ -1576,6 +1576,11 @@
     stroke-width: 1.8;
   }
 
+  /* A drag over the streamed page: the page lights up to say the drop lands there. */
+  [data-testid="browser-viewport"][data-drop] {
+    box-shadow: inset 0 0 0 3px var(--p-accent, #2b5cd9);
+  }
+
   .dt-switch-art {
     display: block;
     width: 64px;
@@ -2740,12 +2745,14 @@ div:has(> .dt-os) > :not(.dt-os) {
 
 /* ── Idle: dim, the screen saver, and shutting down ──────────────────── */
 
+/* Dimmed or saving, the screen still takes the click that wakes it: these layers never swallow it. */
 .dt-dim {
   position: fixed;
   inset: 0;
   z-index: 2147483200;
   background: #000;
   opacity: 0.6;
+  pointer-events: none;
   animation: dt-dim-in 1.4s ease;
 }
 @keyframes dt-dim-in {
@@ -2761,6 +2768,7 @@ div:has(> .dt-os) > :not(.dt-os) {
   overflow: hidden;
   background: #000;
   color: #fff;
+  pointer-events: none;
   animation: dt-dim-in 0.8s ease;
 }
 .dt-saver-photo {

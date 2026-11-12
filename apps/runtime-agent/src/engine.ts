@@ -21,8 +21,14 @@ import type { ChromiumBrand } from "./config.ts";
 import type { CdpConnection } from "./cdp.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
-import { IconReporter, PointerReporter } from "./page-reporters.ts";
-import { FIND_STOP_SCRIPT, findScript, selectionScript, zoomScript } from "./page-tools.ts";
+import { FocusReporter, IconReporter, PointerReporter } from "./page-reporters.ts";
+import {
+  fetchImageScript,
+  FIND_STOP_SCRIPT,
+  findScript,
+  selectionScript,
+  zoomScript,
+} from "./page-tools.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
 
 export type { EngineOptions, Viewer } from "./engine-types.ts";
@@ -47,6 +53,51 @@ interface Chooser {
   dir: string;
   /** By transfer id, once the relay has said which files come. */
   writers: Map<string, ChunkWriter>;
+  /** A drop onto the page at a point, rather than a file chooser's answer. */
+  drop?: { x: number; y: number };
+}
+
+/** Keys after which what has focus may have changed. */
+const FOCUS_KEYS = new Set([
+  "Tab",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Enter",
+  " ",
+  "Escape",
+  "Home",
+  "End",
+]);
+
+/** A name for a saved image: the address's last part, with an extension its type suggests. */
+export function imageFilename(url: string, type?: string): string {
+  let base = "image";
+  try {
+    const last = decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop() ?? "");
+    if (last)
+      base =
+        last
+          .replace(/[\p{Cc}/\\]/gu, " ")
+          .trim()
+          .slice(0, 120) || "image";
+  } catch {
+    // Not an address worth naming after.
+  }
+  const extension = type
+    ? {
+        "image/png": "png",
+        "image/jpeg": "jpg",
+        "image/gif": "gif",
+        "image/webp": "webp",
+        "image/svg+xml": "svg",
+        "image/avif": "avif",
+        "image/x-icon": "ico",
+      }[type]
+    : undefined;
+  if (extension && !/\.[a-z0-9]{2,5}$/i.test(base)) base = `${base}.${extension}`;
+  return base;
 }
 
 /** Chromium's `net::ERR_NAME_NOT_RESOLVED` → `ERR_NAME_NOT_RESOLVED`, within the protocol's size. */
@@ -100,9 +151,10 @@ const SHARP_QUALITY = 85;
 /** No frame for this long means the page has stopped moving. */
 const STILL_MS = 300;
 /** A sharp frame that takes longer than this to be drawn says the connection can't afford them. */
-const SHARP_SLOW_MS = 1_500;
-/** How long sharp frames pause after a slow one. */
-const SHARP_BACKOFF_MS = 30_000;
+const SHARP_SLOW_MS = 2_500;
+/** How long sharp frames pause after a slow one: a little, then longer the more slow ones in a row. */
+const SHARP_BACKOFF_MS = 3_000;
+const SHARP_BACKOFF_MAX_MS = 30_000;
 /** In a tab's in-flight map: a sharp frame, which the engine has nothing to acknowledge for. */
 const SHARP_FRAME = "";
 /** A sharp frame unacknowledged for this long is given up on, so the next one isn't waited for. */
@@ -261,14 +313,20 @@ export class BrowserEngine implements Engine {
     (url) => this.options.fetchIcon(url),
     (message) => this.viewer?.send(message),
   );
+  private readonly focus = new FocusReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (message) => this.viewer?.send(message),
+    (tab) => this.viewer !== null && tab.id === this.activeId && this.tabs.has(tab.id),
+  );
   /** Counts down from the last frame of a moving page to its sharp frame. */
   private stillTimer: NodeJS.Timeout | null = null;
   /** The sharp frame on its way to the viewer, until it reports it drawn. */
   private sharpInFlight: { tabId: string; frameId: number; sentAt: number } | null = null;
   /** Whether the page showing now has had its sharp frame. */
   private sharpDone = false;
-  /** Until when sharp frames are skipped because the last one was slow to arrive. */
+  /** Until when sharp frames are skipped because the last one was slow to arrive, and how many were. */
   private sharpBackoffUntil = 0;
+  private sharpSlowCount = 0;
   private userAgent = "";
   private userAgentMetadata: UserAgentMetadata | null = null;
   private readonly loadedExtensions: string[] = [];
@@ -523,6 +581,7 @@ export class BrowserEngine implements Engine {
       void this.syncScreencasts();
       void this.handOver();
       this.pointer.reset();
+      this.focus.reset();
       this.icons.resend(this.tabs.values());
     });
     this.titleTimer ??= setInterval(() => {
@@ -606,6 +665,7 @@ export class BrowserEngine implements Engine {
         if (message.kind === "move" || message.kind === "up") {
           this.pointer.report(tab, message.x, message.y);
         }
+        if (message.kind === "up") this.focus.report(tab);
         const type = {
           move: "mouseMoved",
           down: "mousePressed",
@@ -629,6 +689,7 @@ export class BrowserEngine implements Engine {
         return;
       }
       case "key": {
+        if (message.kind === "up" && FOCUS_KEYS.has(message.key)) this.focus.report(tab);
         const text = message.text ?? (message.key === "Enter" ? "\r" : undefined);
         await this.cdp.send(
           "Input.dispatchKeyEvent",
@@ -673,6 +734,23 @@ export class BrowserEngine implements Engine {
         return;
       case "file-chooser":
         this.expectChosenFiles(message.chooserId, message.files);
+        return;
+      case "drop": {
+        // The relay has resolved the dropped Drive files; their bytes follow as chunks.
+        const chooser: Chooser = {
+          id: message.dropId,
+          tabId: tab.id,
+          backendNodeId: 0,
+          dir: path.join(this.options.uploadDir, message.dropId),
+          writers: new Map(),
+          drop: { x: message.x, y: message.y },
+        };
+        this.choosers.set(chooser.id, chooser);
+        this.expectChosenFiles(chooser.id, message.files);
+        return;
+      }
+      case "save-image":
+        await this.saveImage(tab, message.url);
         return;
       case "find":
       case "find-stop":
@@ -835,6 +913,56 @@ export class BrowserEngine implements Engine {
     }
   }
 
+  /**
+   * Saves a page's image to Drive: fetched by the page itself where it may
+   * (its cookies apply), else through the session's proxy, written to the
+   * scratch directory and handed over like a download.
+   */
+  private async saveImage(tab: Tab, url: string): Promise<void> {
+    const id = `image-${randomUUID()}`;
+    const transfer: Transfer = {
+      id,
+      tabId: tab.id,
+      kind: "download",
+      filename: imageFilename(url),
+      path: path.join(this.options.downloadDir, id),
+      bytes: 0,
+      finished: false,
+    };
+    this.transfers.set(id, transfer);
+    this.report(transfer, "started");
+    try {
+      let image: { type: string; bytes: Buffer } | null = null;
+      const inPage = await this.evaluate(
+        tab,
+        fetchImageScript(url, this.options.maxFileBytes),
+      ).catch(() => null);
+      if (typeof inPage === "string") {
+        const parsed = JSON.parse(inPage) as { type?: unknown; data?: unknown };
+        if (typeof parsed.type === "string" && typeof parsed.data === "string") {
+          image = { type: parsed.type, bytes: Buffer.from(parsed.data, "base64") };
+        }
+      }
+      image ??= await this.options.fetchImage(url, this.options.maxFileBytes);
+      if (!image) throw new Error("not an image");
+      transfer.filename = imageFilename(url, image.type);
+      transfer.bytes = image.bytes.length;
+      const file = await open(transfer.path, "w", 0o600);
+      try {
+        await file.write(image.bytes);
+      } finally {
+        await file.close();
+      }
+      this.queueHandover(transfer);
+    } catch (error) {
+      transfer.finished = true;
+      this.transfers.delete(id);
+      await rm(transfer.path, { force: true }).catch(() => undefined);
+      log("warn", "save image failed", { message: error instanceof Error ? error.message : "" });
+      this.report(transfer, "failed", "The image couldn’t be read.");
+    }
+  }
+
   /** Renders the tab to a PDF in the scratch directory and hands it over like a download. */
   private async printToDrive(tab: Tab): Promise<void> {
     const id = `print-${randomUUID()}`;
@@ -901,21 +1029,33 @@ export class BrowserEngine implements Engine {
     this.choosers.set(chooserId, chooser);
     void Promise.all([...chooser.writers.values()].map((writer) => writer.done))
       .then(async () => {
+        const paths = [...chooser.writers.values()].map((writer) => writer.path);
+        if (chooser.drop) {
+          // As a drag from the computer's own desktop would arrive: enter, over, drop.
+          const data = { items: [], files: paths, dragOperationsMask: 1 };
+          const { x, y } = chooser.drop;
+          for (const type of ["dragEnter", "dragOver", "drop"] as const) {
+            await this.cdp.send("Input.dispatchDragEvent", { type, x, y, data }, tab.sessionId);
+          }
+          log("info", "files dropped on the page", { files: paths.length });
+          return;
+        }
         await this.cdp.send(
           "DOM.setFileInputFiles",
-          {
-            files: [...chooser.writers.values()].map((writer) => writer.path),
-            backendNodeId: chooser.backendNodeId,
-          },
+          { files: paths, backendNodeId: chooser.backendNodeId },
           tab.sessionId,
         );
         log("info", "file chooser answered", { files: chooser.writers.size });
       })
       .catch((error: unknown) => {
-        log("warn", "file chooser failed", {
+        log("warn", chooser.drop ? "drop failed" : "file chooser failed", {
           message: error instanceof Error ? error.message : "",
         });
-        this.viewer?.send({ type: "refused", tabId: tab.id, action: "upload" });
+        this.viewer?.send({
+          type: "refused",
+          tabId: tab.id,
+          action: chooser.drop ? "drop" : "upload",
+        });
       })
       .finally(() => {
         this.choosers.delete(chooserId);
@@ -1411,8 +1551,15 @@ export class BrowserEngine implements Engine {
     this.sharpInFlight = null;
     const took = Date.now() - sharp.sentAt;
     if (took > SHARP_SLOW_MS) {
-      this.sharpBackoffUntil = Date.now() + SHARP_BACKOFF_MS;
-      log("info", "sharp frame was slow to arrive; pausing them", { ms: took });
+      this.sharpSlowCount += 1;
+      const pause = Math.min(
+        SHARP_BACKOFF_MAX_MS,
+        SHARP_BACKOFF_MS * 2 ** (this.sharpSlowCount - 1),
+      );
+      this.sharpBackoffUntil = Date.now() + pause;
+      log("info", "sharp frame was slow to arrive; pausing them", { ms: took, pause });
+    } else {
+      this.sharpSlowCount = 0;
     }
   }
 

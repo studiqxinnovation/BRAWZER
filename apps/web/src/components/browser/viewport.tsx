@@ -1,8 +1,10 @@
 "use client";
 
 import type { ClientMessageInput, CursorKind, FrameHeader, Viewport } from "@brawzer/contracts";
+import { DRAG_FILE_TYPE, DRAG_PAGE_IMAGE_TYPE } from "@/components/desktop/desktop-context";
 import { cn } from "@brawzer/ui/lib/cn";
 import {
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type Ref,
   useCallback,
@@ -14,6 +16,8 @@ import {
 import { buttonOf, fitViewport, keyMessage, modifiersOf } from "@/lib/browser/input";
 
 export interface ViewportHandle {
+  /** Where a point on screen is in the page's own pixels (for a drop handed over by the desktop). */
+  pointAt: (clientX: number, clientY: number) => { x: number; y: number };
   /** Draws the frame; `onDrawn` fires once it is on screen (or when it was skipped for a newer one). */
   draw(header: FrameHeader, image: Blob): void;
   focus(): void;
@@ -105,6 +109,17 @@ interface ViewportProps {
   /** Whether a sideways swipe should go back or forward now (not over something that scrolls sideways). */
   canSwipe?: () => boolean;
   onGesture?: (gesture: Gesture) => void;
+  /** A right-click on the page: Brawzer's own menu for what is under the pointer. */
+  onPageMenu?: (event: ReactMouseEvent<HTMLDivElement>, point: { x: number; y: number }) => void;
+  /** Files dropped on the page: Drive files (by id) from Brawzer's own windows, or this computer's. */
+  onDropFiles?: (
+    point: { x: number; y: number },
+    dropped: { fileIds: string[]; files: File[] },
+  ) => void;
+  /** The image under the pointer, if any, for dragging it out of the page with Alt held. */
+  imageAt?: () => string | null;
+  /** What a drag out carries: which session the image belongs to. */
+  dragOutSession?: string | null;
   tabId: string | null;
   /** Null while nothing is connected: input is ignored and the surface stays blank. */
   send: ((message: ClientMessageInput) => void) | null;
@@ -138,8 +153,15 @@ export function BrowserViewport({
   cursor = "default",
   canSwipe,
   onGesture,
+  onPageMenu,
+  onDropFiles,
+  imageAt,
+  dragOutSession = null,
   className,
 }: ViewportProps) {
+  /** Set while Alt is held over an image: the next drag takes the image out, not the pointer in. */
+  const [dragOut, setDragOut] = useState<string | null>(null);
+  const [dropHint, setDropHint] = useState(false);
   const gestureRef = useRef({ canSwipe, onGesture });
   gestureRef.current = { canSwipe, onGesture };
   /** A sideways swipe in progress: how far so far, and when it last moved. */
@@ -223,6 +245,9 @@ export function BrowserViewport({
       canvas() {
         const canvas = canvasRef.current;
         return canvas && readyRef.current && canvas.width > 0 ? canvas : null;
+      },
+      pointAt(clientX, clientY) {
+        return pointOf({ clientX, clientY });
       },
       restart() {
         readyRef.current = false;
@@ -410,8 +435,21 @@ export function BrowserViewport({
     return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : null;
   }
 
+  /** What a drag can carry: Drive files from Brawzer's own windows, or this computer's files. */
+  function carries(transfer: DataTransfer): boolean {
+    return transfer.types.includes(DRAG_FILE_TYPE) || transfer.types.includes("Files");
+  }
+
   function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     areaRef.current?.focus({ preventScroll: true });
+    // Alt and a press on an image: the drag that follows takes the image out to Files or the desktop.
+    if (event.altKey && event.pointerType === "mouse" && event.button === 0) {
+      const image = imageAt?.() ?? null;
+      if (image) {
+        setDragOut(image);
+        return;
+      }
+    }
     if (event.pointerType === "touch") {
       const point = pointOf(event);
       pointers.current.set(event.pointerId, point);
@@ -517,8 +555,55 @@ export function BrowserViewport({
       }}
       style={{ cursor }}
       data-cursor={cursor}
+      data-drop={dropHint || undefined}
+      draggable={dragOut !== null}
+      onDragStart={(event) => {
+        if (!dragOut || !dragOutSession) {
+          event.preventDefault();
+          return;
+        }
+        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setData(
+          DRAG_PAGE_IMAGE_TYPE,
+          JSON.stringify({ url: dragOut, session: dragOutSession }),
+        );
+        event.dataTransfer.setData("text/uri-list", dragOut);
+      }}
+      onDragEnd={() => {
+        setDragOut(null);
+      }}
+      onDragOver={(event) => {
+        if (!onDropFiles || !carries(event.dataTransfer)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        if (!dropHint) setDropHint(true);
+      }}
+      onDragLeave={() => {
+        setDropHint(false);
+      }}
+      onDrop={(event) => {
+        setDropHint(false);
+        if (!onDropFiles || !carries(event.dataTransfer)) return;
+        event.preventDefault();
+        const fileIds: string[] = [];
+        const own = event.dataTransfer.getData(DRAG_FILE_TYPE);
+        if (own) {
+          try {
+            const parsed = JSON.parse(own) as { ids?: unknown };
+            if (Array.isArray(parsed.ids)) {
+              for (const id of parsed.ids) if (typeof id === "string") fileIds.push(id);
+            }
+          } catch {
+            // Not Brawzer's own drag after all.
+          }
+        }
+        const files = fileIds.length === 0 ? Array.from(event.dataTransfer.files) : [];
+        if (fileIds.length === 0 && files.length === 0) return;
+        onDropFiles(pointOf(event), { fileIds, files });
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
+        onPageMenu?.(event, pointOf(event));
       }}
     >
       <canvas

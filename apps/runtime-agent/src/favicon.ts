@@ -33,11 +33,30 @@ function sniff(bytes: Buffer): string | null {
  * as a data URL for the viewer to show: the person's computer never asks the
  * site for anything. Null for anything that isn't a small image.
  */
-export function fetchFavicon(url: string, proxyPort: number): Promise<string | null> {
-  return get(url, proxyPort, 0);
+export async function fetchFavicon(url: string, proxyPort: number): Promise<string | null> {
+  const image = await fetchImage(url, proxyPort, FAVICON_MAX_BYTES);
+  return image ? `data:${image.type};base64,${image.bytes.toString("base64")}` : null;
 }
 
-async function get(url: string, proxyPort: number, hops: number): Promise<string | null> {
+/**
+ * An image by address, through the session's proxy, typed from its bytes:
+ * what "Save image to Drive" falls back to when the page itself may not
+ * read the image. Null for anything that isn't an image, or is too large.
+ */
+export function fetchImage(
+  url: string,
+  proxyPort: number,
+  maxBytes: number,
+): Promise<{ type: string; bytes: Buffer } | null> {
+  return get(url, proxyPort, maxBytes, 0);
+}
+
+async function get(
+  url: string,
+  proxyPort: number,
+  maxBytes: number,
+  hops: number,
+): Promise<{ type: string; bytes: Buffer } | null> {
   let target: URL;
   try {
     target = new URL(url);
@@ -45,7 +64,7 @@ async function get(url: string, proxyPort: number, hops: number): Promise<string
     return null;
   }
   if (target.protocol !== "http:" && target.protocol !== "https:") return null;
-  const response = await request(target, proxyPort).catch(() => null);
+  const response = await request(target, proxyPort, maxBytes).catch(() => null);
   if (!response) return null;
   const { status, headers, body } = response;
   if (status >= 300 && status < 400 && headers.location && hops < MAX_REDIRECTS) {
@@ -55,12 +74,12 @@ async function get(url: string, proxyPort: number, hops: number): Promise<string
     } catch {
       return null;
     }
-    return get(next, proxyPort, hops + 1);
+    return get(next, proxyPort, maxBytes, hops + 1);
   }
-  if (status !== 200 || body.length === 0 || body.length > FAVICON_MAX_BYTES) return null;
+  if (status !== 200 || body.length === 0 || body.length > maxBytes) return null;
   const type = sniff(body);
   if (!type) return null;
-  return `data:${type};base64,${body.toString("base64")}`;
+  return { type, bytes: body };
 }
 
 interface Response {
@@ -70,7 +89,7 @@ interface Response {
 }
 
 /** One GET through the proxy: plain for http, inside a CONNECT tunnel for https. */
-function request(target: URL, proxyPort: number): Promise<Response> {
+function request(target: URL, proxyPort: number, maxBytes: number): Promise<Response> {
   return new Promise((resolve, reject) => {
     const headers = { Host: target.host, Accept: "image/*", "User-Agent": "Brawzer" };
     const finish = (res: http.IncomingMessage) => {
@@ -78,7 +97,7 @@ function request(target: URL, proxyPort: number): Promise<Response> {
       let size = 0;
       res.on("data", (chunk: Buffer) => {
         size += chunk.length;
-        if (size > FAVICON_MAX_BYTES + 1) {
+        if (size > maxBytes + 1) {
           res.destroy();
           reject(new Error("too large"));
           return;

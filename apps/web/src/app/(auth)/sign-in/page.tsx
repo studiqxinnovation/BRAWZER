@@ -20,6 +20,15 @@ async function SignInNotice({ searchParams }: Pick<PageProps<"/sign-in">, "searc
       </div>
     );
   }
+  if (params.signed_out === "switch") {
+    return (
+      <div className="lg-err lg-info" role="status">
+        <b>Ready for someone else</b>
+        The last person was signed out so you can sign in. Their cloud browsers wait for them for a
+        while, and nothing of theirs stays on this computer.
+      </div>
+    );
+  }
   if (params.signed_out === "idle") {
     return (
       <div className="lg-err lg-info" role="status">

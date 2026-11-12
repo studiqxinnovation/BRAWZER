@@ -16,6 +16,7 @@ import {
   subscribeToIconPositions,
 } from "@/lib/icon-positions";
 import { Tile } from "./apps/registry";
+import { postToBrowserWindow } from "./desktop-context";
 import type { GlyphName, TileColour } from "./glyphs";
 
 /** A Drive file's tile, by kind, as the prototype draws files. */
@@ -122,6 +123,20 @@ export function DesktopIcons({
     if (!state?.moved) return;
     const placed = liftedRef.current;
     liftedRef.current = null;
+    // Let go over a cloud browser's window: the file is given to the page there, from Drive.
+    const file = files.find((candidate) => candidate.id === state.key);
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    if (file && under instanceof HTMLIFrameElement && under.dataset.session) {
+      const box = under.getBoundingClientRect();
+      postToBrowserWindow(under.dataset.session, {
+        type: "brawzer:drop",
+        fileIds: [file.id],
+        x: event.clientX - box.left,
+        y: event.clientY - box.top,
+      });
+      setLifted(null);
+      return;
+    }
     if (placed?.key === state.key) setIconPosition(state.key, { x: placed.x, y: placed.y });
     setLifted(null);
   }

@@ -10,6 +10,7 @@ import { lockClock, subscribeToClock } from "@/lib/clock";
 import { isLocked, lockNow, markUnlocked, startLocked, subscribeToLock } from "@/lib/lock";
 import { usePasskeysSupported } from "@/lib/passkeys";
 import { signOut } from "@/lib/session-channel";
+import { Face } from "./face";
 import { StarField } from "@/components/auth/star-field";
 import "./lock-screen.css";
 
@@ -56,9 +57,7 @@ function LockPanel({
         onSubmit={(event) => void check.submit(event)}
         className="lk-me"
       >
-        <span className="lk-avatar" aria-hidden="true">
-          {email.slice(0, 1).toUpperCase()}
-        </span>
+        <Face email={email} className="lk-avatar" size={72} />
         <p className="lk-name">{email}</p>
         <div className="lk-row">
           <label className="sr-only" htmlFor={`${titleId}-password`}>
@@ -124,6 +123,19 @@ function LockPanel({
         )}
       </form>
       <div className="lk-foot">
+        <button
+          type="button"
+          className="lk-link"
+          disabled={leaving}
+          onClick={() => {
+            setLeaving(true);
+            void signOut("switch").then((result) => {
+              if (!result.ok) setLeaving(false);
+            });
+          }}
+        >
+          {leaving ? "Signing out…" : "Switch user"}
+        </button>
         <button
           type="button"
           className="lk-link"

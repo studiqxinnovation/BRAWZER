@@ -21,6 +21,8 @@ export interface WindowSummary {
 
 /** What the rest of the app may ask of the desktop. */
 export interface DesktopApi {
+  /** Who is signed in, as the lock screen and Start show them. */
+  email: string;
   /** Shows a running cloud browser in its own window, or brings its window forward; it can open a site or page there. */
   openSession: (session: BrowserSession, open?: BrowserOpen) => void;
   /** Asks a browser's window to save a screenshot of its page in Drive. */
@@ -88,12 +90,34 @@ export interface BrowserOpen {
 
 /** What the desktop asks of a framed browser window. */
 export type DesktopRequest =
-  { type: "brawzer:open"; open: BrowserOpen } | { type: "brawzer:screenshot" };
+  | { type: "brawzer:open"; open: BrowserOpen }
+  | { type: "brawzer:screenshot" }
+  /** Drive files dropped on the window, at a point in the window's own coordinates. */
+  | { type: "brawzer:drop"; fileIds: string[]; x: number; y: number }
+  /** A page's image, dragged out of the window onto Files or the desktop: save it to Drive. */
+  | { type: "brawzer:save-image"; url: string };
+
+const uuid = /^[0-9a-f-]{36}$/i;
 
 export function parseDesktopRequest(data: unknown): DesktopRequest | null {
   if (typeof data !== "object" || data === null || !("type" in data)) return null;
   const message = data as Record<string, unknown>;
   if (message.type === "brawzer:screenshot") return { type: "brawzer:screenshot" };
+  if (message.type === "brawzer:drop") {
+    const fileIds = Array.isArray(message.fileIds)
+      ? message.fileIds.filter((id): id is string => typeof id === "string" && uuid.test(id))
+      : [];
+    const x = typeof message.x === "number" && Number.isFinite(message.x) ? message.x : null;
+    const y = typeof message.y === "number" && Number.isFinite(message.y) ? message.y : null;
+    return fileIds.length > 0 && x !== null && y !== null
+      ? { type: "brawzer:drop", fileIds: fileIds.slice(0, 20), x, y }
+      : null;
+  }
+  if (message.type === "brawzer:save-image") {
+    return typeof message.url === "string" && isWebUrl(message.url)
+      ? { type: "brawzer:save-image", url: message.url }
+      : null;
+  }
   if (
     message.type !== "brawzer:open" ||
     typeof message.open !== "object" ||
@@ -118,3 +142,17 @@ export function postToDesktop(message: DesktopMessage) {
   if (window.parent === window) return;
   window.parent.postMessage(message, window.location.origin);
 }
+
+/** From the desktop to one of its browser windows (same origin); false if that window isn't here. */
+export function postToBrowserWindow(session: string, request: DesktopRequest): boolean {
+  const frame = document.querySelector<HTMLIFrameElement>(
+    `iframe[data-session="${CSS.escape(session)}"]`,
+  );
+  if (!frame?.contentWindow) return false;
+  frame.contentWindow.postMessage(request, window.location.origin);
+  return true;
+}
+
+/** What a drag carries between Brawzer's own windows and apps. */
+export const DRAG_FILE_TYPE = "application/x-brawzer-file";
+export const DRAG_PAGE_IMAGE_TYPE = "application/x-brawzer-page-image";

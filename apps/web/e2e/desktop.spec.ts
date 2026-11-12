@@ -713,8 +713,15 @@ test.describe("desktop that rests, restarts and has several desktops", () => {
     });
     await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
 
-    // Shut Down signs out.
-    await menubar.getByRole("menuitem").first().click();
+    // Shut Down signs out. (After the start-up screen, the Brawzer menu is the first again.)
+    await expect(page.locator("html")).not.toHaveAttribute("data-boot", /.+/, { timeout: 10_000 });
+    const brawzerMenu = menubar.getByRole("menuitem", { name: "Brawzer", exact: true });
+    await expect(async () => {
+      await brawzerMenu.click();
+      await expect(page.getByRole("menuitem", { name: "Shut Down…" })).toBeVisible({
+        timeout: 2_000,
+      });
+    }).toPass({ timeout: 20_000 });
     await page.getByRole("menuitem", { name: "Shut Down…" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Shut Down" }).click();
     await expect(page.getByTestId("power-screen")).toBeVisible();

@@ -132,6 +132,8 @@ const baseClientMessages = [
     text: z.string().min(1).max(CLIPBOARD_MAX_CHARS),
   }),
   z.object({ type: z.literal("ping") }),
+  /** A page's image, saved to Drive by the container (never fetched by the viewer). */
+  z.object({ type: z.literal("save-image"), tabId: tabIdSchema, url: browserUrlSchema }),
 ] as const;
 
 /** From the Browser page to the relay. */
@@ -143,6 +145,15 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
     tabId: tabIdSchema,
     chooserId: z.string().min(1).max(64),
     fileIds: z.array(z.uuid()).max(MAX_CHOSEN_FILES),
+  }),
+  /** Drive files dropped onto the page at a point, as a drag from the computer would be. */
+  z.object({
+    type: z.literal("drop"),
+    tabId: tabIdSchema,
+    dropId: z.string().min(1).max(64),
+    x: z.number().min(0).max(viewport.maxWidth),
+    y: z.number().min(0).max(viewport.maxHeight),
+    fileIds: z.array(z.uuid()).min(1).max(MAX_CHOSEN_FILES),
   }),
 ]);
 
@@ -163,6 +174,14 @@ export const relayMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("file-chooser"),
     tabId: tabIdSchema,
     chooserId: z.string().min(1).max(64),
+    files: z.array(chosenFileSchema).max(MAX_CHOSEN_FILES),
+  }),
+  z.object({
+    type: z.literal("drop"),
+    tabId: tabIdSchema,
+    dropId: z.string().min(1).max(64),
+    x: z.number().min(0).max(viewport.maxWidth),
+    y: z.number().min(0).max(viewport.maxHeight),
     files: z.array(chosenFileSchema).max(MAX_CHOSEN_FILES),
   }),
 ]);
@@ -236,7 +255,14 @@ export const ZOOM_LIMITS = { min: 0.25, max: 5 } as const;
 export const dialogKinds = ["alert", "confirm", "prompt", "beforeunload"] as const;
 
 /** What the cloud browser refused on the page's behalf, for Brawzer to explain. */
-export const refusedActions = ["download", "upload", "print", "blocked-url"] as const;
+export const refusedActions = [
+  "download",
+  "upload",
+  "print",
+  "blocked-url",
+  "drop",
+  "save-image",
+] as const;
 
 /**
  * A file on its way from the cloud browser to Drive (a download or a printed
@@ -347,6 +373,21 @@ export const agentMessageSchema = z.discriminatedUnion("type", [
     tabId: tabIdSchema,
     cursor: cursorSchema,
     hscroll: z.boolean(),
+    /** The link under the pointer, the image under it, and whether the page has text selected. */
+    link: z.string().max(2048).nullable().default(null),
+    image: z.string().max(2048).nullable().default(null),
+    selected: z.boolean().default(false),
+  }),
+  /**
+   * What has focus in the page, as the page labels it, for a screen reader
+   * here: a canvas says nothing on its own.
+   */
+  z.object({
+    type: z.literal("focus"),
+    tabId: tabIdSchema,
+    role: z.string().max(64),
+    name: z.string().max(512),
+    value: z.string().max(512).nullable().default(null),
   }),
   /** The tab's site icon, fetched by the container (never by the viewer), or none. */
   z.object({ type: z.literal("favicon"), tabId: tabIdSchema, icon: faviconSchema.nullable() }),

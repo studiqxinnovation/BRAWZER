@@ -40,6 +40,8 @@ export interface DesktopPrefs {
   lockAfter: number;
   /** Where each app's window was last, by app id (or "browser"), so it opens there again. */
   windowRects: Readonly<Record<string, WindowRect>>;
+  /** The person's picture: "photo:<Drive file id>", or null for their initial. */
+  avatar: string | null;
 }
 
 export interface WindowRect {
@@ -86,6 +88,7 @@ const prefsSchema = z.object({
   dimAfter: z.number().int().min(0).max(1440).optional(),
   saverAfter: z.number().int().min(0).max(1440).optional(),
   lockAfter: z.number().int().min(0).max(1440).optional(),
+  avatar: z.string().max(60).nullable().optional(),
   windowRects: z
     .record(
       z.string().max(40),
@@ -114,8 +117,10 @@ const DEFAULT: DesktopPrefs = {
   wallpaper: null,
   dimAfter: 10,
   saverAfter: 15,
-  lockAfter: 20,
+  // Never, unless chosen: a shared computer already warns and signs out on its own.
+  lockAfter: 0,
   windowRects: {},
+  avatar: null,
 };
 
 let prefs: DesktopPrefs = DEFAULT;
@@ -166,6 +171,7 @@ export async function loadDesktopPrefs(): Promise<void> {
       saverAfter: data.saverAfter ?? DEFAULT.saverAfter,
       lockAfter: data.lockAfter ?? DEFAULT.lockAfter,
       windowRects: data.windowRects ?? {},
+      avatar: data.avatar ?? null,
     };
   }
   loaded = "yes";

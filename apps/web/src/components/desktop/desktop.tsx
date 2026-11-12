@@ -78,6 +78,8 @@ import {
   type DesktopApi,
   DesktopContext,
   type DesktopMessage,
+  DRAG_PAGE_IMAGE_TYPE,
+  postToBrowserWindow,
   type WindowSummary,
 } from "./desktop-context";
 import { IdleScreen } from "./idle-screen";
@@ -677,6 +679,7 @@ export function DesktopShell({
 
   const api = useMemo<DesktopApi>(
     () => ({
+      email,
       openSession,
       screenshot,
       openApp,
@@ -731,6 +734,7 @@ export function DesktopShell({
       },
     }),
     [
+      email,
       openSession,
       screenshot,
       openApp,
@@ -2155,6 +2159,23 @@ export function DesktopShell({
           onContextMenu={(event: ReactMouseEvent<HTMLElement>) => {
             showMenu(event, desktopMenu);
           }}
+          // An image dragged out of a cloud browser's page onto the desktop goes to Drive.
+          onDragOver={(event) => {
+            if (!event.dataTransfer.types.includes(DRAG_PAGE_IMAGE_TYPE)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+          }}
+          onDrop={(event) => {
+            const carried = event.dataTransfer.getData(DRAG_PAGE_IMAGE_TYPE);
+            if (!carried) return;
+            event.preventDefault();
+            try {
+              const { url, session } = JSON.parse(carried) as { url: string; session: string };
+              postToBrowserWindow(session, { type: "brawzer:save-image", url });
+            } catch {
+              // Not a page image after all.
+            }
+          }}
           onPointerDown={() => {
             if (focused !== "desktop" && active) {
               setFocused("desktop");
@@ -2359,6 +2380,7 @@ export function DesktopShell({
                       }}
                       title={`${label}, streamed from Brawzer’s cloud`}
                       src={frameSource(entry.id, entry.content.open)}
+                      data-session={entry.id}
                       className="dt-frame"
                       allow="clipboard-read; clipboard-write; autoplay; fullscreen"
                     />

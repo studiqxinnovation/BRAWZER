@@ -6,12 +6,21 @@ import { Button } from "@brawzer/ui/components/button";
 import { useToast } from "@brawzer/ui/components/toast";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  type ChangeEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { AccentControl } from "@/components/appearance-controls";
 import { useDesktop } from "@/components/desktop/desktop-context";
 import { WallpaperPicker } from "@/components/desktop/wallpaper";
 import { fetchBrowserOverview } from "@/lib/api/browser";
-import { emptyTrash, fetchDriveOverview, fetchTrash } from "@/lib/api/drive";
+import { emptyTrash, fetchDriveOverview, fetchTrash, uploadDriveFile } from "@/lib/api/drive";
+import { Face } from "../face";
+import { driveFolder } from "./drive-save";
 import {
   type DesktopStyle,
   readDesktopStyle,
@@ -127,6 +136,53 @@ export default function SettingsApp() {
   const [trash, setTrash] = useState<{ count: number; bytes: number } | null>(null);
   const [browsers, setBrowsers] = useState<{ open: number; limit: number } | null>(null);
   const [version, setVersion] = useState(0);
+  const email = desktop?.email ?? "";
+  const facePicker = useRef<HTMLInputElement>(null);
+  const [picking, setPicking] = useState(false);
+
+  /** The person's picture goes to Drive's Pictures folder, scanned and encrypted like any file. */
+  async function pickFace(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.add({ type: "info", title: "Too large", description: "A picture can be up to 10 MB." });
+      return;
+    }
+    setPicking(true);
+    try {
+      const folder = await driveFolder("Pictures");
+      if (!folder.ok) {
+        toast.add({
+          type: "error",
+          title: "Couldn’t open Drive",
+          description: folder.error.message,
+        });
+        return;
+      }
+      const result = await uploadDriveFile(file, folder.data, () => undefined).result;
+      if (!result.ok) {
+        toast.add({
+          type: "error",
+          title: "Couldn’t upload it",
+          description: result.error.message,
+        });
+        return;
+      }
+      if (result.data.status !== "clean") {
+        toast.add({
+          type: "error",
+          title: "That picture was quarantined",
+          description: "It matched known malware.",
+        });
+        return;
+      }
+      updateDesktopPrefs({ avatar: `photo:${result.data.id}` });
+      toast.add({ type: "success", title: "That’s you now" });
+    } finally {
+      setPicking(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -479,6 +535,40 @@ export default function SettingsApp() {
 
         {section === "about" && (
           <>
+            <div className="ap-st-card">
+              <div className="ap-st-t ap-st-cap">You</div>
+              <Row
+                label={email}
+                sub="Your picture shows on the lock screen and in Start; it lives in Drive, never on this computer"
+              >
+                <span className="flex items-center gap-2">
+                  <Face email={email} className="ap-st-face" size={36} />
+                  <Button size="sm" disabled={picking} onClick={() => facePicker.current?.click()}>
+                    {picking ? "Uploading…" : "Choose a picture…"}
+                  </Button>
+                  {prefs.avatar && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        updateDesktopPrefs({ avatar: null });
+                      }}
+                    >
+                      Use my initial
+                    </Button>
+                  )}
+                  <input
+                    ref={facePicker}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/avif,image/gif"
+                    hidden
+                    aria-hidden="true"
+                    tabIndex={-1}
+                    onChange={(event) => void pickFace(event)}
+                  />
+                </span>
+              </Row>
+            </div>
             <div className="ap-st-card ap-st-about">
               <span
                 className="dt-brand"

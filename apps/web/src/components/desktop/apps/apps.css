@@ -2509,6 +2509,16 @@
     height: 16px;
     accent-color: var(--p-accent, #2563eb);
   }
+  .ap-st-face {
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--p-accent, #2b5cd9);
+    color: #fff;
+    font-weight: 700;
+    overflow: hidden;
+  }
+
   .ap-st-select {
     height: 1.875rem;
     border: 1px solid var(--p-card-border);

@@ -7,6 +7,7 @@ import { useToast } from "@brawzer/ui/components/toast";
 import { ArrowLeft, RotateCcw, Search, Trash2 } from "lucide-react";
 import { readDesktopPrefs, updateDesktopPrefs } from "@/lib/desktop-prefs";
 import { notify } from "@/lib/notifications";
+import { DRAG_FILE_TYPE, DRAG_PAGE_IMAGE_TYPE, postToBrowserWindow } from "../desktop-context";
 import { rememberRecentFile } from "@/lib/recent-files";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -516,8 +517,32 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
                     : "This folder is empty."}
               </p>
             ) : (
+              // A drop target only; saving an image is in the page's own menu for the keyboard.
+              // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
               <ul
                 className={view === "grid" ? "ap-file-grid" : "ap-file-list"}
+                // An image dragged out of a cloud browser's page lands in Drive (Downloads), saved by the container.
+                onDragOver={(event) => {
+                  if (!event.dataTransfer.types.includes(DRAG_PAGE_IMAGE_TYPE)) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                }}
+                onDrop={(event) => {
+                  const carried = event.dataTransfer.getData(DRAG_PAGE_IMAGE_TYPE);
+                  if (!carried) return;
+                  event.preventDefault();
+                  try {
+                    const { url, session } = JSON.parse(carried) as {
+                      url: string;
+                      session: string;
+                    };
+                    if (!postToBrowserWindow(session, { type: "brawzer:save-image", url })) {
+                      toast.add({ type: "error", title: "That browser window is gone" });
+                    }
+                  } catch {
+                    // Not a page image after all.
+                  }
+                }}
                 aria-label={`In ${here}`}
               >
                 {inside.map((folder) => (
@@ -584,6 +609,15 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
                           className="ap-file"
                           aria-pressed={selected === file.id}
                           aria-label={`${file.name}, ${size(file.size)}${file.status === "clean" ? "" : ", quarantined"}`}
+                          // Dragged onto a cloud browser's page, the file is given to that page from Drive.
+                          draggable={file.status === "clean"}
+                          onDragStart={(event) => {
+                            event.dataTransfer.effectAllowed = "copy";
+                            event.dataTransfer.setData(
+                              DRAG_FILE_TYPE,
+                              JSON.stringify({ ids: [file.id], name: file.name }),
+                            );
+                          }}
                           onClick={() => {
                             setSelected(file.id);
                           }}

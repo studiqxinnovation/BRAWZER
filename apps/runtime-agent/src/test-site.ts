@@ -186,7 +186,8 @@ function handleTestSiteRequest(req: http.IncomingMessage, res: http.ServerRespon
         page(
           "Upload page",
           `<h1>Upload page</h1>
-<input class="box" style="top:40px" type="file" multiple onchange="document.title=[...this.files].map(f=>f.name+' '+f.size).join(', ')">`,
+<input class="box" style="top:40px" type="file" multiple onchange="document.title=[...this.files].map(f=>f.name+' '+f.size).join(', ')">
+<div style="position:absolute;top:200px;left:0;right:0;height:300px;background:#eef" ondragover="event.preventDefault()" ondrop="event.preventDefault();document.title=[...event.dataTransfer.files].map(f=>f.name+' '+f.size).join(', ')">Drop files here</div>`,
         ),
       );
       return;

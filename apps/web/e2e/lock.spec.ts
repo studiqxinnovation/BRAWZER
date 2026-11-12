@@ -148,3 +148,47 @@ test.describe("lock screen", () => {
     await expect(page.getByText("Bee Browser closed")).toBeVisible({ timeout: 30_000 });
   });
 });
+
+test.describe("faces and switching user", () => {
+  test("a picture chosen in Settings shows on the lock screen, and Switch user signs out for the next person", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "Phones keep the plain layout.");
+    const email = await signedIn(page, baseURL, "faces");
+    // Settings → About: choose a picture; it goes to Drive and shows at once.
+    await page.getByRole("menuitem").first().click();
+    await page.getByRole("menuitem", { name: "Settings…" }).click();
+    const settings = page.getByRole("region", { name: "Settings window" });
+    await settings.getByRole("button", { name: "About Brawzer" }).click();
+    await expect(settings).toContainText(email);
+    const chooser = page.waitForEvent("filechooser");
+    await settings.getByRole("button", { name: "Choose a picture…" }).click();
+    await (
+      await chooser
+    ).setFiles({
+      name: "me.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    });
+    await expect(page.getByText("That’s you now")).toBeVisible({ timeout: 15_000 });
+    await expect(settings.getByTestId("face")).toHaveAttribute(
+      "src",
+      /\/api\/v1\/drive\/files\/[0-9a-f-]{36}\/preview/,
+    );
+
+    // The lock screen shows the picture, and offers to switch user.
+    await page.getByRole("menuitem", { name: "File", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Lock screen" }).click();
+    const lock = lockScreen(page);
+    await expect(lock).toBeVisible();
+    await expect(lock.getByTestId("face")).toBeVisible();
+    await lock.getByRole("button", { name: "Switch user" }).click();
+    await expect(page).toHaveURL(/\/sign-in\?signed_out=switch/, { timeout: 30_000 });
+    await expect(page.getByRole("status")).toContainText("Ready for someone else");
+  });
+});

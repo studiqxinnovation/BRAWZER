@@ -69,6 +69,23 @@ import { hostOf } from "@/lib/browser/input";
 import { zoomLabel } from "@/lib/browser/zoom";
 import { initialOf, profileColorShades } from "@/lib/profiles";
 
+/** A tick in a menu item's icon slot, for a choice that is on. */
+const Tick = ({ on }: { on: boolean }) => (
+  <span aria-hidden="true" className="grid size-4 place-items-center">
+    {on && (
+      <svg
+        viewBox="0 0 24 24"
+        className="size-3.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+      >
+        <path d="M20 6 9 17l-5-5" />
+      </svg>
+    )}
+  </span>
+);
+
 /** A stable colour for a site, from its host name, for the tab's initial. */
 const TAB_HUES = [
   "#2b5cd9",
@@ -697,6 +714,7 @@ export function MoreMenu({
   onHandOff,
   onPopOut,
   onCloseWindow,
+  caption,
 }: {
   canPrint: boolean;
   coarsePointer: boolean;
@@ -725,6 +743,8 @@ export function MoreMenu({
   onPopOut?: (() => void) | undefined;
   /** In that window: close it (the session keeps running). */
   onCloseWindow?: (() => void) | undefined;
+  /** What has focus in the page, written under it for anyone who can't see the canvas. */
+  caption?: { on: boolean; onToggle: () => void };
 }) {
   return (
     <Menu>
@@ -736,6 +756,11 @@ export function MoreMenu({
         <Ellipsis aria-hidden="true" />
       </MenuTrigger>
       <MenuContent align="end">
+        {caption && (
+          <MenuItem icon={<Tick on={caption.on} />} onClick={caption.onToggle}>
+            Show what has focus
+          </MenuItem>
+        )}
         <MenuItem icon={<Plus />} onClick={onNewTab}>
           New tab
         </MenuItem>

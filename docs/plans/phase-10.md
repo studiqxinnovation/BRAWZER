@@ -19,7 +19,7 @@ real; nothing an account owns is kept on the device.
 | 10.1 | The cloud browser as a computer's own: cursor, gestures, site icons and tab previews, fonts, link numbers            | **Done** 2026-11-12 |
 | 10.2 | The app switcher, Mission Control and Task View, Spotlight and Start search, notifications, app menus                | **Done** 2026-11-12 |
 | 10.3 | Idle, screensaver and lock; boot, shut down and restart; several desktops; windows that remember                     | **Done** 2026-11-12 |
-| 10.4 | Drag and drop across the boundary; faces on the login screen and switching; the stream read aloud; video over WebRTC | Planned             |
+| 10.4 | Drag and drop across the boundary; faces on the login screen and switching; the stream read aloud; video over WebRTC | **Done** 2026-11-12 |
 
 ## 10.1 The cloud browser as a computer's own
 
@@ -82,7 +82,7 @@ real; nothing an account owns is kept on the device.
 ## 10.3 A desktop that rests, restarts and has several desktops
 
 - **Idle.** After the minutes chosen in Settings (Desktop and dock: dim,
-  screen saver, lock; each can be Never), counted from the last click, key or
+  screen saver, lock; each can be Never, and the lock is Never unless chosen), counted from the last click, key or
   touch in any Brawzer tab, the screen dims, then the screen saver shows the
   wallpaper photographs drifting under the clock (still, with reduced
   motion), then the screen locks: the server's lock, as Lock screen is.
@@ -102,3 +102,27 @@ real; nothing an account owns is kept on the device.
   resized is kept with the account (by app; one place for the cloud
   browsers), and it opens there next time, brought inside a smaller screen
   if need be.
+
+## 10.4 Across the boundary, faces, the stream read aloud, and video
+
+- **Drag and drop across the boundary.** A file from Files or a desktop
+  icon dropped on a cloud browser's window, or this computer's own file
+  dropped on the page, reaches the page as a drop at that point (Chromium
+  engines; Firefox's remote protocol has no drop, so it says to use the
+  page's upload button). This computer's files go to Drive's Uploads first,
+  scanned and encrypted; the page never sees this computer. An image dragged
+  out of the page with Alt held, onto Files or the desktop, is saved to
+  Drive by the container, as is "Save image to Drive" in the page's new
+  right-click menu (Back, Forward, Reload; a link's and an image's actions;
+  Copy, Paste, Find, Save as PDF, Reader view).
+- **Faces.** The person's picture, chosen in Settings → About (a Drive
+  file, scanned and encrypted, never on this device), shows on the lock
+  screen and in Start. **Switch user** on the lock screen signs the person
+  out so someone else can sign in, their cloud browsers waiting; the sign-in
+  page says so. Nothing about the last person stays on the device, which is
+  why the sign-in screen shows no faces of its own.
+- **The stream read aloud.** After a key or click that may have moved focus,
+  the agent asks the page what has focus, as the page labels it (role, name,
+  a field's value, never a password), and the viewer announces it in a live
+  region; "Show what has focus" in the More menu writes it under the page.
+- **Video.** See 10.5.

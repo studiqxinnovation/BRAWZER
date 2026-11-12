@@ -27,6 +27,8 @@ export interface EngineOptions {
   readerScript: string;
   /** A page's site icon as a data URL, fetched through the session's proxy; null for none. */
   fetchIcon: (url: string) => Promise<string | null>;
+  /** An image by address through the session's proxy, for saving to Drive; null if it isn't one. */
+  fetchImage: (url: string, maxBytes: number) => Promise<{ type: string; bytes: Buffer } | null>;
   /** Catalogue extensions to install for this session, with where their builds are in the image. */
   extensions: readonly InstallableExtension[];
   /**

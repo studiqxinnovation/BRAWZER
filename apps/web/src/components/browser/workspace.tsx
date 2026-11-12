@@ -11,6 +11,7 @@ import {
   engineDetails,
   type CursorKind,
   type FrameHeader,
+  MAX_CHOSEN_FILES,
   type Profile,
   type RefusedAction,
   STREAM_CLOSE_CODES,
@@ -45,6 +46,12 @@ import { encodeCanvas, screenshotName } from "@/lib/browser/picture";
 import { AudioPlayer } from "@/lib/browser/audio";
 import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/stream";
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
+import {
+  ContextMenuHost,
+  type MenuEntry,
+  openContextMenu,
+} from "@/components/desktop/context-menu";
+import { driveFolder } from "@/components/desktop/apps/drive-save";
 import {
   type BrowserOpen,
   parseDesktopRequest,
@@ -113,6 +120,15 @@ const REFUSALS: Record<RefusedAction, { title: string; description: string }> = 
   "blocked-url": {
     title: "Address blocked",
     description: "The cloud browser only opens public websites.",
+  },
+  drop: {
+    title: "The page didn’t get the file",
+    description:
+      "Firefox can’t take a drop from Brawzer; use the page’s own upload button, which opens Drive.",
+  },
+  "save-image": {
+    title: "The image couldn’t be saved",
+    description: "The page wouldn’t let it be read.",
   },
 };
 
@@ -337,8 +353,26 @@ export function BrowserWorkspace({
 
   const viewportRef = useRef<ViewportHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  /** What the pointer is over, by tab: the cursor to show and whether a swipe would scroll. */
-  const pointerRef = useRef(new Map<string, { cursor: CursorKind; hscroll: boolean }>());
+  /** What the pointer is over, by tab: the cursor to show, whether a swipe would scroll, a link, an image, a selection. */
+  const pointerRef = useRef(
+    new Map<
+      string,
+      {
+        cursor: CursorKind;
+        hscroll: boolean;
+        link: string | null;
+        image: string | null;
+        selected: boolean;
+      }
+    >(),
+  );
+  /** What has focus in the page, as the page labels it, for a screen reader and the caption. */
+  const [focusInfo, setFocusInfo] = useState<{
+    role: string;
+    name: string;
+    value: string | null;
+  } | null>(null);
+  const [captionOn, setCaptionOn] = useState(false);
   const [cursor, setCursor] = useState<CursorKind>("default");
   /** Site icons by tab, fetched by the container; the strip shows an initial until one arrives. */
   const [favicons, setFavicons] = useState<ReadonlyMap<string, string>>(() => new Map());
@@ -453,8 +487,19 @@ export function BrowserWorkspace({
         return;
       }
       case "pointer":
-        pointerRef.current.set(message.tabId, { cursor: message.cursor, hscroll: message.hscroll });
+        pointerRef.current.set(message.tabId, {
+          cursor: message.cursor,
+          hscroll: message.hscroll,
+          link: message.link,
+          image: message.image,
+          selected: message.selected,
+        });
         if (message.tabId === activeTabRef.current) setCursor(message.cursor);
+        return;
+      case "focus":
+        if (message.tabId === activeTabRef.current) {
+          setFocusInfo({ role: message.role, name: message.name, value: message.value });
+        }
         return;
       case "favicon":
         setFavicons((current) => {
@@ -834,6 +879,136 @@ export function BrowserWorkspace({
     setFirstFrame(true);
   }, []);
 
+  /** Brawzer's own right-click menu for the page: what is under the pointer decides what it offers. */
+  function pageMenu(event: Parameters<typeof openContextMenu>[0]) {
+    const tab = activeTabRef.current;
+    if (!tab || !live) return;
+    const under = pointerRef.current.get(tab);
+    const entries: MenuEntry[] = [
+      { label: "Back", disabled: !activeTab?.canGoBack, onSelect: () => onShortcut("back") },
+      {
+        label: "Forward",
+        disabled: !activeTab?.canGoForward,
+        onSelect: () => onShortcut("forward"),
+      },
+      { label: "Reload", onSelect: () => onShortcut("reload") },
+    ];
+    if (under?.link) {
+      const link = under.link;
+      entries.push(
+        "-",
+        { label: "Open link in new tab", onSelect: () => send({ type: "new-tab", url: link }) },
+        {
+          label: "Copy link address",
+          sub: hostOf(link),
+          onSelect: () => {
+            copyToLocal(link);
+          },
+        },
+      );
+    }
+    if (under?.image) {
+      const image = under.image;
+      entries.push(
+        "-",
+        { label: "Save image to Drive", onSelect: () => saveImageToDrive(image) },
+        { label: "Open image in new tab", onSelect: () => send({ type: "new-tab", url: image }) },
+        {
+          label: "Copy image address",
+          onSelect: () => {
+            copyToLocal(image);
+          },
+        },
+      );
+    }
+    entries.push(
+      "-",
+      {
+        label: "Copy",
+        shortcut: "Alt+C",
+        disabled: !under?.selected,
+        onSelect: () => onShortcut("copy"),
+      },
+      { label: "Paste", shortcut: "Alt+V", onSelect: () => onShortcut("paste") },
+      "-",
+      { label: "Find in page…", shortcut: "Alt+F", onSelect: () => onShortcut("find") },
+      { label: "Save as PDF in Drive", shortcut: "Alt+P", onSelect: () => onShortcut("print") },
+      {
+        label: activeTab?.reader ? "Leave reader view" : "Reader view",
+        onSelect: () => onShortcut("reader"),
+      },
+    );
+    openContextMenu(event, entries);
+  }
+
+  /** A page's image to Drive, by the container: it lands in Downloads like any download. */
+  function saveImageToDrive(url: string) {
+    const tab = activeTabRef.current;
+    if (!tab) return;
+    send({ type: "save-image", tabId: tab, url });
+    toast.add({
+      type: "info",
+      title: "Saving the image to Drive…",
+      description: "It goes to Downloads.",
+    });
+  }
+
+  /**
+   * Files dropped on the page: Drive files go straight to the page; this
+   * computer's files go to Drive's Uploads first (scanned, encrypted), then
+   * to the page, so the page never sees this computer.
+   */
+  async function dropFiles(
+    point: { x: number; y: number },
+    dropped: { fileIds: string[]; files: File[] },
+  ) {
+    const tab = activeTabRef.current;
+    if (!tab) return;
+    let fileIds = dropped.fileIds;
+    if (fileIds.length === 0 && dropped.files.length > 0) {
+      toast.add({
+        type: "info",
+        title:
+          dropped.files.length === 1
+            ? "Uploading to Drive first…"
+            : `Uploading ${String(dropped.files.length)} files to Drive first…`,
+        description: "The page gets them from Drive, never from this computer.",
+      });
+      const folder = await driveFolder("Uploads");
+      if (!folder.ok) {
+        toast.add({
+          type: "error",
+          title: "Couldn’t open Drive",
+          description: folder.error.message,
+        });
+        return;
+      }
+      fileIds = [];
+      for (const file of dropped.files.slice(0, MAX_CHOSEN_FILES)) {
+        const result = await uploadDriveFile(file, folder.data, () => undefined).result;
+        if (result.ok && result.data.status === "clean") fileIds.push(result.data.id);
+        else {
+          toast.add({
+            type: "error",
+            title: `“${file.name}” wasn’t given to the page`,
+            description: result.ok
+              ? "It was quarantined: it matched known malware."
+              : result.error.message,
+          });
+        }
+      }
+      if (fileIds.length === 0) return;
+    }
+    send({
+      type: "drop",
+      tabId: tab,
+      dropId: crypto.randomUUID(),
+      x: point.x,
+      y: point.y,
+      fileIds: fileIds.slice(0, MAX_CHOSEN_FILES),
+    });
+  }
+
   function navigate(url: string) {
     if (!activeTab) return;
     send({ type: "navigate", tabId: activeTab.id, url });
@@ -1033,9 +1208,14 @@ export function BrowserWorkspace({
   }
 
   // The desktop around a framed window asks it to open things and take screenshots.
-  const latest = useRef({ saveScreenshot, live: phase.kind === "live" });
+  const latest = useRef({
+    saveScreenshot,
+    dropFiles,
+    saveImageToDrive,
+    live: phase.kind === "live",
+  });
   useEffect(() => {
-    latest.current = { saveScreenshot, live: phase.kind === "live" };
+    latest.current = { saveScreenshot, dropFiles, saveImageToDrive, live: phase.kind === "live" };
   });
   useEffect(() => {
     if (!embedded) return;
@@ -1045,6 +1225,11 @@ export function BrowserWorkspace({
       if (!message) return;
       if (message.type === "brawzer:screenshot") {
         void latest.current.saveScreenshot();
+      } else if (message.type === "brawzer:drop") {
+        const point = viewportRef.current?.pointAt(message.x, message.y);
+        if (point) void latest.current.dropFiles(point, { fileIds: message.fileIds, files: [] });
+      } else if (message.type === "brawzer:save-image") {
+        latest.current.saveImageToDrive(message.url);
       } else if (latest.current.live) {
         openNow(message.open);
       } else {
@@ -1327,6 +1512,12 @@ export function BrowserWorkspace({
           }}
         />
         <MoreMenu
+          caption={{
+            on: captionOn,
+            onToggle: () => {
+              setCaptionOn((current) => !current);
+            },
+          }}
           canPrint={Boolean(activeTab) && !isStartPage(activeTab?.url ?? "")}
           coarsePointer={coarsePointer}
           zoom={activeTab?.zoom ?? 1}
@@ -1425,7 +1616,35 @@ export function BrowserWorkspace({
             pointerRef.current.get(activeTabRef.current)?.hscroll !== true
           }
           onGesture={onShortcut}
+          onPageMenu={(event) => {
+            pageMenu(event);
+          }}
+          onDropFiles={(point, dropped) => void dropFiles(point, dropped)}
+          imageAt={() =>
+            activeTabRef.current
+              ? (pointerRef.current.get(activeTabRef.current)?.image ?? null)
+              : null
+          }
+          dragOutSession={live ? session.id : null}
         />
+        {/* What has focus, for a screen reader (always) and as a caption (when asked for). */}
+        <div className="sr-only" aria-live="polite" aria-atomic="true">
+          {focusInfo
+            ? `${focusInfo.name || "unnamed"}, ${focusInfo.role}${focusInfo.value ? `, ${focusInfo.value}` : ""}`
+            : ""}
+        </div>
+        {captionOn && focusInfo && (
+          <div
+            className="pointer-events-none absolute right-3 bottom-3 left-3 rounded-xl bg-ink/85 px-3 py-2 text-footnote text-canvas"
+            data-testid="focus-caption"
+          >
+            <span className="font-semibold">{focusInfo.name || "Unnamed"}</span>
+            <span className="opacity-80"> · {focusInfo.role}</span>
+            {focusInfo.value !== null && focusInfo.value !== "" && (
+              <span className="opacity-80"> · {focusInfo.value}</span>
+            )}
+          </div>
+        )}
         {activeTab?.error && live && (
           <NavigationErrorPage
             tab={activeTab}
@@ -1480,6 +1699,8 @@ export function BrowserWorkspace({
       />
 
       <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      {/* The page's right-click menu needs a host; the desktop has one of its own. */}
+      {!desktop && <ContextMenuHost />}
       <ConfirmCopyDialog
         open={pendingCopy !== null}
         chars={pendingCopy?.length ?? 0}

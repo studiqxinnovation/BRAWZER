@@ -12,7 +12,7 @@ import { SessionAudio } from "./audio.ts";
 import { BrowserEngine } from "./engine.ts";
 import { type LaunchedFirefox, launchFirefox } from "./firefox.ts";
 import { FirefoxEngine } from "./firefox-engine.ts";
-import { fetchFavicon } from "./favicon.ts";
+import { fetchFavicon, fetchImage } from "./favicon.ts";
 import { log } from "./log.ts";
 import { writePolicies } from "./policies.ts";
 import { packProfile, restoreProfile } from "./profile-data.ts";
@@ -191,6 +191,7 @@ const lifecycle: AgentLifecycle = {
       refusalFor: (url: string) => refusals.codeFor(url),
       readerScript: readerScript(readabilitySource),
       fetchIcon: (url: string) => fetchFavicon(url, config.proxyPort),
+      fetchImage: (url: string, maxBytes: number) => fetchImage(url, config.proxyPort, maxBytes),
       extensions: installableExtensions(config.engine),
       browserPages: config.browserAccount ? BROWSER_PAGES[config.engine] : null,
     };

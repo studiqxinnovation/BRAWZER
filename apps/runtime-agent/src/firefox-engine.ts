@@ -19,9 +19,16 @@ import {
 import type { BidiConnection } from "./bidi.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
-import { IconReporter, PointerReporter } from "./page-reporters.ts";
+import { FocusReporter, IconReporter, PointerReporter } from "./page-reporters.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
-import { FIND_STOP_SCRIPT, findScript, selectionScript, zoomScript } from "./page-tools.ts";
+import {
+  fetchImageScript,
+  FIND_STOP_SCRIPT,
+  findScript,
+  selectionScript,
+  zoomScript,
+} from "./page-tools.ts";
+import { imageFilename } from "./engine.ts";
 
 /** Firefox's own error page, `about:neterror?e=<code>&u=<address>`, as the failure it stands for. */
 function errorPageOf(url: string): NavigationError | null {
@@ -71,6 +78,19 @@ interface Chooser {
 }
 
 const MAX_TABS = 16;
+/** Keys after which what has focus may have changed. */
+const FOCUS_KEYS = new Set([
+  "Tab",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Enter",
+  " ",
+  "Escape",
+  "Home",
+  "End",
+]);
 /** Frames of a moving page: at scale 1, small enough to keep up. */
 const JPEG_QUALITY = 0.6;
 /** The one frame of a page that has stopped: at the viewer's pixel ratio, for reading. */
@@ -185,6 +205,11 @@ export class FirefoxEngine implements Engine {
     (tab, expression) => this.evaluate(tab, expression),
     (url) => this.options.fetchIcon(url),
     (message) => this.viewer?.send(message),
+  );
+  private readonly focus = new FocusReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (message) => this.viewer?.send(message),
+    (tab) => this.viewer !== null && tab.id === this.activeId && this.tabs.has(tab.id),
   );
   private readonly loadedExtensions: string[] = [];
   private readonly transfers = new Map<string, Transfer>();
@@ -455,6 +480,7 @@ export class FirefoxEngine implements Engine {
       void this.streamFrames();
       void this.handOver();
       this.pointer.reset();
+      this.focus.reset();
       this.icons.resend(this.tabs.values());
     });
     this.titleTimer ??= setInterval(() => {
@@ -533,6 +559,7 @@ export class FirefoxEngine implements Engine {
         if (message.kind === "move" || message.kind === "up") {
           this.pointer.report(tab, message.x, message.y);
         }
+        if (message.kind === "up") this.focus.report(tab);
         const actions: object[] = [{ type: "pointerMove", x: message.x, y: message.y }];
         const button = { left: 0, middle: 1, right: 2, back: 3, forward: 4, none: 0 }[
           message.button
@@ -567,6 +594,7 @@ export class FirefoxEngine implements Engine {
         return;
       }
       case "key": {
+        if (message.kind === "up" && FOCUS_KEYS.has(message.key)) this.focus.report(tab);
         const value = keyValue(message.key, message.text);
         if (!value) return;
         await this.bidi.send("input.performActions", {
@@ -612,6 +640,14 @@ export class FirefoxEngine implements Engine {
         return;
       case "file-chooser":
         this.expectChosenFiles(message.chooserId, message.files);
+        return;
+      case "drop":
+        // Firefox's remote protocol has no way to drop files on a page: the bytes that
+        // follow find no writer and are dropped; the viewer says to use the page's own button.
+        this.viewer?.send({ type: "refused", tabId: tab.id, action: "drop" });
+        return;
+      case "save-image":
+        await this.saveImage(tab, message.url);
         return;
       case "find": {
         // A page still settling (a navigation committing, no body yet) can fail the
@@ -1192,6 +1228,63 @@ export class FirefoxEngine implements Engine {
     } finally {
       this.handingOver = false;
     }
+  }
+
+  /** As the Chromium engine's: the page fetches its image where it may, else the proxy does. */
+  private async saveImage(tab: Tab, url: string): Promise<void> {
+    const id = `image-${randomUUID()}`;
+    const transfer: Transfer = {
+      id,
+      tabId: tab.id,
+      kind: "download",
+      filename: imageFilename(url),
+      path: path.join(this.options.downloadDir, id),
+      bytes: 0,
+      finished: false,
+    };
+    this.transfers.set(id, transfer);
+    this.report(transfer, "started");
+    try {
+      let image: { type: string; bytes: Buffer } | null = null;
+      const inPage = await this.evaluateAwaited(
+        tab,
+        fetchImageScript(url, this.options.maxFileBytes),
+      ).catch(() => null);
+      if (typeof inPage === "string") {
+        const parsed = JSON.parse(inPage) as { type?: unknown; data?: unknown };
+        if (typeof parsed.type === "string" && typeof parsed.data === "string") {
+          image = { type: parsed.type, bytes: Buffer.from(parsed.data, "base64") };
+        }
+      }
+      image ??= await this.options.fetchImage(url, this.options.maxFileBytes);
+      if (!image) throw new Error("not an image");
+      transfer.filename = imageFilename(url, image.type);
+      transfer.bytes = image.bytes.length;
+      const file = await open(transfer.path, "w", 0o600);
+      try {
+        await file.write(image.bytes);
+      } finally {
+        await file.close();
+      }
+      this.handoverQueue.push(id);
+      void this.handOver();
+    } catch (error) {
+      transfer.finished = true;
+      this.transfers.delete(id);
+      await rm(transfer.path, { force: true }).catch(() => undefined);
+      log("warn", "save image failed", { message: error instanceof Error ? error.message : "" });
+      this.report(transfer, "failed", "The image couldn’t be read.");
+    }
+  }
+
+  /** A script whose result is a promise, awaited in the page. */
+  private async evaluateAwaited(tab: Tab, expression: string): Promise<unknown> {
+    const result = await this.bidi.send<{ result?: { value?: unknown } }>("script.evaluate", {
+      expression,
+      target: { context: tab.id },
+      awaitPromise: true,
+    });
+    return result.result?.value;
   }
 
   private async printToDrive(tab: Tab): Promise<void> {

@@ -9,6 +9,7 @@ import { AppIconArt } from "@/components/browser/engine-logo";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
 import { chooseDesktopStyle } from "@/lib/desktop-prefs";
 import { lockNow } from "@/lib/lock";
+import { Face } from "./face";
 import { type AppId, AppIcon, apps, launchpadOrder, Tile } from "./apps/registry";
 import { WebAppIcon } from "./apps/web-app-icon";
 import type { WebApp } from "./apps/web-apps";
@@ -246,9 +247,7 @@ export function StartMenu({
         </ul>
         <div className="dt-start-foot">
           <span className="dt-start-me">
-            <span className="dt-avatar" aria-hidden="true">
-              {email.slice(0, 1).toUpperCase()}
-            </span>
+            <Face email={email} className="dt-avatar" size={32} />
             <span className="truncate">{email}</span>
           </span>
           <span className="flex gap-1.5">
