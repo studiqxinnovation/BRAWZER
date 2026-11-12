@@ -56,7 +56,8 @@ test.describe("two-factor authentication", () => {
     await page.goto("/app/account");
     // The page works once its scripts run; the session keeper marks that.
     await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
-    await expect(page.getByText("9 recovery codes left")).toBeVisible();
+    // Scoped to the page: while it streams in, a copy waits in a hidden segment.
+    await expect(page.locator("#main-content").getByText("9 recovery codes left")).toBeVisible();
     await page.getByRole("button", { name: "Turn off" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Turn off" }).click();
     await expect(page.getByText("Two-factor authentication is off")).toBeVisible();

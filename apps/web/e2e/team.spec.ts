@@ -59,8 +59,10 @@ test.describe("team", () => {
     await expect(memberPage.getByRole("button", { name: "Leave team" })).toBeVisible();
     // Their plan comes from the team.
     await memberPage.goto("/app/account");
-    await expect(memberPage.getByText("From your team")).toBeVisible();
-    await expect(memberPage.getByText(`${ownerEmail} pays for it`)).toBeVisible();
+    // Scoped to the card: while the page streams in, a copy waits in a hidden template.
+    const plan = memberPage.getByRole("region", { name: "Plan" });
+    await expect(plan.getByText("From your team")).toBeVisible();
+    await expect(plan.getByText(`${ownerEmail} pays for it`)).toBeVisible();
 
     // The owner adds a team proxy; the member sees it and can't change it.
     await page.goto("/app/proxy");
@@ -76,13 +78,17 @@ test.describe("team", () => {
     const shared = memberPage.getByRole("list", { name: "Team proxies" });
     await expect(shared).toContainText("Team exit");
     await expect(shared.getByRole("button", { name: "Edit Team exit" })).toHaveCount(0);
-    await expect(memberPage.getByText("Shared by your team")).toBeVisible();
+    await expect(
+      memberPage.locator("#main-content").getByText("Shared by your team"),
+    ).toBeVisible();
     expect(await wcagViolations(memberPage)).toEqual([]);
 
     // The team's Drive: the owner adds a file, the member opens it and can't delete it.
     await page.goto("/app/drive");
     await page.getByRole("link", { name: `${teamName}’s Drive` }).click();
-    await expect(page.getByText("Nothing in the team’s Drive yet")).toBeVisible();
+    await expect(
+      page.locator("#main-content").getByText("Nothing in the team’s Drive yet"),
+    ).toBeVisible();
     await page.getByTestId("drive-file-input").setInputFiles({
       name: "team-plan.txt",
       mimeType: "text/plain",
@@ -100,7 +106,9 @@ test.describe("team", () => {
     await memberPage.keyboard.press("Escape");
     // Their own Drive doesn't hold it.
     await memberPage.getByRole("link", { name: "My Drive" }).click();
-    await expect(memberPage.getByText("Nothing in Drive yet")).toBeVisible();
+    await expect(
+      memberPage.locator("#main-content").getByText("Nothing in Drive yet"),
+    ).toBeVisible();
 
     // The owner sees them, makes them an admin, then removes them.
     await page.goto("/app/team");

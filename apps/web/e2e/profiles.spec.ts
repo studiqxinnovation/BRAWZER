@@ -34,8 +34,10 @@ test.describe("profiles", () => {
     await page.goto("/app/profiles");
     await interactive(page);
     await expect.poll(() => names(page)).toEqual(["Personal"]);
-    await expect(page.getByText("1 of 10 profiles")).toBeVisible();
-    await expect(page.getByText("the last one can’t be deleted")).toBeVisible();
+    await expect(page.locator("#main-content").getByText("1 of 10 profiles")).toBeVisible();
+    await expect(
+      page.locator("#main-content").getByText("the last one can’t be deleted"),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "Delete Personal" })).toHaveCount(0);
 
     // Create, in the "New profile" card, with a name that's already taken first.
@@ -67,7 +69,9 @@ test.describe("profiles", () => {
     await keep.click();
     await edit.getByRole("button", { name: "Save" }).click();
     await expect.poll(() => names(page)).toEqual(["Office", "Personal"]);
-    await expect(page.getByText("Starts every session clean")).toBeVisible();
+    await expect(
+      page.locator("#main-content").getByText("Starts every session clean"),
+    ).toBeVisible();
 
     // A profile's own password manager and browser account: off until asked for,
     // and only for a profile that keeps its data.
@@ -78,7 +82,9 @@ test.describe("profiles", () => {
     await account.click();
     await personal.getByRole("button", { name: "Save" }).click();
     await expect(personal).toBeHidden();
-    await expect(page.getByText("Browser account and saved passwords on")).toBeVisible();
+    await expect(
+      page.locator("#main-content").getByText("Browser account and saved passwords on"),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Edit Office" }).click();
     const office = page.getByRole("dialog", { name: "Edit “Office”" });
     await expect(
