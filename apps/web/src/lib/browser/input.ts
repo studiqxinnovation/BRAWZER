@@ -35,12 +35,24 @@ export function textOf(event: {
   return printable ? key : undefined;
 }
 
-/** Fits the available area into what the engine can stream (device pixel ratio 1, ADR 0006). */
-export function fitViewport(width: number, height: number): Viewport {
-  const { minWidth, minHeight, maxWidth, maxHeight } = BROWSER_LIMITS.viewport;
+/**
+ * Fits the available area into what the engine can stream (ADR 0006), and
+ * says how sharp a still page may be: the screen's own pixel ratio, up to a
+ * limit and within a budget of pixels, so a large page on a dense screen asks
+ * for less than its full ratio rather than a frame too large to send.
+ */
+export function fitViewport(width: number, height: number, pixelRatio = 1): Viewport {
+  const { minWidth, minHeight, maxWidth, maxHeight, maxScale, maxPixels } = BROWSER_LIMITS.viewport;
   const clamp = (value: number, min: number, max: number) =>
     Math.min(max, Math.max(min, Math.floor(value)));
-  return { width: clamp(width, minWidth, maxWidth), height: clamp(height, minHeight, maxHeight) };
+  const fitted = {
+    width: clamp(width, minWidth, maxWidth),
+    height: clamp(height, minHeight, maxHeight),
+  };
+  const budget = Math.sqrt(maxPixels / (fitted.width * fitted.height));
+  const wanted = Math.min(maxScale, budget, Number.isFinite(pixelRatio) ? pixelRatio : 1);
+  const scale = Math.max(1, Math.floor(wanted * 100) / 100);
+  return { ...fitted, scale };
 }
 
 /**

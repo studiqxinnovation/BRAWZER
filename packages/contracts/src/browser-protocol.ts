@@ -14,9 +14,14 @@ const { viewport } = BROWSER_LIMITS;
 /** The most text one deliberate copy or paste carries between the page and the local computer. */
 export const CLIPBOARD_MAX_CHARS = 65_536;
 
+/** How many device pixels one CSS pixel gets in a sharp frame; 1 means none asked for. */
+const scaleSchema = z.number().min(1).max(viewport.maxScale).default(1);
+
 export const viewportSchema = z.object({
   width: z.number().int().min(viewport.minWidth).max(viewport.maxWidth),
   height: z.number().int().min(viewport.minHeight).max(viewport.maxHeight),
+  /** The viewer's pixel ratio, capped: what a still page is rendered at. */
+  scale: scaleSchema,
 });
 
 const tabIdSchema = z.string().min(1).max(64);
@@ -336,8 +341,19 @@ export const STREAM_CLOSE_CODES = {
 export const frameHeaderSchema = z.object({
   tabId: tabIdSchema,
   frameId: z.number().int().min(0),
-  width: z.number().int().min(1).max(viewport.maxWidth),
-  height: z.number().int().min(1).max(viewport.maxHeight),
+  /** The frame's size in pixels; its size on screen is this divided by `scale`. */
+  width: z
+    .number()
+    .int()
+    .min(1)
+    .max(viewport.maxWidth * viewport.maxScale),
+  height: z
+    .number()
+    .int()
+    .min(1)
+    .max(viewport.maxHeight * viewport.maxScale),
+  /** Device pixels per CSS pixel: 1 for a frame of a moving page, more for a sharp one. */
+  scale: scaleSchema,
 });
 
 export type FrameHeader = z.infer<typeof frameHeaderSchema>;

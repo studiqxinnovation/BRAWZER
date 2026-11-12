@@ -104,9 +104,11 @@ const RESIZE_DEBOUNCE_MS = 150;
 const TAP_SLOP_PX = 10;
 
 /**
- * The streamed page: a canvas showing the engine's frames at device pixel
- * ratio 1, with the pointer and keyboard forwarded to the page. The canvas
- * is only ever pixels; nothing from the page runs here.
+ * The streamed page: a canvas showing the engine's frames, with the pointer
+ * and keyboard forwarded to the page. A moving page's frames are at scale 1;
+ * a still page's one sharp frame is at this screen's own pixel ratio, drawn
+ * pixel for pixel. The canvas is only ever pixels; nothing from the page runs
+ * here.
  */
 export function BrowserViewport({
   ref,
@@ -121,7 +123,9 @@ export function BrowserViewport({
   const areaRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keyboardRef = useRef<HTMLTextAreaElement>(null);
+  /** The canvas's size on screen, in CSS pixels: the page's size, whatever a frame's scale. */
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const sizeRef = useRef<{ width: number; height: number } | null>(null);
   const [frames, setFrames] = useState(0);
   const pending = useRef<{ header: FrameHeader; image: Blob } | null>(null);
   const drawing = useRef(false);
@@ -144,7 +148,14 @@ export function BrowserViewport({
         if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
           canvas.width = bitmap.width;
           canvas.height = bitmap.height;
-          setSize({ width: bitmap.width, height: bitmap.height });
+        }
+        const shown = {
+          width: Math.round(bitmap.width / next.header.scale),
+          height: Math.round(bitmap.height / next.header.scale),
+        };
+        if (sizeRef.current?.width !== shown.width || sizeRef.current.height !== shown.height) {
+          sizeRef.current = shown;
+          setSize(shown);
         }
         canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
         bitmap.close();
@@ -199,17 +210,28 @@ export function BrowserViewport({
     let timer: ReturnType<typeof setTimeout> | undefined;
     const report = () => {
       const rect = area.getBoundingClientRect();
-      onViewport(fitViewport(rect.width, rect.height));
+      onViewport(fitViewport(rect.width, rect.height, window.devicePixelRatio));
     };
-    report();
-    const observer = new ResizeObserver(() => {
+    const later = () => {
       clearTimeout(timer);
       timer = setTimeout(report, RESIZE_DEBOUNCE_MS);
-    });
+    };
+    report();
+    const observer = new ResizeObserver(later);
     observer.observe(area);
+    // The pixel ratio changes when the window moves to another screen or the page zooms.
+    let density = matchMedia(`(resolution: ${String(window.devicePixelRatio)}dppx)`);
+    const onDensity = () => {
+      later();
+      density.removeEventListener("change", onDensity);
+      density = matchMedia(`(resolution: ${String(window.devicePixelRatio)}dppx)`);
+      density.addEventListener("change", onDensity);
+    };
+    density.addEventListener("change", onDensity);
     return () => {
       clearTimeout(timer);
       observer.disconnect();
+      density.removeEventListener("change", onDensity);
     };
   }, [onViewport]);
 
@@ -287,15 +309,17 @@ export function BrowserViewport({
     };
   }, [send, tabId, onShortcut]);
 
+  /** Where on the page, in its CSS pixels, whatever scale the frame on the canvas has. */
   function pointOf(event: { clientX: number; clientY: number }): { x: number; y: number } {
     const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
+    const page = sizeRef.current;
+    if (!canvas || !page) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * canvas.width;
-    const y = ((event.clientY - rect.top) / Math.max(1, rect.height)) * canvas.height;
+    const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * page.width;
+    const y = ((event.clientY - rect.top) / Math.max(1, rect.height)) * page.height;
     return {
-      x: Math.min(canvas.width, Math.max(0, Math.round(x))),
-      y: Math.min(canvas.height, Math.max(0, Math.round(y))),
+      x: Math.min(page.width, Math.max(0, Math.round(x))),
+      y: Math.min(page.height, Math.max(0, Math.round(y))),
     };
   }
 

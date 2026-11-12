@@ -586,3 +586,76 @@ test.describe("browser", () => {
     );
   });
 });
+
+test.describe("browser on a dense screen", () => {
+  test.use({ deviceScaleFactor: 2 });
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:desktop", "off");
+    });
+  });
+
+  /** Device pixels on the canvas per CSS pixel it takes on screen. */
+  const density = (page: Page) =>
+    page
+      .getByTestId("browser-viewport")
+      .locator("canvas")
+      .evaluate((canvas: HTMLCanvasElement) => canvas.width / canvas.getBoundingClientRect().width);
+
+  test("a still page is shown sharp at the screen's pixel ratio, on both engines", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The streamed page is driven with a mouse; phones get the launcher test.");
+    test.setTimeout(240_000);
+    await signedIn(page, baseURL, "browser-sharp");
+    const viewport = page.getByTestId("browser-viewport");
+    const address = page.getByRole("textbox", { name: "Address or search" });
+    const streaming = async () => {
+      await expect
+        .poll(() => viewport.getAttribute("data-frames"), { timeout: 90_000 })
+        .not.toBe("0");
+    };
+    const sharp = async () => {
+      await expect.poll(() => density(page), { timeout: 20_000 }).toBeCloseTo(2, 1);
+    };
+
+    await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
+    await streaming();
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+    // Once the page stops, one frame at twice the density; a click still lands
+    // where it is aimed, in the page's own pixels.
+    await sharp();
+    await clickPage(page, 100, 60);
+    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+    await sharp();
+    // Moving again (scrolling an article) streams light frames, and it is sharp again once still.
+    await address.fill("http://testsite.invalid/article");
+    await address.press("Enter");
+    await expect(tab(page, "Aurora forecast")).toBeVisible({ timeout: 30_000 });
+    await sharp();
+    const before = Number(await viewport.getAttribute("data-frames"));
+    await viewport.locator("canvas").hover({ position: { x: 400, y: 300 } });
+    await page.mouse.wheel(0, 600);
+    await expect
+      .poll(async () => Number(await viewport.getAttribute("data-frames")))
+      .toBeGreaterThan(before);
+    await sharp();
+
+    // Firefox is captured the same way.
+    await page.getByRole("button", { name: /^Bee Browser · .*Switch browser$/ }).click();
+    await page.getByRole("menuitem", { name: "Open another browser" }).click();
+    await page.getByRole("button", { name: "Open Firefox", exact: true }).click();
+    await streaming();
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+    await sharp();
+    await clickPage(page, 100, 60);
+    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+    await sharp();
+  });
+});

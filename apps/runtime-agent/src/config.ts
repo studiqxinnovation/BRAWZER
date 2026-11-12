@@ -33,7 +33,7 @@ export interface AgentConfig {
   scratchDir: string;
   /** The largest file the engine may download or print; Drive's per-file limit, set by the orchestrator. */
   maxFileBytes: number;
-  initialViewport: { width: number; height: number };
+  initialViewport: { width: number; height: number; scale: number };
 }
 
 export function readConfig(env: NodeJS.ProcessEnv): AgentConfig {
@@ -66,6 +66,7 @@ export function readConfig(env: NodeJS.ProcessEnv): AgentConfig {
     initialViewport: {
       width: Math.min(1280, BROWSER_LIMITS.viewport.maxWidth),
       height: Math.min(800, BROWSER_LIMITS.viewport.maxHeight),
+      scale: 1,
     },
   };
 }

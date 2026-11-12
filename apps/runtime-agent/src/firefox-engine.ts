@@ -67,7 +67,16 @@ interface Chooser {
 }
 
 const MAX_TABS = 16;
+/** Frames of a moving page: at scale 1, small enough to keep up. */
 const JPEG_QUALITY = 0.6;
+/** The one frame of a page that has stopped: at the viewer's pixel ratio, for reading. */
+const SHARP_QUALITY = 0.85;
+/** No change for this long means the page has stopped moving. */
+const STILL_MS = 300;
+/** A sharp frame that takes longer than this to be drawn says the connection can't afford them. */
+const SHARP_SLOW_MS = 1_500;
+/** How long sharp frames pause after a slow one. */
+const SHARP_BACKOFF_MS = 30_000;
 /** Between screenshots when the page hasn't changed; grows while it stays still. */
 const IDLE_MIN_MS = 80;
 const IDLE_MAX_MS = 400;
@@ -155,6 +164,12 @@ export class FirefoxEngine implements Engine {
   private pendingAck: { frameId: number; resolve: () => void } | null = null;
   private streaming = false;
   private lastFrameHash = "";
+  /** Whether the page showing now has had its sharp frame. */
+  private sharpDone = false;
+  /** When the page was last seen unchanged after a change; 0 while it moves. */
+  private stillSince = 0;
+  /** Until when sharp frames are skipped because the last one was slow to arrive. */
+  private sharpBackoffUntil = 0;
   private snapshotQueued = false;
   private titleTimer: NodeJS.Timeout | null = null;
   private readonly loadedExtensions: string[] = [];
@@ -718,37 +733,115 @@ export class FirefoxEngine implements Engine {
         }
         const hash = createHash("sha1").update(shot.data).digest("hex");
         if (hash === this.lastFrameHash) {
+          if (this.stillSince === 0) this.stillSince = Date.now();
+          // The page has stopped: once, a frame at the viewer's own pixel ratio.
+          if (
+            !this.sharpDone &&
+            this.viewport.scale > 1 &&
+            Date.now() >= this.sharpBackoffUntil &&
+            Date.now() - this.stillSince >= STILL_MS
+          ) {
+            this.sharpDone = true;
+            await this.sendSharp(tab, viewer);
+            continue;
+          }
           await new Promise((resolve) => setTimeout(resolve, idle));
           idle = Math.min(IDLE_MAX_MS, Math.round(idle * 1.5));
           continue;
         }
         idle = IDLE_MIN_MS;
         this.lastFrameHash = hash;
+        this.sharpDone = false;
+        this.stillSince = 0;
         const frameId = ++this.frameCounter;
         const bytes = encodeFrame(
-          { tabId: tab.id, frameId, width: this.viewport.width, height: this.viewport.height },
+          {
+            tabId: tab.id,
+            frameId,
+            width: this.viewport.width,
+            height: this.viewport.height,
+            scale: 1,
+          },
           Buffer.from(shot.data, "base64"),
         );
         if (!viewer.sendFrame(bytes)) {
           await new Promise((resolve) => setTimeout(resolve, IDLE_MIN_MS));
           continue;
         }
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(() => {
-            if (this.pendingAck?.frameId === frameId) this.pendingAck = null;
-            resolve();
-          }, ACK_TIMEOUT_MS);
-          this.pendingAck = {
-            frameId,
-            resolve: () => {
-              clearTimeout(timer);
-              resolve();
-            },
-          };
-        });
+        await this.drawn(frameId);
       }
     } finally {
       this.streaming = false;
+    }
+  }
+
+  /** Waits for the viewer to report a frame drawn, or gives up after a while; how long it took. */
+  private async drawn(frameId: number): Promise<number> {
+    const sentAt = Date.now();
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.pendingAck?.frameId === frameId) this.pendingAck = null;
+        resolve();
+      }, ACK_TIMEOUT_MS);
+      this.pendingAck = {
+        frameId,
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+      };
+    });
+    return Date.now() - sentAt;
+  }
+
+  /**
+   * One frame of the still page at the viewer's pixel ratio: the page is
+   * painted at that ratio for the capture and put back, so the frames that
+   * follow when it moves again stay small. Firefox can't scale a capture on
+   * the way out, which is why the ratio is switched rather than kept.
+   */
+  private async sendSharp(tab: Tab, viewer: Viewer): Promise<void> {
+    const { width, height, scale } = this.viewport;
+    let shot: { data: string } | null = null;
+    try {
+      await this.bidi.send("browsingContext.setViewport", {
+        context: tab.id,
+        viewport: { width, height },
+        devicePixelRatio: scale,
+      });
+      shot = await this.bidi.send<{ data: string }>("browsingContext.captureScreenshot", {
+        context: tab.id,
+        origin: "viewport",
+        format: { type: "image/jpeg", quality: SHARP_QUALITY },
+      });
+    } catch {
+      shot = null;
+    } finally {
+      await this.bidi
+        .send("browsingContext.setViewport", {
+          context: tab.id,
+          viewport: { width, height },
+          devicePixelRatio: 1,
+        })
+        .catch(() => undefined);
+    }
+    if (!shot || this.viewer !== viewer || tab.id !== this.activeId) return;
+    const frameId = ++this.frameCounter;
+    const bytes = encodeFrame(
+      {
+        tabId: tab.id,
+        frameId,
+        width: Math.round(width * scale),
+        height: Math.round(height * scale),
+        scale,
+      },
+      Buffer.from(shot.data, "base64"),
+    );
+    if (!viewer.sendFrame(bytes)) return;
+    const took = await this.drawn(frameId);
+    if (took > SHARP_SLOW_MS) {
+      this.sharpBackoffUntil = Date.now() + SHARP_BACKOFF_MS;
+      log("info", "sharp frame was slow to arrive; pausing them", { ms: took });
     }
   }
 
@@ -782,6 +875,7 @@ export class FirefoxEngine implements Engine {
       .send("browsingContext.setViewport", {
         context: id,
         viewport: { width: this.viewport.width, height: this.viewport.height },
+        devicePixelRatio: 1,
       })
       .catch(() => undefined);
     // Popups come to the front, like new tabs.
@@ -973,16 +1067,20 @@ export class FirefoxEngine implements Engine {
   }
 
   private async setViewport(viewport: Viewport): Promise<void> {
-    const changed =
+    const resized =
       viewport.width !== this.viewport.width || viewport.height !== this.viewport.height;
+    const changed = resized || viewport.scale !== this.viewport.scale;
     this.viewport = viewport;
     if (!changed) return;
+    this.sharpDone = false;
+    if (!resized) return;
     await Promise.all(
       [...this.tabs.keys()].map((id) =>
         this.bidi
           .send("browsingContext.setViewport", {
             context: id,
             viewport: { width: viewport.width, height: viewport.height },
+            devicePixelRatio: 1,
           })
           .catch(() => undefined),
       ),

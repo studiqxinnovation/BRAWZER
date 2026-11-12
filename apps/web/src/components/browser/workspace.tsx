@@ -306,7 +306,7 @@ export function BrowserWorkspace({
   const viewportRef = useRef<ViewportHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
-  const viewport = useRef<Viewport>({ width: 1280, height: 800 });
+  const viewport = useRef<Viewport>({ width: 1280, height: 800, scale: 1 });
   const attempts = useRef(0);
   /** Set while this page ends the session itself: the server's own notice then says less. */
   const endingRef = useRef(false);

@@ -42,8 +42,20 @@ export const BROWSER_LIMITS = {
   maxHours: 4,
   /** How long starting a container may take before it counts as failed. */
   startTimeoutSeconds: 45,
-  /** Streamed page size, at device pixel ratio 1 (ADR 0006). */
-  viewport: { minWidth: 320, minHeight: 240, maxWidth: 1920, maxHeight: 1080 },
+  /**
+   * Streamed page size in CSS pixels, and how sharp a still page may be
+   * (ADR 0006): frames of a moving page are at scale 1; once it stops, one
+   * frame at the viewer's own pixel ratio, up to `maxScale`, and never more
+   * than `maxPixels` pixels.
+   */
+  viewport: {
+    minWidth: 320,
+    minHeight: 240,
+    maxWidth: 1920,
+    maxHeight: 1080,
+    maxScale: 2,
+    maxPixels: 6_000_000,
+  },
 } as const;
 
 /** How long a stream ticket can be used for, in seconds. */

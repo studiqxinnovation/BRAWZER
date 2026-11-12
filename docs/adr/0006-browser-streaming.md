@@ -51,7 +51,7 @@ tab, no network between the browser and the reader of the frames. Scripts:
 ## Settings chosen for step 3a
 
 - **JPEG quality 60** by default: text stays crisp while frames stay near the quality-50 size.
-- **Frames at device pixel ratio 1**, up to 1920×1080. High-density screens are scaled up locally; streaming at 2× would roughly quadruple the bytes.
+- **Frames at device pixel ratio 1**, up to 1920×1080. High-density screens are scaled up locally; streaming at 2× would roughly quadruple the bytes. (Revised below: a still page gets one frame at the screen's own ratio.)
 - **Acknowledgements travel end to end.** The agent acknowledges a frame to Chromium only when the viewer reports it has drawn that frame, so each viewer's connection sets its own frame rate.
 - **Frames replace, never queue.** If a newer frame arrives before an older one is sent, the older one is dropped.
 
@@ -78,3 +78,31 @@ sessions, at about half a core and 275 MB each, sending about 17 Mbit/s per
 session while scrolling a busy page; Firefox kept about 12 frames a second.
 Bandwidth, not CPU, is what step 3a costs most: adapting JPEG quality to the
 viewer's link is the first lever, before WebRTC's encoders.
+
+## Addendum (2026-11-12): sharp when still
+
+Streaming every frame at ratio 1 made every page on a dense screen (every
+MacBook, most phones) soft: the browser stretched each frame twice over.
+Streaming everything at 2× would have quadrupled the bytes and made scrolling
+lag. The revision keeps the moving frames as they were and adds one sharp
+frame once the page stops:
+
+- The viewer sends its pixel ratio with `hello` and `resize` (`viewport.scale`,
+  capped at 2 and by a budget of 6 million pixels, so 1920×1080 asks for 1.7).
+- Chromium lays the page out at that ratio (`deviceScaleFactor`), and the
+  screencast scales its frames down to the page's size on the way out, so
+  frames of a moving page cost what they did. When no frame has arrived for
+  300 ms, the agent captures one screenshot as painted (JPEG quality 85) and
+  sends it with its scale in the header; the viewer draws it pixel for pixel.
+- Firefox can't scale a capture on the way out, so it is captured at ratio 1
+  while the page moves and, once the page has been unchanged for 300 ms,
+  switched to the viewer's ratio for one capture and switched back.
+- A sharp frame goes only when the viewer has drawn every moving frame, and
+  if one takes more than 1.5 s to be drawn the agent pauses sharp frames for
+  30 s: a slow connection gets the stream it had before, never a backlog.
+- The pointer is mapped in the page's CSS pixels whatever the frame's scale.
+
+Measured on the long test page, 1280×800 at ratio 2 against ratio 1: Chromium
+scrolls at 19 frames a second against 21, Firefox at 8 against 9, with moving
+frames the same size (about 39 KB and 48 KB); the sharp frame is 170–190 KB and
+arrives 0.4–0.9 s after the page stops; a still page sends nothing further.

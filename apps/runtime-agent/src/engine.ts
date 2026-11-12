@@ -89,7 +89,18 @@ interface TargetInfo {
 }
 
 const MAX_TABS = 16;
+/** Frames of a moving page: at scale 1, small enough to keep up. */
 const JPEG_QUALITY = 60;
+/** The one frame of a page that has stopped: at the viewer's pixel ratio, for reading. */
+const SHARP_QUALITY = 85;
+/** No frame for this long means the page has stopped moving. */
+const STILL_MS = 300;
+/** A sharp frame that takes longer than this to be drawn says the connection can't afford them. */
+const SHARP_SLOW_MS = 1_500;
+/** How long sharp frames pause after a slow one. */
+const SHARP_BACKOFF_MS = 30_000;
+/** In a tab's in-flight map: a sharp frame, which the engine has nothing to acknowledge for. */
+const SHARP_FRAME = "";
 /**
  * How often the active tab's title is re-read while someone is watching. The
  * engine reports titles on navigation but not when a page's script changes
@@ -234,6 +245,14 @@ export class BrowserEngine implements Engine {
   private handingOver = false;
   private readonly choosers = new Map<string, Chooser>();
   private titleTimer: NodeJS.Timeout | null = null;
+  /** Counts down from the last frame of a moving page to its sharp frame. */
+  private stillTimer: NodeJS.Timeout | null = null;
+  /** The sharp frame on its way to the viewer, until it reports it drawn. */
+  private sharpInFlight: { tabId: string; frameId: number; sentAt: number } | null = null;
+  /** Whether the page showing now has had its sharp frame. */
+  private sharpDone = false;
+  /** Until when sharp frames are skipped because the last one was slow to arrive. */
+  private sharpBackoffUntil = 0;
   private userAgent = "";
   private userAgentMetadata: UserAgentMetadata | null = null;
   private readonly loadedExtensions: string[] = [];
@@ -498,6 +517,7 @@ export class BrowserEngine implements Engine {
     this.viewer = null;
     if (this.titleTimer) clearInterval(this.titleTimer);
     this.titleTimer = null;
+    this.clearStill();
     void this.syncScreencasts();
   }
 
@@ -609,7 +629,10 @@ export class BrowserEngine implements Engine {
         const screencastSession = tab.inFlight.get(message.frameId);
         if (screencastSession === undefined) return;
         tab.inFlight.delete(message.frameId);
-        await this.ack(tab, screencastSession);
+        if (screencastSession === SHARP_FRAME) this.sharpDrawn(message.frameId);
+        else await this.ack(tab, screencastSession);
+        // The page may have stopped while the viewer was catching up.
+        if (tab.inFlight.size === 0) this.armStill();
         return;
       }
       case "dialog":
@@ -667,6 +690,7 @@ export class BrowserEngine implements Engine {
     this.closing = true;
     if (this.titleTimer) clearInterval(this.titleTimer);
     this.titleTimer = null;
+    this.clearStill();
     try {
       await this.cdp.send("Browser.close");
     } catch {
@@ -958,7 +982,12 @@ export class BrowserEngine implements Engine {
         ),
         this.cdp.send(
           "Emulation.setDeviceMetricsOverride",
-          { ...this.viewport, deviceScaleFactor: 1, mobile: false },
+          {
+            width: this.viewport.width,
+            height: this.viewport.height,
+            deviceScaleFactor: this.viewport.scale,
+            mobile: false,
+          },
           sessionId,
         ),
       ]);
@@ -1203,16 +1232,26 @@ export class BrowserEngine implements Engine {
   // ── Viewport and frames ───────────────────────────────────────────────
 
   private async setViewport(viewport: Viewport): Promise<void> {
-    const changed =
+    const resized =
       viewport.width !== this.viewport.width || viewport.height !== this.viewport.height;
+    const changed = resized || viewport.scale !== this.viewport.scale;
     this.viewport = viewport;
     if (!changed) return;
+    this.sharpDone = false;
     await Promise.all(
       [...this.tabs.values()].map((tab) =>
         this.cdp
           .send(
             "Emulation.setDeviceMetricsOverride",
-            { ...viewport, deviceScaleFactor: 1, mobile: false },
+            {
+              width: viewport.width,
+              height: viewport.height,
+              // The page is laid out and painted at the viewer's own pixel
+              // ratio: its moving frames are scaled down to size on the way
+              // out, its sharp frame is captured as painted.
+              deviceScaleFactor: viewport.scale,
+              mobile: false,
+            },
             tab.sessionId,
           )
           .catch(() => undefined),
@@ -1220,7 +1259,7 @@ export class BrowserEngine implements Engine {
     );
     // The screencast's maximum size is fixed when it starts.
     const active = this.activeTab();
-    if (active?.screencasting) {
+    if (resized && active?.screencasting) {
       await this.stopScreencast(active);
       await this.syncScreencasts();
     }
@@ -1256,7 +1295,90 @@ export class BrowserEngine implements Engine {
   private async stopScreencast(tab: Tab): Promise<void> {
     tab.screencasting = false;
     tab.inFlight.clear();
+    if (this.sharpInFlight?.tabId === tab.id) this.sharpInFlight = null;
+    this.clearStill();
     await this.cdp.send("Page.stopScreencast", {}, tab.sessionId).catch(() => undefined);
+  }
+
+  // ── Sharp frames: one at the viewer's pixel ratio once the page stops ──
+
+  private clearStill(): void {
+    if (this.stillTimer) clearTimeout(this.stillTimer);
+    this.stillTimer = null;
+  }
+
+  /** (Re)starts the count to the page's sharp frame; a new frame of a moving page starts it over. */
+  private armStill(): void {
+    this.clearStill();
+    if (this.viewport.scale <= 1 || this.sharpDone || !this.viewer) return;
+    this.stillTimer = setTimeout(() => {
+      this.stillTimer = null;
+      void this.sendSharp();
+    }, STILL_MS);
+  }
+
+  /**
+   * Whether the still page in front wants its sharp frame now. The viewer
+   * drawing moving frames comes first; their acknowledgement arms the count
+   * again.
+   */
+  private sharpWanted(viewer: Viewer, tab: Tab): boolean {
+    return (
+      this.viewer === viewer &&
+      tab.id === this.activeId &&
+      tab.screencasting &&
+      tab.inFlight.size === 0 &&
+      !this.sharpDone &&
+      this.sharpInFlight === null &&
+      this.stillTimer === null &&
+      this.viewport.scale > 1 &&
+      Date.now() >= this.sharpBackoffUntil
+    );
+  }
+
+  private async sendSharp(): Promise<void> {
+    const viewer = this.viewer;
+    const tab = this.activeTab();
+    if (!viewer || !tab || !this.sharpWanted(viewer, tab)) return;
+    const { width, height, scale } = this.viewport;
+    let shot: { data: string };
+    try {
+      shot = await this.cdp.send<{ data: string }>(
+        "Page.captureScreenshot",
+        { format: "jpeg", quality: SHARP_QUALITY, optimizeForSpeed: true },
+        tab.sessionId,
+      );
+    } catch {
+      return;
+    }
+    // Anything that moved meanwhile has sent a frame of its own and will count down again.
+    if (!this.sharpWanted(viewer, tab)) return;
+    const frameId = ++this.frameCounter;
+    const bytes = encodeFrame(
+      {
+        tabId: tab.id,
+        frameId,
+        width: Math.round(width * scale),
+        height: Math.round(height * scale),
+        scale,
+      },
+      Buffer.from(shot.data, "base64"),
+    );
+    if (!viewer.sendFrame(bytes)) return;
+    tab.inFlight.set(frameId, SHARP_FRAME);
+    this.sharpInFlight = { tabId: tab.id, frameId, sentAt: Date.now() };
+    this.sharpDone = true;
+  }
+
+  private sharpDrawn(frameId: number): void {
+    const sharp = this.sharpInFlight;
+    if (sharp?.frameId !== frameId) return;
+    this.sharpInFlight = null;
+    const took = Date.now() - sharp.sentAt;
+    if (took > SHARP_SLOW_MS) {
+      this.sharpBackoffUntil = Date.now() + SHARP_BACKOFF_MS;
+      log("info", "sharp frame was slow to arrive; pausing them", { ms: took });
+    }
   }
 
   private frameArrived(tab: Tab, frame: { data: string; sessionId: string }): void {
@@ -1267,15 +1389,24 @@ export class BrowserEngine implements Engine {
     }
     const frameId = ++this.frameCounter;
     const bytes = encodeFrame(
-      { tabId: tab.id, frameId, width: this.viewport.width, height: this.viewport.height },
+      {
+        tabId: tab.id,
+        frameId,
+        width: this.viewport.width,
+        height: this.viewport.height,
+        scale: 1,
+      },
       Buffer.from(frame.data, "base64"),
     );
+    // The page moved: its sharp frame, if it had one, is out of date.
+    this.sharpDone = false;
     if (viewer.sendFrame(bytes)) {
       tab.inFlight.set(frameId, frame.sessionId);
     } else {
       // Dropped (the viewer's connection is behind): free the engine to draw the next one.
       void this.ack(tab, frame.sessionId);
     }
+    this.armStill();
   }
 
   private async ack(tab: Tab, screencastSession: string): Promise<void> {

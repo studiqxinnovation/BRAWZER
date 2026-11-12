@@ -50,6 +50,26 @@ describe("client messages", () => {
     expect(
       clientMessageSchema.safeParse({ type: "hello", viewport: { width: 10, height: 10 } }).success,
     ).toBe(false);
+    expect(
+      clientMessageSchema.safeParse({
+        type: "hello",
+        viewport: { width: 1280, height: 800, scale: 3 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("a viewport without a scale asks for none", () => {
+    const parsed = clientMessageSchema.parse({
+      type: "resize",
+      viewport: { width: 1280, height: 800 },
+    });
+    expect(parsed).toMatchObject({ viewport: { width: 1280, height: 800, scale: 1 } });
+    expect(
+      clientMessageSchema.parse({
+        type: "resize",
+        viewport: { width: 1280, height: 800, scale: 2 },
+      }),
+    ).toMatchObject({ viewport: { scale: 2 } });
   });
 });
 
@@ -80,10 +100,32 @@ describe("agent messages", () => {
 describe("frames", () => {
   it("round-trips a header and image", () => {
     const image = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
-    const bytes = encodeFrame({ tabId: "tab-1", frameId: 7, width: 1280, height: 800 }, image);
+    const bytes = encodeFrame(
+      { tabId: "tab-1", frameId: 7, width: 1280, height: 800, scale: 1 },
+      image,
+    );
     const decoded = decodeFrame(bytes);
-    expect(decoded?.header).toEqual({ tabId: "tab-1", frameId: 7, width: 1280, height: 800 });
+    expect(decoded?.header).toEqual({
+      tabId: "tab-1",
+      frameId: 7,
+      width: 1280,
+      height: 800,
+      scale: 1,
+    });
     expect(Array.from(decoded?.image ?? [])).toEqual([0xff, 0xd8, 0xff, 0xd9]);
+  });
+
+  it("carries a sharp frame of a still page, twice the size on screen", () => {
+    const image = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    const sharp = decodeFrame(
+      encodeFrame({ tabId: "tab-1", frameId: 8, width: 3840, height: 2160, scale: 2 }, image),
+    );
+    expect(sharp?.header).toMatchObject({ width: 3840, height: 2160, scale: 2 });
+    expect(
+      decodeFrame(
+        encodeFrame({ tabId: "tab-1", frameId: 9, width: 3841, height: 2160, scale: 2 }, image),
+      ),
+    ).toBeNull();
   });
 
   it("refuses malformed frames", () => {
@@ -105,7 +147,7 @@ describe("transfer chunks", () => {
     expect(decoded?.header).toEqual({ transferId: "dl-1", seq: 3, last: true });
     expect(Array.from(decoded?.data ?? [])).toEqual([1, 2, 3, 4]);
 
-    const frame = encodeFrame({ tabId: "t", frameId: 1, width: 10, height: 10 }, data);
+    const frame = encodeFrame({ tabId: "t", frameId: 1, width: 10, height: 10, scale: 1 }, data);
     expect(binaryKind(frame)).toBe("frame");
     expect(decodeTransferChunk(frame)).toBeNull();
     expect(binaryKind(new Uint8Array([0x58, 1, 0, 0, 0, 0]))).toBeNull();
