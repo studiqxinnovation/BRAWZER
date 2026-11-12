@@ -356,8 +356,12 @@ actions, and a form that opens under a row); pills; tables; the ring.
 
 Compared screen by screen with the prototype again, and brought in line:
 
-- **Sign-in** is the prototype's log-in screen: the wallpaper behind a blur,
-  the time and date, Brawzer's mark where the prototype puts an initial, the
+- **Sign-in** is the prototype's log-in screen, in space: the home page's
+  nebula behind a drawn night sky (`components/auth/star-field.tsx`: stars
+  that twinkle at their own pace, the bright ones with a glow and a flare,
+  the field panning slowly, a meteor now and then; still with reduced
+  motion, asleep while the tab is hidden), the time and date, Brawzer's
+  mark in black and white where the prototype puts an initial, the
   email and password pills with the arrow, and the real choices under them
   (keep me signed in, passkey, phone, forgotten password, create an account).
   No "any password works" and no guest mode: a sign-in is a sign-in.

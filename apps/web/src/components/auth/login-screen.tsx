@@ -2,6 +2,7 @@
 
 import { Mark } from "@brawzer/ui/brand";
 import { type ReactNode, useSyncExternalStore } from "react";
+import { StarField } from "./star-field";
 import "@/components/site/landing/landing.css";
 import "./login-screen.css";
 
@@ -31,23 +32,21 @@ function Clock() {
 }
 
 /**
- * The sign-in page as the prototype's log-in screen: the wallpaper behind a
- * blur, the time and date, Brawzer's mark where the prototype puts the
+ * The sign-in page as the prototype's log-in screen, in space: the time and date, Brawzer's mark where the prototype puts the
  * person's initial, then the form.
  */
 export function LoginScreen({ children, notice }: { children: ReactNode; notice?: ReactNode }) {
   return (
     <div className="lg-screen" data-theme="dark">
-      {/* The same sky as the home page: Brawzer's black, the aurora, the stars, the floor. */}
-      <div aria-hidden="true" className="lp-aurora">
+      {/* Space: the home page's nebula behind a drawn sky of twinkling stars and the odd meteor. */}
+      <div aria-hidden="true" className="lp-aurora lg-nebula">
         <div className="lp-blob lp-blob-blue" />
         <div className="lp-blob lp-blob-violet" />
         <div className="lp-blob lp-blob-honey" />
         <div className="lp-blob lp-blob-teal" />
       </div>
-      <div aria-hidden="true" className="lp-stars" />
-      <div aria-hidden="true" className="lp-stars lp-stars-far" />
-      <div aria-hidden="true" className="lp-floor" />
+      <div aria-hidden="true" className="lg-band" />
+      <StarField className="lg-sky" />
       {/* Only this layer scrolls: the sky behind it never adds a scrollbar or shifts. */}
       <div className="lg-scroll">
         <Clock />
