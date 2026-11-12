@@ -117,3 +117,38 @@ most every 60 ms while the pointer moves and sent when the answer changes;
 through the session's own filtering proxy, so the same policy applies as to
 the page and the viewer never asks a site for anything. The viewer also
 times the ping it already sent, now every 5 s, and shows the round trip.
+
+## Addendum (2026-11-12): the moving page as video
+
+Step 3b's WebRTC never came: the session's container has no network of its
+own (its traffic goes through the egress sidecar, ADR 0014) and no UDP, so
+a media path would need its own relay. The moving page now goes as video
+over the same WebSocket instead (Phase 10.5):
+
+- The viewer says in `hello` which codecs it decodes (`codecs: ["vp8"]`
+  when WebCodecs can). The container has ffmpeg (Debian's, with libvpx).
+- In the agent, each engine's pictures of the moving page (the screencast's
+  JPEGs; Firefox's screenshots) go into one ffmpeg per page size (the
+  `mjpeg` demuxer in, `libvpx` at realtime settings, `-g 48`, 1.6 Mbit/s
+  aiming, 2.6 ceiling, IVF out), whose frames go to the viewer as `V`
+  messages: a sequence number, the codec, whether it is a key frame, the
+  size. Chromium is acknowledged as soon as the encoder has the picture, so
+  the engine draws as fast as it can; a picture the encoder can't take yet
+  is skipped, never queued. Two things measured in the image decided the
+  flags: `image2pipe` holds every picture until the input closes, while the
+  `mjpeg` demuxer hands each on as the next begins; so the last picture
+  before a pause is fed once more after 60 ms to let it through.
+- Video is never acknowledged. A chunk the relay or the agent drops (the
+  viewer behind) leaves the frames after it useless: the agent sends nothing
+  until the next key frame, and a viewer that sees a gap or a decoder error
+  asks for one (`video-lost`), which starts a fresh encoder.
+- The still page's sharp picture (the addendum above) stays as it was:
+  one JPEG at the screen's ratio, drawn over the last video frame.
+- Without ffmpeg, a viewer without WebCodecs, or `BRAWZER_VIDEO=off`, the
+  stream is the pictures it was.
+
+Measured on the long test page at 1280×800, scrolling without pause for
+5 s, against the pictures-only figures above: Chromium 27 frames a second at
+1.6 Mbit/s (pictures: 21 at 13–19 Mbit/s), Firefox 21 at 1.2 Mbit/s
+(pictures: 9 at about 5 Mbit/s); a still page sends one frame and then
+nothing. ffmpeg adds about 300 MB to the image (2.9 GB).

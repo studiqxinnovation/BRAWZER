@@ -1,6 +1,12 @@
 "use client";
 
-import type { ClientMessageInput, CursorKind, FrameHeader, Viewport } from "@brawzer/contracts";
+import type {
+  ClientMessageInput,
+  CursorKind,
+  FrameHeader,
+  VideoChunkHeader,
+  Viewport,
+} from "@brawzer/contracts";
 import { DRAG_FILE_TYPE, DRAG_PAGE_IMAGE_TYPE } from "@/components/desktop/desktop-context";
 import { cn } from "@brawzer/ui/lib/cn";
 import {
@@ -16,6 +22,8 @@ import {
 import { buttonOf, fitViewport, keyMessage, modifiersOf } from "@/lib/browser/input";
 
 export interface ViewportHandle {
+  /** A decoded video frame of the moving page, drawn at once; it is closed here. */
+  drawVideo: (frame: VideoFrame, header: VideoChunkHeader) => void;
   /** Where a point on screen is in the page's own pixels (for a drop handed over by the desktop). */
   pointAt: (clientX: number, clientY: number) => { x: number; y: number };
   /** Draws the frame; `onDrawn` fires once it is on screen (or when it was skipped for a newer one). */
@@ -177,6 +185,8 @@ export function BrowserViewport({
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const sizeRef = useRef<{ width: number; height: number } | null>(null);
   const [frames, setFrames] = useState(0);
+  /** Set once video frames arrive: the moving page comes as video, the still page as a picture. */
+  const [video, setVideo] = useState<string | null>(null);
   const pending = useRef<{ header: FrameHeader; image: Blob } | null>(null);
   const drawing = useRef(false);
   const readyRef = useRef(false);
@@ -249,11 +259,37 @@ export function BrowserViewport({
       pointAt(clientX, clientY) {
         return pointOf({ clientX, clientY });
       },
+      drawVideo(frame, header) {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+          frame.close();
+          return;
+        }
+        // A video frame is at scale 1: the page's own size on screen.
+        if (canvas.width !== frame.codedWidth || canvas.height !== frame.codedHeight) {
+          canvas.width = frame.codedWidth;
+          canvas.height = frame.codedHeight;
+        }
+        const shown = { width: header.width, height: header.height };
+        if (sizeRef.current?.width !== shown.width || sizeRef.current.height !== shown.height) {
+          sizeRef.current = shown;
+          setSize(shown);
+        }
+        canvas.getContext("2d")?.drawImage(frame, 0, 0);
+        frame.close();
+        setFrames((count) => count + 1);
+        setVideo((current) => current ?? header.codec);
+        if (!readyRef.current) {
+          readyRef.current = true;
+          onReady?.();
+        }
+      },
       restart() {
         readyRef.current = false;
+        setVideo(null);
       },
     }),
-    [drawNext, onDrawn],
+    [drawNext, onDrawn, onReady],
   );
 
   // Measure the area and report what size the page should be rendered at.
@@ -539,6 +575,7 @@ export function BrowserViewport({
       aria-label="Page shown by the cloud browser. Keys go to the page; press Shift and Escape to leave."
       tabIndex={0}
       data-frames={frames}
+      data-video={video ?? undefined}
       data-testid="browser-viewport"
       className={cn(
         "relative flex min-h-0 flex-1 touch-none items-start justify-center overflow-hidden bg-[#fff] outline-none",

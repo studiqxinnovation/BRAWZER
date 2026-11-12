@@ -1,5 +1,11 @@
 import type { ChromiumBrand } from "./config.ts";
-import type { AgentMessage, RelayMessage, TransferChunkHeader, Viewport } from "@brawzer/contracts";
+import type {
+  AgentMessage,
+  RelayMessage,
+  TransferChunkHeader,
+  VideoCodec,
+  Viewport,
+} from "@brawzer/contracts";
 import type { BinarySink } from "./transfers.ts";
 
 /** Who is watching the stream right now, if anyone. */
@@ -7,6 +13,8 @@ export interface Viewer extends BinarySink {
   send(message: AgentMessage): void;
   /** False when the viewer can't take the frame right now; it is then dropped and acknowledged. */
   sendFrame(frame: Uint8Array): boolean;
+  /** An encoded video frame; false when the viewer can't take it now, and it is dropped. */
+  sendVideo(chunk: Uint8Array): boolean;
 }
 
 export interface EngineOptions {
@@ -29,6 +37,8 @@ export interface EngineOptions {
   fetchIcon: (url: string) => Promise<string | null>;
   /** An image by address through the session's proxy, for saving to Drive; null if it isn't one. */
   fetchImage: (url: string, maxBytes: number) => Promise<{ type: string; bytes: Buffer } | null>;
+  /** Whether a moving page may be sent as video (the container has an encoder). */
+  video: boolean;
   /** Catalogue extensions to install for this session, with where their builds are in the image. */
   extensions: readonly InstallableExtension[];
   /**
@@ -89,7 +99,7 @@ export class RefusalLog {
 export interface Engine {
   readonly isReady: boolean;
   start(): Promise<void>;
-  attachViewer(viewer: Viewer, viewport: Viewport): void;
+  attachViewer(viewer: Viewer, viewport: Viewport, codecs: readonly VideoCodec[]): void;
   detachViewer(viewer: Viewer): void;
   handle(message: RelayMessage): Promise<void>;
   receiveChunk(header: TransferChunkHeader, data: Uint8Array): Promise<void>;

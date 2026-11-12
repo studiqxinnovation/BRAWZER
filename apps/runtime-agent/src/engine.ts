@@ -13,8 +13,10 @@ import {
   type TransferChunkHeader,
   type TransferKind,
   type TransferMessage,
+  type VideoCodec,
   type Viewport,
   type NavigationError,
+  encodeVideoChunk,
 } from "@brawzer/contracts";
 import { BEE_VERSION } from "./bee.ts";
 import type { ChromiumBrand } from "./config.ts";
@@ -22,6 +24,7 @@ import type { CdpConnection } from "./cdp.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
 import { FocusReporter, IconReporter, PointerReporter } from "./page-reporters.ts";
+import { FrameEncoder } from "./video.ts";
 import {
   fetchImageScript,
   FIND_STOP_SCRIPT,
@@ -318,6 +321,12 @@ export class BrowserEngine implements Engine {
     (message) => this.viewer?.send(message),
     (tab) => this.viewer !== null && tab.id === this.activeId && this.tabs.has(tab.id),
   );
+  /** The moving page as video, when the viewer decodes it and the container can encode it. */
+  private encoder: FrameEncoder | null = null;
+  private videoSeq = 0;
+  /** After a dropped chunk, nothing goes until the next key frame: the viewer couldn't use it. */
+  private videoNeedsKey = false;
+  private viewerCodecs: readonly string[] = [];
   /** Counts down from the last frame of a moving page to its sharp frame. */
   private stillTimer: NodeJS.Timeout | null = null;
   /** The sharp frame on its way to the viewer, until it reports it drawn. */
@@ -566,8 +575,10 @@ export class BrowserEngine implements Engine {
     if (first && this.activeId !== first) await this.activate(first);
   }
 
-  attachViewer(viewer: Viewer, viewport: Viewport): void {
+  attachViewer(viewer: Viewer, viewport: Viewport, codecs: readonly VideoCodec[]): void {
     this.viewer = viewer;
+    this.viewerCodecs = codecs;
+    this.stopVideo();
     void this.setViewport(viewport).then(() => {
       if (this.viewer !== viewer) return;
       viewer.send({
@@ -597,7 +608,52 @@ export class BrowserEngine implements Engine {
     this.titleTimer = null;
     this.clearStill();
     this.pointer.reset();
+    this.stopVideo();
     void this.syncScreencasts();
+  }
+
+  // ── Video: the moving page encoded, the still page a picture ──────────
+
+  private get videoWanted(): boolean {
+    return this.options.video && this.viewerCodecs.includes("vp8");
+  }
+
+  /** The encoder for the page's current size, started as needed; a new size gets a new one. */
+  private videoEncoder(): FrameEncoder | null {
+    if (!this.videoWanted) return null;
+    const { width, height } = this.viewport;
+    if (this.encoder && (this.encoder.width !== width || this.encoder.height !== height)) {
+      this.stopVideo();
+    }
+    if (!this.encoder) {
+      const encoder = new FrameEncoder(width, height, (frame) => {
+        if (this.encoder !== encoder) return;
+        this.sendVideo(frame.key, frame.data);
+      });
+      encoder.start();
+      this.encoder = encoder;
+      this.videoNeedsKey = true;
+    }
+    return this.encoder;
+  }
+
+  private sendVideo(key: boolean, data: Buffer): void {
+    const viewer = this.viewer;
+    if (!viewer) return;
+    if (this.videoNeedsKey && !key) return;
+    const { width, height } = this.viewport;
+    const sent = viewer.sendVideo(
+      encodeVideoChunk({ seq: this.videoSeq, codec: "vp8", key, width, height }, data),
+    );
+    this.videoSeq = (this.videoSeq + 1) % 1_000_000_000;
+    // The viewer couldn't take it: the frames that follow build on it, so they wait for a key.
+    this.videoNeedsKey = !sent;
+  }
+
+  private stopVideo(): void {
+    this.encoder?.stop();
+    this.encoder = null;
+    this.videoNeedsKey = true;
   }
 
   /** Everything the viewer may ask for. Invalid tab ids are ignored, never fatal. */
@@ -606,6 +662,10 @@ export class BrowserEngine implements Engine {
       case "hello":
       case "ping":
       case "sound":
+        return;
+      case "video-lost":
+        // A fresh encoder begins with a key frame.
+        this.stopVideo();
         return;
       case "resize":
         await this.setViewport(message.viewport);
@@ -793,6 +853,7 @@ export class BrowserEngine implements Engine {
     this.titleTimer = null;
     this.clearStill();
     this.pointer.reset();
+    this.stopVideo();
     try {
       await this.cdp.send("Browser.close");
     } catch {
@@ -1569,6 +1630,18 @@ export class BrowserEngine implements Engine {
       void this.ack(tab, frame.sessionId);
       return;
     }
+    // The page moved: its sharp frame, if it had one, is out of date.
+    this.sharpDone = false;
+    const image = Buffer.from(frame.data, "base64");
+    const encoder = this.videoEncoder();
+    if (encoder) {
+      // As video: the encoder takes the picture (or skips it when behind) and the
+      // engine is freed at once; the viewer never acknowledges video.
+      encoder.push(image);
+      void this.ack(tab, frame.sessionId);
+      this.armStill();
+      return;
+    }
     const frameId = ++this.frameCounter;
     const bytes = encodeFrame(
       {
@@ -1578,10 +1651,8 @@ export class BrowserEngine implements Engine {
         height: this.viewport.height,
         scale: 1,
       },
-      Buffer.from(frame.data, "base64"),
+      image,
     );
-    // The page moved: its sharp frame, if it had one, is out of date.
-    this.sharpDone = false;
     if (viewer.sendFrame(bytes)) {
       tab.inFlight.set(frameId, frame.sessionId);
     } else {

@@ -66,6 +66,7 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends ca-certific
   && apt-get install -y --no-install-recommends \
     chromium firefox-esr google-chrome-stable ${edge} fonts-liberation fonts-noto-core fonts-noto-color-emoji tini ca-certificates \
     fonts-inter fonts-roboto-unhinted fonts-open-sans fonts-lato fonts-crosextra-carlito fonts-crosextra-caladea fontconfig \
+    ffmpeg \
     pulseaudio pulseaudio-utils \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin browser

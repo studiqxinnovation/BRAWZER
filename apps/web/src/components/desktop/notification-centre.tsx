@@ -160,6 +160,8 @@ export function NotificationCentre({ compact = false }: { compact?: boolean }) {
   const time = useSyncExternalStore(subscribeToClock, menuBarClock, () => "");
   const [notices, setNotices] = useState<readonly Notice[]>([]);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  /** "Clear all" hides Shield's notices from before it, including ones that arrive a moment later. */
+  const [clearedAt, setClearedAt] = useState(0);
   const [seenCount, setSeenCount] = useState(0);
   const fresh = Math.max(0, all.length - seenCount);
   const mac = useSyncExternalStore(
@@ -194,9 +196,11 @@ export function NotificationCentre({ compact = false }: { compact?: boolean }) {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("pointerdown", onPointer);
     };
-  }, [open, all.length, panelId]);
+  }, [open, panelId]);
 
-  const shownNotices = notices.filter((notice) => !hidden.has(notice.id));
+  const shownNotices = notices.filter(
+    (notice) => !hidden.has(notice.id) && new Date(notice.at).getTime() > clearedAt,
+  );
   const empty = all.length === 0 && shownNotices.length === 0;
   const toggle = () => {
     setSeenCount(all.length);
@@ -284,7 +288,7 @@ export function NotificationCentre({ compact = false }: { compact?: boolean }) {
               className="dt-nc-clear"
               onClick={() => {
                 clearNotifications();
-                setHidden(new Set(notices.map((notice) => notice.id)));
+                setClearedAt(Date.now());
               }}
             >
               Clear all

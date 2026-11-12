@@ -6,8 +6,11 @@ import {
   binaryKind,
   decodeAudioChunk,
   decodeFrame,
+  decodeVideoChunk,
   type FrameHeader,
   STREAM_CLOSE_CODES,
+  type VideoChunkHeader,
+  type VideoCodec,
   type Viewport,
 } from "@brawzer/contracts";
 
@@ -15,6 +18,7 @@ export type StreamEvent =
   | { kind: "message"; message: AgentMessage }
   | { kind: "frame"; header: FrameHeader; image: Blob }
   | { kind: "audio"; header: AudioChunkHeader; samples: Uint8Array }
+  | { kind: "video"; header: VideoChunkHeader; data: Uint8Array }
   | { kind: "closed"; code: number; reason: string }
   /** How long a ping took to come back from the container, end to end. */
   | { kind: "latency"; ms: number };
@@ -35,14 +39,14 @@ export class BrowserStream {
 
   constructor(private readonly onEvent: (event: StreamEvent) => void) {}
 
-  open(url: string, ticket: string, viewport: Viewport): void {
+  open(url: string, ticket: string, viewport: Viewport, codecs: readonly VideoCodec[] = []): void {
     this.close();
     const socket = new WebSocket(url);
     socket.binaryType = "arraybuffer";
     this.socket = socket;
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify({ type: "ticket", ticket }));
-      this.send({ type: "hello", viewport });
+      this.send({ type: "hello", viewport, codecs: [...codecs] });
       this.pingTimer = setInterval(() => this.ping(), PING_INTERVAL_MS);
       this.ping();
     });
@@ -67,6 +71,11 @@ export class BrowserStream {
         return;
       }
       const bytes = new Uint8Array(event.data);
+      if (binaryKind(bytes) === "video") {
+        const chunk = decodeVideoChunk(bytes);
+        if (chunk) this.onEvent({ kind: "video", header: chunk.header, data: chunk.data.slice() });
+        return;
+      }
       if (binaryKind(bytes) === "audio") {
         const chunk = decodeAudioChunk(bytes);
         if (chunk) this.onEvent({ kind: "audio", header: chunk.header, samples: chunk.samples });

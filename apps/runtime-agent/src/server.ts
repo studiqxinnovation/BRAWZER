@@ -166,6 +166,13 @@ export function createAgentServer(
           ws.send(frame, { binary: true });
           return true;
         },
+        sendVideo: (chunk) => {
+          if (ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > MAX_BUFFERED_BYTES) {
+            return false;
+          }
+          ws.send(chunk, { binary: true });
+          return true;
+        },
         sendBinary: (bytes) =>
           new Promise<void>((resolve, reject) => {
             if (ws.readyState !== WebSocket.OPEN) {
@@ -223,7 +230,7 @@ export function createAgentServer(
         if (message.data.type === "hello") {
           if (!attached) {
             attached = true;
-            engine.attachViewer(viewer, message.data.viewport);
+            engine.attachViewer(viewer, message.data.viewport, message.data.codecs);
             audio?.attach(audioSink);
           }
           return;

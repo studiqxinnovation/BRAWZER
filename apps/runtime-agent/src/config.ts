@@ -34,6 +34,8 @@ export interface AgentConfig {
   /** The largest file the engine may download or print; Drive's per-file limit, set by the orchestrator. */
   maxFileBytes: number;
   initialViewport: { width: number; height: number; scale: number };
+  /** Video for moving pages, when the container can encode it; BRAWZER_VIDEO=off keeps pictures only. */
+  video: boolean;
 }
 
 export function readConfig(env: NodeJS.ProcessEnv): AgentConfig {
@@ -53,6 +55,7 @@ export function readConfig(env: NodeJS.ProcessEnv): AgentConfig {
     firefoxBinary: env.FIREFOX_BIN ?? "/usr/bin/firefox-esr",
     proxyPort: 3128,
     testSite: env.BRAWZER_TEST_SITE === "true",
+    video: env.BRAWZER_VIDEO !== "off",
     egress: readEgress(env.BRAWZER_EGRESS_PROXY),
     privateViaEgress: env.BRAWZER_PRIVATE_VIA_EGRESS === "true",
     browserAccount: env.BRAWZER_BROWSER_ACCOUNT === "true",

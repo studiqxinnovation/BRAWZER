@@ -14,12 +14,13 @@ real; nothing an account owns is kept on the device.
 
 ## Milestones
 
-| #    | Milestone                                                                                                            | Status              |
-| ---- | -------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| 10.1 | The cloud browser as a computer's own: cursor, gestures, site icons and tab previews, fonts, link numbers            | **Done** 2026-11-12 |
-| 10.2 | The app switcher, Mission Control and Task View, Spotlight and Start search, notifications, app menus                | **Done** 2026-11-12 |
-| 10.3 | Idle, screensaver and lock; boot, shut down and restart; several desktops; windows that remember                     | **Done** 2026-11-12 |
-| 10.4 | Drag and drop across the boundary; faces on the login screen and switching; the stream read aloud; video over WebRTC | **Done** 2026-11-12 |
+| #    | Milestone                                                                                                 | Status              |
+| ---- | --------------------------------------------------------------------------------------------------------- | ------------------- |
+| 10.1 | The cloud browser as a computer's own: cursor, gestures, site icons and tab previews, fonts, link numbers | **Done** 2026-11-12 |
+| 10.2 | The app switcher, Mission Control and Task View, Spotlight and Start search, notifications, app menus     | **Done** 2026-11-12 |
+| 10.3 | Idle, screensaver and lock; boot, shut down and restart; several desktops; windows that remember          | **Done** 2026-11-12 |
+| 10.4 | Drag and drop across the boundary; faces on the login screen and switching; the stream read aloud         | **Done** 2026-11-12 |
+| 10.5 | The moving page as video (VP8 over the stream, decoded with WebCodecs)                                    | **Done** 2026-11-12 |
 
 ## 10.1 The cloud browser as a computer's own
 
@@ -125,4 +126,16 @@ real; nothing an account owns is kept on the device.
   the agent asks the page what has focus, as the page labels it (role, name,
   a field's value, never a password), and the viewer announces it in a live
   region; "Show what has focus" in the More menu writes it under the page.
-- **Video.** See 10.5.
+
+## 10.5 The moving page as video
+
+WebRTC was the plan's step 3b, but the session's container has no network
+or UDP of its own (its traffic goes through the egress sidecar), so a media
+path would have needed a relay of its own. Instead the moving page goes as
+VP8 over the stream it has: the viewer offers the codecs it can decode with
+WebCodecs, the container's ffmpeg encodes each engine's pictures at
+realtime settings (about 1.6 Mbit/s, a key frame every 48), the viewer
+decodes and draws each frame, and the still page keeps its sharp picture
+drawn over the last frame. A missed chunk makes the viewer ask for a key
+frame. Without ffmpeg, WebCodecs or with `BRAWZER_VIDEO=off`, the stream
+is the pictures it was. See ADR 0006's addendum for the measurements.

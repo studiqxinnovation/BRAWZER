@@ -13,6 +13,7 @@ import { BrowserEngine } from "./engine.ts";
 import { type LaunchedFirefox, launchFirefox } from "./firefox.ts";
 import { FirefoxEngine } from "./firefox-engine.ts";
 import { fetchFavicon, fetchImage } from "./favicon.ts";
+import { videoAvailable } from "./video.ts";
 import { log } from "./log.ts";
 import { writePolicies } from "./policies.ts";
 import { packProfile, restoreProfile } from "./profile-data.ts";
@@ -192,6 +193,7 @@ const lifecycle: AgentLifecycle = {
       readerScript: readerScript(readabilitySource),
       fetchIcon: (url: string) => fetchFavicon(url, config.proxyPort),
       fetchImage: (url: string, maxBytes: number) => fetchImage(url, config.proxyPort, maxBytes),
+      video: config.video && videoAvailable(),
       extensions: installableExtensions(config.engine),
       browserPages: config.browserAccount ? BROWSER_PAGES[config.engine] : null,
     };

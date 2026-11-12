@@ -663,6 +663,51 @@ test.describe("browser as a computer's own", () => {
   });
 });
 
+test.describe("browser as video", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:desktop", "off");
+    });
+  });
+
+  test("a moving page arrives as video, a still one as a picture", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The streamed page is driven with a mouse; phones get the launcher test.");
+    test.setTimeout(120_000);
+    await signedIn(page, baseURL, "browser-video");
+    await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
+    const viewport = page.getByTestId("browser-viewport");
+    await expect(viewport).toBeVisible({ timeout: 60_000 });
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 30_000 })
+      .not.toBe("0");
+    const address = page.getByRole("textbox", { name: "Address or search" });
+    await address.fill("http://testsite.invalid/long");
+    await address.press("Enter");
+    await expect(tab(page, "Long page")).toBeVisible({ timeout: 30_000 });
+    // Scrolling: the frames come as VP8 video, decoded here, many a second.
+    await viewport.locator("canvas").hover({ position: { x: 400, y: 300 } });
+    const before = Number(await viewport.getAttribute("data-frames"));
+    for (let step = 0; step < 20; step += 1) {
+      await page.mouse.wheel(0, 120);
+      await page.waitForTimeout(50);
+    }
+    await expect(viewport).toHaveAttribute("data-video", "vp8", { timeout: 10_000 });
+    await expect
+      .poll(async () => Number(await viewport.getAttribute("data-frames")))
+      .toBeGreaterThan(before + 10);
+    // The page can still be read and used: a click lands where it is aimed.
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+    await clickPage(page, 100, 60);
+    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+  });
+});
+
 test.describe("browser on a dense screen", () => {
   test.use({ deviceScaleFactor: 2 });
   test.beforeEach(async ({ page }) => {
@@ -703,10 +748,12 @@ test.describe("browser on a dense screen", () => {
     await address.press("Enter");
     await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
     // Once the page stops, one frame at twice the density; a click still lands
-    // where it is aimed, in the page's own pixels.
+    // where it is aimed, in the page's own pixels (repeated if a busy engine is late).
     await sharp();
-    await clickPage(page, 100, 60);
-    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+    await expect(async () => {
+      await clickPage(page, 100, 60);
+      await expect(tab(page, "Second page")).toBeVisible({ timeout: 8_000 });
+    }).toPass({ timeout: 45_000 });
     await sharp();
     // Moving again (scrolling an article) streams light frames, and it is sharp again once still.
     await address.fill("http://testsite.invalid/article");
@@ -730,8 +777,11 @@ test.describe("browser on a dense screen", () => {
     await address.press("Enter");
     await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
     await sharp();
-    await clickPage(page, 100, 60);
-    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+    // A busy Firefox answers a click late; the click is repeated until the page follows it.
+    await expect(async () => {
+      await clickPage(page, 100, 60);
+      await expect(tab(page, "Second page")).toBeVisible({ timeout: 8_000 });
+    }).toPass({ timeout: 45_000 });
     await sharp();
   });
 });

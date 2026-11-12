@@ -17,6 +17,7 @@ import {
   STREAM_CLOSE_CODES,
   type TabState,
   type TransferMessage,
+  type VideoCodec,
   type Viewport,
 } from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
@@ -45,6 +46,7 @@ import { nextZoom } from "@/lib/browser/zoom";
 import { encodeCanvas, screenshotName } from "@/lib/browser/picture";
 import { AudioPlayer } from "@/lib/browser/audio";
 import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/stream";
+import { detectVideoCodecs, VideoPlayer } from "@/lib/browser/video";
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
 import {
   ContextMenuHost,
@@ -412,6 +414,10 @@ export function BrowserWorkspace({
         viewportRef.current?.draw(event.header, event.image);
         return;
       }
+      if (event.kind === "video") {
+        videoRef.current?.push(event.header, event.data);
+        return;
+      }
       if (event.kind === "latency") {
         setLatencyMs(event.ms);
         return;
@@ -453,6 +459,38 @@ export function BrowserWorkspace({
     [],
   );
   const stream = useMemo(() => new BrowserStream(handleEvent), [handleEvent]);
+  /** The codecs this browser decodes, found once; the stream says hello with them. */
+  const codecsRef = useRef<VideoCodec[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void detectVideoCodecs().then((codecs) => {
+      if (!cancelled) codecsRef.current = codecs;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  /** The video decoder for the stream open now; a new stream gets a new one. */
+  const videoRef = useRef<VideoPlayer | null>(null);
+  const openVideo = useCallback(() => {
+    videoRef.current?.close();
+    videoRef.current = new VideoPlayer(
+      (frame, header) => {
+        viewportRef.current?.drawVideo(frame, header);
+        drawTimes.current.push(performance.now());
+        previewDirty.current = true;
+      },
+      () => {
+        stream.send({ type: "video-lost" });
+      },
+    );
+  }, [stream]);
+  useEffect(
+    () => () => {
+      videoRef.current?.close();
+    },
+    [],
+  );
 
   function handleMessage(message: AgentMessage) {
     switch (message.type) {
@@ -622,7 +660,8 @@ export function BrowserWorkspace({
       });
       return;
     }
-    stream.open(ticket.data.url, ticket.data.ticket, viewport.current);
+    openVideo();
+    stream.open(ticket.data.url, ticket.data.ticket, viewport.current, codecsRef.current);
   }
 
   async function start(profileId: string | null, resume = false, engine?: BrowserEngine) {

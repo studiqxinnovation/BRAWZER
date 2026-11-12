@@ -13,13 +13,16 @@ import {
   type TransferChunkHeader,
   type TransferKind,
   type TransferMessage,
+  type VideoCodec,
   type Viewport,
+  encodeVideoChunk,
   type NavigationError,
 } from "@brawzer/contracts";
 import type { BidiConnection } from "./bidi.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
 import { FocusReporter, IconReporter, PointerReporter } from "./page-reporters.ts";
+import { FrameEncoder } from "./video.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
 import {
   fetchImageScript,
@@ -188,6 +191,11 @@ export class FirefoxEngine implements Engine {
   private pendingAck: { frameId: number; resolve: () => void } | null = null;
   private streaming = false;
   private lastFrameHash = "";
+  /** The moving page as video, when the viewer decodes it and the container can encode it. */
+  private encoder: FrameEncoder | null = null;
+  private videoSeq = 0;
+  private videoNeedsKey = false;
+  private viewerCodecs: readonly string[] = [];
   /** Whether the page showing now has had its sharp frame. */
   private sharpDone = false;
   /** When the page was last seen unchanged after a change; 0 while it moves. */
@@ -464,8 +472,10 @@ export class FirefoxEngine implements Engine {
     if (first && this.activeId !== first) await this.activate(first);
   }
 
-  attachViewer(viewer: Viewer, viewport: Viewport): void {
+  attachViewer(viewer: Viewer, viewport: Viewport, codecs: readonly VideoCodec[]): void {
     this.viewer = viewer;
+    this.viewerCodecs = codecs;
+    this.stopVideo();
     void this.setViewport(viewport).then(() => {
       if (this.viewer !== viewer) return;
       viewer.send({
@@ -497,6 +507,45 @@ export class FirefoxEngine implements Engine {
     this.pendingAck?.resolve();
     this.pendingAck = null;
     this.pointer.reset();
+    this.stopVideo();
+  }
+
+  // ── Video, as the Chromium engine does it ─────────────────────────────
+
+  private videoEncoder(): FrameEncoder | null {
+    if (!this.options.video || !this.viewerCodecs.includes("vp8")) return null;
+    const { width, height } = this.viewport;
+    if (this.encoder && (this.encoder.width !== width || this.encoder.height !== height)) {
+      this.stopVideo();
+    }
+    if (!this.encoder) {
+      const encoder = new FrameEncoder(width, height, (frame) => {
+        if (this.encoder !== encoder) return;
+        this.sendVideo(frame.key, frame.data);
+      });
+      encoder.start();
+      this.encoder = encoder;
+      this.videoNeedsKey = true;
+    }
+    return this.encoder;
+  }
+
+  private sendVideo(key: boolean, data: Buffer): void {
+    const viewer = this.viewer;
+    if (!viewer) return;
+    if (this.videoNeedsKey && !key) return;
+    const { width, height } = this.viewport;
+    const sent = viewer.sendVideo(
+      encodeVideoChunk({ seq: this.videoSeq, codec: "vp8", key, width, height }, data),
+    );
+    this.videoSeq = (this.videoSeq + 1) % 1_000_000_000;
+    this.videoNeedsKey = !sent;
+  }
+
+  private stopVideo(): void {
+    this.encoder?.stop();
+    this.encoder = null;
+    this.videoNeedsKey = true;
   }
 
   async handle(message: RelayMessage): Promise<void> {
@@ -504,6 +553,9 @@ export class FirefoxEngine implements Engine {
       case "hello":
       case "ping":
       case "sound":
+        return;
+      case "video-lost":
+        this.stopVideo();
         return;
       case "resize":
         await this.setViewport(message.viewport);
@@ -810,6 +862,13 @@ export class FirefoxEngine implements Engine {
         this.lastFrameHash = hash;
         this.sharpDone = false;
         this.stillSince = 0;
+        const encoder = this.videoEncoder();
+        if (encoder) {
+          // As video: no acknowledgement to wait for; the next picture follows at once.
+          encoder.push(Buffer.from(shot.data, "base64"));
+          await new Promise((resolve) => setTimeout(resolve, 33));
+          continue;
+        }
         const frameId = ++this.frameCounter;
         const bytes = encodeFrame(
           {

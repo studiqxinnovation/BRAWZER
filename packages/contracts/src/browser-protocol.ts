@@ -26,6 +26,11 @@ export const viewportSchema = z.object({
 
 const tabIdSchema = z.string().min(1).max(64);
 
+/** The video codecs a stream may use for a moving page (ADR 0006, addendum). */
+export const videoCodecs = ["vp8"] as const;
+export const videoCodecSchema = z.enum(videoCodecs);
+export type VideoCodec = z.infer<typeof videoCodecSchema>;
+
 /** Chrome DevTools Protocol modifier bits: Alt 1, Ctrl 2, Meta 4, Shift 8. */
 const modifiersSchema = z.number().int().min(0).max(15).default(0);
 
@@ -56,7 +61,14 @@ export const streamAuthMessageSchema = z.object({
 
 /** Messages the page may send, apart from the file chooser's answer (which differs per hop). */
 const baseClientMessages = [
-  z.object({ type: z.literal("hello"), viewport: viewportSchema }),
+  z.object({
+    type: z.literal("hello"),
+    viewport: viewportSchema,
+    /** Video codecs the viewer can decode; none means frames as pictures only. */
+    codecs: z.array(videoCodecSchema).max(4).default([]),
+  }),
+  /** The viewer's decoder lost its place (a chunk missed): it needs a key frame. */
+  z.object({ type: z.literal("video-lost") }),
   z.object({ type: z.literal("resize"), viewport: viewportSchema }),
   z.object({ type: z.literal("navigate"), tabId: tabIdSchema, url: browserUrlSchema }),
   z.object({ type: z.literal("back"), tabId: tabIdSchema }),
@@ -463,6 +475,7 @@ export const TRANSFER_CHUNK_BYTES = 256 * 1024;
 const FRAME_MAGIC = 0x42; // "B"
 const TRANSFER_MAGIC = 0x54; // "T"
 const AUDIO_MAGIC = 0x41; // "A"
+const VIDEO_MAGIC = 0x56; // "V"
 const PREFIX_BYTES = 6; // magic, version, header length (uint32)
 
 function encodeBinary(magic: number, header: object, payload: Uint8Array): Uint8Array {
@@ -498,11 +511,12 @@ function decodeBinary(
 }
 
 /** Which kind of binary message this is, without decoding it. */
-export function binaryKind(bytes: Uint8Array): "frame" | "transfer" | "audio" | null {
+export function binaryKind(bytes: Uint8Array): "frame" | "transfer" | "audio" | "video" | null {
   if (bytes.length < PREFIX_BYTES || bytes[1] !== BROWSER_PROTOCOL_VERSION) return null;
   if (bytes[0] === FRAME_MAGIC) return "frame";
   if (bytes[0] === TRANSFER_MAGIC) return "transfer";
   if (bytes[0] === AUDIO_MAGIC) return "audio";
+  if (bytes[0] === VIDEO_MAGIC) return "video";
   return null;
 }
 
@@ -512,6 +526,34 @@ export function binaryKind(bytes: Uint8Array): "frame" | "transfer" | "audio" | 
  * are short (tens of milliseconds) and never acknowledged; a page that falls
  * behind just loses some.
  */
+/**
+ * One encoded video frame of the moving page (`V` messages): a key frame
+ * stands alone, the others follow from it. Chunks are never acknowledged;
+ * one missed means the viewer asks for a key frame.
+ */
+export const videoChunkHeaderSchema = z.object({
+  seq: z.number().int().min(0),
+  codec: videoCodecSchema,
+  key: z.boolean(),
+  width: z.number().int().min(1).max(viewport.maxWidth),
+  height: z.number().int().min(1).max(viewport.maxHeight),
+});
+
+export type VideoChunkHeader = z.infer<typeof videoChunkHeaderSchema>;
+
+export function encodeVideoChunk(header: VideoChunkHeader, data: Uint8Array): Uint8Array {
+  return encodeBinary(VIDEO_MAGIC, header, data);
+}
+
+export function decodeVideoChunk(
+  bytes: Uint8Array,
+): { header: VideoChunkHeader; data: Uint8Array } | null {
+  const decoded = decodeBinary(VIDEO_MAGIC, bytes);
+  if (!decoded) return null;
+  const header = videoChunkHeaderSchema.safeParse(decoded.header);
+  return header.success ? { header: header.data, data: decoded.payload } : null;
+}
+
 export const audioChunkHeaderSchema = z.object({
   seq: z.number().int().min(0),
   sampleRate: z.number().int().min(8000).max(48_000),
