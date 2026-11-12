@@ -127,6 +127,15 @@ export async function signIn(
     headers: { origin: new URL(baseURL).origin },
   });
   expect(response.status()).toBe(200);
+  // A fresh tab at /app starts on the plain desktop; the tests want the dashboard out.
+  await context.addInitScript(() => {
+    try {
+      if (location.pathname.startsWith("/app") && !sessionStorage.getItem("brawzer:dash"))
+        sessionStorage.setItem("brawzer:dash", "shown");
+    } catch {
+      // Storage blocked.
+    }
+  });
 }
 
 /** Another device: a separate browser context with its own cookies, signed in. */

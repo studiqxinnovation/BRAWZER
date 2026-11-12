@@ -28,6 +28,17 @@ export interface DesktopPrefs {
   defaultEngine: BrowserEngine | null;
   /** Drive's starting folders and the welcome note were made (once per account). */
   driveSetUp: boolean;
+  /** Files marked as favourites, for the desktop's menu. */
+  favourites: readonly Favourite[];
+  /** The one-time hint that the dashboard waits in the Dock was shown. */
+  deskHinted: boolean;
+}
+
+export interface Favourite {
+  id: string;
+  name: string;
+  contentType: string;
+  status: "clean" | "infected";
 }
 
 const prefsSchema = z.object({
@@ -40,6 +51,18 @@ const prefsSchema = z.object({
   brightness: z.number().min(15).max(100).optional(),
   defaultEngine: browserEngineSchema.nullable().optional(),
   driveSetUp: z.boolean().optional(),
+  favourites: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        contentType: z.string(),
+        status: z.enum(["clean", "infected"]),
+      }),
+    )
+    .max(40)
+    .optional(),
+  deskHinted: z.boolean().optional(),
 });
 
 const DEFAULT: DesktopPrefs = {
@@ -52,6 +75,8 @@ const DEFAULT: DesktopPrefs = {
   brightness: 100,
   defaultEngine: null,
   driveSetUp: false,
+  favourites: [],
+  deskHinted: false,
 };
 
 let prefs: DesktopPrefs = DEFAULT;
@@ -95,6 +120,8 @@ export async function loadDesktopPrefs(): Promise<void> {
       brightness: data.brightness ?? DEFAULT.brightness,
       defaultEngine: data.defaultEngine ?? null,
       driveSetUp: data.driveSetUp ?? false,
+      favourites: data.favourites ?? [],
+      deskHinted: data.deskHinted ?? false,
     };
   }
   loaded = "yes";
@@ -128,3 +155,14 @@ export function setWebAppInstalled(id: string, on: boolean) {
   const without = prefs.webApps.filter((candidate) => candidate !== id);
   updateDesktopPrefs({ webApps: on ? [...without, id] : without });
 }
+
+/** Adds a file to the favourites, or takes it out when it's there. */
+export function toggleFavourite(file: Favourite) {
+  const without = prefs.favourites.filter((entry) => entry.id !== file.id);
+  updateDesktopPrefs({
+    favourites:
+      without.length === prefs.favourites.length ? [file, ...without].slice(0, 40) : without,
+  });
+}
+
+export const isFavourite = (id: string) => prefs.favourites.some((entry) => entry.id === id);

@@ -117,6 +117,8 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
   const [version, setVersion] = useState(0);
   const load = useCallback(() => {
     setVersion((current) => current + 1);
+    // The desktop's icons show the Desktop folder: told to look again.
+    globalThis.dispatchEvent(new Event("brawzer:drive-changed"));
   }, [setVersion]);
 
   // The first time Drive is opened as a computer: the prototype's folders and its welcome note.

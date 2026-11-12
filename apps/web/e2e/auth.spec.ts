@@ -61,6 +61,11 @@ test.describe("account journey", () => {
       const picker = page.getByRole("dialog", { name: "Choose your desktop" });
       await picker.getByRole("button", { name: /^Mac style/ }).click();
       await expect(picker).toBeHidden();
+      // A fresh tab starts on the plain desktop; the dashboard comes out of the Dock.
+      await page
+        .getByRole("navigation", { name: "Dock" })
+        .getByRole("button", { name: /^Brawzer/ })
+        .click();
     }
     await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
     await expectSignedInAs(page, email);
@@ -316,6 +321,9 @@ test.describe("sign in with your phone", () => {
 
     // The computer is in, with a shared-computer session.
     await expect(page).toHaveURL(/\/app$/, { timeout: 15_000 });
+    // A fresh tab starts on the plain desktop; the dashboard comes out of the Dock.
+    const dock = page.getByRole("navigation", { name: "Dock" });
+    if (await dock.isVisible()) await dock.getByRole("button", { name: /^Brawzer/ }).click();
     await expect(page.getByText("Shared-computer mode is on")).toBeVisible();
     await phone.close();
   });

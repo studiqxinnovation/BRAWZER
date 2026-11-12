@@ -14,6 +14,8 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@brawzer/ui/components/dialog";
+import type { DriveFile } from "@brawzer/contracts";
+import { describeType, formatBytes } from "@/lib/drive";
 import { Tile } from "./apps/registry";
 
 const SHORTCUTS: [string, string][] = [
@@ -159,5 +161,63 @@ export function LeaveNoTraceDialog({
         ) : null}
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+/** Get info: what a Drive file is, where it is, and that it lives in the cloud. */
+export function FileInfoDialog({
+  file,
+  folderName,
+  onOpenChange,
+  onOpen,
+}: {
+  file: DriveFile | null;
+  folderName: string;
+  onOpenChange: (open: boolean) => void;
+  onOpen: () => void;
+}) {
+  const rows: [string, string][] = file
+    ? [
+        ["Kind", describeType(file.contentType)],
+        ["Size", formatBytes(file.size)],
+        ["Where", `Brawzer Drive › ${folderName}`],
+        ["Modified", new Date(file.updatedAt).toLocaleString()],
+        [
+          "Checked",
+          file.status === "clean"
+            ? "Scanned for malware: clean"
+            : "Quarantined: it matched known malware",
+        ],
+        ["Stored", "In the cloud, encrypted with its own key; not on this computer"],
+      ]
+    : [];
+  return (
+    <Dialog open={file !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[min(28rem,calc(100vw-2rem))]">
+        <DialogTitle className="truncate">{file?.name ?? ""}</DialogTitle>
+        <DialogDescription className="sr-only">About this file.</DialogDescription>
+        <dl className="dt-keys">
+          {rows.map(([what, value]) => (
+            <div key={what}>
+              <dt>{what}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onOpen}>
+            Open
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              onOpenChange(false);
+            }}
+          >
+            Done
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

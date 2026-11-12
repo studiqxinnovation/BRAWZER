@@ -10,6 +10,7 @@ import { lockClock, subscribeToClock } from "@/lib/clock";
 import { isLocked, lockNow, markUnlocked, startLocked, subscribeToLock } from "@/lib/lock";
 import { usePasskeysSupported } from "@/lib/passkeys";
 import { signOut } from "@/lib/session-channel";
+import { StarField } from "@/components/auth/star-field";
 import "./lock-screen.css";
 
 interface LockDetails {
@@ -182,6 +183,7 @@ export function LockScreen(details: LockDetails) {
   if (!locked) return null;
   return createPortal(
     <div ref={rootRef} className="lk-root">
+      <StarField className="lk-sky" earth />
       <LockPanel
         {...details}
         onUnlocked={() => {
@@ -204,6 +206,7 @@ export function LockedPage(details: LockDetails) {
   }, []);
   return (
     <div className="lk-root" data-standalone="true">
+      <StarField className="lk-sky" earth />
       <LockPanel
         {...details}
         onUnlocked={() => {

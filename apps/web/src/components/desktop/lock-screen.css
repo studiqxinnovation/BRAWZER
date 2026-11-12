@@ -35,6 +35,24 @@
     --lk-wallpaper: var(--wp-sand);
   }
 
+  /* Space behind the lock: the same drawn sky as the sign-in, over the blurred desktop. */
+  .lk-sky {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background:
+      radial-gradient(120% 80% at 50% -10%, rgb(17 26 58 / 0.9) 0%, transparent 60%),
+      linear-gradient(
+        180deg,
+        rgb(5 6 12 / 0.92) 0%,
+        rgb(7 10 22 / 0.92) 60%,
+        rgb(4 5 10 / 0.94) 100%
+      );
+    backdrop-filter: blur(26px);
+  }
+
   .lk-screen {
     position: absolute;
     inset: 0;
@@ -43,8 +61,7 @@
     align-items: center;
     justify-content: space-between;
     overflow-y: auto;
-    background: rgb(0 0 0 / 0.28);
-    backdrop-filter: blur(26px) brightness(0.75);
+    background: transparent;
     padding: 9vh 20px 7vh;
     color: #fff;
     animation: lk-in 380ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -55,22 +72,13 @@
    * keep WCAG AA contrast (the prototype's 28% black only reads over its
    * dark wallpaper).
    */
-  :root:not([data-theme="dark"]) .lk-screen {
-    background: rgb(5 8 16 / 0.7);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .lk-screen {
-      background: rgb(0 0 0 / 0.28);
-    }
-  }
 
   /* Loaded while locked: nothing of the app behind it, so the wallpaper itself, darkened. */
   .lk-root[data-standalone] {
     background: var(--lk-wallpaper, #0f1f35);
   }
-  .lk-root[data-standalone] .lk-screen {
-    background: rgb(5 8 16 / 0.55);
+  .lk-root[data-standalone] .lk-sky {
+    backdrop-filter: none;
   }
 
   .lk-clock {
@@ -101,14 +109,18 @@
     gap: 0.75rem;
   }
 
+  /* The person's initial, white on Brawzer's black, ringed as the sign-in's mark is. */
   .lk-avatar {
     display: grid;
     width: 86px;
     height: 86px;
     place-items: center;
     border-radius: 999px;
-    background: linear-gradient(135deg, #5e5ce6, #0a84ff);
-    box-shadow: 0 8px 30px rgb(0 0 0 / 0.35);
+    background: #0a0a0c;
+    box-shadow:
+      0 0 0 1.5px rgb(255 255 255 / 0.9),
+      0 0 0 7px rgb(255 255 255 / 0.08),
+      0 18px 40px rgb(0 0 0 / 0.55);
     font-size: 34px;
     font-weight: 600;
   }

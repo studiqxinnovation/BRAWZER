@@ -243,7 +243,8 @@ function MenuList({
         (() => {
           const parent = entries[sub.index];
           if (!parent || !isItem(parent) || !parent.children) return null;
-          return (
+          // In the document itself: inside the menu, its blur would hold the submenu's position.
+          return createPortal(
             <MenuList
               key={sub.index}
               entries={parent.children}
@@ -254,7 +255,8 @@ function MenuList({
                 setSub(null);
                 items()[0]?.focus();
               }}
-            />
+            />,
+            document.body,
           );
         })()}
     </div>

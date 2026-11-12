@@ -387,6 +387,22 @@ Compared screen by screen with the prototype again, and brought in line:
 - **Browser windows** open at the prototype's 780 by 500, and Bee's start
   page is the prototype's: the tile, the name, the search pill, six
   shortcuts and the isolation line.
+- **The desktop first**: a fresh tab at /app starts on the plain desktop,
+  as the prototype does, with the one-time hint that the dashboard waits in
+  the Dock (kept with the account); what the tab last chose is kept for it.
+- **The lock screen** stands in the same space scene as the sign-in, with the
+  person's initial white on Brawzer's black.
+- **The desktop's right-click menu** is the prototype's, item for item: New,
+  Paste (a cut file, moved on paste), Upload, Show/Hide dashboard, Open
+  Files, Recent files, Favourites (kept with the account), Search inside
+  files, All apps, Clean up icons (icons can be dragged into place, kept for
+  the tab), Change wallpaper, View, Settings, Lock screen, Control Centre,
+  Leave no trace. A file's menu: Open, Show in Files, Rename, Move to, Cut,
+  Send to phone, Get info, Add to Favourites, Move to Trash. Copying a file
+  isn't offered: Drive has no copy, and pretending with a re-upload would
+  double the storage quietly.
+- **Notices** are the prototype's size (a 36px tile, 9.5px app line, 12.5px
+  title, 11.5px line, 10px time); submenus open beside their item.
 - **No emoji anywhere**: every one, on the public site and in the app
   (greeting, notices, Control Centre, menu bar), is now one of the
   prototype's Apple-style icon tiles (`components/glyph-tile.tsx`), and the

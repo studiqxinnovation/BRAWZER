@@ -1,6 +1,6 @@
 "use client";
 
-import type { BrowserEngine, BrowserSession, DriveFile } from "@brawzer/contracts";
+import type { BrowserEngine, BrowserSession, DriveFile, DriveFolder } from "@brawzer/contracts";
 import { useToast } from "@brawzer/ui/components/toast";
 import { cn } from "@brawzer/ui/lib/cn";
 import { Logo } from "@brawzer/ui/brand";
@@ -20,7 +20,17 @@ import {
 import { flushSync } from "react-dom";
 import { EngineLogo } from "@/components/browser/engine-logo";
 import { endBrowserSession, fetchBrowserOverview } from "@/lib/api/browser";
-import { emptyTrash, fetchDriveOverview, listFilesInFolder } from "@/lib/api/drive";
+import {
+  createFolder,
+  deleteFile,
+  emptyTrash,
+  fetchDriveOverview,
+  listFilesInFolder,
+  updateFile,
+} from "@/lib/api/drive";
+import { NameDialog } from "@/components/drive/dialogs";
+import { clearCutFile, cutFile, readCutFile } from "@/lib/file-clipboard";
+import { clearIconPositions, readIconPositions } from "@/lib/icon-positions";
 import { fetchSecurityOverview } from "@/lib/api/security";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
 import { subscribeToClock } from "@/lib/clock";
@@ -42,6 +52,8 @@ import {
   readDesktopPrefs,
   setPinned,
   subscribeToDesktopPrefs,
+  toggleFavourite,
+  updateDesktopPrefs,
 } from "@/lib/desktop-prefs";
 import { currentExam, endExam, examAllows, loadExam, subscribeToExam } from "@/lib/exam";
 import { isLocked, lockNow, subscribeToLock } from "@/lib/lock";
@@ -69,7 +81,7 @@ import { Dock, type DockActions, Taskbar } from "./dock";
 import { Launchpad, StartMenu } from "./launchpad";
 import { OsPicker } from "./os-picker";
 import { WindowSwitcher } from "./switcher";
-import { LeaveNoTraceDialog, ShortcutsDialog, WipeDialog } from "./system-dialogs";
+import { FileInfoDialog, LeaveNoTraceDialog, ShortcutsDialog, WipeDialog } from "./system-dialogs";
 import { WallpaperDialog } from "./wallpaper";
 import { type Rect, type Snap, snapRect, TitleBar, trackPointer } from "./window-chrome";
 import {
@@ -141,6 +153,34 @@ const CASCADE_Y = 42;
  * height, so every window behind keeps its title and buttons in view.
  */
 const BROWSER_WINDOW = { width: 780, height: 500 };
+
+/** Whether the dashboard is out or in the Dock, kept for this tab. */
+const DASH_KEY = "brawzer:dash";
+const dashListeners = new Set<() => void>();
+function rememberDash(state: "shown" | "hidden") {
+  try {
+    window.sessionStorage.setItem(DASH_KEY, state);
+  } catch {
+    // Nothing kept.
+  }
+  for (const listener of dashListeners) listener();
+}
+const subscribeToDash = (listener: () => void) => {
+  dashListeners.add(listener);
+  return () => {
+    dashListeners.delete(listener);
+  };
+};
+/** What this tab chose; a fresh tab at /app starts on the desktop. */
+function readDashPref(): "shown" | "hidden" | null {
+  try {
+    const kept = window.sessionStorage.getItem(DASH_KEY);
+    if (kept === "shown" || kept === "hidden") return kept;
+  } catch {
+    return null;
+  }
+  return window.location.pathname === "/app" ? "hidden" : null;
+}
 
 /** Who wants to know when the start-up screen is taken away. */
 const bootListeners = new Set<() => void>();
@@ -238,6 +278,9 @@ export function DesktopShell({
   const [issues, setIssues] = useState(0);
   const [drive, setDrive] = useState<{ used: number; limit: number } | null>(null);
   const [deskFiles, setDeskFiles] = useState<readonly DriveFile[]>([]);
+  const [deskFolders, setDeskFolders] = useState<readonly DriveFolder[]>([]);
+  const [renaming, setRenaming] = useState<DriveFile | null>(null);
+  const [info, setInfo] = useState<DriveFile | null>(null);
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [controlOpen, setControlOpen] = useState(false);
@@ -394,15 +437,39 @@ export function DesktopShell({
   );
 
   const dashboardState = useRef(dashboard);
+  const dashHinted = useRef(false);
+
+  // A fresh tab at /app starts on the plain desktop, as the prototype does; the
+  // dashboard waits in the Dock. What the person last chose (this tab) is kept.
+  const dashPref = useSyncExternalStore(subscribeToDash, readDashPref, () => null);
+  const dashHidden = dashboard.hidden || (active && dashPref === "hidden");
   useEffect(() => {
-    dashboardState.current = dashboard;
+    dashboardState.current = { ...dashboard, hidden: dashHidden };
   });
+  // The prototype's one-time hint, kept with the account so it's said once.
+  useEffect(() => {
+    if (!active || dashPref !== "hidden" || !prefsLoaded || prefs.deskHinted || dashHinted.current)
+      return;
+    dashHinted.current = true;
+    const hint = setTimeout(() => {
+      updateDesktopPrefs({ deskHinted: true });
+      toast.add({
+        type: "info",
+        title: "Your desktop",
+        description: "Click the Brawzer icon in the Dock to open your dashboard.",
+      });
+    }, 1_800);
+    return () => {
+      clearTimeout(hint);
+    };
+  }, [active, dashPref, prefsLoaded, prefs.deskHinted, toast]);
 
   /** The dashboard flies out of the Dock's Brawzer icon, or comes forward. */
   const showDashboard = useCallback(() => {
     zTop.current += 1;
     const z = zTop.current;
     const wasHidden = dashboardState.current.hidden;
+    rememberDash("shown");
     flushSync(() => {
       setDashboard((current) => ({ ...current, hidden: false, z }));
       setFocused("dashboard");
@@ -431,6 +498,7 @@ export function DesktopShell({
       (candidate) => candidate && visible(candidate),
     );
     const hide = () => {
+      rememberDash("hidden");
       setDashboard((current) => ({ ...current, hidden: true }));
       setFocused((current) => (current === "dashboard" ? "desktop" : current));
     };
@@ -612,7 +680,70 @@ export function DesktopShell({
     void listFilesInFolder("Desktop").then((files) => {
       setDeskFiles(files);
     });
+    void fetchDriveOverview().then((result) => {
+      if (result.ok) setDeskFolders(result.data.folders);
+    });
   }, []);
+
+  // Whatever changes Drive elsewhere (Files, Trash, saves) refreshes the desktop's icons.
+  useEffect(() => {
+    if (!active) return;
+    window.addEventListener("brawzer:drive-changed", loadDesk);
+    return () => {
+      window.removeEventListener("brawzer:drive-changed", loadDesk);
+    };
+  }, [active, loadDesk]);
+
+  /** The Desktop folder's id, made when there is none yet. */
+  const desktopFolderId = useCallback(async (): Promise<string | null> => {
+    const existing = deskFolders.find(
+      (folder) => folder.parentId === null && folder.name === "Desktop",
+    );
+    if (existing) return existing.id;
+    const made = await createFolder({ name: "Desktop", parentId: null, space: "personal" });
+    return made.ok ? made.data.id : null;
+  }, [deskFolders]);
+
+  /** What a file move or change says when it fails. */
+  const fileFailed = useCallback(
+    (title: string, message: string) => {
+      toast.add({ type: "error", title, description: message });
+    },
+    [toast],
+  );
+
+  /** Pastes the cut file into the Desktop folder: a move. */
+  async function pasteOnDesktop() {
+    const cut = readCutFile();
+    if (!cut) return;
+    const folderId = await desktopFolderId();
+    if (!folderId) {
+      fileFailed("Couldn’t paste it", "The Desktop folder couldn’t be made.");
+      return;
+    }
+    const result = await updateFile(cut.id, { folderId });
+    if (!result.ok) {
+      fileFailed("Couldn’t paste it", result.error.message);
+      return;
+    }
+    clearCutFile();
+    toast.add({ type: "success", title: `Moved “${cut.name}” to the desktop` });
+    loadDesk();
+  }
+
+  async function moveDeskFile(file: DriveFile, folderId: string | null, where: string) {
+    const result = await updateFile(file.id, { folderId });
+    if (!result.ok) fileFailed("Couldn’t move it", result.error.message);
+    else toast.add({ type: "success", title: `Moved “${file.name}” to ${where}` });
+    loadDesk();
+  }
+
+  async function trashDeskFile(file: DriveFile) {
+    const result = await deleteFile(file.id);
+    if (!result.ok) fileFailed("Couldn’t delete it", result.error.message);
+    else toast.add({ type: "success", title: `“${file.name}” is in Trash` });
+    loadDesk();
+  }
 
   useEffect(() => {
     if (!active) return;
@@ -905,11 +1036,11 @@ export function DesktopShell({
   // The window switcher: the dashboard and every window, most recently used first.
   const switchable = useMemo(() => {
     const entries: { z: number; entry: "dashboard" | DesktopWindow }[] = [
-      ...(dashboard.hidden ? [] : [{ z: dashboard.z, entry: "dashboard" as const }]),
+      ...(dashHidden ? [] : [{ z: dashboard.z, entry: "dashboard" as const }]),
       ...windows.map((entry) => ({ z: entry.min ? 0 : entry.z, entry })),
     ];
     return entries.sort((a, b) => b.z - a.z).map((item) => item.entry);
-  }, [windows, dashboard]);
+  }, [windows, dashboard, dashHidden]);
   const keys = useRef({ switchable, switcher, focusWindow, focused, minimise, hideDashboard });
   useEffect(() => {
     keys.current = { switchable, switcher, focusWindow, focused, minimise, hideDashboard };
@@ -973,8 +1104,8 @@ export function DesktopShell({
 
   const dashboardMenu = (): MenuEntry[] => [
     {
-      label: dashboard.hidden ? "Show Brawzer" : "Hide Brawzer",
-      onSelect: dashboard.hidden ? showDashboard : hideDashboard,
+      label: dashHidden ? "Show Brawzer" : "Hide Brawzer",
+      onSelect: dashHidden ? showDashboard : hideDashboard,
     },
     { heading: "Go to" },
     ...(
@@ -1243,110 +1374,226 @@ export function DesktopShell({
     input.click();
   };
 
-  const desktopMenu = (): MenuEntry[] => [
-    {
-      label: "New",
-      children: [
-        {
-          label: "Text file",
-          icon: <Tile glyph="note" colour="yellow" size={18} />,
-          // A newline, not nothing: Drive reads an empty file as unknown, and text opens in its app.
-          onSelect: () => void newOnDesktop("Untitled.txt", "\n", "text/plain"),
-        },
-        {
-          label: "Document",
-          icon: <Tile glyph="doc" colour="blue" size={18} />,
-          onSelect: () =>
-            void newOnDesktop(
-              "Untitled document.html",
-              '<!doctype html><html><head><meta charset="utf-8"><title>Untitled document</title></head><body><p></p></body></html>',
-              "text/html",
-            ),
-        },
-        {
-          label: "Spreadsheet",
-          icon: <Tile glyph="table" colour="green" size={18} />,
-          onSelect: () => void newOnDesktop("Untitled sheet.csv", "\n", "text/csv"),
-        },
-      ],
-    },
-    { label: "Upload files to the desktop…", onSelect: uploadToDesktop },
-    "-",
-    {
-      label: dashboard.hidden ? "Show dashboard" : "Hide dashboard",
-      onSelect: dashboard.hidden ? showDashboard : hideDashboard,
-    },
-    {
-      label: "Open Files",
-      onSelect: () => {
-        openApp("files");
-      },
-    },
-    {
-      label: "Recent files",
-      children: recentMenu(),
-    },
-    {
-      label: "Search inside files…",
-      shortcut: "⌘⇧F",
-      onSelect: () => {
-        openApp("files", { search: "1" });
-      },
-    },
-    { label: "All apps", onSelect: openLauncher },
-    "-",
-    { label: "Change wallpaper…", onSelect: chooseWallpaper },
-    {
-      label: "View",
-      children: [
-        {
-          label: "Dark",
-          checked: dark,
-          onSelect: () => {
-            setThemePreference("dark");
+  const desktopMenu = (): MenuEntry[] => {
+    const cut = readCutFile();
+    const placed = Object.keys(readIconPositions()).length > 0;
+    return [
+      {
+        label: "New",
+        children: [
+          {
+            label: "Text file",
+            icon: <Tile glyph="note" colour="yellow" size={18} />,
+            // A newline, not nothing: Drive reads an empty file as unknown, and text opens in its app.
+            onSelect: () => void newOnDesktop("Untitled.txt", "\n", "text/plain"),
           },
-        },
-        {
-          label: "Light",
-          checked: !dark,
-          onSelect: () => {
-            setThemePreference("light");
+          {
+            label: "Document",
+            icon: <Tile glyph="doc" colour="blue" size={18} />,
+            onSelect: () =>
+              void newOnDesktop(
+                "Untitled document.html",
+                '<!doctype html><html><head><meta charset="utf-8"><title>Untitled document</title></head><body><p></p></body></html>',
+                "text/html",
+              ),
           },
-        },
-        "-",
-        {
-          label: "Mac style",
-          checked: style === "mac",
-          onSelect: () => {
-            chooseDesktopStyle("mac");
+          {
+            label: "Spreadsheet",
+            icon: <Tile glyph="table" colour="green" size={18} />,
+            onSelect: () => void newOnDesktop("Untitled sheet.csv", "\n", "text/csv"),
           },
-        },
-        {
-          label: "Windows style",
-          checked: style === "windows",
-          onSelect: () => {
-            chooseDesktopStyle("windows");
-          },
-        },
-      ],
-    },
-    "-",
-    {
-      label: "Settings…",
-      onSelect: () => {
-        openApp("settings");
+        ],
       },
-    },
-    { label: "Lock screen", shortcut: "Ctrl+Shift+L", onSelect: () => void lockNow() },
-    "-",
-    { label: "Control Centre", onSelect: toggleControlCentre },
-    {
-      label: "Leave no trace…",
-      onSelect: () => {
-        setNoTrace("ask");
+      {
+        label: "Paste",
+        shortcut: keyOf("V"),
+        disabled: !cut,
+        sub: cut ? `“${cut.name}”, cut` : undefined,
+        onSelect: () => void pasteOnDesktop(),
       },
-    },
-  ];
+      { label: "Upload files to the desktop…", onSelect: uploadToDesktop },
+      "-",
+      {
+        label: dashHidden ? "Show dashboard" : "Hide dashboard",
+        onSelect: dashHidden ? showDashboard : hideDashboard,
+      },
+      {
+        label: "Open Files",
+        onSelect: () => {
+          openApp("files");
+        },
+      },
+      { label: "Recent files", children: recentMenu() },
+      { label: "Favourites", children: favouritesMenu() },
+      {
+        label: "Search inside files…",
+        shortcut: keyOf("⇧F"),
+        onSelect: () => {
+          openApp("files", { search: "1" });
+        },
+      },
+      { label: "All apps", onSelect: openLauncher },
+      "-",
+      { label: "Clean up icons", disabled: !placed, onSelect: clearIconPositions },
+      { label: "Change wallpaper…", onSelect: chooseWallpaper },
+      {
+        label: "View",
+        children: [
+          {
+            label: "Dark",
+            checked: dark,
+            onSelect: () => {
+              setThemePreference("dark");
+            },
+          },
+          {
+            label: "Light",
+            checked: !dark,
+            onSelect: () => {
+              setThemePreference("light");
+            },
+          },
+          "-",
+          {
+            label: "Mac style",
+            checked: style === "mac",
+            onSelect: () => {
+              chooseDesktopStyle("mac");
+            },
+          },
+          {
+            label: "Windows style",
+            checked: style === "windows",
+            onSelect: () => {
+              chooseDesktopStyle("windows");
+            },
+          },
+        ],
+      },
+      "-",
+      {
+        label: "Settings…",
+        onSelect: () => {
+          openApp("settings");
+        },
+      },
+      { label: "Lock screen", shortcut: "Ctrl+Shift+L", onSelect: () => void lockNow() },
+      "-",
+      { label: "Control Centre", onSelect: toggleControlCentre },
+      {
+        label: "Leave no trace…",
+        onSelect: () => {
+          setNoTrace("ask");
+        },
+      },
+    ];
+  };
+
+  /** A key with the style's modifier, as the prototype writes shortcuts. */
+  const keyOf = (key: string) => (style === "mac" ? `⌘${key}` : `Ctrl+${key}`);
+
+  /** The files marked as favourites, kept with the account. */
+  const favouritesMenu = (): MenuEntry[] => {
+    if (prefs.favourites.length === 0)
+      return [{ label: "Right-click a file and choose Add to Favourites", disabled: true }];
+    return prefs.favourites.map((entry) => ({
+      label: entry.name,
+      onSelect: () => {
+        const app = appFor(entry);
+        if (app) openApp(app, { file: entry.id, name: entry.name });
+        else openApp("files");
+      },
+    }));
+  };
+
+  /** A file's menu on the desktop, as the prototype's. */
+  const deskFileMenu = (file: DriveFile): MenuEntry[] => {
+    const app = appFor(file);
+    const favourite = prefs.favourites.some((entry) => entry.id === file.id);
+    const folders = deskFolders.filter(
+      (folder) => folder.parentId === null && folder.id !== file.folderId,
+    );
+    return [
+      {
+        label: "Open",
+        disabled: !app,
+        onSelect: () => {
+          if (app) openApp(app, { file: file.id, name: file.name });
+        },
+      },
+      {
+        label: "Show in Files",
+        onSelect: () => {
+          openApp("files", file.folderId ? { folder: file.folderId } : {});
+        },
+      },
+      "-",
+      {
+        label: "Rename…",
+        shortcut: "F2",
+        onSelect: () => {
+          setRenaming(file);
+        },
+      },
+      {
+        label: "Move to",
+        children: [
+          ...folders.map((folder) => ({
+            label: folder.name,
+            onSelect: () => void moveDeskFile(file, folder.id, folder.name),
+          })),
+          ...(folders.length > 0 ? ["-" as const] : []),
+          { label: "Drive", onSelect: () => void moveDeskFile(file, null, "Drive") },
+        ],
+      },
+      "-",
+      {
+        label: "Cut",
+        shortcut: keyOf("X"),
+        onSelect: () => {
+          cutFile({ id: file.id, name: file.name, folderId: file.folderId });
+          toast.add({
+            type: "info",
+            title: `Cut “${file.name}”`,
+            description: "Paste it into another folder, or on the desktop.",
+          });
+        },
+      },
+      "-",
+      {
+        label: "Send to phone",
+        icon: <Tile glyph="phone" colour="green" size={18} />,
+        onSelect: () => {
+          openApp("send-to-phone", { file: file.id, name: file.name });
+        },
+      },
+      {
+        label: "Get info",
+        shortcut: keyOf("I"),
+        onSelect: () => {
+          setInfo(file);
+        },
+      },
+      {
+        label: favourite ? "Remove from Favourites" : "Add to Favourites",
+        onSelect: () => {
+          toggleFavourite({
+            id: file.id,
+            name: file.name,
+            contentType: file.contentType,
+            status: file.status,
+          });
+        },
+      },
+      "-",
+      {
+        label: "Move to Trash",
+        shortcut: style === "mac" ? "⌘⌫" : "Delete",
+        danger: true,
+        onSelect: () => void trashDeskFile(file),
+      },
+    ];
+  };
 
   /** The files opened in this tab, newest first; a shared computer keeps nothing longer. */
   const recentMenu = (): MenuEntry[] => {
@@ -1388,7 +1635,7 @@ export function DesktopShell({
     engines,
     pinned,
     webApps: installedWebApps,
-    dashboardHidden: dashboard.hidden,
+    dashboardHidden: dashHidden,
     onDashboard: dockHome,
     onDashboardMenu: (event: ReactMouseEvent<HTMLElement>) => {
       showMenu(event, dashboardMenu);
@@ -1510,32 +1757,7 @@ export function DesktopShell({
                 });
             }}
             onFileMenu={(event, file) => {
-              showMenu(event, () => {
-                const app = appFor(file);
-                return [
-                  {
-                    label: "Open",
-                    disabled: !app,
-                    onSelect: () => {
-                      if (app) openApp(app, { file: file.id, name: file.name });
-                    },
-                  },
-                  {
-                    label: "Show in Files",
-                    onSelect: () => {
-                      openApp("files");
-                    },
-                  },
-                  "-",
-                  {
-                    label: "Send to phone",
-                    icon: <Tile glyph="phone" colour="green" size={18} />,
-                    onSelect: () => {
-                      openApp("send-to-phone", { file: file.id, name: file.name });
-                    },
-                  },
-                ];
-              });
+              showMenu(event, () => deskFileMenu(file));
             }}
             onIconMenu={(event, open) => {
               showMenu(event, () => [{ label: "Open", onSelect: open }]);
@@ -1547,7 +1769,7 @@ export function DesktopShell({
         <div
           ref={dashboardRef}
           className="ad-window dt-dash"
-          data-hidden={dashboard.hidden || undefined}
+          data-hidden={dashHidden || undefined}
           data-placed={dashboard.rect ? true : undefined}
           data-focused={focused === "dashboard" || undefined}
           style={
@@ -1834,6 +2056,36 @@ export function DesktopShell({
             if (!open) setNoTrace(null);
           }}
           onConfirm={() => void leaveNoTrace()}
+        />
+        <NameDialog
+          open={renaming !== null}
+          onOpenChange={(open) => {
+            if (!open) setRenaming(null);
+          }}
+          title={renaming ? `Rename “${renaming.name}”` : "Rename"}
+          description="On the desktop and in Drive."
+          label="Name"
+          initial={renaming?.name ?? ""}
+          submitLabel="Rename"
+          onSubmit={(name) =>
+            updateFile(renaming?.id ?? "", { name }).then((result) => {
+              if (result.ok) loadDesk();
+              return result;
+            })
+          }
+        />
+        <FileInfoDialog
+          file={info}
+          folderName={deskFolders.find((folder) => folder.id === info?.folderId)?.name ?? "Desktop"}
+          onOpenChange={(open) => {
+            if (!open) setInfo(null);
+          }}
+          onOpen={() => {
+            if (!info) return;
+            const app = appFor(info);
+            setInfo(null);
+            if (app) openApp(app, { file: info.id, name: info.name });
+          }}
         />
         <OsPicker
           open={pickerOpen}

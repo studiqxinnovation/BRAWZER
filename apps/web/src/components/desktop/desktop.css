@@ -927,6 +927,20 @@
     pointer-events: auto;
   }
 
+  /* An icon dragged somewhere: it leaves the column and sits where it was put. */
+  .dt-icons > li[data-placed] {
+    position: absolute;
+  }
+
+  .dt-icons > li[data-lifted] {
+    z-index: 2;
+    opacity: 0.85;
+  }
+
+  .dt-icons > li[data-lifted] .dt-dico {
+    cursor: grabbing;
+  }
+
   .dt-dico {
     display: flex;
     width: 88px;
