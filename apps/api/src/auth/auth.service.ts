@@ -181,6 +181,16 @@ export class AuthService {
       meta,
       metadata: { method: "sign_up_link" },
     });
+    // The account exists now: welcome the person, and tell whoever runs Brawzer.
+    this.email.sendWelcome(result.user.email);
+    this.email.notifyAdmins(
+      "sign-up",
+      [
+        ["Email", result.user.email],
+        ["When", new Date().toISOString()],
+      ],
+      `sign-up:${result.user.id}`,
+    );
     await this.events.record({
       type: "sign_in.succeeded",
       userId: result.user.id,

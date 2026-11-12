@@ -3,6 +3,7 @@ import { AuthModule } from "../auth/auth.module.js";
 import { BillingModule } from "../billing/billing.module.js";
 import { CryptoModule } from "../crypto/crypto.module.js";
 import { DatabaseModule } from "../database/database.module.js";
+import { EmailModule } from "../email/email.js";
 import { RateLimitModule } from "../rate-limit/rate-limiter.js";
 import { RedisModule } from "../redis/redis.module.js";
 import { ScanningModule } from "../scanning/scanning.module.js";
@@ -17,6 +18,7 @@ import { DownloadTickets } from "./tickets.js";
   imports: [
     AuthModule,
     DatabaseModule,
+    EmailModule,
     CryptoModule,
     StorageModule,
     ScanningModule,

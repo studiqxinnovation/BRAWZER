@@ -13,6 +13,7 @@ import { ChangeEmail } from "@/components/account/change-email";
 import { ChangePasswordForm } from "@/components/account/change-password-form";
 import { DeleteAccount } from "@/components/account/delete-account";
 import { DownloadData } from "@/components/account/download-data";
+import { EmailPreferences } from "@/components/account/email-preferences";
 import { PasskeysSection } from "@/components/account/passkeys-section";
 import { PlanSection } from "@/components/account/plan-section";
 import { DesktopStyleSegment, WallpaperButton } from "@/components/account/preference-controls";
@@ -184,6 +185,12 @@ async function Preferences() {
           {session.persistent ? "Never" : `${String(session.idleTimeoutMinutes)} min`}
         </span>
       </Row>
+      <Row
+        id="email-heading"
+        title="Email notifications"
+        sub="Which optional emails you get. Security and billing emails are always sent."
+        body={<EmailPreferences />}
+      />
     </>
   );
 }

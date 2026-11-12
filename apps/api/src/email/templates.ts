@@ -22,15 +22,37 @@ export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => entities[character] ?? character);
 }
 
+/**
+ * Where the mark shown at the top of each email lives (set once by the
+ * service from the web app's address). Clients that block images still see
+ * the "Brawzer" wordmark beside it.
+ */
+let markUrl: string | null = null;
+export function setMarkUrl(url: string | null): void {
+  markUrl = url;
+}
+
 interface LayoutOptions {
   preheader: string;
   heading: string;
   paragraphs: readonly string[];
   action?: { label: string; url: string };
+  /** Short facts in a table, such as a plan and when it renews. */
+  facts?: readonly (readonly [string, string])[];
   footnote: string;
+  /** For an optional notice: why the person gets it, and the link that stops it. */
+  unsubscribe?: { reason: string; url: string };
 }
 
-function renderHtml({ preheader, heading, paragraphs, action, footnote }: LayoutOptions): string {
+function renderHtml({
+  preheader,
+  heading,
+  paragraphs,
+  action,
+  facts,
+  footnote,
+  unsubscribe,
+}: LayoutOptions): string {
   const font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
   const body = paragraphs
     .map(
@@ -38,9 +60,24 @@ function renderHtml({ preheader, heading, paragraphs, action, footnote }: Layout
         `<p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#5e5b56;">${escapeHtml(text)}</p>`,
     )
     .join("");
+  const table =
+    facts && facts.length > 0
+      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 20px;border:1px solid #e4e2dd;border-radius:10px;">${facts
+          .map(
+            ([label, value], index) =>
+              `<tr><td style="padding:10px 14px;font-size:13px;color:#6f6b65;${index > 0 ? "border-top:1px solid #eeece8;" : ""}">${escapeHtml(label)}</td><td align="right" style="padding:10px 14px;font-size:13px;font-weight:600;color:#1c1b19;${index > 0 ? "border-top:1px solid #eeece8;" : ""}">${escapeHtml(value)}</td></tr>`,
+          )
+          .join("")}</table>`
+      : "";
   const button = action
     ? `<p style="margin:24px 0 20px;"><a href="${escapeHtml(action.url)}" style="display:inline-block;background:#2b5be0;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;line-height:20px;padding:12px 20px;border-radius:8px;">${escapeHtml(action.label)}</a></p>
 <p style="margin:0;font-size:13px;line-height:18px;color:#6f6b65;">Or copy this link into your browser:<br><span style="word-break:break-all;color:#2453cf;">${escapeHtml(action.url)}</span></p>`
+    : "";
+  const mark = markUrl
+    ? `<img src="${escapeHtml(markUrl)}" width="28" height="28" alt="" style="display:inline-block;vertical-align:middle;border-radius:7px;margin-right:10px;">`
+    : "";
+  const stop = unsubscribe
+    ? `<p style="margin:10px 0 0;font-size:12px;line-height:18px;color:#6f6b65;">${escapeHtml(unsubscribe.reason)} <a href="${escapeHtml(unsubscribe.url)}" style="color:#2453cf;">Stop these emails</a>.</p>`
     : "";
   return `<!doctype html>
 <html lang="en">
@@ -55,12 +92,13 @@ function renderHtml({ preheader, heading, paragraphs, action, footnote }: Layout
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8f7f4;padding:32px 16px;">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
-<tr><td style="padding:0 4px 20px;font-size:18px;font-weight:600;letter-spacing:-0.02em;color:#1c1b19;">Brawzer</td></tr>
+<tr><td style="padding:0 4px 20px;font-size:18px;font-weight:600;letter-spacing:-0.02em;color:#1c1b19;">${mark}<span style="vertical-align:middle;">Brawzer</span></td></tr>
 <tr><td style="background:#ffffff;border:1px solid #e4e2dd;border-radius:16px;padding:32px;">
 <h1 style="margin:0 0 16px;font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.01em;color:#1c1b19;">${escapeHtml(heading)}</h1>
-${body}${button}
+${body}${table}${button}
 </td></tr>
-<tr><td style="padding:20px 4px 0;font-size:12px;line-height:18px;color:#6f6b65;">${escapeHtml(footnote)}</td></tr>
+<tr><td style="padding:20px 4px 0;font-size:12px;line-height:18px;color:#6f6b65;">${escapeHtml(footnote)}${stop}
+<p style="margin:14px 0 0;font-size:12px;line-height:18px;color:#9a968f;">Brawzer · Your computer in the cloud. Nothing is saved on your device.</p></td></tr>
 </table>
 </td></tr>
 </table>
@@ -68,13 +106,26 @@ ${body}${button}
 </html>`;
 }
 
-function renderText({ heading, paragraphs, action, footnote }: LayoutOptions): string {
+function renderText({
+  heading,
+  paragraphs,
+  action,
+  facts,
+  footnote,
+  unsubscribe,
+}: LayoutOptions): string {
   return [
     heading,
     "",
     ...paragraphs.flatMap((text) => [text, ""]),
+    ...(facts && facts.length > 0
+      ? [...facts.map(([label, value]) => `${label}: ${value}`), ""]
+      : []),
     ...(action ? [`${action.label}: ${action.url}`, ""] : []),
     footnote,
+    ...(unsubscribe ? ["", `${unsubscribe.reason} Stop these emails: ${unsubscribe.url}`] : []),
+    "",
+    "Brawzer · Your computer in the cloud. Nothing is saved on your device.",
   ].join("\n");
 }
 
@@ -392,5 +443,241 @@ export function teamInvitationMessage(team: string, invitedBy: string, url: stri
     action: { label: "Open the Team page", url },
     footnote:
       "If you don’t know who this is, ignore this email. Nothing happens unless you join from your own account.",
+  });
+}
+
+// ── After sign-up ───────────────────────────────────────────────────────
+
+export function welcomeMessage(appUrl: string, securityUrl: string): EmailContent {
+  return compose("Welcome to Brawzer", {
+    preheader: "Your computer in the cloud is ready.",
+    heading: "Your computer in the cloud is ready",
+    paragraphs: [
+      "Thanks for confirming your email. Brawzer runs a whole computer for you in the cloud: browsers that open in an isolated container, Drive for your files, and a desktop of apps, all reached from any device without leaving anything behind on it.",
+      "Three things to try first: open a cloud browser from the Dock, drop a file into Drive, and look at Shield, where every sign-in and change to your account is listed.",
+      "Brawzer never sees your passwords, and a page in a cloud browser can't reach this computer. If anything about your account changes, an email like this one tells you.",
+    ],
+    action: { label: "Open Brawzer", url: appUrl },
+    footnote: `How Brawzer keeps you safe: ${securityUrl}`,
+  });
+}
+
+// ── Billing ─────────────────────────────────────────────────────────────
+
+export function subscriptionStartedMessage(
+  plan: string,
+  price: string | null,
+  renewsOn: string | null,
+  trialEndsOn: string | null,
+  url: string,
+): EmailContent {
+  const trial = trialEndsOn !== null;
+  return compose(trial ? `Your ${plan} trial has started` : `You’re on the ${plan} plan`, {
+    preheader: trial ? `Free until ${trialEndsOn}.` : `Thank you. ${plan} is active now.`,
+    heading: trial ? `Your ${plan} trial has started` : `Welcome to ${plan}`,
+    paragraphs: [
+      trial
+        ? `${plan} is yours to use in full until ${trialEndsOn}. If you keep it, the first payment is taken then; cancel before and nothing is charged.`
+        : `Thank you. ${plan}’s limits apply from now, and your plan renews on its own until you cancel.`,
+      "Your plan, its limits, invoices and the way to change or cancel it are on the Account page.",
+    ],
+    facts: [
+      ["Plan", plan],
+      ...(price ? ([["Price", price]] as const) : []),
+      ...(trial
+        ? ([["Trial ends", trialEndsOn]] as const)
+        : renewsOn
+          ? ([["Renews on", renewsOn]] as const)
+          : []),
+    ],
+    action: { label: "See your plan", url },
+    footnote: "Brawzer sends this when a plan starts; receipts come from the payment provider.",
+  });
+}
+
+export function subscriptionChangedMessage(
+  plan: string,
+  renewsOn: string | null,
+  url: string,
+): EmailContent {
+  return compose(`Your plan is now ${plan}`, {
+    preheader: `${plan}’s limits apply from now.`,
+    heading: `Your plan is now ${plan}`,
+    paragraphs: [
+      `${plan}’s limits apply from now. Anything above the new limits stays as it is, but nothing more can be added until there is room.`,
+    ],
+    facts: [["Plan", plan], ...(renewsOn ? ([["Renews on", renewsOn]] as const) : [])],
+    action: { label: "See your plan", url },
+    footnote: "If you didn’t change your plan, sign in and check Shield for what happened.",
+  });
+}
+
+export function subscriptionEndingMessage(plan: string, endsOn: string, url: string): EmailContent {
+  return compose(`Your ${plan} plan ends on ${endsOn}`, {
+    preheader: "Nothing more is charged; the free plan follows.",
+    heading: `${plan} ends on ${endsOn}`,
+    paragraphs: [
+      `Your subscription was cancelled. ${plan} stays yours until ${endsOn}; after that the free plan and its limits apply, and nothing more is charged.`,
+      "Your files, profiles and settings stay. Anything above the free plan’s limits is kept but can’t be added to until there is room.",
+      "Changed your mind? Resume the plan from the Account page before it ends.",
+    ],
+    action: { label: "See your plan", url },
+    footnote: "If you didn’t cancel, sign in and check Shield for what happened.",
+  });
+}
+
+export function subscriptionEndedMessage(plan: string, url: string): EmailContent {
+  return compose(`Your ${plan} plan has ended`, {
+    preheader: "You’re on the free plan now.",
+    heading: `${plan} has ended`,
+    paragraphs: [
+      "You’re on the free plan now, and nothing more is charged. Your files, profiles and settings stay; anything above the free plan’s limits is kept but can’t be added to until there is room.",
+      "You can choose a plan again at any time from the Account page.",
+    ],
+    action: { label: "See your plan", url },
+    footnote: "If this is a surprise, sign in and check Shield for what happened.",
+  });
+}
+
+export function paymentFailedMessage(
+  plan: string,
+  amount: string | null,
+  retryOn: string | null,
+  url: string,
+): EmailContent {
+  return compose("Your payment for Brawzer didn’t go through", {
+    preheader: "Update your card to keep your plan.",
+    heading: "Your payment didn’t go through",
+    paragraphs: [
+      `The payment for your ${plan} plan${amount ? ` (${amount})` : ""} was declined by your bank or card. Nothing has changed yet.`,
+      retryOn
+        ? `The payment provider tries again on ${retryOn}. Update your card before then from the Account page and the plan carries on; if the payments keep failing, the plan ends and the free plan follows.`
+        : "Update your card from the Account page and the plan carries on; if the payments keep failing, the plan ends and the free plan follows.",
+    ],
+    action: { label: "Update your payment method", url },
+    footnote: "Brawzer never sees your card details; they are held by the payment provider.",
+  });
+}
+
+export function trialEndingMessage(
+  plan: string,
+  endsOn: string,
+  price: string | null,
+  url: string,
+): EmailContent {
+  return compose(`Your ${plan} trial ends on ${endsOn}`, {
+    preheader: price ? `${price} from then, unless you cancel.` : "Decide before then.",
+    heading: `Your ${plan} trial ends on ${endsOn}`,
+    paragraphs: [
+      price
+        ? `From ${endsOn}, ${plan} costs ${price}, taken from the card on file. To keep it, do nothing. To stop, cancel from the Account page before then and nothing is charged.`
+        : `From ${endsOn} the plan is charged to the card on file. To keep it, do nothing. To stop, cancel from the Account page before then and nothing is charged.`,
+    ],
+    action: { label: "See your plan", url },
+    footnote: "Brawzer sends this once, three days before a trial ends.",
+  });
+}
+
+// ── Drive ───────────────────────────────────────────────────────────────
+
+export function fileQuarantinedMessage(
+  name: string,
+  threat: string | null,
+  source: "upload" | "browser",
+  when: string,
+  url: string,
+): EmailContent {
+  return compose(`“${name}” was quarantined in your Drive`, {
+    preheader: "The malware scan found a threat. The file is isolated.",
+    heading: "A file was quarantined",
+    paragraphs: [
+      `${source === "browser" ? "A file a cloud browser saved to your Drive" : "A file uploaded to your Drive"} matched known malware${threat ? ` (${threat})` : ""} and was put in quarantine at ${when}.`,
+      "It is kept, but it can’t be opened, previewed, sent to a page or downloaded to a computer. You can delete it from Files. Nothing else in your Drive was touched, and the file never ran anywhere.",
+    ],
+    action: { label: "See the file", url },
+    footnote:
+      "Brawzer scans every file on its way into Drive. If you didn’t expect this file, check Shield for what else happened in your account.",
+  });
+}
+
+// ── Teams ───────────────────────────────────────────────────────────────
+
+export function teamMemberJoinedMessage(
+  team: string,
+  who: string,
+  url: string,
+  unsubscribeUrl: string,
+): EmailContent {
+  return compose(`${who} joined “${team}”`, {
+    preheader: "They use the team’s plan and shared Drive from now.",
+    heading: `${who} joined “${team}”`,
+    paragraphs: [
+      `${who} accepted the invitation to your team. They use the team’s plan and can see the shared Drive from now; their own profiles and files stay theirs.`,
+    ],
+    action: { label: "Open the Team page", url },
+    footnote: "Team members, roles and invitations are managed on the Team page.",
+    unsubscribe: { reason: "You get team updates because you run this team.", url: unsubscribeUrl },
+  });
+}
+
+export function teamMemberRemovedMessage(team: string, url: string): EmailContent {
+  return compose(`You’re no longer in “${team}”`, {
+    preheader: "Your own plan and limits apply again.",
+    heading: `You’re no longer in “${team}”`,
+    paragraphs: [
+      `An owner or admin of “${team}” removed you. Your own plan and limits apply again, and you no longer see the team’s shared Drive. Your own profiles, files and settings are untouched.`,
+    ],
+    action: { label: "See your account", url },
+    footnote: "If you think this is a mistake, ask the team’s owner for a new invitation.",
+  });
+}
+
+export function teamOwnershipTransferredMessage(
+  team: string,
+  from: string,
+  url: string,
+): EmailContent {
+  return compose(`You now own “${team}”`, {
+    preheader: "The team uses your plan from now.",
+    heading: `You now own “${team}”`,
+    paragraphs: [
+      `${from} made you the owner of “${team}”. The team uses your plan and its limits from now, and you can invite, remove and change the roles of its members. ${from} stays in the team as an admin.`,
+    ],
+    action: { label: "Open the Team page", url },
+    footnote: "Ownership can be passed on again from the Team page.",
+  });
+}
+
+// ── For the people who run Brawzer ──────────────────────────────────────
+
+export function adminNoticeMessage(
+  kind: "sign-up" | "subscription" | "report" | "quarantine",
+  facts: readonly (readonly [string, string])[],
+  url: string,
+): EmailContent {
+  const title =
+    kind === "sign-up"
+      ? "A new account was created"
+      : kind === "subscription"
+        ? "A subscription changed"
+        : kind === "report"
+          ? "A page was reported"
+          : "A file was quarantined";
+  return compose(`Brawzer: ${title.toLowerCase()}`, {
+    preheader: facts.map(([label, value]) => `${label}: ${value}`).join(" · "),
+    heading: title,
+    paragraphs: [
+      kind === "sign-up"
+        ? "Someone confirmed their email and has an account now."
+        : kind === "subscription"
+          ? "The payment provider reported a change to an account’s plan."
+          : kind === "report"
+            ? "Someone reported a page from a cloud browser. The report, with its picture if one was attached, is on the Admin page."
+            : "The malware scan caught a file on its way into a Drive. It is isolated; nothing ran.",
+    ],
+    facts,
+    action: { label: "Open the Admin page", url },
+    footnote:
+      "You get these because your address is in ADMIN_EMAILS. Set ADMIN_NOTIFICATIONS=none to stop them.",
   });
 }

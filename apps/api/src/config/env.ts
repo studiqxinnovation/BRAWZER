@@ -43,6 +43,12 @@ export const envSchema = z.object({
   EMAIL_FROM: z.string().min(3).default("Brawzer <no-reply@brawzer.localhost>"),
   MAILPIT_API_URL: z.url({ protocol: /^https?$/ }).default("http://127.0.0.1:8125"),
   RESEND_API_KEY: z.string().min(1).optional(),
+  /** Resend's webhook signing secret (whsec_…), for bounce and complaint reports. */
+  RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
+  /** Where replies to Brawzer's email go, if anywhere. */
+  EMAIL_REPLY_TO: z.string().min(3).optional(),
+  /** Whether administrators (ADMIN_EMAILS) are emailed about sign-ups, subscriptions, reports and quarantines. */
+  ADMIN_NOTIFICATIONS: z.enum(["all", "none"]).default("all"),
   /**
    * Refuse new passwords found in known data breaches (Pwned Passwords range
    * API; only a 5-character hash prefix is sent). Default: on in production.
@@ -231,8 +237,12 @@ export interface BillingConfig {
 export interface EmailConfig {
   readonly transport: EmailTransportName;
   readonly from: string;
+  readonly replyTo: string | undefined;
   readonly mailpitApiUrl: string;
   readonly resendApiKey: string | undefined;
+  readonly resendWebhookSecret: string | undefined;
+  /** Whether administrators get the project's own notices. */
+  readonly adminNotifications: "all" | "none";
 }
 
 export type EncryptionConfig =
@@ -672,8 +682,11 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
     email: Object.freeze({
       transport: values.EMAIL_TRANSPORT,
       from: values.EMAIL_FROM,
+      replyTo: values.EMAIL_REPLY_TO,
       mailpitApiUrl: values.MAILPIT_API_URL,
       resendApiKey: values.RESEND_API_KEY,
+      resendWebhookSecret: values.RESEND_WEBHOOK_SECRET,
+      adminNotifications: values.ADMIN_NOTIFICATIONS,
     }),
   });
 }

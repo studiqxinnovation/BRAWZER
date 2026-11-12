@@ -413,6 +413,7 @@ export class TeamsService {
       return locked.name;
     });
     await this.record(auth, meta, "team.joined", { team });
+    this.email.sendTeamMemberJoined(await this.leaders(auth.user.id), team, auth.user.email);
     return this.overview(auth);
   }
 
@@ -459,6 +460,8 @@ export class TeamsService {
     });
     await this.runAfter(after);
     await this.record(auth, meta, "team.member_removed", { team }, userId);
+    const removed = await this.addressOf(userId);
+    if (removed) this.email.sendTeamMemberRemoved(removed, team);
     return this.overview(auth);
   }
 
@@ -510,6 +513,8 @@ export class TeamsService {
     });
     await this.record(auth, meta, "team.ownership_transferred", { team, role: "owner" }, userId);
     await this.record(auth, meta, "team.ownership_transferred", { team, role: "admin" });
+    const newOwner = await this.addressOf(userId);
+    if (newOwner) this.email.sendTeamOwnershipTransferred(newOwner, team, auth.user.email);
     return this.overview(auth);
   }
 
@@ -654,6 +659,36 @@ export class TeamsService {
       .from(schema.teamMembers)
       .where(eq(schema.teamMembers.teamId, teamId));
     return rows.map((row) => row.userId);
+  }
+
+  private async addressOf(userId: string): Promise<string | null> {
+    const [row] = await this.database.db
+      .select({ email: schema.users.email })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+    return row?.email ?? null;
+  }
+
+  /** The owner and admins of the team a member is in, who hear when someone joins. */
+  private async leaders(memberId: string): Promise<{ id: string; email: string }[]> {
+    const [mine] = await this.database.db
+      .select({ teamId: schema.teamMembers.teamId })
+      .from(schema.teamMembers)
+      .where(eq(schema.teamMembers.userId, memberId))
+      .limit(1);
+    if (!mine) return [];
+    return this.database.db
+      .select({ id: schema.users.id, email: schema.users.email })
+      .from(schema.teamMembers)
+      .innerJoin(schema.users, eq(schema.users.id, schema.teamMembers.userId))
+      .where(
+        and(
+          eq(schema.teamMembers.teamId, mine.teamId),
+          ne(schema.teamMembers.userId, memberId),
+          ne(schema.teamMembers.role, "member"),
+        ),
+      );
   }
 
   private async record(

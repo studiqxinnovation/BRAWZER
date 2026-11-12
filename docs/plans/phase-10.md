@@ -14,13 +14,14 @@ real; nothing an account owns is kept on the device.
 
 ## Milestones
 
-| #    | Milestone                                                                                                 | Status              |
-| ---- | --------------------------------------------------------------------------------------------------------- | ------------------- |
-| 10.1 | The cloud browser as a computer's own: cursor, gestures, site icons and tab previews, fonts, link numbers | **Done** 2026-11-12 |
-| 10.2 | The app switcher, Mission Control and Task View, Spotlight and Start search, notifications, app menus     | **Done** 2026-11-12 |
-| 10.3 | Idle, screensaver and lock; boot, shut down and restart; several desktops; windows that remember          | **Done** 2026-11-12 |
-| 10.4 | Drag and drop across the boundary; faces on the login screen and switching; the stream read aloud         | **Done** 2026-11-12 |
-| 10.5 | The moving page as video (VP8 over the stream, decoded with WebCodecs)                                    | **Done** 2026-11-12 |
+| #    | Milestone                                                                                                                         | Status              |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| 10.1 | The cloud browser as a computer's own: cursor, gestures, site icons and tab previews, fonts, link numbers                         | **Done** 2026-11-12 |
+| 10.2 | The app switcher, Mission Control and Task View, Spotlight and Start search, notifications, app menus                             | **Done** 2026-11-12 |
+| 10.3 | Idle, screensaver and lock; boot, shut down and restart; several desktops; windows that remember                                  | **Done** 2026-11-12 |
+| 10.4 | Drag and drop across the boundary; faces on the login screen and switching; the stream read aloud                                 | **Done** 2026-11-12 |
+| 10.5 | The moving page as video (VP8 over the stream, decoded with WebCodecs)                                                            | **Done** 2026-11-12 |
+| 10.6 | Email that a computer's owner expects: welcome, billing, quarantines, team updates, administrators, preferences, delivery reports | **Done** 2026-11-12 |
 
 ## 10.1 The cloud browser as a computer's own
 
@@ -139,3 +140,34 @@ decodes and draws each frame, and the still page keeps its sharp picture
 drawn over the last frame. A missed chunk makes the viewer ask for a key
 frame. Without ffmpeg, WebCodecs or with `BRAWZER_VIDEO=off`, the stream
 is the pictures it was. See ADR 0006's addendum for the measurements.
+
+## 10.6 Email, through Resend
+
+Brawzer already sent twenty transactional emails (confirmation, reset,
+every change to an account, usage notices, team invitations) through one
+transport with Resend behind it in production. Added:
+
+- **Welcome** once the email is confirmed, with the first three things to
+  try and what Brawzer never sees.
+- **Billing**: a plan started (with its trial and renewal dates), changed,
+  cancelled for the end of the period, ended; a payment that didn't go
+  through (`invoice.payment_failed`) and a trial about to end
+  (`customer.subscription.trial_will_end`), both new webhook events. Each is
+  sent once per Stripe event (an idempotency key), never again on a
+  redelivery.
+- **A quarantined file**: what it was, the threat, how it came in.
+- **Teams**: someone joined (to the owner and admins), you were removed,
+  you now own the team.
+- **For whoever runs Brawzer** (`ADMIN_EMAILS`): a sign-up, a subscription
+  change, a reported page, a quarantined file; `ADMIN_NOTIFICATIONS=none`
+  stops them.
+- **Preferences** on the Account page (usage notices, team updates), with a
+  one-click "Stop these emails" link and `List-Unsubscribe` headers on those
+  notices; security and billing emails are always sent.
+- **Delivery reports**: Resend's signed webhooks for bounces and complaints
+  stop email to that address and tell the person on their Account page.
+- The layout shows the brand mark (`/brand/mark.png`), facts as a table,
+  and Resend gets a category tag on every message.
+- Found on the way: webhooks carry no Origin, and the cross-site check
+  would have refused Stripe's in production. Signed webhook paths are
+  exempt now, and a test posts both without an origin.

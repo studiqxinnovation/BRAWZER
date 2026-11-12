@@ -390,8 +390,11 @@ describe("parseConfig", () => {
     expect(parseConfig(minimal, "1").email).toEqual({
       transport: "mailpit",
       from: "Brawzer <no-reply@brawzer.localhost>",
+      replyTo: undefined,
       mailpitApiUrl: "http://127.0.0.1:8125",
       resendApiKey: undefined,
+      resendWebhookSecret: undefined,
+      adminNotifications: "all",
     });
   });
 });

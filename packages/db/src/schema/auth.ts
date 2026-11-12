@@ -33,8 +33,26 @@ export const users = pgTable("users", {
    * Passkeys store this instead of the email address or database ID.
    */
   webauthnUserId: text().unique("users_webauthn_user_id_unique"),
+  /**
+   * Which optional emails the person wants (`usageNotices`, `teamUpdates`);
+   * a key left out means yes. Security and billing emails are always sent.
+   */
+  emailPrefs: jsonb().$type<Record<string, boolean>>().notNull().default({}),
   createdAt: timestamptz().notNull().defaultNow(),
   updatedAt: timestamptz().notNull().defaultNow(),
+});
+
+/**
+ * Addresses email can't be delivered to, as the email provider's webhooks
+ * reported (a hard bounce, or the person marked Brawzer as spam). Nothing
+ * is sent there again until the address is changed or the entry is cleared.
+ */
+export const emailSuppressions = pgTable("email_suppressions", {
+  /** Lower-cased. */
+  email: text().primaryKey(),
+  reason: text().notNull(),
+  detail: text(),
+  createdAt: timestamptz().notNull().defaultNow(),
 });
 
 /**
@@ -93,6 +111,8 @@ export const emailTokenPurpose = pgEnum("email_token_purpose", [
   "reset_password",
   "change_email",
   "undo_email_change",
+  /** One-click "stop these emails" from an optional notice's footer. */
+  "unsubscribe",
 ]);
 
 /** Single-use links sent by email. Only the token's hash is stored. */

@@ -12,6 +12,7 @@ import { Inject, Injectable, Logger, type OnApplicationBootstrap } from "@nestjs
 import type { z } from "zod";
 import type { AuthContext } from "../auth/session.service.js";
 import { ApiException } from "../common/api-exception.js";
+import { EmailService } from "../email/email.js";
 import type { RequestMeta } from "../common/request-meta.js";
 import { SECRET_BOX } from "../crypto/crypto.module.js";
 import type { SecretBox } from "../crypto/secret-box.js";
@@ -37,6 +38,7 @@ const pictureContext = (id: string) => `page-report:${id}`;
 @Injectable()
 export class ReportsService implements OnApplicationBootstrap {
   constructor(
+    @Inject(EmailService) private readonly email: EmailService,
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(SECRET_BOX) private readonly box: SecretBox,
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
@@ -122,6 +124,16 @@ export class ReportsService implements OnApplicationBootstrap {
       meta,
       metadata: { kind: input.kind, picture: picture !== null },
     });
+    this.email.notifyAdmins(
+      "report",
+      [
+        ["Kind", input.kind],
+        ["Page", input.url ?? "(not given)"],
+        ["Engine", session?.engine ?? "(none)"],
+        ["Message", input.message.slice(0, 200)],
+      ],
+      `report:${id}`,
+    );
     return { id: row.id, createdAt: row.createdAt.toISOString() };
   }
 

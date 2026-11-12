@@ -8,6 +8,9 @@ import {
   reauthenticateResponseSchema,
   revokeOtherSessionsResponseSchema,
   securityEventPageSchema,
+  accountEmailSchema,
+  type UpdateEmailPreferencesRequest,
+  unsubscribeResponseSchema,
 } from "@brawzer/contracts";
 import { apiRequest } from "./client";
 
@@ -70,6 +73,23 @@ export const undoEmailChange = (token: string, password: string) =>
   });
 
 /** Deletes the account immediately. Needs a recent sign-in. */
+export const fetchAccountEmail = () => apiRequest("/account/email", { schema: accountEmailSchema });
+
+export const updateEmailPreferences = (patch: UpdateEmailPreferencesRequest) =>
+  apiRequest("/account/email-preferences", {
+    method: "PATCH",
+    body: patch,
+    schema: accountEmailSchema,
+  });
+
+/** One click from an email's footer, signed in or not. */
+export const unsubscribe = (token: string) =>
+  apiRequest("/account/unsubscribe", {
+    method: "POST",
+    body: { token },
+    schema: unsubscribeResponseSchema,
+  });
+
 export const deleteAccount = (email: string) =>
   apiRequest<undefined>("/account/delete", { method: "POST", body: { email } });
 

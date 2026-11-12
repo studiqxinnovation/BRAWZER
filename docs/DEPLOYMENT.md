@@ -70,7 +70,7 @@ docker compose -f infra/staging/compose.yaml --env-file infra/staging/staging.en
 ```
 
 - **OpenBao runs in dev mode** as a stand-in for a managed key service: its keys live in memory, so anything encrypted with them becomes unreadable after a restart. It's for checking the stack, not for real data.
-- **Email needs a real Resend key** and a verified sending domain; without one, sign-up confirmation emails aren't delivered.
+- **Email needs a real Resend key** and a verified sending domain; without one, sign-up confirmation emails aren't delivered. See "Email through Resend" below.
 - **Checked on 2026-11-07:**
   - Every service became healthy, and migrations and key setup ran once and exited.
   - Pages were served over HTTP/2 with HSTS and the security headers, with a fresh nonce for each account page.
@@ -131,6 +131,33 @@ Engine API ([ADR 0012](adr/0012-cloud-browser-runtime-isolation.md)):
 - **A verified Resend sending domain.** It needs the website domain.
 - **TURN servers for WebRTC streaming** (Phase 3b): declined after the spike; the frame stream is what ships. (The runtime-host scheduler and the warm pool were built in Phase 8.)
 - **An independent penetration test** and the isolation checks on a real host (runbook).
+
+## Email through Resend
+
+Every email Brawzer sends (sign-up confirmation, sign-in and account
+notices, the welcome, billing, quarantined files, team updates, usage
+notices, and the notices to administrators) goes through one transport.
+To send for real:
+
+1. In Resend, verify the sending domain (SPF and DKIM records) and create an
+   API key with sending permission.
+2. Set `EMAIL_TRANSPORT=resend`, `RESEND_API_KEY=re_…` and
+   `EMAIL_FROM=Brawzer <no-reply@your-domain>` on the API (from the secret
+   manager, never in the repository). `EMAIL_REPLY_TO` is optional.
+3. Add a webhook in Resend pointing at `https://<api>/api/v1/webhooks/resend`
+   for the events `email.bounced` and `email.complained`, and set its
+   signing secret as `RESEND_WEBHOOK_SECRET=whsec_…`. From then on a hard
+   bounce or a spam complaint stops every further email to that address, and
+   the person's Account page says so until they change it. Without the
+   secret the route answers 404 and bounces go unnoticed.
+4. `ADMIN_EMAILS` lists who runs the installation; they are emailed about
+   sign-ups, subscriptions, reported pages and quarantined files unless
+   `ADMIN_NOTIFICATIONS=none`.
+
+The mark at the top of each email is served from the web app
+(`/brand/mark.png`), so the web origin must be reachable from mail clients.
+Optional notices carry `List-Unsubscribe` headers and a one-click link;
+security and billing emails are always sent.
 
 ## Running the browser tests against a production build
 

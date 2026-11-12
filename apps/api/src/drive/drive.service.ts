@@ -35,6 +35,7 @@ import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { AuthContext } from "../auth/session.service.js";
 import { lockAccount } from "../common/account-lock.js";
 import { ApiException } from "../common/api-exception.js";
+import { EmailService } from "../email/email.js";
 import { isUniqueViolation } from "../common/database-errors.js";
 import type { RequestMeta } from "../common/request-meta.js";
 import { APP_CONFIG } from "../config/config.module.js";
@@ -197,6 +198,7 @@ export interface OpenedFile {
 @Injectable()
 export class DriveService implements OnModuleInit {
   constructor(
+    @Inject(EmailService) private readonly email: EmailService,
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(SECRET_BOX) private readonly box: SecretBox,
     @Inject(OBJECT_STORE) private readonly store: ObjectStore,
@@ -580,6 +582,36 @@ export class DriveService implements OnModuleInit {
    * file is kept in quarantine: visible and deletable, never openable. A
    * file goes where its folder is, or to the top of `space`.
    */
+  /** The owner hears of a quarantined file, and so does whoever runs Brawzer. */
+  private async quarantineNotices(
+    userId: string,
+    fileId: string,
+    name: string,
+    threat: string | null,
+    source: "upload" | "browser",
+  ): Promise<void> {
+    try {
+      const [owner] = await this.database.db
+        .select({ email: schema.users.email })
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+      if (owner) this.email.sendFileQuarantined(owner.email, name, threat, source, fileId);
+      this.email.notifyAdmins(
+        "quarantine",
+        [
+          ["File", name],
+          ["Threat", threat ?? "(unnamed)"],
+          ["Source", source === "browser" ? "a cloud browser" : "an upload"],
+          ["Account", owner?.email ?? userId],
+        ],
+        `quarantine:${fileId}`,
+      );
+    } catch (error) {
+      logger.warn(`Quarantine notice failed: ${error instanceof Error ? error.message : ""}`);
+    }
+  }
+
   async upload(
     auth: { user: { id: string }; session: { id: string } },
     folderId: string | null,
@@ -679,6 +711,15 @@ export class DriveService implements OnModuleInit {
     }
 
     const fromBrowser = input.source === "browser";
+    if (row.status === "infected") {
+      void this.quarantineNotices(
+        userId,
+        row.id,
+        row.name,
+        row.threat,
+        fromBrowser ? "browser" : "upload",
+      );
+    }
     await this.events.record({
       type:
         row.status === "infected"
@@ -981,6 +1022,9 @@ export class DriveService implements OnModuleInit {
       throw error;
     }
     await this.removeObjects([row.objectKey]);
+    if (updated.status === "infected") {
+      void this.quarantineNotices(userId, updated.id, updated.name, updated.threat, "upload");
+    }
     await this.events.record({
       type: updated.status === "infected" ? "drive.file_quarantined" : "drive.file_uploaded",
       userId,

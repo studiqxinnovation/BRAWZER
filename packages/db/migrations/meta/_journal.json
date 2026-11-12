@@ -232,6 +232,13 @@
       "when": 1794392695796,
       "tag": "0032_drive_trash",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794520255391,
+      "tag": "0033_email_notices",
+      "breakpoints": true
     }
   ]
 }

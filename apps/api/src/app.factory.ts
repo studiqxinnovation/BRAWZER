@@ -17,6 +17,7 @@ import type { Logger } from "pino";
 import { AppModule } from "./app.module.js";
 import { SESSION_AUTH } from "./auth/auth.controller.js";
 import { BillingService } from "./billing/billing.service.js";
+import { EmailDeliveryService } from "./email/delivery.js";
 import { StreamGateway } from "./browser/stream-gateway.js";
 import { ApiExceptionFilter, errorBody } from "./common/api-exception.filter.js";
 import { isAllowedOrigin, isUnsafeMethod } from "./common/request-meta.js";
@@ -33,6 +34,10 @@ const ONE_MEGABYTE = 1_048_576;
 /** Builds a fully configured API application without starting to listen. */
 /** Stripe's webhook, outside Nest's routing so the raw body can be checked. */
 const WEBHOOK_PATH = "/api/v1/billing/webhook";
+/** Resend's webhook (bounces and complaints), checked the same way. */
+const EMAIL_WEBHOOK_PATH = "/api/v1/webhooks/resend";
+/** Routes a signature authenticates instead of a Brawzer page's origin. */
+const SIGNED_WEBHOOKS = new Set([WEBHOOK_PATH, EMAIL_WEBHOOK_PATH]);
 
 export async function createApp(
   config: AppConfig,
@@ -106,6 +111,25 @@ export async function createApp(
     return reply.code(204).send();
   });
 
+  const delivery = app.get(EmailDeliveryService);
+  const header = (value: string | string[] | undefined) =>
+    Array.isArray(value) ? value[0] : value;
+  void fastify.post(
+    EMAIL_WEBHOOK_PATH,
+    { config: { rateLimit: false } },
+    async (request, reply) => {
+      const raw =
+        (request as FastifyRequest & { rawBody?: Buffer }).rawBody?.toString("utf8") ?? "";
+      delivery.verify(raw, {
+        id: header(request.headers["svix-id"]),
+        timestamp: header(request.headers["svix-timestamp"]),
+        signature: header(request.headers["svix-signature"]),
+      });
+      await delivery.handle(raw);
+      return reply.code(204).send();
+    },
+  );
+
   // The cloud browser stream: a WebSocket outside Nest's routing, relayed to
   // the session's runtime by the gateway (see browser/stream-gateway.ts).
   await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
@@ -115,12 +139,13 @@ export async function createApp(
   });
 
   // Cross-site request forgery: a state-changing request must come from one
-  // of Brawzer's own pages. Future webhook routes (billing) will authenticate
-  // with signatures instead and be listed here as exceptions.
+  // of Brawzer's own pages. The webhooks are the exception: no browser sends
+  // them, and each proves itself with the provider's signature instead.
   fastify.addHook("onRequest", (request, reply, done) => {
     if (
       isUnsafeMethod(request.method) &&
       request.url.startsWith("/api/") &&
+      !SIGNED_WEBHOOKS.has(request.url.split("?")[0] ?? "") &&
       !isAllowedOrigin(request.headers, config.allowedOrigins)
     ) {
       void reply

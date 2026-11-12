@@ -68,6 +68,18 @@ export const authMethodSchema = z.enum([
   "sign_up_link",
 ]);
 
+/** The optional emails a person may turn off; security and billing emails are always sent. */
+export const emailCategories = ["usageNotices", "teamUpdates"] as const;
+export const emailCategorySchema = z.enum(emailCategories);
+export type EmailCategory = z.infer<typeof emailCategorySchema>;
+export const emailPreferencesSchema = z.object({
+  usageNotices: z.boolean(),
+  teamUpdates: z.boolean(),
+});
+export type EmailPreferences = z.infer<typeof emailPreferencesSchema>;
+/** Why email to the account's address stopped: the provider reported a bounce or a spam complaint. */
+export const emailDeliveryProblemSchema = z.enum(["bounced", "complained"]);
+
 export const accountSchema = z.object({
   id: z.uuid(),
   email: z.email(),
@@ -78,6 +90,26 @@ export const accountSchema = z.object({
   planCode: z.string(),
   createdAt: z.iso.datetime(),
 });
+
+/** GET /account/email: what the account's address receives, and whether it can be reached. */
+export const accountEmailSchema = z.object({
+  preferences: emailPreferencesSchema,
+  /** Set while nothing can be delivered to the address; null when email works. */
+  deliveryProblem: emailDeliveryProblemSchema.nullable(),
+});
+export type AccountEmail = z.infer<typeof accountEmailSchema>;
+
+export const updateEmailPreferencesRequestSchema = emailPreferencesSchema.partial();
+export type UpdateEmailPreferencesRequest = z.infer<typeof updateEmailPreferencesRequestSchema>;
+
+/** One click from an email's footer; the token says which account and which emails. */
+export const unsubscribeRequestSchema = z.object({ token: z.string().min(20).max(128) });
+export const unsubscribeResponseSchema = z.object({
+  category: emailCategorySchema,
+  /** Masked, for the page to say whose preference changed. */
+  email: z.string(),
+});
+export type UnsubscribeResponse = z.infer<typeof unsubscribeResponseSchema>;
 
 export const sessionInfoSchema = z.object({
   id: z.uuid(),

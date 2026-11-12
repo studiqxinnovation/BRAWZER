@@ -1,4 +1,9 @@
-import type { AccountExport } from "@brawzer/contracts";
+import type {
+  AccountEmail,
+  AccountExport,
+  UnsubscribeResponse,
+  UpdateEmailPreferencesRequest,
+} from "@brawzer/contracts";
 import { and, type DatabaseHandle, eq, ne, schema } from "@brawzer/db";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { BreachedPasswordCheck } from "../auth/breached-passwords.js";
@@ -14,6 +19,7 @@ import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
 import { DriveService } from "../drive/drive.service.js";
 import { ProfileDataService } from "../profiles/profile-data.service.js";
+import { EmailDeliveryService } from "../email/delivery.js";
 import { EmailService } from "../email/email.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
@@ -42,6 +48,7 @@ export class AccountService {
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(EmailTokenService) private readonly emailTokens: EmailTokenService,
     @Inject(EmailService) private readonly email: EmailService,
+    @Inject(EmailDeliveryService) private readonly delivery: EmailDeliveryService,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
     @Inject(SessionService) private readonly sessions: SessionService,
@@ -60,6 +67,31 @@ export class AccountService {
     @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
     @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
   ) {}
+
+  /** What the account's address receives, and whether anything can reach it. */
+  async emailSettings(auth: AuthContext): Promise<AccountEmail> {
+    const [preferences, deliveryProblem] = await Promise.all([
+      this.email.preferences(auth.user.id),
+      this.delivery.problemFor(auth.user.email),
+    ]);
+    return { preferences, deliveryProblem };
+  }
+
+  async updateEmailPreferences(
+    auth: AuthContext,
+    patch: UpdateEmailPreferencesRequest,
+  ): Promise<AccountEmail> {
+    const preferences = await this.email.setPreferences(auth.user.id, patch);
+    return { preferences, deliveryProblem: await this.delivery.problemFor(auth.user.email) };
+  }
+
+  /** One click from an email's footer, signed in or not. */
+  async unsubscribe(token: string, meta: RequestMeta): Promise<UnsubscribeResponse> {
+    await this.limiter.enforce(RATE_LIMITS.linkAttemptsPerIp, ipOf(meta));
+    const result = await this.email.unsubscribe(token);
+    if (!result) throw linkInvalid();
+    return result;
+  }
 
   /**
    * Sends a confirmation link to the new address and a notice to the current
@@ -136,6 +168,8 @@ export class AccountService {
       if (isUniqueViolation(error)) throw addressTaken();
       throw error;
     }
+    // A new address starts clean: a block on it from an earlier owner no longer applies.
+    await this.delivery.clear(newEmail);
     this.email.sendEmailChanged(oldEmail, newEmail, undoToken);
     await this.events.record({ type: "email.changed", userId: found.user.id, meta });
     return newEmail;

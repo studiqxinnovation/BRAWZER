@@ -44,4 +44,6 @@ export const EMAIL_LINK_LIFETIME_SECONDS = {
   change_email: DAY,
   /** Long enough for someone to notice a change they didn't make. */
   undo_email_change: 7 * DAY,
+  /** A footer link in an email that may sit unread for a while. */
+  unsubscribe: 90 * DAY,
 } as const;
