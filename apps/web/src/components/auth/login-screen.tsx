@@ -46,7 +46,7 @@ export function LoginScreen({ children, notice }: { children: ReactNode; notice?
         <div className="lp-blob lp-blob-teal" />
       </div>
       <div aria-hidden="true" className="lg-band" />
-      <StarField className="lg-sky" />
+      <StarField className="lg-sky" earth />
       {/* Only this layer scrolls: the sky behind it never adds a scrollbar or shifts. */}
       <div className="lg-scroll">
         <Clock />

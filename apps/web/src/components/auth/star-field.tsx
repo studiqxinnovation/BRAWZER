@@ -28,6 +28,39 @@ interface Meteor {
   length: number;
 }
 
+interface Satellite {
+  /** Its orbit: the ring's size relative to the planet, its tilt, and where it is on it. */
+  ring: number;
+  tilt: number;
+  angle: number;
+  /** Radians per second. */
+  rate: number;
+  size: number;
+}
+
+interface Station {
+  /** Where on the planet's limb, in radians from straight up. */
+  bearing: number;
+  phase: number;
+}
+
+const SATELLITES: readonly Satellite[] = [
+  { ring: 1.1, tilt: -0.22, angle: 0.4, rate: 0.085, size: 1.3 },
+  { ring: 1.22, tilt: 0.14, angle: 2.6, rate: -0.06, size: 1.5 },
+  { ring: 1.22, tilt: 0.14, angle: 5.1, rate: -0.06, size: 1.2 },
+  { ring: 1.36, tilt: -0.06, angle: 3.9, rate: 0.045, size: 1.6 },
+  { ring: 1.36, tilt: -0.06, angle: 1.1, rate: 0.045, size: 1.25 },
+];
+
+/** How flat the rings look: seen almost side-on, so they pass over the planet's face. */
+const RING_SQUASH = 0.9;
+
+const STATIONS: readonly Station[] = [
+  { bearing: -0.42, phase: 0 },
+  { bearing: 0.08, phase: 0.9 },
+  { bearing: 0.5, phase: 1.6 },
+];
+
 const WHITE: readonly [number, number, number] = [255, 255, 255];
 const TINTS: readonly (readonly [number, number, number])[] = [
   WHITE,
@@ -45,6 +78,23 @@ function mulberry(seed: number) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+/** Points on the planet's visible cap: cities, as lights at night. */
+function makeCities(count: number, seed: number): { a: number; d: number; w: number }[] {
+  const random = mulberry(seed);
+  const cities: { a: number; d: number; w: number }[] = [];
+  for (let index = 0; index < count; index += 1) {
+    // Clustered: most lights sit together, as coasts and cities do.
+    const cluster = Math.floor(random() * 6);
+    const centre = -0.75 + cluster * 0.3 + (random() - 0.5) * 0.08;
+    cities.push({
+      a: centre + (random() - 0.5) * 0.22,
+      d: 0.955 + random() * 0.04,
+      w: 0.3 + random() * 0.7,
+    });
+  }
+  return cities;
 }
 
 function makeStars(count: number, seed: number): Star[] {
@@ -72,10 +122,11 @@ function makeStars(count: number, seed: number): Star[] {
 /**
  * A night sky, drawn: stars that twinkle at their own pace, the bright ones
  * with a soft glow and a four-point flare, the whole field panning slowly,
- * and now and then a meteor. Still for anyone who prefers reduced motion,
- * and asleep while the tab is hidden.
+ * and now and then a meteor; with `earth`, the planet along the bottom,
+ * satellites on their rings and the network between them. Still for anyone
+ * who prefers reduced motion, and asleep while the tab is hidden.
  */
-export function StarField({ className }: { className?: string }) {
+export function StarField({ className, earth = false }: { className?: string; earth?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -91,6 +142,7 @@ export function StarField({ className }: { className?: string }) {
     let height = 0;
     let ratio = 1;
     let stars: Star[] = [];
+    const cities = makeCities(140, 11);
     let meteors: Meteor[] = [];
     let nextMeteor = 2_500 + Math.random() * 4_000;
     let frame = 0;
@@ -146,6 +198,7 @@ export function StarField({ className }: { className?: string }) {
         context.arc(x, y, star.r, 0, Math.PI * 2);
         context.fill();
       }
+      if (earth) drawEarth(time);
       for (const meteor of meteors) {
         const fade = Math.sin(Math.min(1, meteor.life) * Math.PI);
         const tailX = meteor.x - meteor.vx * meteor.length;
@@ -160,6 +213,207 @@ export function StarField({ className }: { className?: string }) {
         context.moveTo(tailX, tailY);
         context.lineTo(meteor.x, meteor.y);
         context.stroke();
+      }
+    }
+
+    /** Where a satellite is now, on its tilted ring around the planet. */
+    function place(satellite: Satellite, seconds: number, cx: number, cy: number, radius: number) {
+      const angle = satellite.angle + satellite.rate * seconds;
+      const rx = radius * satellite.ring;
+      const ry = rx * RING_SQUASH;
+      const ox = Math.cos(angle) * rx;
+      const oy = Math.sin(angle) * ry;
+      return {
+        x: cx + ox * Math.cos(satellite.tilt) - oy * Math.sin(satellite.tilt),
+        y: cy + ox * Math.sin(satellite.tilt) + oy * Math.cos(satellite.tilt),
+        // The near half of the ring passes in front of the planet.
+        front: Math.sin(angle) > 0,
+      };
+    }
+
+    /**
+     * The planet's limb along the bottom, lit from the left with its night
+     * side to the right, the atmosphere glowing over it, city lights on the
+     * dark side; satellites on three rings, ground stations, and the faint
+     * links and pulses of a network between them.
+     */
+    function drawEarth(time: number) {
+      const seconds = reduced ? 0 : time / 1000;
+      const radius = Math.max(width * 0.58, height * 0.85);
+      const cx = width * 0.5;
+      const cy = height + radius * 0.78;
+      const inside = (x: number, y: number) => Math.hypot(x - cx, y - cy) < radius;
+
+      // Rings behind the planet first, dashed and faint.
+      for (const ring of [1.1, 1.22, 1.36]) {
+        const tilt = SATELLITES.find((satellite) => satellite.ring === ring)?.tilt ?? 0;
+        context.save();
+        context.translate(cx, cy);
+        context.rotate(tilt);
+        context.strokeStyle = "rgba(160, 190, 255, 0.16)";
+        context.lineWidth = 0.8;
+        context.setLineDash([3, 9]);
+        context.beginPath();
+        context.ellipse(0, 0, radius * ring, radius * ring * RING_SQUASH, 0, 0, Math.PI * 2);
+        context.stroke();
+        context.restore();
+      }
+      const positions = SATELLITES.map((satellite) => place(satellite, seconds, cx, cy, radius));
+      // Satellites on the far side, dimmer, before the planet covers them.
+      drawSatellites(positions, false, seconds);
+
+      // The atmosphere: a halo outside the limb.
+      const halo = context.createRadialGradient(cx, cy, radius * 0.94, cx, cy, radius * 1.12);
+      halo.addColorStop(0, "rgba(90, 160, 255, 0)");
+      halo.addColorStop(0.3, "rgba(100, 170, 255, 0.42)");
+      halo.addColorStop(1, "rgba(90, 160, 255, 0)");
+      context.fillStyle = halo;
+      context.fillRect(0, 0, width, height);
+
+      // The planet itself: deep blue, lit from the upper left.
+      const body = context.createRadialGradient(
+        cx - radius * 0.55,
+        cy - radius * 0.9,
+        radius * 0.1,
+        cx,
+        cy,
+        radius,
+      );
+      body.addColorStop(0, "#1b4f9c");
+      body.addColorStop(0.35, "#0d2d64");
+      body.addColorStop(0.7, "#071a3c");
+      body.addColorStop(1, "#040d20");
+      context.fillStyle = body;
+      context.beginPath();
+      context.arc(cx, cy, radius, 0, Math.PI * 2);
+      context.fill();
+      // Night falls across the right-hand side.
+      const night = context.createLinearGradient(cx - radius * 0.2, 0, cx + radius * 0.7, 0);
+      night.addColorStop(0, "rgba(2, 6, 16, 0)");
+      night.addColorStop(1, "rgba(2, 6, 16, 0.85)");
+      context.fillStyle = night;
+      context.beginPath();
+      context.arc(cx, cy, radius, 0, Math.PI * 2);
+      context.fill();
+      // The bright limb where the atmosphere catches the sun.
+      const limb = context.createLinearGradient(cx - radius, 0, cx + radius, 0);
+      limb.addColorStop(0, "rgba(150, 200, 255, 0.9)");
+      limb.addColorStop(0.55, "rgba(150, 200, 255, 0.55)");
+      limb.addColorStop(1, "rgba(150, 200, 255, 0.05)");
+      context.strokeStyle = limb;
+      context.lineWidth = 1.6;
+      context.beginPath();
+      context.arc(cx, cy, radius, Math.PI * 1.05, Math.PI * 1.95);
+      context.stroke();
+
+      // City lights, brightest on the night side, each flickering a little.
+      for (const [index, city] of cities.entries()) {
+        const x = cx + Math.sin(city.a) * radius * city.d;
+        const y = cy - Math.cos(city.a) * radius * city.d;
+        if (y > height) continue;
+        const dark = Math.min(1, Math.max(0.15, (x - (cx - radius * 0.2)) / (radius * 0.9)));
+        const flicker = reduced ? 1 : 0.75 + 0.25 * Math.sin(seconds * 2.2 + index);
+        context.fillStyle = `rgba(255, 214, 150, ${String(0.45 * city.w * dark * flicker + 0.12)})`;
+        context.beginPath();
+        context.arc(x, y, 0.8 + city.w * 0.9, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      // Ground stations on the limb: a mark and a ring that spreads and fades.
+      const stationPoints = STATIONS.map((station) => ({
+        x: cx + Math.sin(station.bearing) * radius,
+        y: cy - Math.cos(station.bearing) * radius,
+        phase: station.phase,
+      }));
+      for (const station of stationPoints) {
+        const pulse = reduced ? 0.5 : (seconds * 0.5 + station.phase) % 1;
+        context.strokeStyle = `rgba(120, 220, 255, ${String(0.5 * (1 - pulse))})`;
+        context.lineWidth = 1;
+        context.beginPath();
+        context.arc(station.x, station.y, 3 + pulse * 18, 0, Math.PI * 2);
+        context.stroke();
+        context.fillStyle = "rgba(170, 235, 255, 0.95)";
+        context.beginPath();
+        context.arc(station.x, station.y, 2, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      // The network: links between what can see each other, with pulses along them.
+      const nodes = [
+        ...positions.filter((point) => point.front || !inside(point.x, point.y)),
+        ...stationPoints,
+      ];
+      let link = 0;
+      for (let a = 0; a < nodes.length; a += 1) {
+        for (let b = a + 1; b < nodes.length; b += 1) {
+          const from = nodes[a];
+          const to = nodes[b];
+          if (!from || !to) continue;
+          const distance = Math.hypot(from.x - to.x, from.y - to.y);
+          const reach = Math.min(width, height) * 0.42;
+          if (distance > reach) continue;
+          // No link through the planet.
+          if (inside((from.x + to.x) / 2, (from.y + to.y) / 2)) continue;
+          const strength = 1 - distance / reach;
+          context.strokeStyle = `rgba(140, 190, 255, ${String(0.08 + strength * 0.22)})`;
+          context.lineWidth = 0.8;
+          context.beginPath();
+          context.moveTo(from.x, from.y);
+          context.lineTo(to.x, to.y);
+          context.stroke();
+          const along = reduced ? 0.5 : (seconds * 0.35 + link * 0.29) % 1;
+          context.fillStyle = `rgba(190, 225, 255, ${String(0.5 + strength * 0.5)})`;
+          context.beginPath();
+          context.arc(
+            from.x + (to.x - from.x) * along,
+            from.y + (to.y - from.y) * along,
+            1.6,
+            0,
+            Math.PI * 2,
+          );
+          context.fill();
+          link += 1;
+        }
+      }
+      // Satellites on the near side, over everything.
+      drawSatellites(positions, true, seconds);
+    }
+
+    /** A satellite: its body, two solar panels, and a light that blinks. */
+    function drawSatellites(
+      positions: readonly { x: number; y: number; front: boolean }[],
+      front: boolean,
+      seconds: number,
+    ) {
+      for (const [index, point] of positions.entries()) {
+        if (point.front !== front) continue;
+        const satellite = SATELLITES[index];
+        if (!satellite) continue;
+        const scale = (front ? 1 : 0.8) * satellite.size;
+        const alpha = front ? 1 : 0.45;
+        context.save();
+        context.translate(point.x, point.y);
+        context.rotate(satellite.tilt + (front ? 0.35 : -0.35));
+        context.scale(scale, scale);
+        context.fillStyle = `rgba(214, 226, 245, ${String(alpha)})`;
+        context.fillRect(-3.5, -2.5, 7, 5);
+        context.fillStyle = `rgba(90, 140, 230, ${String(alpha)})`;
+        context.fillRect(-15, -2, 9, 4);
+        context.fillRect(6, -2, 9, 4);
+        context.strokeStyle = `rgba(214, 226, 245, ${String(alpha * 0.9)})`;
+        context.lineWidth = 0.8;
+        context.beginPath();
+        context.moveTo(-6, 0);
+        context.lineTo(-3.5, 0);
+        context.moveTo(3.5, 0);
+        context.lineTo(6, 0);
+        context.stroke();
+        const blink = reduced ? 1 : 0.5 + 0.5 * Math.sin(seconds * 3 + index * 1.7);
+        context.fillStyle = `rgba(120, 220, 255, ${String(alpha * blink)})`;
+        context.beginPath();
+        context.arc(0, -4.5, 1.2, 0, Math.PI * 2);
+        context.fill();
+        context.restore();
       }
     }
 
@@ -208,7 +462,7 @@ export function StarField({ className }: { className?: string }) {
       document.removeEventListener("visibilitychange", onVisibility);
       cancelAnimationFrame(frame);
     };
-  }, []);
+  }, [earth]);
 
   return <canvas ref={ref} className={className} aria-hidden="true" />;
 }
