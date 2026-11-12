@@ -259,6 +259,11 @@ export function BrowserWorkspace({
   const [tabs, setTabs] = useState<TabState[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [engine, setEngine] = useState("");
+  /** The engine's name as notifications say it, read outside React's render cycle. */
+  const engineRef = useRef("");
+  useEffect(() => {
+    engineRef.current = engine.split(" · ")[0] ?? "";
+  }, [engine]);
   const [dialog, setDialog] = useState<PageDialogState | null>(null);
   const [chooser, setChooser] = useState<ChooserRequest | null>(null);
   const [transfers, setTransfers] = useState<RecentTransfer[]>([]);
@@ -514,6 +519,19 @@ export function BrowserWorkspace({
         const described = describeTransfer(message);
         if (!described || message.state === "started") return;
         toast.add(described);
+        // A window on the desktop tells the desktop too: Notification Centre keeps it.
+        postToDesktop({
+          type: "brawzer:notify",
+          notification: {
+            id: `transfer:${message.transferId}`,
+            source: `${engineRef.current} · ${message.kind === "print" ? "Printing" : "Downloads"}`,
+            glyph: message.kind === "print" ? "doc" : "archive",
+            colour: described.type === "error" ? "red" : "blue",
+            tone: described.type === "error" ? "danger" : "success",
+            title: described.title,
+            description: described.description,
+          },
+        });
         return;
       }
       case "file-chooser": {
@@ -973,6 +991,17 @@ export function BrowserWorkspace({
     }).result;
     if (saved.ok) {
       toast.add({ title: "Screenshot saved in Drive", description: name, type: "success" });
+      postToDesktop({
+        type: "brawzer:notify",
+        notification: {
+          source: `${engineRef.current} · Screenshot`,
+          glyph: "camera",
+          colour: "pink",
+          tone: "success",
+          title: "Screenshot saved in Drive",
+          description: name,
+        },
+      });
     } else if (saved.status === 401) {
       leaveSignedInArea("expired");
     } else {

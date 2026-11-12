@@ -15,13 +15,13 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
 import { EngineLogo } from "@/components/browser/engine-logo";
-import { type AppId, Tile } from "@/components/desktop/apps/registry";
-import { useDesktop } from "@/components/desktop/desktop-context";
+import { type AppId, apps, Tile } from "@/components/desktop/apps/registry";
+import { useDesktop, type WindowSummary } from "@/components/desktop/desktop-context";
+import { NotificationCentre } from "@/components/desktop/notification-centre";
 import type { GlyphName, TileColour } from "@/components/desktop/glyphs";
 import { GlyphSvg } from "@/components/glyph-tile";
 import { endBrowserSession, fetchBrowserOverview } from "@/lib/api/browser";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
-import { menuBarClock, subscribeToClock } from "@/lib/clock";
 import {
   type DesktopStyle,
   desktopActive,
@@ -36,6 +36,7 @@ import { lockNow } from "@/lib/lock";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
 
 const TRIGGER = "ad-mb-mi";
+const never = () => () => undefined;
 
 const useDark = () =>
   useSyncExternalStore(
@@ -140,11 +141,6 @@ function Status() {
   );
 }
 
-function Clock() {
-  const time = useSyncExternalStore(subscribeToClock, menuBarClock, () => "");
-  return <time className="ad-mb-clock">{time}</time>;
-}
-
 function IconButton({
   label,
   onClick,
@@ -181,6 +177,14 @@ export function MenuBar() {
   );
   const [sessions, setSessions] = useState<readonly BrowserSession[] | null>(null);
   const [engines, setEngines] = useState<readonly BrowserSession["engine"][]>([]);
+  /** The windows and the one in front, read as their menus open. */
+  const [windows, setWindows] = useState<readonly WindowSummary[]>([]);
+  const [front, setFront] = useState<WindowSummary | null>(null);
+  const mac = useSyncExternalStore(
+    never,
+    () => /Mac|iPhone|iPad/.test(navigator.platform),
+    () => true,
+  );
   const onDesktop = () => desktop !== null && desktopActive();
   const go = (href: string) => {
     router.push(href as Route);
@@ -207,17 +211,63 @@ export function MenuBar() {
       </span>
 
       <Menubar className="ad-mb-menu" aria-label="Brawzer menu bar">
-        <Menu>
+        <Menu
+          onOpenChange={(open) => {
+            if (open) setFront(desktop?.frontWindow() ?? null);
+          }}
+        >
           <MenuTrigger className="ad-mb-mi ad-mb-app">{appName}</MenuTrigger>
           <MenuContent className="ad-mb-pop">
-            <MenuItem
-              onClick={() => {
-                app("settings", "/app/account", { section: "about" });
-              }}
-            >
-              About Brawzer
-            </MenuItem>
-            <MenuSeparator />
+            {front && desktop ? (
+              // The app in front: its own menu, as a Mac names it after the app.
+              <>
+                <MenuItem
+                  onClick={() => {
+                    if (front.app) app("settings", "/app/account", { section: "about" });
+                    else app("settings", "/app/account", { section: "browsers" });
+                  }}
+                >
+                  About {front.label}
+                </MenuItem>
+                <MenuSeparator />
+                {front.app && !apps[front.app].single && (
+                  <MenuItem
+                    onClick={() => {
+                      if (front.app) desktop.openApp(front.app);
+                    }}
+                  >
+                    New {front.label} window
+                  </MenuItem>
+                )}
+                <MenuItem
+                  onClick={() => {
+                    desktop.minimiseWindow(front.id);
+                  }}
+                  shortcut={mac ? "⌘M" : "Ctrl+M"}
+                >
+                  Hide {front.label}
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    desktop.closeWindow(front.id);
+                  }}
+                >
+                  {front.app ? `Quit ${front.label}` : `End ${front.label}`}
+                </MenuItem>
+                <MenuSeparator />
+              </>
+            ) : (
+              <>
+                <MenuItem
+                  onClick={() => {
+                    app("settings", "/app/account", { section: "about" });
+                  }}
+                >
+                  About Brawzer
+                </MenuItem>
+                <MenuSeparator />
+              </>
+            )}
             <MenuItem
               icon={<Glyph glyph="gear" colour="gray" />}
               onClick={() => {
@@ -478,6 +528,68 @@ export function MenuBar() {
           </MenuContent>
         </Menu>
 
+        {desktop && desktopOn && (
+          <Menu
+            onOpenChange={(open) => {
+              if (open) setWindows(desktop.listWindows());
+            }}
+          >
+            <MenuTrigger className={TRIGGER}>Window</MenuTrigger>
+            <MenuContent className="ad-mb-pop">
+              <MenuItem
+                disabled={!windows.some((entry) => entry.focused)}
+                shortcut={mac ? "⌘M" : "Ctrl+M"}
+                onClick={() => {
+                  const frontmost = desktop.frontWindow();
+                  if (frontmost) desktop.minimiseWindow(frontmost.id);
+                }}
+              >
+                Minimise
+              </MenuItem>
+              <MenuItem
+                disabled={!windows.some((entry) => entry.focused)}
+                onClick={() => {
+                  const frontmost = desktop.frontWindow();
+                  if (frontmost) desktop.zoomWindow(frontmost.id);
+                }}
+              >
+                Zoom
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem
+                shortcut={mac ? "F3 or ⌃↑" : "F3 or Ctrl+↑"}
+                onClick={desktop.toggleOverview}
+              >
+                {style === "windows" ? "Task View" : "Mission Control"}
+              </MenuItem>
+              <MenuItem onClick={desktop.showDesktop}>Show desktop</MenuItem>
+              <MenuItem shortcut={mac ? "⌥`" : "Alt+`"} onClick={desktop.showSwitcher}>
+                Switch windows
+              </MenuItem>
+              <MenuItem
+                disabled={windows.length === 0}
+                onClick={() => {
+                  for (const entry of windows) if (!entry.min) desktop.focusWindow(entry.id);
+                }}
+              >
+                Bring all to front
+              </MenuItem>
+              {windows.length > 0 && <MenuSeparator />}
+              {windows.map((entry) => (
+                <MenuItem
+                  key={entry.id}
+                  icon={<Check on={entry.focused} />}
+                  onClick={() => {
+                    desktop.focusWindow(entry.id);
+                  }}
+                >
+                  {entry.min ? `${entry.title} (in the Dock)` : entry.title}
+                </MenuItem>
+              ))}
+            </MenuContent>
+          </Menu>
+        )}
+
         <Menu>
           <MenuTrigger className={TRIGGER}>Help</MenuTrigger>
           <MenuContent className="ad-mb-pop">
@@ -510,7 +622,7 @@ export function MenuBar() {
 
       <div className="ad-mb-right">
         <Status />
-        <Clock />
+        <NotificationCentre compact />
         <IconButton label="Lock screen" onClick={() => void lockNow()}>
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <rect x="5" y="11" width="14" height="10" rx="2" />

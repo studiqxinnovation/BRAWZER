@@ -334,9 +334,19 @@ export function Taskbar({
   onStart: () => void;
   onControlCentre: () => void;
   onShowDesktop: () => void;
+  onTaskView: () => void;
 }) {
-  const { windows, focused, engines, pinned, webApps, onStart, onControlCentre, onShowDesktop } =
-    actions;
+  const {
+    windows,
+    focused,
+    engines,
+    pinned,
+    webApps,
+    onStart,
+    onControlCentre,
+    onShowDesktop,
+    onTaskView,
+  } = actions;
   const open = useOpenOrToggle(actions);
   const dark = useDark();
   const online = useSyncExternalStore(
@@ -407,6 +417,20 @@ export function Taskbar({
             <path d="m21 21-4.35-4.35" />
           </svg>
           Search
+        </button>
+        <button
+          type="button"
+          className="dt-tb-item dt-tb-taskview"
+          aria-label="Task View"
+          title="Task View"
+          onClick={onTaskView}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="8" height="6" rx="1.5" />
+            <rect x="13" y="5" width="8" height="6" rx="1.5" />
+            <rect x="3" y="13" width="8" height="6" rx="1.5" />
+            <rect x="13" y="13" width="8" height="6" rx="1.5" />
+          </svg>
         </button>
         <button
           ref={dashboardRef}

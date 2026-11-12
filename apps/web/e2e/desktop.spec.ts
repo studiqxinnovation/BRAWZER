@@ -154,7 +154,7 @@ test.describe("desktop", () => {
     await expect(page.getByRole("button", { name: "Maximise Brawzer" })).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);
     await taskbar.getByRole("button", { name: "Search" }).click();
-    await expect(page.getByRole("combobox", { name: "Launch a browser or search" })).toBeFocused();
+    await expect(page.getByRole("combobox", { name: /Search apps, files/ })).toBeFocused();
     await page.keyboard.press("Escape");
     await taskbar.getByRole("button", { name: "Start" }).click();
     const start = page.getByRole("dialog", { name: "Start" });
@@ -209,7 +209,7 @@ test.describe("desktop", () => {
 
     // Settings from quick launch; it changes the desktop's style.
     await page.keyboard.press("ControlOrMeta+k");
-    await page.getByRole("combobox", { name: "Launch a browser or search" }).fill("settings");
+    await page.getByRole("combobox", { name: /Search apps, files/ }).fill("settings");
     await page.keyboard.press("Enter");
     const settings = page.getByRole("region", { name: "Settings window" });
     await expect(settings).toBeVisible();
@@ -495,5 +495,102 @@ test.describe("desktop", () => {
     await expect(window).toBeHidden();
     await expect(page.getByText("Bee Browser closed")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByLabel("Status")).toContainText("0 of 3 browsers running");
+  });
+});
+
+test.describe("desktop as a computer's own", () => {
+  test("Mission Control, the app and Window menus, Search with files and sums, and Notification Centre", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "Phones keep the plain layout.");
+    test.setTimeout(120_000);
+    await signedIn(page, baseURL, "desktop-own");
+    const dock = page.getByRole("navigation", { name: "Dock" });
+    const launchpad = page.getByRole("dialog", { name: "Launchpad" });
+    const openFromLaunchpad = async (name: string) => {
+      await dock.getByRole("button", { name: "Launchpad" }).click();
+      await launchpad.getByRole("searchbox").fill(name);
+      await launchpad.getByRole("button", { name, exact: true }).click();
+      await expect(launchpad).toBeHidden();
+    };
+    await openFromLaunchpad("Calculator");
+    const calculator = page.getByRole("region", { name: "Calculator window" });
+    await expect(calculator).toBeVisible();
+    await openFromLaunchpad("Notepad");
+    const notepad = page.getByRole("region", { name: "Notepad window" });
+    await expect(notepad).toBeVisible();
+
+    // Mission Control: every window at once; choosing one brings it forward.
+    await page.keyboard.press("F3");
+    const overview = page.getByRole("dialog", { name: "Mission Control" });
+    await expect(overview).toBeVisible();
+    await expect(overview.getByTestId("overview-window")).toHaveCount(3);
+    await overview.getByRole("button", { name: "Calculator", exact: true }).click();
+    await expect(overview).toBeHidden();
+    await expect(calculator).toHaveAttribute("data-focused", "true");
+
+    // The menu bar names the app in front and offers its menu; Window lists every window.
+    const menubar = page.getByRole("menubar", { name: "Brawzer menu bar" });
+    await expect(menubar.getByRole("menuitem", { name: "Calculator" })).toBeVisible();
+    await menubar.getByRole("menuitem", { name: "Calculator" }).click();
+    await expect(page.getByRole("menuitem", { name: "About Calculator" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Hide Calculator" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await menubar.getByRole("menuitem", { name: "Window", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Mission Control" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /Notepad$/ })).toBeVisible();
+    await page.getByRole("menuitem", { name: /^Minimise/ }).click();
+    await expect(dock.getByRole("button", { name: "Calculator, minimised" })).toBeVisible();
+    // Minimised windows wait in a row under Mission Control.
+    await page.keyboard.press("F3");
+    await expect(
+      overview.getByRole("button", { name: /Calculator window, in the Dock/ }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(overview).toBeHidden();
+
+    // Search: a sum answered on the spot, a Settings section, an open window, a Drive file.
+    await page.keyboard.press("ControlOrMeta+KeyK");
+    const search = page.getByRole("combobox", { name: /Search apps, files/ });
+    await expect(search).toBeFocused();
+    await search.fill("12 * 4 + 2");
+    await expect(page.getByRole("option", { name: /^= 50/ })).toBeVisible();
+    await search.fill("notepad");
+    await expect(page.getByRole("option", { name: /Notepad.*Switch to/ })).toBeVisible();
+    await search.fill("appearance");
+    await page.getByRole("option", { name: /^Appearance/ }).click();
+    const settings = page.getByRole("region", { name: "Settings window" });
+    await expect(settings).toBeVisible();
+    await expect(settings.getByRole("region", { name: "Appearance" })).toBeVisible();
+
+    // A file uploaded in Files: a banner at the top right, kept in Notification Centre.
+    await openFromLaunchpad("Files");
+    const files = page.getByRole("region", { name: "Files window" });
+    // The sidebar's Documents (the grid has one too, opened with a double click).
+    await files.getByRole("button", { name: "Documents" }).first().click();
+    await expect(files.getByRole("button", { name: "Upload", exact: true })).toBeEnabled();
+    const chooser = page.waitForEvent("filechooser");
+    await files.getByRole("button", { name: "Upload", exact: true }).click();
+    await (
+      await chooser
+    ).setFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hello") });
+    const banners = page.getByRole("region", { name: "New notifications" });
+    await expect(banners).toContainText("Uploaded “notes.txt”");
+    await page.getByRole("button", { name: /Notification Centre/ }).click();
+    const centre = page.getByRole("region", { name: "Notification Centre" });
+    await expect(centre).toContainText("Uploaded “notes.txt”");
+    await expect(centre).toContainText("Files · Drive");
+    await centre.getByRole("button", { name: "Clear all" }).click();
+    await expect(centre).toContainText("Nothing new");
+    await page.keyboard.press("Escape");
+    await expect(centre).toBeHidden();
+
+    // Search finds the file in Drive as you type.
+    await page.keyboard.press("ControlOrMeta+KeyK");
+    await search.fill("notes");
+    await expect(page.getByRole("option", { name: /notes\.txt/ })).toBeVisible({ timeout: 15_000 });
+    await page.keyboard.press("Escape");
   });
 });

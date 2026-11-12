@@ -2,8 +2,21 @@
 
 import type { BrowserSession } from "@brawzer/contracts";
 import { createContext, useContext } from "react";
+import type { PostedNotification } from "@/lib/notifications";
 import { isWebUrl } from "@/lib/web-url";
 import type { AppId } from "./apps/registry";
+
+/** A window as the menu bar and Search list it. */
+export interface WindowSummary {
+  id: string;
+  /** "Chrome", "Notepad": what the window is. */
+  label: string;
+  /** What its title bar says. */
+  title: string;
+  app: AppId | null;
+  min: boolean;
+  focused: boolean;
+}
 
 /** What the rest of the app may ask of the desktop. */
 export interface DesktopApi {
@@ -33,6 +46,20 @@ export interface DesktopApi {
   wipe: () => void;
   /** Help → Keyboard shortcuts. */
   showShortcuts: () => void;
+  /** Every window, in the order they were opened, read when asked (menus are built as they open). */
+  listWindows: () => readonly WindowSummary[];
+  /** The window in front, if one of the desktop's windows has focus. */
+  frontWindow: () => WindowSummary | null;
+  /** Brings a window forward (and back from the Dock). */
+  focusWindow: (id: string) => void;
+  minimiseWindow: (id: string) => void;
+  /** Zoom (fill the desktop) or back to its size. */
+  zoomWindow: (id: string) => void;
+  closeWindow: (id: string) => void;
+  /** Mission Control (Mac) or Task View (Windows): every window at once. */
+  toggleOverview: () => void;
+  /** The window switcher, as Alt+` shows it, for the mouse. */
+  showSwitcher: () => void;
 }
 
 export const DesktopContext = createContext<DesktopApi | null>(null);
@@ -72,7 +99,9 @@ export function parseDesktopRequest(data: unknown): DesktopRequest | null {
 /** Messages a framed browser window sends the desktop around it (same origin only). */
 export type DesktopMessage =
   | { type: "brawzer:close-window"; session: string }
-  | { type: "brawzer:focus-window"; session: string };
+  | { type: "brawzer:focus-window"; session: string }
+  /** Something the person should know, from a framed browser window: shown by the desktop. */
+  | { type: "brawzer:notify"; notification: PostedNotification };
 
 export function postToDesktop(message: DesktopMessage) {
   if (window.parent === window) return;

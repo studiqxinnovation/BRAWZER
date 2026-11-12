@@ -4,6 +4,7 @@ import { Button } from "@brawzer/ui/components/button";
 import { useToast } from "@brawzer/ui/components/toast";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { z } from "zod";
+import { notify } from "@/lib/notifications";
 import { RecordStatus } from "./record-status";
 import { useAppRecord } from "./use-app-record";
 
@@ -78,6 +79,14 @@ export default function FocusTimerApp() {
           ],
         }));
         toast.add({ type: "success", title: "Focus done", description: "Time for a break." });
+        notify({
+          source: "Focus Timer",
+          glyph: "clock",
+          colour: "orange",
+          tone: "success",
+          title: "Focus done",
+          description: `${String(value.focusMinutes)} minutes on ${subject.trim() || "General"}. Time for a break.`,
+        });
         setRun({ mode: "break", endsAt: Date.now() + value.breakMinutes * 60_000 });
       } else {
         toast.add({
@@ -85,10 +94,18 @@ export default function FocusTimerApp() {
           title: "Break over",
           description: "Start the next focus when you’re ready.",
         });
+        notify({
+          source: "Focus Timer",
+          glyph: "clock",
+          colour: "orange",
+          tone: "accent",
+          title: "Break over",
+          description: "Start the next focus when you’re ready.",
+        });
         setRun(null);
       }
     });
-  }, [finished, run, subject, toast, update, value.breakMinutes]);
+  }, [finished, run, subject, toast, update, value.breakMinutes, value.focusMinutes]);
 
   const minutes = Math.floor(left / 60_000);
   const seconds = Math.floor((left % 60_000) / 1000);

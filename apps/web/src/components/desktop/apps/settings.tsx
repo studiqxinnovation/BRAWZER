@@ -27,19 +27,12 @@ import {
 } from "@/lib/desktop-prefs";
 import { lockNow } from "@/lib/lock";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
-import type { GlyphName, TileColour } from "../glyphs";
 import { useAppWindow } from "./app-window";
+import { SETTINGS_SECTIONS, type SettingsSection } from "./settings-sections";
 import { type AppId, AppIcon, apps, dockSystemApps, launchpadOrder, Tile } from "./registry";
 
-const SECTIONS = [
-  { id: "appearance", label: "Appearance", glyph: "sun", colour: "blue" },
-  { id: "desktop", label: "Desktop and dock", glyph: "grid", colour: "indigo" },
-  { id: "browsers", label: "Browsers", glyph: "globe", colour: "teal" },
-  { id: "security", label: "Privacy and security", glyph: "lock", colour: "red" },
-  { id: "storage", label: "Storage", glyph: "drive", colour: "gray" },
-  { id: "about", label: "About Brawzer", glyph: "bag", colour: "orange" },
-] as const satisfies readonly { id: string; label: string; glyph: GlyphName; colour: TileColour }[];
-type Section = (typeof SECTIONS)[number]["id"];
+const SECTIONS = SETTINGS_SECTIONS;
+type Section = SettingsSection;
 const isSection = (value: string | undefined): value is Section =>
   SECTIONS.some((section) => section.id === value);
 

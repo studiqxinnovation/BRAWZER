@@ -6,6 +6,7 @@ import { Button } from "@brawzer/ui/components/button";
 import { useToast } from "@brawzer/ui/components/toast";
 import { ArrowLeft, RotateCcw, Search, Trash2 } from "lucide-react";
 import { readDesktopPrefs, updateDesktopPrefs } from "@/lib/desktop-prefs";
+import { notify } from "@/lib/notifications";
 import { rememberRecentFile } from "@/lib/recent-files";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -246,6 +247,18 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
     if (!list || place.kind !== "folder") return;
     for (const file of Array.from(list)) {
       const result = await uploadDriveFile(file, place.id, () => undefined).result;
+      if (result.ok && result.data.status === "clean") {
+        const uploaded = result.data;
+        notify({
+          source: "Files · Drive",
+          glyph: "folder",
+          colour: "blue",
+          tone: "success",
+          title: `Uploaded “${uploaded.name}”`,
+          description: "It’s in your Drive, encrypted with its own key.",
+          action: { label: "Open", run: () => openFile(uploaded) },
+        });
+      }
       toast.add(
         result.ok
           ? result.data.status === "clean"

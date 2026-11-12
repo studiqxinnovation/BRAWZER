@@ -17,7 +17,7 @@ real; nothing an account owns is kept on the device.
 | #    | Milestone                                                                                                            | Status              |
 | ---- | -------------------------------------------------------------------------------------------------------------------- | ------------------- |
 | 10.1 | The cloud browser as a computer's own: cursor, gestures, site icons and tab previews, fonts, link numbers            | **Done** 2026-11-12 |
-| 10.2 | The app switcher, Mission Control and Task View, Spotlight and Start search, notifications, app menus                | Planned             |
+| 10.2 | The app switcher, Mission Control and Task View, Spotlight and Start search, notifications, app menus                | **Done** 2026-11-12 |
 | 10.3 | Idle, screensaver and lock; boot, shut down and restart; several desktops; windows that remember                     | Planned             |
 | 10.4 | Drag and drop across the boundary; faces on the login screen and switching; the stream read aloud; video over WebRTC | Planned             |
 
@@ -49,3 +49,32 @@ real; nothing an account owns is kept on the device.
 - **The link's numbers.** The status bar shows the round trip to the
   container (a ping every 5 s, answered by the agent) and frames drawn in
   the last second, with a tooltip saying what they are.
+
+## 10.2 The desktop as a Mac's or a PC's
+
+- **The window switcher** (Alt+` or Option+`) now moves with the arrow keys
+  and chooses with a click, and the Window menu opens it for the mouse.
+  ⌘Tab and Alt+Tab themselves belong to the computer: no web page ever
+  receives them, so Brawzer doesn't pretend to.
+- **Mission Control** (Task View on Windows): F3 or Control and the up
+  arrow, the Window menu, or the taskbar's Task View button fly every window
+  to a cell of a grid, each named, with the windows in the Dock in a row
+  below; choosing one brings it forward, Escape or a click on the desktop
+  puts them back. The windows themselves move (a transform on each), so what
+  is shown is live, not a picture.
+- **Search** (⌘K or Ctrl+K, and Option+Space on a Mac) now finds the desktop's
+  apps and its open windows ("Switch to"), Settings by section, files in
+  Drive as you type (asked of the API once typing pauses), and works out a
+  sum typed into it on the spot with a small parser of its own, never code
+  evaluation; choosing the answer copies it.
+- **Notification Centre.** Apps tell the person what happened through one
+  store (`lib/notifications.ts`): downloads and printed pages, screenshots,
+  uploads, and the Focus Timer. Each arrives as a banner at the top right,
+  with a sound if sounds are on, unless Do Not Disturb is on, and waits in
+  Notification Centre, opened from the clock or the bell in the menu bar,
+  beside Shield's latest notices; Do Not Disturb is switched there too.
+  Kept for this tab only, as everything on a shared computer is.
+- **App and Window menus.** The menu bar's first menu is the app in front:
+  About it, a new window, Hide (⌘M) and Quit (or End, for a browser). A
+  Window menu offers Minimise, Zoom, Mission Control, Show desktop, Switch
+  windows, Bring all to front and every window, the one in front ticked.

@@ -77,11 +77,15 @@ import {
   type DesktopApi,
   DesktopContext,
   type DesktopMessage,
+  type WindowSummary,
 } from "./desktop-context";
+import { Overview, type OverviewCell } from "./overview";
+import { notify } from "@/lib/notifications";
 import { DesktopIcons } from "./desktop-icons";
 import { Dock, type DockActions, Taskbar } from "./dock";
 import { Launchpad, StartMenu } from "./launchpad";
 import { OsPicker } from "./os-picker";
+import { NotificationBanners } from "./notification-centre";
 import { WindowSwitcher } from "./switcher";
 import { FileInfoDialog, LeaveNoTraceDialog, ShortcutsDialog, WipeDialog } from "./system-dialogs";
 import { WallpaperDialog, wallpaperChoiceFrom } from "./wallpaper";
@@ -96,6 +100,29 @@ import {
 import "@/components/browser/launcher.css";
 import "./desktop.css";
 import "./apps/apps.css";
+
+/** Lays `count` windows out in a grid inside `area`, with room under each for its name. */
+function overviewCells(area: Rect, count: number): Rect[] {
+  const gap = 28;
+  const caption = 30;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+  const rows = Math.max(1, Math.ceil(count / cols));
+  const width = (area.width - gap * (cols + 1)) / cols;
+  const height = (area.height - gap * (rows + 1)) / rows - caption;
+  return Array.from({ length: count }, (_value, index) => {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    // The last row is centred when it isn't full.
+    const inRow = row === rows - 1 ? count - row * cols : cols;
+    const offset = ((cols - inRow) * (width + gap)) / 2;
+    return {
+      left: area.left + gap + col * (width + gap) + offset,
+      top: area.top + gap + row * (height + caption + gap),
+      width,
+      height,
+    };
+  });
+}
 
 interface DashboardState {
   hidden: boolean;
@@ -207,6 +234,7 @@ function cascade(area: Rect, index: number, size?: { width: number; height: numb
 }
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const noop = () => undefined;
 
 /** The prototype's genie: from a window to a Dock icon, as a transform. */
 function flyTransform(from: DOMRect, to: DOMRect): string {
@@ -292,6 +320,8 @@ export function DesktopShell({
     null,
   );
   const [switcher, setSwitcher] = useState<number | null>(null);
+  /** Mission Control: every window laid out at once, each in its cell, until one is chosen. */
+  const [overview, setOverview] = useState<readonly OverviewCell[] | null>(null);
   // The dock as the account keeps it: pinned apps and installed web apps.
   const prefs = useSyncExternalStore(
     subscribeToDesktopPrefs,
@@ -627,6 +657,26 @@ export function DesktopShell({
       dashboardHidden: () => dashboardState.current.hidden,
       wipe: askWipe,
       showShortcuts,
+      listWindows: () => windowList.current(),
+      frontWindow: () => windowList.current().find((entry) => entry.focused) ?? null,
+      focusWindow: (id) => {
+        windowActions.current.focus(id);
+      },
+      minimiseWindow: (id) => {
+        windowActions.current.minimise(id);
+      },
+      zoomWindow: (id) => {
+        windowActions.current.zoom(id);
+      },
+      closeWindow: (id) => {
+        windowActions.current.close(id);
+      },
+      toggleOverview: () => {
+        windowActions.current.toggleOverview();
+      },
+      showSwitcher: () => {
+        windowActions.current.showSwitcher();
+      },
     }),
     [
       openSession,
@@ -642,6 +692,24 @@ export function DesktopShell({
       showShortcuts,
     ],
   );
+  /** The windows as the menu bar lists them, read when a menu opens (not a render-time value). */
+  const windowList = useRef<() => readonly WindowSummary[]>(() => []);
+  /** Window actions declared further down, reachable from the stable API above. */
+  const windowActions = useRef<{
+    focus: (id: string) => void;
+    minimise: (id: string) => void;
+    zoom: (id: string) => void;
+    close: (id: string) => void;
+    toggleOverview: () => void;
+    showSwitcher: () => void;
+  }>({
+    focus: noop,
+    minimise: noop,
+    zoom: noop,
+    close: noop,
+    toggleOverview: noop,
+    showSwitcher: noop,
+  });
 
   // What's offered and what's running: running browsers come back as windows in the dock.
   const apply = useCallback(
@@ -833,6 +901,8 @@ export function DesktopShell({
       const message = event.data;
       if (message.type === "brawzer:close-window") {
         setWindows((current) => current.filter((entry) => entry.id !== message.session));
+      } else if (message.type === "brawzer:notify") {
+        notify(message.notification);
       }
     };
     window.addEventListener("message", onMessage);
@@ -1050,9 +1120,132 @@ export function DesktopShell({
     ];
     return entries.sort((a, b) => b.z - a.z).map((item) => item.entry);
   }, [windows, dashboard, dashHidden]);
-  const keys = useRef({ switchable, switcher, focusWindow, focused, minimise, hideDashboard });
+  const keys = useRef<{
+    switchable: typeof switchable;
+    switcher: number | null;
+    focusWindow: (id: string) => void;
+    focused: string;
+    minimise: (id: string) => void;
+    hideDashboard: () => void;
+    toggleOverview: () => void;
+  }>({
+    switchable,
+    switcher,
+    focusWindow,
+    focused,
+    minimise,
+    hideDashboard,
+    toggleOverview: noop,
+  });
+
+  // ── Mission Control ────────────────────────────────────────────────────
+
+  /** Every window shown at once, each flown to a cell of a grid; choosing one brings it forward. */
+  function enterOverview() {
+    const box = bounds();
+    const area = workArea();
+    const shown: { id: string; title: string; label: string; element: HTMLElement; z: number }[] =
+      [];
+    if (!dashHidden && dashboardRef.current) {
+      shown.push({
+        id: "dashboard",
+        title: "Brawzer",
+        label: "Brawzer",
+        element: dashboardRef.current,
+        z: dashboard.z,
+      });
+    }
+    for (const entry of windows) {
+      const element = windowElements.current.get(entry.id);
+      if (!entry.min && element) {
+        shown.push({
+          id: entry.id,
+          title: windowTitle(entry),
+          label: windowLabel(entry),
+          element,
+          z: entry.z,
+        });
+      }
+    }
+    shown.sort((a, b) => b.z - a.z);
+    const cells = overviewCells(area, Math.max(1, shown.length));
+    const placed: OverviewCell[] = [];
+    shown.forEach((item, index) => {
+      const cell = cells[index];
+      if (!cell) return;
+      const rect = item.element.getBoundingClientRect();
+      const left = rect.left - box.left;
+      const top = rect.top - box.top;
+      const scale = Math.min(cell.width / rect.width, cell.height / rect.height, 1);
+      const width = rect.width * scale;
+      const height = rect.height * scale;
+      const x = cell.left + (cell.width - width) / 2;
+      const y = cell.top + (cell.height - height) / 2;
+      const element = item.element;
+      element.style.transformOrigin = "top left";
+      element.style.transition = reducedMotion()
+        ? "none"
+        : "transform 340ms cubic-bezier(.2,.8,.2,1)";
+      element.style.transform = `translate(${String(x - left)}px, ${String(y - top)}px) scale(${String(scale)})`;
+      placed.push({
+        id: item.id,
+        title: item.title,
+        label: item.label,
+        rect: { left: x, top: y, width, height },
+      });
+    });
+    setOverview(placed);
+  }
+
+  function leaveOverview(choose?: string) {
+    for (const element of [dashboardRef.current, ...windowElements.current.values()]) {
+      if (!element) continue;
+      element.style.transform = "";
+      element.style.transition = "";
+      element.style.transformOrigin = "";
+    }
+    setOverview(null);
+    if (choose) focusWindow(choose);
+  }
+
+  function toggleOverview() {
+    if (overview) leaveOverview();
+    else if (!isLocked()) enterOverview();
+  }
+
+  // What the menus and keys reach, as of the latest render (read later, never during one).
   useEffect(() => {
-    keys.current = { switchable, switcher, focusWindow, focused, minimise, hideDashboard };
+    keys.current = {
+      switchable,
+      switcher,
+      focusWindow,
+      focused,
+      minimise,
+      hideDashboard,
+      toggleOverview,
+    };
+    windowList.current = () =>
+      windows.map((entry) => ({
+        id: entry.id,
+        label: windowLabel(entry),
+        title: windowTitle(entry),
+        app: entry.content.kind === "app" ? entry.content.app : null,
+        min: entry.min,
+        focused: focused === entry.id && !entry.min,
+      }));
+    windowActions.current = {
+      focus: focusWindow,
+      minimise,
+      zoom,
+      close: (id) => {
+        const entry = windows.find((candidate) => candidate.id === id);
+        if (entry) void close(entry);
+      },
+      toggleOverview,
+      showSwitcher: () => {
+        if (switchable.length > 0) setSwitcher(switchable.length > 1 ? 1 : 0);
+      },
+    };
   });
 
   useEffect(() => {
@@ -1066,6 +1259,25 @@ export function DesktopShell({
         event.preventDefault();
         if (front === "dashboard") hide();
         else tuck(front);
+        return;
+      }
+      // F3, or Control and the up arrow: Mission Control (Task View).
+      if (
+        event.code === "F3" ||
+        (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "ArrowUp")
+      ) {
+        event.preventDefault();
+        keys.current.toggleOverview();
+        return;
+      }
+      if (
+        keys.current.switcher !== null &&
+        (event.code === "ArrowRight" || event.code === "ArrowLeft")
+      ) {
+        event.preventDefault();
+        const { switchable: list, switcher: current } = keys.current;
+        const step = event.code === "ArrowRight" ? 1 : -1;
+        setSwitcher((current + step + list.length) % list.length);
         return;
       }
       if (!event.altKey || event.code !== "Backquote") return;
@@ -1731,6 +1943,7 @@ export function DesktopShell({
         ref={shellRef}
         className="ad-shell dt-shell min-h-dvh lg:flex lg:h-dvh lg:flex-col lg:overflow-hidden"
         data-dragging={dragging || undefined}
+        data-overview={overview ? true : undefined}
       >
         {/* The wallpaper: right-click it for the desktop's menu (the menu's items are all elsewhere too). */}
         <div
@@ -1994,6 +2207,7 @@ export function DesktopShell({
           }}
           onControlCentre={toggleControlCentre}
           onShowDesktop={showDesktop}
+          onTaskView={toggleOverview}
         />
         <Launchpad
           open={launcherOpen && style === "mac"}
@@ -2037,7 +2251,32 @@ export function DesktopShell({
             setNoTrace("ask");
           }}
         />
-        {switcher !== null && <WindowSwitcher entries={switchable} selected={switcher} />}
+        {switcher !== null && (
+          <WindowSwitcher
+            entries={switchable}
+            selected={switcher}
+            onChoose={(index) => {
+              const chosen = switchable[index];
+              setSwitcher(null);
+              if (chosen === "dashboard") focusWindow("dashboard");
+              else if (chosen) focusWindow(chosen.id);
+            }}
+          />
+        )}
+        {overview && (
+          <Overview
+            cells={overview}
+            minimised={windows.filter((entry) => entry.min)}
+            style={style}
+            onChoose={(id) => {
+              leaveOverview(id);
+            }}
+            onClose={() => {
+              leaveOverview();
+            }}
+          />
+        )}
+        {active && <NotificationBanners />}
         {exam && active && (
           <button
             type="button"

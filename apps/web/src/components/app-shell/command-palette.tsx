@@ -4,15 +4,26 @@ import { type BrowserEngine, type BrowserSession, engineDetails } from "@brawzer
 import { Dialog, DialogContent, DialogTitle } from "@brawzer/ui/components/dialog";
 import { Kbd } from "@brawzer/ui/components/kbd";
 import { cn } from "@brawzer/ui/lib/cn";
-import { Search } from "lucide-react";
+import { useToast } from "@brawzer/ui/components/toast";
+import type { DriveFile } from "@brawzer/contracts";
+import { Equal, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { EngineLogo } from "@/components/browser/engine-logo";
-import { useDesktop } from "@/components/desktop/desktop-context";
+import { useDesktop, type WindowSummary } from "@/components/desktop/desktop-context";
 import { AppIcon, appIds, apps } from "@/components/desktop/apps/registry";
+import { appFor } from "@/components/desktop/apps/open-with";
+import { SETTINGS_SECTIONS } from "@/components/desktop/apps/settings-sections";
+import { GlyphTile } from "@/components/glyph-tile";
 import { appNav } from "@/content/app";
 import { fetchBrowserOverview } from "@/lib/api/browser";
+import { listDriveFiles } from "@/lib/api/drive";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
+import { describeType } from "@/lib/drive";
+import { formatAnswer, quickMaths } from "@/lib/quick-maths";
+
+/** Drive is asked once typing pauses this long, and only for two characters or more. */
+const FILE_SEARCH_DEBOUNCE_MS = 180;
 
 const OPEN_EVENT = "brawzer:open-command-palette";
 
@@ -56,13 +67,16 @@ function PageIcon({ icon: Icon }: { icon: (typeof appNav)[number]["items"][numbe
 }
 
 /**
- * Quick launch: the browsers first (choosing one opens it, or goes back to it
- * if it's open), then every page of the app, found by typing. ⌘K or Ctrl+K
- * anywhere in the app opens it.
+ * Search, as a computer's own: the browsers first (choosing one opens it, or
+ * goes back to it if it's open), every page of the app, the desktop's apps
+ * and open windows, Settings' sections, files in Drive as you type, and a
+ * sum worked out on the spot. ⌘K or Ctrl+K anywhere in the app opens it,
+ * and Option+Space on a Mac.
  */
 export function CommandPalette() {
   const router = useRouter();
   const listId = useId();
+  const toast = useToast();
   const { launch } = useLaunchBrowser();
   const desktop = useDesktop();
   const [open, setOpen] = useState(false);
@@ -72,12 +86,18 @@ export function CommandPalette() {
     engines: readonly BrowserEngine[];
     sessions: readonly BrowserSession[];
   } | null>(null);
+  const [windows, setWindows] = useState<readonly WindowSummary[]>([]);
+  const [files, setFiles] = useState<{ query: string; files: readonly DriveFile[] }>({
+    query: "",
+    files: [],
+  });
 
   useEffect(() => {
     const show = () => {
       setQuery("");
       setActive(0);
       setOpen(true);
+      setWindows(desktop?.listWindows() ?? []);
       // What's offered and what's open now, read as it opens.
       void fetchBrowserOverview().then((result) => {
         if (result.ok) {
@@ -89,6 +109,10 @@ export function CommandPalette() {
       if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && !event.altKey) {
         event.preventDefault();
         show();
+      } else if (event.altKey && !event.ctrlKey && !event.metaKey && event.code === "Space") {
+        // Option+Space on a Mac (Windows gives Alt+Space to the window's own menu).
+        event.preventDefault();
+        show();
       }
     };
     window.addEventListener(OPEN_EVENT, show);
@@ -97,7 +121,24 @@ export function CommandPalette() {
       window.removeEventListener(OPEN_EVENT, show);
       window.removeEventListener("keydown", onKey);
     };
-  }, []);
+  }, [desktop]);
+
+  // Files in Drive whose names match, asked once typing pauses.
+  useEffect(() => {
+    const wanted = query.trim();
+    if (!open || wanted.length < 2) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void listDriveFiles({ q: wanted }).then((result) => {
+        if (cancelled || !result.ok) return;
+        setFiles({ query: wanted, files: result.data.files.slice(0, 8) });
+      });
+    }, FILE_SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [open, query]);
 
   const commands: Command[] = [
     ...(browsers?.engines ?? []).map((engine) => {
@@ -142,7 +183,80 @@ export function CommandPalette() {
           },
         }))
       : []),
+    // Windows open now: choosing one brings it forward.
+    ...(desktop
+      ? windows.map((entry) => ({
+          key: `window:${entry.id}`,
+          label: entry.title,
+          hint: entry.min ? "In the Dock" : "Switch to",
+          words: `${entry.label} window switch`,
+          icon: entry.app ? (
+            <AppIcon app={entry.app} size={28} />
+          ) : (
+            <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-hover">
+              <Search aria-hidden="true" className="size-4 text-ink-secondary" />
+            </span>
+          ),
+          run: () => {
+            desktop.focusWindow(entry.id);
+          },
+        }))
+      : []),
+    // Settings, by section.
+    ...SETTINGS_SECTIONS.map((section) => ({
+      key: `settings:${section.id}`,
+      label: section.label,
+      hint: "Settings",
+      words: "settings preferences",
+      icon: <GlyphTile glyph={section.glyph} colour={section.colour} size={28} />,
+      run: () => {
+        if (desktop) desktop.openApp("settings", { section: section.id });
+        else router.push("/app/account");
+      },
+    })),
   ];
+  // Drive files whose names match what's typed now (older answers aren't shown for a new query).
+  const fileCommands: Command[] =
+    files.query === query.trim() && query.trim().length >= 2
+      ? files.files.map((file) => {
+          const app = appFor(file);
+          return {
+            key: `file:${file.id}`,
+            label: file.name,
+            hint: describeType(file.contentType),
+            words: "file drive",
+            icon: <GlyphTile glyph="doc" colour="blue" size={28} />,
+            run: () => {
+              if (desktop && app) desktop.openApp(app, { file: file.id });
+              else router.push("/app/drive");
+            },
+          };
+        })
+      : [];
+  // A sum: the answer, copied when chosen.
+  const answer = quickMaths(query);
+  const sumCommand: Command | null =
+    answer === null
+      ? null
+      : {
+          key: "sum",
+          label: `= ${formatAnswer(answer)}`,
+          hint: "Copy",
+          words: "",
+          icon: (
+            <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-hover">
+              <Equal aria-hidden="true" className="size-4 text-ink-secondary" />
+            </span>
+          ),
+          run: () => {
+            void navigator.clipboard.writeText(formatAnswer(answer)).then(
+              () => {
+                toast.add({ type: "success", title: `${formatAnswer(answer)} copied` });
+              },
+              () => undefined,
+            );
+          },
+        };
 
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   // Names that start with what's typed come first, then names containing it, then the rest.
@@ -151,15 +265,19 @@ export function CommandPalette() {
     const first = words[0] ?? "";
     return label.startsWith(first) ? 0 : label.includes(first) ? 1 : 2;
   };
-  const matches = commands
-    .filter((command) =>
-      words.every((word) =>
-        `${command.label} ${command.hint} ${command.words}`.toLowerCase().includes(word),
-      ),
-    )
-    .map((command, index) => ({ command, index }))
-    .sort((a, b) => rank(a.command) - rank(b.command) || a.index - b.index)
-    .map((entry) => entry.command);
+  const matches = [
+    ...(sumCommand ? [sumCommand] : []),
+    ...commands
+      .filter((command) =>
+        words.every((word) =>
+          `${command.label} ${command.hint} ${command.words}`.toLowerCase().includes(word),
+        ),
+      )
+      .map((command, index) => ({ command, index }))
+      .sort((a, b) => rank(a.command) - rank(b.command) || a.index - b.index)
+      .map((entry) => entry.command),
+    ...fileCommands,
+  ];
   const current = Math.min(active, Math.max(0, matches.length - 1));
 
   function go(command: Command | undefined) {
@@ -183,7 +301,7 @@ export function CommandPalette() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="top-[18vh] w-[min(32rem,calc(100vw-2rem))] translate-y-0 gap-0 overflow-hidden rounded-[1.375rem] p-0">
-        <DialogTitle className="sr-only">Quick launch</DialogTitle>
+        <DialogTitle className="sr-only">Search</DialogTitle>
         <div className="flex items-center gap-2.5 px-4">
           <Search aria-hidden="true" className="size-4 shrink-0 text-ink-tertiary" />
           <input
@@ -194,8 +312,8 @@ export function CommandPalette() {
             aria-expanded="true"
             aria-controls={listId}
             aria-activedescendant={matches[current] ? `${listId}-${String(current)}` : undefined}
-            aria-label="Launch a browser or search"
-            placeholder="Launch a browser or search…"
+            aria-label="Search apps, files, settings, or type a sum"
+            placeholder="Search apps, files, settings, or type a sum…"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -208,7 +326,7 @@ export function CommandPalette() {
         <div
           id={listId}
           role="listbox"
-          aria-label="Browsers and pages"
+          aria-label="Results"
           className="max-h-[22rem] overflow-y-auto border-y border-line p-2"
         >
           {matches.map((command, index) => {

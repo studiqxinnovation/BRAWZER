@@ -105,7 +105,7 @@ test.describe("home", () => {
 
     // Search: any page, by typing.
     await page.getByRole("button", { name: "Search Brawzer" }).click();
-    const search = page.getByRole("combobox", { name: "Launch a browser or search" });
+    const search = page.getByRole("combobox", { name: /Search apps, files/ });
     // The browsers come first, each ready to launch.
     await expect(page.getByRole("option").first()).toHaveAccessibleName(/^Bee Browser\s*Launch$/);
     await search.fill("site");

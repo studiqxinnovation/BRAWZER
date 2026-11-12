@@ -19,10 +19,12 @@ import { describeType, formatBytes } from "@/lib/drive";
 import { Tile } from "./apps/registry";
 
 const SHORTCUTS: [string, string][] = [
-  ["Search apps and pages", "Ctrl+K or ⌘K"],
+  ["Search apps, files and settings, or a sum", "Ctrl+K or ⌘K (also Option+Space on a Mac)"],
+  ["Mission Control or Task View: every window", "F3 or Ctrl+↑"],
+  ["Notification Centre", "Click the clock or the bell"],
   ["Lock the screen", "Ctrl+Shift+L"],
   ["Minimise the active window", "Ctrl+M or ⌘M"],
-  ["Switch windows", "Alt+` (Option+` on a Mac)"],
+  ["Switch windows", "Alt+` (Option+` on a Mac); arrows move, a click chooses"],
   ["Zoom the window", "Double-click a title bar"],
   ["Wallpaper, style and more", "Right-click the desktop"],
   ["Move through an open menu", "Arrow keys and Enter"],
