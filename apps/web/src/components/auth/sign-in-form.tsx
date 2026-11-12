@@ -13,6 +13,7 @@ import { signInOptions, verifySignIn } from "@/lib/api/passkeys";
 import { requestPasskey, usePasskeysSupported } from "@/lib/passkeys";
 import { fieldErrorsFromDetails, fieldErrorsFromIssues } from "@/lib/api/client";
 import { safeNextPath } from "@/lib/redirect";
+import { playSound } from "@/lib/sounds";
 import { focusFirstInvalid, KeepSignedIn, TextLink } from "./auth-ui";
 import { SecondStep } from "./second-step";
 
@@ -34,8 +35,28 @@ export function SignInForm({ screen = false }: { screen?: boolean }) {
   const passkeysSupported = usePasskeysSupported();
 
   function goToNext() {
+    const next = safeNextPath(new URLSearchParams(window.location.search).get("next"));
     // A full page load: the signed-in area renders on the server with the new cookie.
-    window.location.replace(safeNextPath(new URLSearchParams(window.location.search).get("next")));
+    if (!screen) {
+      window.location.replace(next);
+      return;
+    }
+    // Signed in: a welcome chime and "Welcome" for a beat, then the screen lifts away.
+    playSound("boot");
+    const screenElement = document.querySelector(".lg-screen");
+    const welcome = screenElement?.querySelector(".lg-welcome");
+    if (welcome) welcome.textContent = "Welcome";
+    screenElement?.classList.add("lg-done");
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      window.location.replace(next);
+      return;
+    }
+    setTimeout(() => {
+      screenElement?.classList.add("lg-out");
+    }, 700);
+    setTimeout(() => {
+      window.location.replace(next);
+    }, 1_150);
   }
 
   async function signInWithPasskey() {

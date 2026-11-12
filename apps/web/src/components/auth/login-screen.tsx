@@ -2,6 +2,7 @@
 
 import { Mark } from "@brawzer/ui/brand";
 import { type ReactNode, useSyncExternalStore } from "react";
+import "@/components/site/landing/landing.css";
 import "./login-screen.css";
 
 const everyMinute = (changed: () => void) => {
@@ -37,11 +38,22 @@ function Clock() {
 export function LoginScreen({ children, notice }: { children: ReactNode; notice?: ReactNode }) {
   return (
     <div className="lg-screen" data-theme="dark">
+      {/* The same sky as the home page: Brawzer's black, the aurora, the stars, the floor. */}
+      <div aria-hidden="true" className="lp-aurora">
+        <div className="lp-blob lp-blob-blue" />
+        <div className="lp-blob lp-blob-violet" />
+        <div className="lp-blob lp-blob-honey" />
+        <div className="lp-blob lp-blob-teal" />
+      </div>
+      <div aria-hidden="true" className="lp-stars" />
+      <div aria-hidden="true" className="lp-stars lp-stars-far" />
+      <div aria-hidden="true" className="lp-floor" />
       <Clock />
       <div className="lg-me">
         <span className="lg-av" aria-hidden="true">
           <Mark size={44} />
         </span>
+        <p className="lg-welcome" aria-live="polite" />
         {notice}
         {children}
       </div>

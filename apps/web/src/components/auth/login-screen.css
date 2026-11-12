@@ -1,4 +1,7 @@
-/* The prototype's log-in screen (#login): fixed over the page, white on the blurred wallpaper. */
+/*
+ * The prototype's log-in screen (#login), on the home page's sky: Brawzer's
+ * black, the aurora, the stars and the floor (landing.css), white on top.
+ */
 .lg-screen {
   position: fixed;
   inset: 0;
@@ -8,23 +11,22 @@
   align-items: center;
   justify-content: space-between;
   padding: 9vh 20px 7vh;
-  color: #fff;
+  color: #f4f6fb;
   background:
-    linear-gradient(rgb(0 0 0 / 0.28), rgb(0 0 0 / 0.28)),
-    linear-gradient(145deg, #1a2a4a 0%, #1e3a5f 35%, #162d4a 65%, #0f1f35 100%);
-  overflow-y: auto;
+    radial-gradient(120% 80% at 50% -10%, #111a3a 0%, transparent 60%),
+    linear-gradient(180deg, #05060c 0%, #070a16 60%, #04050a 100%);
+  isolation: isolate;
+  overflow: hidden auto;
+  transition:
+    opacity 450ms ease,
+    transform 450ms ease;
 }
 
-.lg-screen::before {
-  content: "";
-  position: absolute;
-  inset: 0;
+/* Signed in: the screen lifts away, as the prototype's #login.out. */
+.lg-screen.lg-out {
+  opacity: 0;
+  transform: scale(1.04);
   pointer-events: none;
-  background:
-    radial-gradient(1px 1px at 15% 20%, rgb(255 255 255 / 0.4) 0%, transparent 100%),
-    radial-gradient(1px 1px at 70% 10%, rgb(255 255 255 / 0.3) 0%, transparent 100%),
-    radial-gradient(1px 1px at 40% 70%, rgb(255 255 255 / 0.3) 0%, transparent 100%),
-    radial-gradient(1px 1px at 85% 55%, rgb(255 255 255 / 0.25) 0%, transparent 100%);
 }
 
 .lg-clock {
@@ -55,15 +57,108 @@
   gap: 12px;
 }
 
+/* Brawzer's mark, white on black as the brand is; it arrives, then breathes. */
 .lg-av {
   display: grid;
   width: 86px;
   height: 86px;
   place-items: center;
   border-radius: 50%;
-  background: linear-gradient(135deg, #5e5ce6, #0a84ff);
-  box-shadow: 0 8px 30px rgb(0 0 0 / 0.35);
+  background: #0a0a0c;
+  box-shadow:
+    0 0 0 1.5px rgb(255 255 255 / 0.9),
+    0 0 0 7px rgb(255 255 255 / 0.08),
+    0 18px 40px rgb(0 0 0 / 0.55);
   color: #fff;
+  animation:
+    lg-arrive 700ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    lg-breathe 4.2s ease-in-out 700ms infinite;
+}
+
+/* Signed in: the mark cheers, "Welcome" takes the form's place, then the screen lifts away. */
+.lg-done .lg-av {
+  animation: lg-cheer 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.lg-done .lg-form,
+.lg-done .lg-name,
+.lg-done .lg-err {
+  opacity: 0;
+  transition: opacity 220ms ease;
+  pointer-events: none;
+}
+
+.lg-welcome {
+  margin-top: 6px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 320ms ease 120ms,
+    transform 320ms ease 120ms;
+}
+
+.lg-welcome:empty {
+  display: none;
+}
+
+.lg-done .lg-welcome {
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes lg-arrive {
+  from {
+    opacity: 0;
+    transform: scale(0.6) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes lg-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow:
+      0 0 0 1.5px rgb(255 255 255 / 0.9),
+      0 0 0 7px rgb(255 255 255 / 0.08),
+      0 18px 40px rgb(0 0 0 / 0.55);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.03);
+    box-shadow:
+      0 0 0 1.5px rgb(255 255 255 / 1),
+      0 0 0 12px rgb(255 255 255 / 0.05),
+      0 26px 48px rgb(0 0 0 / 0.6);
+  }
+}
+
+@keyframes lg-cheer {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-av,
+  .lg-done .lg-av {
+    animation: none;
+  }
+
+  .lg-screen {
+    transition: none;
+  }
 }
 
 .lg-name {
@@ -173,7 +268,7 @@
 .lg-keep input {
   width: 15px;
   height: 15px;
-  accent-color: #0a84ff;
+  accent-color: #fff;
 }
 
 .lg-small {
