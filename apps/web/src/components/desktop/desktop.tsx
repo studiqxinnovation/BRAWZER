@@ -35,11 +35,13 @@ import { fetchSecurityOverview } from "@/lib/api/security";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
 import { subscribeToClock } from "@/lib/clock";
 import {
+  applyWallpaperChoice,
   chosenDesktopStyle,
   type DesktopStyle,
   desktopActive,
   readDesktopStyle,
   setDesktopStyle,
+  tabChoseWallpaper,
   subscribeToDesktop,
 } from "@/lib/desktop";
 import { setFocusedName } from "@/lib/desktop-focus";
@@ -82,7 +84,7 @@ import { Launchpad, StartMenu } from "./launchpad";
 import { OsPicker } from "./os-picker";
 import { WindowSwitcher } from "./switcher";
 import { FileInfoDialog, LeaveNoTraceDialog, ShortcutsDialog, WipeDialog } from "./system-dialogs";
-import { WallpaperDialog } from "./wallpaper";
+import { WallpaperDialog, wallpaperChoiceFrom } from "./wallpaper";
 import { type Rect, type Snap, snapRect, TitleBar, trackPointer } from "./window-chrome";
 import {
   type DesktopWindow,
@@ -793,6 +795,8 @@ export function DesktopShell({
   // Exam Mode and the dock's apps: read on arrival. When Exam Mode starts, what it doesn't allow is tucked away.
   useEffect(() => {
     if (!active) return;
+    // The shell is up: the page's early hiding (theme script) is no longer needed.
+    delete document.documentElement.dataset.desk;
     void loadExam();
     void loadDesktopPrefs();
   }, [active]);
@@ -800,6 +804,11 @@ export function DesktopShell({
   useEffect(() => {
     if (prefsLoaded && prefs.style && chosenDesktopStyle() === null) setDesktopStyle(prefs.style);
   }, [prefsLoaded, prefs.style]);
+  // So does the wallpaper, unless this tab chose one itself.
+  useEffect(() => {
+    const kept = prefsLoaded ? wallpaperChoiceFrom(prefs.wallpaper) : null;
+    if (kept && !tabChoseWallpaper()) applyWallpaperChoice(kept);
+  }, [prefsLoaded, prefs.wallpaper]);
   useEffect(
     () =>
       subscribeToExam(() => {

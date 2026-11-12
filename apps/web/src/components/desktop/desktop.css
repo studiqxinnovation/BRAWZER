@@ -30,6 +30,65 @@
     display: none;
   }
 
+  .dt-wp-scroll {
+    max-height: min(60vh, 34rem);
+    padding-right: 0.25rem;
+    overflow-y: auto;
+  }
+
+  .dt-wp-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.625rem;
+  }
+
+  @media (min-width: 40rem) {
+    .dt-wp-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  .dt-wp-group {
+    margin-top: 1rem;
+  }
+
+  .dt-wp-credits {
+    margin-top: 1rem;
+    color: var(--color-ink-secondary);
+    font-size: 0.75rem;
+  }
+
+  .dt-wp-credits summary {
+    cursor: pointer;
+    color: var(--color-ink);
+    font-weight: 600;
+  }
+
+  .dt-wp-credits ul {
+    margin-top: 0.4rem;
+    columns: 2;
+    column-gap: 1.5rem;
+  }
+
+  .dt-wp-credits li {
+    margin-bottom: 0.2rem;
+    break-inside: avoid;
+  }
+
+  .dt-wp-credits a {
+    color: var(--color-accent);
+    text-decoration: underline;
+  }
+
+  .dt-wp-cap {
+    margin-bottom: 0.4rem;
+    color: var(--color-ink-tertiary);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
   .dt-wp-tile {
     display: flex;
     height: 5.25rem;
@@ -38,6 +97,9 @@
     border-radius: 0.75rem;
     padding: 0.4rem 0.55rem;
     background: var(--wp-brawzer);
+    /* A scene or photo: the whole picture, scaled to the tile (after the shorthand, which resets these). */
+    background-position: center;
+    background-size: cover;
     box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
     color: #fff;
     font-size: 0.75rem;
@@ -80,6 +142,20 @@
   }
   .dt-wp-tile[data-wallpaper-preview="sand"] {
     background: var(--wp-sand);
+  }
+
+  .dt-wp-add {
+    border-style: dashed;
+    border-color: var(--color-line-strong, var(--color-line));
+    background: var(--color-surface-2, var(--color-surface));
+    color: var(--color-ink);
+    text-shadow: none;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .dt-wp-add:disabled {
+    opacity: 0.6;
   }
 
   @media (min-width: 64rem) {
@@ -185,27 +261,9 @@
       visibility: hidden;
     }
 
-    /* Wallpapers the person chose (the default is the app's own). */
-    :root[data-wallpaper="aurora"] .ad-shell.dt-shell {
-      --ad-wallpaper: var(--wp-aurora);
-    }
-    :root[data-wallpaper="dusk"] .ad-shell.dt-shell {
-      --ad-wallpaper: var(--wp-dusk);
-    }
-    :root[data-wallpaper="ocean"] .ad-shell.dt-shell {
-      --ad-wallpaper: var(--wp-ocean);
-    }
-    :root[data-wallpaper="forest"] .ad-shell.dt-shell {
-      --ad-wallpaper: var(--wp-forest);
-    }
-    :root[data-wallpaper="sunrise"] .ad-shell.dt-shell {
-      --ad-wallpaper: var(--wp-sunrise);
-    }
-    :root[data-wallpaper="graphite"] .ad-shell.dt-shell {
-      --ad-wallpaper: var(--wp-graphite);
-    }
-    :root[data-wallpaper="sand"] .ad-shell.dt-shell {
-      --ad-wallpaper: var(--wp-sand);
+    /* The wallpaper the person chose (the default is the app's own): see :root below. */
+    :root:not([data-desktop="off"]) .ad-shell.dt-shell {
+      --ad-wallpaper: var(--wallpaper);
     }
   }
 
@@ -985,6 +1043,8 @@
     font-weight: 500;
     line-height: 1.25;
     text-align: center;
+    /* Readable on a bright photo too: a faint dark pill under the shadow. */
+    background: rgb(0 0 0 / 0.22);
     text-shadow:
       0 1px 3px rgb(0 0 0 / 0.8),
       0 0 1px rgb(0 0 0 / 0.9);
@@ -2405,4 +2465,39 @@ div:has(> .dt-os) > :not(.dt-os) {
     gap: 12px 8px;
     padding: 16px 12px 18px;
   }
+}
+
+/* A tab starting on the plain desktop: the page waits unseen until the shell has put it in the Dock. */
+:root[data-desk] #main-content {
+  visibility: hidden;
+}
+
+/* The wallpaper, as one value every surface reads: the shell, the lock screen. */
+:root {
+  --wallpaper: var(--wp-brawzer);
+}
+:root[data-wallpaper="aurora"] {
+  --wallpaper: var(--wp-aurora);
+}
+:root[data-wallpaper="dusk"] {
+  --wallpaper: var(--wp-dusk);
+}
+:root[data-wallpaper="ocean"] {
+  --wallpaper: var(--wp-ocean);
+}
+:root[data-wallpaper="forest"] {
+  --wallpaper: var(--wp-forest);
+}
+:root[data-wallpaper="sunrise"] {
+  --wallpaper: var(--wp-sunrise);
+}
+:root[data-wallpaper="graphite"] {
+  --wallpaper: var(--wp-graphite);
+}
+:root[data-wallpaper="sand"] {
+  --wallpaper: var(--wp-sand);
+}
+/* A drawn scene or the person's photo: the picture, covering, over the night. */
+:root[data-wallpaper-kind="image"] {
+  --wallpaper: var(--wallpaper-image) center / cover no-repeat, #05060c;
 }

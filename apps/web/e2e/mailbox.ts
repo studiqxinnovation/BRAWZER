@@ -173,6 +173,24 @@ export async function clickSignOut(page: Page): Promise<void> {
 }
 
 /** The page's own cookie is signed in as `email`: asked of the API, not read off the page. */
+/**
+ * After signing in through the form, a wide screen starts on the plain
+ * desktop: the dashboard comes out of the Dock (Mac) or the taskbar (Windows).
+ */
+export async function openDashboard(page: Page): Promise<void> {
+  await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
+  const desktop = await page.evaluate(
+    () =>
+      matchMedia("(min-width: 64rem)").matches &&
+      document.documentElement.dataset.desktop !== "off",
+  );
+  if (!desktop) return;
+  await page
+    .getByRole("navigation", { name: /^(Dock|Taskbar)$/ })
+    .getByRole("button", { name: /^Brawzer/ })
+    .click();
+}
+
 export async function expectSignedInAs(page: Page, email: string): Promise<void> {
   // The page's own origin: a passkey test signs in on localhost, not the base URL.
   const response = await page.request.get(new URL("/api/v1/auth/session", page.url()).toString());

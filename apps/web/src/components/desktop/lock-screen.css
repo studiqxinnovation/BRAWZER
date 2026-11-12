@@ -7,32 +7,9 @@
 
 @layer components {
   .lk-root {
-    --lk-wallpaper: var(--wp-brawzer);
     position: fixed;
     inset: 0;
     z-index: 2147483000;
-  }
-
-  :root[data-wallpaper="aurora"] .lk-root {
-    --lk-wallpaper: var(--wp-aurora);
-  }
-  :root[data-wallpaper="dusk"] .lk-root {
-    --lk-wallpaper: var(--wp-dusk);
-  }
-  :root[data-wallpaper="ocean"] .lk-root {
-    --lk-wallpaper: var(--wp-ocean);
-  }
-  :root[data-wallpaper="forest"] .lk-root {
-    --lk-wallpaper: var(--wp-forest);
-  }
-  :root[data-wallpaper="sunrise"] .lk-root {
-    --lk-wallpaper: var(--wp-sunrise);
-  }
-  :root[data-wallpaper="graphite"] .lk-root {
-    --lk-wallpaper: var(--wp-graphite);
-  }
-  :root[data-wallpaper="sand"] .lk-root {
-    --lk-wallpaper: var(--wp-sand);
   }
 
   /* Space behind the lock: the same drawn sky as the sign-in, over the blurred desktop. */
@@ -75,7 +52,7 @@
 
   /* Loaded while locked: nothing of the app behind it, so the wallpaper itself, darkened. */
   .lk-root[data-standalone] {
-    background: var(--lk-wallpaper, #0f1f35);
+    background: var(--wallpaper, #0f1f35);
   }
   .lk-root[data-standalone] .lk-sky {
     backdrop-filter: none;

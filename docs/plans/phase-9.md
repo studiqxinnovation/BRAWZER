@@ -55,14 +55,25 @@ On a screen at least 64rem wide the signed-in app is a desktop:
   Windows style has the controls on the right and a taskbar with Start,
   search (quick launch), the browsers, the theme, the clock and "Show the
   desktop". The default follows the device's own system.
-- **Wallpapers and the desktop's menu.** Eight wallpapers, chosen from View or
-  the desktop's right-click menu, which also hides or shows Brawzer, opens a
-  browser, shows the desktop, switches style and theme, and turns on the
-  classic layout.
+- **Wallpapers and the desktop's menu.** Thirty-three wallpapers, chosen from
+  View, Settings or the desktop's right-click menu: eight colour washes and
+  twenty-five real photographs (space from NASA and ESO, nature, wildlife, a
+  city, military aviation, sport, and a honeycomb for the brand), each a
+  JPEG under `apps/web/public/wallpapers/` (2560x1600, signed with the mark).
+  Every photo is public domain, CC0 or CC BY; the registry in
+  `lib/desktop.ts` carries its photographer, licence and source page, and
+  the picker shows them under "Photo credits" (CC BY asks for that). A photo
+  of one's own is uploaded into Drive's "Wallpapers" folder (scanned and
+  encrypted like any file) and served from there. The choice is kept with
+  the account (the `desktop` app record's `wallpaper`) and in the tab, and
+  set before first paint by the theme script. The menu also hides or shows
+  Brawzer, opens a browser, shows the desktop, switches style and theme, and
+  turns on the classic layout.
 - **The classic layout.** "Use the classic layout" turns the desktop off and
   the app is pages again, as before; on phones it always is.
-- **Kept per tab.** The style, the wallpaper and the classic layout are kept
-  in `sessionStorage`, like the theme, and set before first paint. Browser
+- **Kept per tab.** The style and the classic layout are kept in
+  `sessionStorage`, like the theme, and set before first paint (the style
+  and the wallpaper also with the account). Browser
   windows that were open come back (minimised) from the server's list of
   running sessions, not from the device.
 - **Framing, only for a browser window.** The app was never framed
@@ -407,6 +418,14 @@ Compared screen by screen with the prototype again, and brought in line:
   (greeting, notices, Control Centre, menu bar), is now one of the
   prototype's Apple-style icon tiles (`components/glyph-tile.tsx`), and the
   site keeps Apple's font stack first.
+- **Wallpapers of one's own (2026-11-11).** Twenty-five real photographs
+  beside the colours, grouped in the picker with their credits, and "Choose a
+  photo…" for a picture of one's own, saved in Drive's Wallpapers folder. The
+  choice comes with the account to every tab. (A first pass drew the scenes
+  as SVG; the user found them artificial, so they were replaced with
+  photographs under free licences.) A tab that starts on the plain desktop
+  no longer flashes the dashboard first: the theme script hides the page
+  until the shell has put it in the Dock.
 
 ## Not built, and why
 

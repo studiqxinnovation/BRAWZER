@@ -37,6 +37,8 @@ WORKDIR /app
 # Next.js standalone output: the server and only the files it needs.
 COPY --from=build /repo/apps/web/.next/standalone ./
 COPY --from=build /repo/apps/web/.next/static ./apps/web/.next/static
+# Static files (the wallpapers): standalone output doesn't carry them itself.
+COPY --from=build /repo/apps/web/public ./apps/web/public
 USER node
 EXPOSE 3100
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s \

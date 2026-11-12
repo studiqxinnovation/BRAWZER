@@ -88,7 +88,7 @@ test.describe("desktop", () => {
       await expect.poll(async () => Math.round((await window.boundingBox())?.x ?? 0)).toBe(moved);
     }
 
-    // A wallpaper, kept for this tab.
+    // A wallpaper: a colour, one of Brawzer's drawn scenes, or a photo of one's own (saved in Drive).
     await viewMenu(page, "Change wallpaper…");
     const wallpapers = page.getByRole("dialog", { name: "Wallpaper" });
     await expect(wallpapers.getByRole("radio", { name: "Brawzer" })).toBeChecked();
@@ -96,9 +96,46 @@ test.describe("desktop", () => {
     await wallpapers.getByRole("radio", { name: "Ocean" }).click();
     await expect(wallpapers.getByRole("radio", { name: "Ocean" })).toBeChecked();
     await expect(html).toHaveAttribute("data-wallpaper", "ocean");
+    await wallpapers.getByRole("radio", { name: "Saturn" }).click();
+    await expect(html).toHaveAttribute("data-wallpaper", "saturn");
+    await expect(html).toHaveAttribute("data-wallpaper-kind", "image");
+    const chooser = page.waitForEvent("filechooser");
+    await wallpapers.getByRole("button", { name: "Choose a photo…" }).click();
+    await (
+      await chooser
+    ).setFiles({
+      name: "beach.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    });
+    await expect(wallpapers.getByRole("radio", { name: "Your photo" })).toBeChecked({
+      timeout: 15_000,
+    });
+    await expect(html).toHaveAttribute("data-wallpaper", "photo");
+    await expect(html).toHaveCSS(
+      "--wallpaper-image",
+      /\/api\/v1\/drive\/files\/[0-9a-f-]{36}\/preview/,
+    );
+    const kept = page.waitForResponse(
+      (response) =>
+        response.url().includes("/apps/desktop/records/state") &&
+        response.request().method() === "PUT",
+    );
+    await wallpapers.getByRole("radio", { name: "Ocean" }).click();
     await wallpapers.getByRole("button", { name: "Done" }).click();
+    await kept;
     await page.reload();
     await expect(html).toHaveAttribute("data-wallpaper", "ocean");
+    // Kept with the account: a fresh tab gets it too.
+    const fresh = await page.context().newPage();
+    await fresh.goto("/app");
+    await expect(fresh.locator("html")).toHaveAttribute("data-wallpaper", "ocean", {
+      timeout: 15_000,
+    });
+    await fresh.close();
 
     // Windows style: a taskbar with Start, search and the tray instead of the dock.
     await viewMenu(page, "Windows");

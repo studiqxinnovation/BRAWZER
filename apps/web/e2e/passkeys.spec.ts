@@ -71,7 +71,10 @@ test.describe("passkeys", () => {
     await signInWithPassword(page, email, false);
 
     await page.goto(`${SITE}/app/account`);
-    await expect(page.getByText(/only be saved on your phone or a security key/)).toBeVisible();
+    // Scoped to the page: while it streams in, a copy waits in a hidden template.
+    await expect(
+      page.locator("#main-content").getByText(/only be saved on your phone or a security key/),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Add a passkey" }).click();
     await expect(page.getByText("Passkey added")).toBeVisible();
   });

@@ -32,6 +32,8 @@ export interface DesktopPrefs {
   favourites: readonly Favourite[];
   /** The one-time hint that the dashboard waits in the Dock was shown. */
   deskHinted: boolean;
+  /** The wallpaper: a name, or "photo:<Drive file id>"; null: Brawzer's own. */
+  wallpaper: string | null;
 }
 
 export interface Favourite {
@@ -63,6 +65,7 @@ const prefsSchema = z.object({
     .max(40)
     .optional(),
   deskHinted: z.boolean().optional(),
+  wallpaper: z.string().max(60).nullable().optional(),
 });
 
 const DEFAULT: DesktopPrefs = {
@@ -77,6 +80,7 @@ const DEFAULT: DesktopPrefs = {
   driveSetUp: false,
   favourites: [],
   deskHinted: false,
+  wallpaper: null,
 };
 
 let prefs: DesktopPrefs = DEFAULT;
@@ -122,6 +126,7 @@ export async function loadDesktopPrefs(): Promise<void> {
       driveSetUp: data.driveSetUp ?? false,
       favourites: data.favourites ?? [],
       deskHinted: data.deskHinted ?? false,
+      wallpaper: data.wallpaper ?? null,
     };
   }
   loaded = "yes";
@@ -129,15 +134,26 @@ export async function loadDesktopPrefs(): Promise<void> {
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function savePrefs() {
+  saveTimer = null;
+  // Until the account's own choices arrive, a change applies here only (it mustn't overwrite them).
+  if (loaded === "yes") void putAppRecord("desktop", "state", prefs);
+}
 export function updateDesktopPrefs(patch: Partial<DesktopPrefs>) {
   prefs = { ...prefs, ...patch };
   changed();
   // Sliders change many times a second: the record is written once they settle.
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    // Until the account's own choices arrive, a change applies here only (it mustn't overwrite them).
-    if (loaded === "yes") void putAppRecord("desktop", "state", prefs);
-  }, 400);
+  saveTimer = setTimeout(savePrefs, 400);
+}
+// A change made just before the tab reloads or closes is still written.
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      savePrefs();
+    }
+  });
 }
 
 /** Mac or Windows style, for this tab and kept with the account. */
