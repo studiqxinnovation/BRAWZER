@@ -1,6 +1,6 @@
 "use client";
 
-import type { ClientMessageInput, FrameHeader, Viewport } from "@brawzer/contracts";
+import type { ClientMessageInput, CursorKind, FrameHeader, Viewport } from "@brawzer/contracts";
 import { cn } from "@brawzer/ui/lib/cn";
 import {
   type PointerEvent as ReactPointerEvent,
@@ -86,8 +86,25 @@ function shortcutOf(event: KeyboardEvent): Shortcut | null {
   }
 }
 
+/** What a trackpad or touch gesture over the page asks for. */
+export type Gesture = "back" | "forward" | "zoom-in" | "zoom-out";
+
+/** How far a two-finger swipe travels sideways before it goes back or forward. */
+const SWIPE_DISTANCE_PX = 260;
+/** A swipe is one burst: sideways movement that stops for this long starts a new one. */
+const SWIPE_REST_MS = 500;
+/** Pinch (ctrl+wheel on a trackpad) distance per zoom step. */
+const PINCH_STEP = 40;
+/** A two-finger touch pinch changes zoom a step for every this much change in spread. */
+const TOUCH_PINCH_RATIO = 1.25;
+
 interface ViewportProps {
   ref?: Ref<ViewportHandle>;
+  /** The cursor the page would show where the pointer is. */
+  cursor?: CursorKind;
+  /** Whether a sideways swipe should go back or forward now (not over something that scrolls sideways). */
+  canSwipe?: () => boolean;
+  onGesture?: (gesture: Gesture) => void;
   tabId: string | null;
   /** Null while nothing is connected: input is ignored and the surface stays blank. */
   send: ((message: ClientMessageInput) => void) | null;
@@ -118,8 +135,19 @@ export function BrowserViewport({
   onViewport,
   onShortcut,
   onReady,
+  cursor = "default",
+  canSwipe,
+  onGesture,
   className,
 }: ViewportProps) {
+  const gestureRef = useRef({ canSwipe, onGesture });
+  gestureRef.current = { canSwipe, onGesture };
+  /** A sideways swipe in progress: how far so far, and when it last moved. */
+  const swipe = useRef<{ distance: number; at: number; fired: boolean } | null>(null);
+  const pinch = useRef(0);
+  /** Two fingers on the page: the spread they started at, and the zoom steps taken since. */
+  const spread = useRef<{ start: number; steps: number } | null>(null);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
   const areaRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keyboardRef = useRef<HTMLTextAreaElement>(null);
@@ -243,6 +271,38 @@ export function BrowserViewport({
       event.preventDefault();
       if (!send || !tabId) return;
       const scale = event.deltaMode === 1 ? 20 : event.deltaMode === 2 ? 400 : 1;
+      const gestures = gestureRef.current;
+      // A trackpad pinch arrives as a wheel with Ctrl held: zoom, a step at a time.
+      if (event.ctrlKey && !event.altKey && !event.metaKey) {
+        pinch.current += event.deltaY * scale;
+        while (Math.abs(pinch.current) >= PINCH_STEP) {
+          gestures.onGesture?.(pinch.current < 0 ? "zoom-in" : "zoom-out");
+          pinch.current -= Math.sign(pinch.current) * PINCH_STEP;
+        }
+        return;
+      }
+      // Two fingers sideways go back or forward, unless the page under the pointer scrolls that way.
+      const deltaX = event.deltaX * scale;
+      if (deltaX !== 0 && Math.abs(deltaX) > Math.abs(event.deltaY * scale)) {
+        const now = performance.now();
+        const ongoing =
+          swipe.current &&
+          now - swipe.current.at < SWIPE_REST_MS &&
+          Math.sign(swipe.current.distance) === Math.sign(deltaX)
+            ? swipe.current
+            : { distance: 0, at: now, fired: false };
+        ongoing.distance += deltaX;
+        ongoing.at = now;
+        swipe.current = ongoing;
+        if (
+          !ongoing.fired &&
+          Math.abs(ongoing.distance) >= SWIPE_DISTANCE_PX &&
+          gestures.canSwipe?.() !== false
+        ) {
+          ongoing.fired = true;
+          gestures.onGesture?.(ongoing.distance < 0 ? "back" : "forward");
+        }
+      }
       const point = pointOf(event);
       send({
         type: "mouse",
@@ -344,10 +404,24 @@ export function BrowserViewport({
     });
   }
 
+  /** The distance between the two touches, if there are two. */
+  function touchSpread(): number | null {
+    const [a, b] = [...pointers.current.values()];
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : null;
+  }
+
   function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     areaRef.current?.focus({ preventScroll: true });
     if (event.pointerType === "touch") {
       const point = pointOf(event);
+      pointers.current.set(event.pointerId, point);
+      const distance = touchSpread();
+      if (distance !== null) {
+        // A second finger: the gesture is a pinch, not a scroll or a tap.
+        spread.current = { start: distance, steps: 0 };
+        touch.current = null;
+        return;
+      }
       touch.current = { x: point.x, y: point.y, moved: false, last: point };
       return;
     }
@@ -357,6 +431,19 @@ export function BrowserViewport({
 
   function onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.pointerType === "touch") {
+      if (pointers.current.has(event.pointerId))
+        pointers.current.set(event.pointerId, pointOf(event));
+      const pinching = spread.current;
+      const distance = touchSpread();
+      if (pinching && distance !== null) {
+        const steps = Math.round(Math.log(distance / pinching.start) / Math.log(TOUCH_PINCH_RATIO));
+        while (pinching.steps !== steps) {
+          const direction = steps > pinching.steps ? 1 : -1;
+          pinching.steps += direction;
+          gestureRef.current.onGesture?.(direction === 1 ? "zoom-in" : "zoom-out");
+        }
+        return;
+      }
       const start = touch.current;
       if (!start || !send || !tabId) return;
       const point = pointOf(event);
@@ -382,6 +469,11 @@ export function BrowserViewport({
 
   function onPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.pointerType === "touch") {
+      pointers.current.delete(event.pointerId);
+      if (spread.current) {
+        if (pointers.current.size === 0) spread.current = null;
+        return;
+      }
       const start = touch.current;
       touch.current = null;
       if (!start || start.moved || !send || !tabId) return;
@@ -418,9 +510,13 @@ export function BrowserViewport({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={() => {
+      onPointerCancel={(event) => {
         touch.current = null;
+        pointers.current.delete(event.pointerId);
+        if (pointers.current.size === 0) spread.current = null;
       }}
+      style={{ cursor }}
+      data-cursor={cursor}
       onContextMenu={(event) => {
         event.preventDefault();
       }}

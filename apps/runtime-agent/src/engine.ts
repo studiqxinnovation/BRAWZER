@@ -21,6 +21,7 @@ import type { ChromiumBrand } from "./config.ts";
 import type { CdpConnection } from "./cdp.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
+import { IconReporter, PointerReporter } from "./page-reporters.ts";
 import { FIND_STOP_SCRIPT, findScript, selectionScript, zoomScript } from "./page-tools.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
 
@@ -77,6 +78,9 @@ interface Tab {
   screencasting: boolean;
   /** Frames sent to the viewer but not yet drawn, by frame id → engine's screencast session id. */
   inFlight: Map<number, string>;
+  /** The site icon last sent for this tab, and where it came from. */
+  icon: string | null;
+  iconUrl: string | null;
 }
 
 interface TargetInfo {
@@ -101,6 +105,8 @@ const SHARP_SLOW_MS = 1_500;
 const SHARP_BACKOFF_MS = 30_000;
 /** In a tab's in-flight map: a sharp frame, which the engine has nothing to acknowledge for. */
 const SHARP_FRAME = "";
+/** A sharp frame unacknowledged for this long is given up on, so the next one isn't waited for. */
+const SHARP_LOST_MS = 8_000;
 /**
  * How often the active tab's title is re-read while someone is watching. The
  * engine reports titles on navigation but not when a page's script changes
@@ -245,6 +251,16 @@ export class BrowserEngine implements Engine {
   private handingOver = false;
   private readonly choosers = new Map<string, Chooser>();
   private titleTimer: NodeJS.Timeout | null = null;
+  private readonly pointer = new PointerReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (message) => this.viewer?.send(message),
+    (tab) => this.viewer !== null && tab.id === this.activeId && this.tabs.has(tab.id),
+  );
+  private readonly icons = new IconReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (url) => this.options.fetchIcon(url),
+    (message) => this.viewer?.send(message),
+  );
   /** Counts down from the last frame of a moving page to its sharp frame. */
   private stillTimer: NodeJS.Timeout | null = null;
   /** The sharp frame on its way to the viewer, until it reports it drawn. */
@@ -368,6 +384,7 @@ export class BrowserEngine implements Engine {
       if ((params as { frameId: string }).frameId !== tab.mainFrameId) return;
       tab.loading = false;
       void this.refreshTitle(tab);
+      void this.icons.refresh(tab);
     });
     this.cdp.on("Page.loadEventFired", (_params, sessionId) => {
       const tab = this.tabBySession(sessionId);
@@ -505,6 +522,8 @@ export class BrowserEngine implements Engine {
       });
       void this.syncScreencasts();
       void this.handOver();
+      this.pointer.reset();
+      this.icons.resend(this.tabs.values());
     });
     this.titleTimer ??= setInterval(() => {
       const active = this.activeTab();
@@ -518,6 +537,7 @@ export class BrowserEngine implements Engine {
     if (this.titleTimer) clearInterval(this.titleTimer);
     this.titleTimer = null;
     this.clearStill();
+    this.pointer.reset();
     void this.syncScreencasts();
   }
 
@@ -583,6 +603,9 @@ export class BrowserEngine implements Engine {
         await this.cdp.send("Page.stopLoading", {}, tab.sessionId);
         return;
       case "mouse": {
+        if (message.kind === "move" || message.kind === "up") {
+          this.pointer.report(tab, message.x, message.y);
+        }
         const type = {
           move: "mouseMoved",
           down: "mousePressed",
@@ -691,6 +714,7 @@ export class BrowserEngine implements Engine {
     if (this.titleTimer) clearInterval(this.titleTimer);
     this.titleTimer = null;
     this.clearStill();
+    this.pointer.reset();
     try {
       await this.cdp.send("Browser.close");
     } catch {
@@ -963,6 +987,8 @@ export class BrowserEngine implements Engine {
       reader: false,
       screencasting: false,
       inFlight: new Map(),
+      icon: null,
+      iconUrl: null,
     };
     this.tabs.set(tab.id, tab);
     if (!this.order.includes(tab.id)) this.order.push(tab.id);
@@ -1311,6 +1337,9 @@ export class BrowserEngine implements Engine {
   private armStill(): void {
     this.clearStill();
     if (this.viewport.scale <= 1 || this.sharpDone || !this.viewer) return;
+    if (this.sharpInFlight && Date.now() - this.sharpInFlight.sentAt > SHARP_LOST_MS) {
+      this.sharpInFlight = null;
+    }
     this.stillTimer = setTimeout(() => {
       this.stillTimer = null;
       void this.sendSharp();
@@ -1349,6 +1378,8 @@ export class BrowserEngine implements Engine {
         tab.sessionId,
       );
     } catch {
+      // The engine was busy: try again once the page has been still a while longer.
+      this.armStill();
       return;
     }
     // Anything that moved meanwhile has sent a frame of its own and will count down again.
@@ -1364,7 +1395,11 @@ export class BrowserEngine implements Engine {
       },
       Buffer.from(shot.data, "base64"),
     );
-    if (!viewer.sendFrame(bytes)) return;
+    if (!viewer.sendFrame(bytes)) {
+      // The connection can't take it now; the page is still, so it is tried again.
+      this.armStill();
+      return;
+    }
     tab.inFlight.set(frameId, SHARP_FRAME);
     this.sharpInFlight = { tabId: tab.id, frameId, sentAt: Date.now() };
     this.sharpDone = true;

@@ -587,6 +587,82 @@ test.describe("browser", () => {
   });
 });
 
+test.describe("browser as a computer's own", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:desktop", "off");
+    });
+  });
+
+  test("shows the page's cursor, site icons, tab previews, gestures and the link's numbers", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The streamed page is driven with a mouse; phones get the launcher test.");
+    test.setTimeout(180_000);
+    await signedIn(page, baseURL, "browser-feel");
+    await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
+    const viewport = page.getByTestId("browser-viewport");
+    await expect(viewport).toBeVisible({ timeout: 60_000 });
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 30_000 })
+      .not.toBe("0");
+    const address = page.getByRole("textbox", { name: "Address or search" });
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+
+    // The site's icon reaches its tab, fetched by the container, never by this browser.
+    await expect(tab(page, "Brawzer test site").getByTestId("tab-icon")).toHaveAttribute(
+      "src",
+      /^data:image\/png;base64,/,
+      { timeout: 15_000 },
+    );
+
+    // The cursor is the page's: a hand over a link, the arrow over nothing.
+    const canvas = viewport.locator("canvas");
+    await canvas.hover({ position: { x: 100, y: 60 } });
+    await expect(viewport).toHaveAttribute("data-cursor", "pointer", { timeout: 10_000 });
+    await canvas.hover({ position: { x: 900, y: 450 } });
+    await expect(viewport).toHaveAttribute("data-cursor", "default", { timeout: 10_000 });
+
+    // The link's own numbers, measured here.
+    await expect(page.getByTestId("link-stats")).toHaveText(/^\d+ ms · \d+ fps$/, {
+      timeout: 15_000,
+    });
+
+    // A trackpad pinch (a wheel with Ctrl) zooms a step; the badge says so.
+    await canvas.hover({ position: { x: 400, y: 400 } });
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, -60);
+    await page.keyboard.up("Control");
+    const zoomBadge = page.getByRole("button", { name: "Zoom 110%, reset" });
+    await expect(zoomBadge).toBeVisible({ timeout: 10_000 });
+    await zoomBadge.click();
+    await expect(zoomBadge).toBeHidden();
+
+    // A two-finger swipe goes back, as on a Mac, since nothing under the pointer scrolls sideways.
+    await clickPage(page, 100, 60);
+    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+    await canvas.hover({ position: { x: 400, y: 400 } });
+    await page.mouse.wheel(-150, 0);
+    await page.mouse.wheel(-150, 0);
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+
+    // Resting on another tab shows a picture of it as it was last drawn here.
+    await page.getByRole("button", { name: "New tab" }).click();
+    await expect(page.getByRole("tab")).toHaveCount(2, { timeout: 30_000 });
+    await tab(page, "Brawzer test site").hover();
+    const preview = page.getByTestId("tab-preview");
+    await expect(preview).toBeVisible({ timeout: 10_000 });
+    await expect(preview.locator("img")).toHaveAttribute("src", /^data:image\/jpeg;base64,/);
+    await expect(preview).toContainText("Brawzer test site");
+    await page.mouse.move(600, 300);
+    await expect(preview).toBeHidden();
+  });
+});
+
 test.describe("browser on a dense screen", () => {
   test.use({ deviceScaleFactor: 2 });
   test.beforeEach(async ({ page }) => {

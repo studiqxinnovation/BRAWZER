@@ -130,3 +130,66 @@ export function readerScript(readabilitySource: string): string {
     return JSON.stringify({ ok: true });
   })()`;
 }
+
+/**
+ * What the pointer is over at (`x`, `y`): the cursor the page asks for, with
+ * the browser's own choice worked out where it says `auto`, and whether
+ * anything under the pointer scrolls sideways. Same-origin frames are
+ * looked into; others count as the page. Returns JSON.
+ */
+export function pointerScript(x: number, y: number): string {
+  return `(() => {
+    let x = ${String(x)}, y = ${String(y)};
+    let doc = document;
+    let el = doc.elementFromPoint(x, y);
+    for (let depth = 0; el && depth < 4; depth++) {
+      const tag = el.tagName;
+      if (tag !== "IFRAME" && tag !== "FRAME") break;
+      let inner = null;
+      try { inner = el.contentDocument; } catch { inner = null; }
+      if (!inner) break;
+      const r = el.getBoundingClientRect();
+      x -= r.left; y -= r.top; doc = inner;
+      el = inner.elementFromPoint(x, y);
+    }
+    if (!el) return JSON.stringify({ cursor: "default", hscroll: false });
+    const view = doc.defaultView || window;
+    let cursor = view.getComputedStyle(el).cursor || "auto";
+    if (cursor === "auto") {
+      const tag = el.tagName;
+      const type = (el.getAttribute("type") || "text").toLowerCase();
+      const editable = el.isContentEditable || tag === "TEXTAREA" ||
+        (tag === "INPUT" && !/^(button|submit|reset|checkbox|radio|range|color|file|image)$/.test(type));
+      const clickable = el.closest("a[href],button,[role=button],[role=link],summary,label,select,input[type=checkbox],input[type=radio],input[type=submit],input[type=button]");
+      const overText = !clickable && !editable && Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.nodeValue.trim() !== "");
+      cursor = editable || overText ? "text" : clickable ? "pointer" : "default";
+    }
+    let hscroll = false;
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      if (n.scrollWidth > n.clientWidth + 1) {
+        const o = view.getComputedStyle(n).overflowX;
+        const root = n === doc.documentElement || n === doc.body;
+        if (root ? o !== "hidden" : (o === "auto" || o === "scroll")) { hscroll = true; break; }
+      }
+    }
+    return JSON.stringify({ cursor, hscroll });
+  })()`;
+}
+
+/** The address of the page's site icon: its best `<link rel=icon>`, or `/favicon.ico`. */
+export const ICON_SCRIPT = `(() => {
+  const links = Array.from(document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"]'));
+  const score = (link) => {
+    const sizes = (link.getAttribute("sizes") || "").toLowerCase();
+    const px = Number(sizes.split("x")[0]) || 0;
+    const type = (link.getAttribute("type") || "").toLowerCase();
+    let s = 0;
+    if (px >= 24 && px <= 64) s += 3; else if (px > 64) s += 1; else if (px === 0) s += 2;
+    if (type.includes("png")) s += 1;
+    if (type.includes("svg")) s -= 1;
+    if (link.rel === "apple-touch-icon") s -= 2;
+    return s;
+  };
+  const best = links.map((link) => [score(link), link.href]).filter(([, href]) => href).sort((a, b) => b[0] - a[0])[0];
+  return best ? best[1] : new URL("/favicon.ico", location.href).href;
+})()`;

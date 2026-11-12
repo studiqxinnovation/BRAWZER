@@ -19,6 +19,7 @@ import {
 import type { BidiConnection } from "./bidi.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
+import { IconReporter, PointerReporter } from "./page-reporters.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
 import { FIND_STOP_SCRIPT, findScript, selectionScript, zoomScript } from "./page-tools.ts";
 
@@ -46,6 +47,9 @@ interface Tab {
   zoom: number;
   /** Brawzer's reader view is showing in place of the page. */
   reader: boolean;
+  /** The site icon last sent for this tab, and where it came from. */
+  icon: string | null;
+  iconUrl: string | null;
 }
 
 interface Transfer {
@@ -172,6 +176,16 @@ export class FirefoxEngine implements Engine {
   private sharpBackoffUntil = 0;
   private snapshotQueued = false;
   private titleTimer: NodeJS.Timeout | null = null;
+  private readonly pointer = new PointerReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (message) => this.viewer?.send(message),
+    (tab) => this.viewer !== null && tab.id === this.activeId && this.tabs.has(tab.id),
+  );
+  private readonly icons = new IconReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (url) => this.options.fetchIcon(url),
+    (message) => this.viewer?.send(message),
+  );
   private readonly loadedExtensions: string[] = [];
   private readonly transfers = new Map<string, Transfer>();
   private readonly handoverQueue: string[] = [];
@@ -287,6 +301,7 @@ export class FirefoxEngine implements Engine {
       const tab = this.tabs.get(info.context);
       if (!tab) return;
       tab.loading = false;
+      void this.icons.refresh(tab);
       const failure = this.explained(errorPageOf(info.url));
       if (failure) {
         tab.url = failure.url || tab.url;
@@ -439,6 +454,8 @@ export class FirefoxEngine implements Engine {
       this.lastFrameHash = "";
       void this.streamFrames();
       void this.handOver();
+      this.pointer.reset();
+      this.icons.resend(this.tabs.values());
     });
     this.titleTimer ??= setInterval(() => {
       const active = this.activeTab();
@@ -453,6 +470,7 @@ export class FirefoxEngine implements Engine {
     this.titleTimer = null;
     this.pendingAck?.resolve();
     this.pendingAck = null;
+    this.pointer.reset();
   }
 
   async handle(message: RelayMessage): Promise<void> {
@@ -512,6 +530,9 @@ export class FirefoxEngine implements Engine {
         await this.evaluate(tab, "window.stop()");
         return;
       case "mouse": {
+        if (message.kind === "move" || message.kind === "up") {
+          this.pointer.report(tab, message.x, message.y);
+        }
         const actions: object[] = [{ type: "pointerMove", x: message.x, y: message.y }];
         const button = { left: 0, middle: 1, right: 2, back: 3, forward: 4, none: 0 }[
           message.button
@@ -868,6 +889,8 @@ export class FirefoxEngine implements Engine {
       error: null,
       zoom: 1,
       reader: false,
+      icon: null,
+      iconUrl: null,
     };
     this.tabs.set(id, tab);
     this.order.push(id);

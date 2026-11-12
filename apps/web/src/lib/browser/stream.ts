@@ -15,9 +15,11 @@ export type StreamEvent =
   | { kind: "message"; message: AgentMessage }
   | { kind: "frame"; header: FrameHeader; image: Blob }
   | { kind: "audio"; header: AudioChunkHeader; samples: Uint8Array }
-  | { kind: "closed"; code: number; reason: string };
+  | { kind: "closed"; code: number; reason: string }
+  /** How long a ping took to come back from the container, end to end. */
+  | { kind: "latency"; ms: number };
 
-const PING_INTERVAL_MS = 20_000;
+const PING_INTERVAL_MS = 5_000;
 
 /**
  * The page's end of the cloud browser stream: opens the relay's WebSocket,
@@ -28,6 +30,8 @@ const PING_INTERVAL_MS = 20_000;
 export class BrowserStream {
   private socket: WebSocket | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  /** When the ping still unanswered was sent, if any. */
+  private pingSentAt: number | null = null;
 
   constructor(private readonly onEvent: (event: StreamEvent) => void) {}
 
@@ -39,7 +43,8 @@ export class BrowserStream {
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify({ type: "ticket", ticket }));
       this.send({ type: "hello", viewport });
-      this.pingTimer = setInterval(() => this.send({ type: "ping" }), PING_INTERVAL_MS);
+      this.pingTimer = setInterval(() => this.ping(), PING_INTERVAL_MS);
+      this.ping();
     });
     socket.addEventListener("message", (event: MessageEvent<ArrayBuffer | string>) => {
       if (typeof event.data === "string") {
@@ -50,9 +55,15 @@ export class BrowserStream {
           return;
         }
         const message = agentMessageSchema.safeParse(parsed);
-        if (message.success && message.data.type !== "pong") {
-          this.onEvent({ kind: "message", message: message.data });
+        if (!message.success) return;
+        if (message.data.type === "pong") {
+          if (this.pingSentAt !== null) {
+            this.onEvent({ kind: "latency", ms: Math.round(performance.now() - this.pingSentAt) });
+            this.pingSentAt = null;
+          }
+          return;
         }
+        this.onEvent({ kind: "message", message: message.data });
         return;
       }
       const bytes = new Uint8Array(event.data);
@@ -93,9 +104,17 @@ export class BrowserStream {
     if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, "left");
   }
 
+  private ping(): void {
+    if (!this.isOpen) return;
+    // An unanswered ping is left to its answer: the next one isn't timed over it.
+    this.pingSentAt ??= performance.now();
+    this.send({ type: "ping" });
+  }
+
   private stopPing(): void {
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = null;
+    this.pingSentAt = null;
   }
 }
 

@@ -65,6 +65,7 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends ca-certific
   && apt-get update \
   && apt-get install -y --no-install-recommends \
     chromium firefox-esr google-chrome-stable ${edge} fonts-liberation fonts-noto-core fonts-noto-color-emoji tini ca-certificates \
+    fonts-inter fonts-roboto-unhinted fonts-open-sans fonts-lato fonts-crosextra-carlito fonts-crosextra-caladea fontconfig \
     pulseaudio pulseaudio-utils \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin browser
@@ -73,6 +74,11 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends ca-certific
 # scratch space, where the agent writes them (locked, or with the profile's
 # browser account on: ADR 0021) before any engine starts, and starts none if
 # it can't.
+# Pages that ask for a Mac's or Windows' own fonts get the nearest free ones,
+# and text is drawn as a Mac draws it (lightly hinted, greyscale), so a page
+# looks as it would on the person's own computer rather than on a server.
+COPY apps/runtime-agent/fonts.conf /etc/fonts/conf.d/60-brawzer.conf
+RUN fc-cache -fs
 COPY apps/runtime-agent/policies.json /opt/brawzer/policies/chromium.json
 COPY apps/runtime-agent/policies-firefox.json /opt/brawzer/policies/firefox.json
 RUN mkdir -p /etc/chromium/policies/managed /etc/opt/chrome/policies/managed /etc/opt/edge/policies/managed \

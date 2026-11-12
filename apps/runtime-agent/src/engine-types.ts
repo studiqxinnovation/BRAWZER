@@ -25,6 +25,8 @@ export interface EngineOptions {
   refusalFor: (url: string) => string | null;
   /** The reader view script (Mozilla's Readability plus Brawzer's layout), ready to evaluate. */
   readerScript: string;
+  /** A page's site icon as a data URL, fetched through the session's proxy; null for none. */
+  fetchIcon: (url: string) => Promise<string | null>;
   /** Catalogue extensions to install for this session, with where their builds are in the image. */
   extensions: readonly InstallableExtension[];
   /**

@@ -61,7 +61,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { type RefObject, type SubmitEvent, useEffect, useRef } from "react";
+import { type RefObject, type SubmitEvent, useEffect, useRef, useState } from "react";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { formatBytes } from "@/lib/drive";
 import { describeNavigationError } from "@/lib/browser/errors";
@@ -141,21 +141,66 @@ export function tabTitle(tab: TabState): string {
   return tab.title || hostOf(tab.url) || "New tab";
 }
 
+/** How long the pointer rests on a tab before its preview shows. */
+const PREVIEW_DELAY_MS = 450;
+
 export function TabStrip({
   tabs,
   activeTabId,
+  favicons,
+  previews,
   onActivate,
   onClose,
   onNew,
 }: {
   tabs: readonly TabState[];
   activeTabId: string | null;
+  /** Site icons by tab id, as data URLs the container fetched. */
+  favicons?: ReadonlyMap<string, string>;
+  /** Small pictures of each tab as last drawn, by tab id. */
+  previews?: ReadonlyMap<string, string>;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
   onNew: () => void;
 }) {
+  const [hover, setHover] = useState<{ id: string; left: number; top: number } | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settle = (next: { id: string; left: number; top: number } | null) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = null;
+    if (!next) {
+      setHover(null);
+      return;
+    }
+    hoverTimer.current = setTimeout(() => {
+      setHover(next);
+    }, PREVIEW_DELAY_MS);
+  };
+  useEffect(
+    () => () => {
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    },
+    [],
+  );
+  const hovered = hover ? tabs.find((tab) => tab.id === hover.id) : undefined;
+  const preview = hover && hovered ? previews?.get(hover.id) : undefined;
   return (
     <div className="flex items-end gap-1 overflow-x-auto bg-surface-raised px-2 pt-2">
+      {hovered && hover && preview && (
+        <div
+          role="presentation"
+          data-testid="tab-preview"
+          className="pointer-events-none fixed z-50 w-72 overflow-hidden rounded-xl border border-line bg-canvas shadow-lg"
+          style={{ left: hover.left, top: hover.top }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- a data URL made here, not an asset */}
+          <img src={preview} alt="" className="block w-full" />
+          <div className="border-t border-line px-3 py-2">
+            <div className="truncate text-footnote font-medium text-ink">{tabTitle(hovered)}</div>
+            <div className="truncate text-caption text-ink-secondary">{hostOf(hovered.url)}</div>
+          </div>
+        </div>
+      )}
       <span className="mr-1 mb-1.5 flex size-8 items-center justify-center text-ink">
         <Mark size={18} title="Bee Browser" />
       </span>
@@ -181,8 +226,21 @@ export function TabStrip({
                   : "border-transparent text-ink-secondary hover:bg-hover",
               )}
               onClick={(event) => {
+                settle(null);
                 if ((event.target as HTMLElement).closest("[data-tab-close]")) onClose(tab.id);
                 else if (!selected) onActivate(tab.id);
+              }}
+              onPointerEnter={(event) => {
+                if (event.pointerType !== "mouse") return;
+                const rect = event.currentTarget.getBoundingClientRect();
+                settle({
+                  id: tab.id,
+                  left: Math.max(8, Math.min(rect.left, window.innerWidth - 296)),
+                  top: rect.bottom + 6,
+                });
+              }}
+              onPointerLeave={() => {
+                settle(null);
               }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -194,13 +252,23 @@ export function TabStrip({
                 }
               }}
             >
-              <span
-                aria-hidden="true"
-                className="flex size-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold text-white"
-                style={{ backgroundColor: tabColor(tab.url) }}
-              >
-                {tab.loading ? <Spinner className="size-3 text-white" /> : initial}
-              </span>
+              {favicons?.get(tab.id) && !tab.loading ? (
+                // eslint-disable-next-line @next/next/no-img-element -- a data URL the container fetched, not an asset
+                <img
+                  src={favicons.get(tab.id)}
+                  alt=""
+                  data-testid="tab-icon"
+                  className="size-4 shrink-0 rounded-sm object-contain"
+                />
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className="flex size-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold text-white"
+                  style={{ backgroundColor: tabColor(tab.url) }}
+                >
+                  {tab.loading ? <Spinner className="size-3 text-white" /> : initial}
+                </span>
+              )}
               <span className="min-w-0 flex-1 truncate text-left text-footnote">{title}</span>
               {/* A mouse target only: keyboard users close the focused tab with Delete or Alt+W. */}
               <span
@@ -831,6 +899,7 @@ export function StatusBar({
   profile,
   remaining,
   sound,
+  link,
 }: {
   region: string | null;
   engine: string;
@@ -838,6 +907,8 @@ export function StatusBar({
   profile: Profile | null;
   remaining: string;
   sound: { on: boolean; unlocked: boolean; onToggle: () => void };
+  /** The link as measured here: round trip to the container, frames drawn a second. */
+  link?: { latencyMs: number | null; fps: number };
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line bg-surface-raised px-4 py-1.5 text-footnote text-ink-secondary">
@@ -872,6 +943,14 @@ export function StatusBar({
       <span>
         {proxy ? `Proxy · ${proxy.protocol.toUpperCase()} · ${proxy.name}` : "Direct connection"}
       </span>
+      {link && (
+        <Tooltip content="Round trip from here to the cloud browser and back, and frames drawn in the last second. A still page draws none.">
+          <span className="tabular-nums" data-testid="link-stats">
+            {link.latencyMs === null ? "— ms" : `${String(link.latencyMs)} ms`}
+            {` · ${String(link.fps)} fps`}
+          </span>
+        </Tooltip>
+      )}
       <span className="ml-auto flex items-center gap-4">
         <span>
           {profile?.keepData

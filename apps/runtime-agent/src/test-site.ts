@@ -6,6 +6,9 @@ import https from "node:https";
 import path from "node:path";
 import { promisify } from "node:util";
 
+const TEST_ICON_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR42mPQjrlJEmIY1TCqYfhqAAB0lmAQ1pLtYgAAAABJRU5ErkJggg==";
+
 export const TEST_SITE_HOST = "testsite.invalid";
 /** Loopback ports inside the container; the proxy maps the host's 80 and 443 onto them. */
 export const TEST_SITE_PORTS = { http: 8090, https: 8091 } as const;
@@ -97,6 +100,13 @@ function handleTestSiteRequest(req: http.IncomingMessage, res: http.ServerRespon
         ),
       );
       return;
+    case "/favicon.ico": {
+      // A 16×16 blue square: enough to see a site icon reach the tab strip.
+      const icon = Buffer.from(TEST_ICON_PNG, "base64");
+      res.writeHead(200, { "content-type": "image/png", "content-length": String(icon.length) });
+      res.end(icon);
+      return;
+    }
     case "/second":
       send(200, page("Second page", "<h1>Second page</h1>"));
       return;

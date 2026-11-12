@@ -12,6 +12,7 @@ import { SessionAudio } from "./audio.ts";
 import { BrowserEngine } from "./engine.ts";
 import { type LaunchedFirefox, launchFirefox } from "./firefox.ts";
 import { FirefoxEngine } from "./firefox-engine.ts";
+import { fetchFavicon } from "./favicon.ts";
 import { log } from "./log.ts";
 import { writePolicies } from "./policies.ts";
 import { packProfile, restoreProfile } from "./profile-data.ts";
@@ -189,6 +190,7 @@ const lifecycle: AgentLifecycle = {
       homeUrl: BEE_HOME_URL,
       refusalFor: (url: string) => refusals.codeFor(url),
       readerScript: readerScript(readabilitySource),
+      fetchIcon: (url: string) => fetchFavicon(url, config.proxyPort),
       extensions: installableExtensions(config.engine),
       browserPages: config.browserAccount ? BROWSER_PAGES[config.engine] : null,
     };

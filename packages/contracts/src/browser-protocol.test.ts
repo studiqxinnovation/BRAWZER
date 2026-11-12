@@ -74,6 +74,42 @@ describe("client messages", () => {
 });
 
 describe("agent messages", () => {
+  it("carries the pointer's cursor and a site icon", () => {
+    expect(
+      agentMessageSchema.safeParse({
+        type: "pointer",
+        tabId: "a",
+        cursor: "pointer",
+        hscroll: false,
+      }).success,
+    ).toBe(true);
+    expect(
+      agentMessageSchema.safeParse({
+        type: "pointer",
+        tabId: "a",
+        cursor: "url(x)",
+        hscroll: false,
+      }).success,
+    ).toBe(false);
+    expect(
+      agentMessageSchema.safeParse({
+        type: "favicon",
+        tabId: "a",
+        icon: "data:image/png;base64,iVBORw0KGgo=",
+      }).success,
+    ).toBe(true);
+    expect(agentMessageSchema.safeParse({ type: "favicon", tabId: "a", icon: null }).success).toBe(
+      true,
+    );
+    expect(
+      agentMessageSchema.safeParse({
+        type: "favicon",
+        tabId: "a",
+        icon: "data:text/html;base64,PGI+",
+      }).success,
+    ).toBe(false);
+  });
+
   it("validates a tabs snapshot", () => {
     const parsed = agentMessageSchema.safeParse({
       type: "tabs",

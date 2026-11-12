@@ -71,6 +71,8 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
     "--disk-cache-size=52428800",
     "--password-store=basic",
     "--lang=en-US",
+    // Text as a Mac draws it: shapes true to the font, not snapped to the pixel grid.
+    "--font-render-hinting=none",
     `--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication,InterestFeedContentSuggestions,CertificateTransparencyComponentUpdater,${options.browserAccount ? "" : "AccountConsistency,"}DialMediaRouteProvider`,
     ...(options.trustedSpkiHashes?.length
       ? [`--ignore-certificate-errors-spki-list=${options.trustedSpkiHashes.join(",")}`]

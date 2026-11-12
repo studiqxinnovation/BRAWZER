@@ -169,6 +169,42 @@ export const relayMessageSchema = z.discriminatedUnion("type", [
 
 export const tabSecuritySchema = z.enum(["secure", "insecure", "neutral"]);
 
+/** The cursors a page may ask for that the viewer shows; anything else is the arrow. */
+export const cursorKinds = [
+  "default",
+  "pointer",
+  "text",
+  "move",
+  "grab",
+  "grabbing",
+  "crosshair",
+  "not-allowed",
+  "wait",
+  "progress",
+  "help",
+  "zoom-in",
+  "zoom-out",
+  "col-resize",
+  "row-resize",
+  "ns-resize",
+  "ew-resize",
+  "nesw-resize",
+  "nwse-resize",
+  "none",
+] as const;
+export const cursorSchema = z.enum(cursorKinds);
+export type CursorKind = z.infer<typeof cursorSchema>;
+
+/** The largest site icon the container passes on. */
+export const FAVICON_MAX_BYTES = 64 * 1024;
+/** A site icon as a data URL: one image, PNG, ICO, GIF, JPEG, WebP or SVG. */
+export const faviconSchema = z
+  .string()
+  .max(Math.ceil((FAVICON_MAX_BYTES * 4) / 3) + 64)
+  .regex(
+    /^data:image\/(png|x-icon|vnd\.microsoft\.icon|gif|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/]+=*$/,
+  );
+
 /**
  * A navigation the engine couldn't complete: the address it tried and the
  * engine's own code for why (Chromium's `ERR_…`, Firefox's `dnsNotFound`
@@ -301,6 +337,19 @@ export const agentMessageSchema = z.discriminatedUnion("type", [
     text: z.string().max(CLIPBOARD_MAX_CHARS),
   }),
   z.object({ type: z.literal("pong") }),
+  /**
+   * What the pointer is over in the page: the cursor the engine would show,
+   * and whether anything there scrolls sideways (a swipe then scrolls rather
+   * than going back).
+   */
+  z.object({
+    type: z.literal("pointer"),
+    tabId: tabIdSchema,
+    cursor: cursorSchema,
+    hscroll: z.boolean(),
+  }),
+  /** The tab's site icon, fetched by the container (never by the viewer), or none. */
+  z.object({ type: z.literal("favicon"), tabId: tabIdSchema, icon: faviconSchema.nullable() }),
 ]);
 
 export type Viewport = z.infer<typeof viewportSchema>;

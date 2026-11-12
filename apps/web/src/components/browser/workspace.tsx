@@ -9,6 +9,7 @@ import {
   type BrowserSession,
   type ClientMessageInput,
   engineDetails,
+  type CursorKind,
   type FrameHeader,
   type Profile,
   type RefusedAction,
@@ -116,6 +117,32 @@ const REFUSALS: Record<RefusedAction, { title: string; description: string }> = 
 };
 
 const RECONNECT_ATTEMPTS = 2;
+/** How often the tab in front has its preview picture refreshed, if it has drawn since. */
+const PREVIEW_INTERVAL_MS = 4_000;
+const PREVIEW_WIDTH = 288;
+
+/** Drops the entries for tabs that are gone; the same map when nothing changed. */
+function prune<V>(map: ReadonlyMap<string, V>, keep: ReadonlySet<string>): ReadonlyMap<string, V> {
+  if ([...map.keys()].every((id) => keep.has(id))) return map;
+  return new Map([...map].filter(([id]) => keep.has(id)));
+}
+
+/** A small JPEG of the canvas, for a tab's hover preview; null if it can't be made. */
+function previewOf(canvas: HTMLCanvasElement): string | null {
+  if (canvas.width === 0 || canvas.height === 0) return null;
+  const small = document.createElement("canvas");
+  small.width = PREVIEW_WIDTH;
+  small.height = Math.max(1, Math.round((canvas.height / canvas.width) * PREVIEW_WIDTH));
+  const context = small.getContext("2d");
+  if (!context) return null;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(canvas, 0, 0, small.width, small.height);
+  try {
+    return small.toDataURL("image/jpeg", 0.7);
+  } catch {
+    return null;
+  }
+}
 
 /** What to tell the person about a file on its way to Drive. Quiet states return null. */
 function describeTransfer(
@@ -305,6 +332,18 @@ export function BrowserWorkspace({
 
   const viewportRef = useRef<ViewportHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  /** What the pointer is over, by tab: the cursor to show and whether a swipe would scroll. */
+  const pointerRef = useRef(new Map<string, { cursor: CursorKind; hscroll: boolean }>());
+  const [cursor, setCursor] = useState<CursorKind>("default");
+  /** Site icons by tab, fetched by the container; the strip shows an initial until one arrives. */
+  const [favicons, setFavicons] = useState<ReadonlyMap<string, string>>(() => new Map());
+  /** A small picture of each tab as last drawn here, for the strip's hover preview. */
+  const [previews, setPreviews] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const previewDirty = useRef(false);
+  /** The link as measured: round trip to the container and frames drawn a second. */
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [fps, setFps] = useState(0);
+  const drawTimes = useRef<number[]>([]);
   const addressRef = useRef<HTMLInputElement>(null);
   const viewport = useRef<Viewport>({ width: 1280, height: 800, scale: 1 });
   const attempts = useRef(0);
@@ -316,6 +355,8 @@ export function BrowserWorkspace({
   // Stream events are handled outside React's render cycle: read the latest tabs from a ref.
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  const activeTabRef = useRef(activeTabId);
+  activeTabRef.current = activeTabId;
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? null,
@@ -330,6 +371,10 @@ export function BrowserWorkspace({
       }
       if (event.kind === "frame") {
         viewportRef.current?.draw(event.header, event.image);
+        return;
+      }
+      if (event.kind === "latency") {
+        setLatencyMs(event.ms);
         return;
       }
       if (event.kind === "closed") {
@@ -387,9 +432,32 @@ export function BrowserWorkspace({
           pendingOpen.current = undefined;
         }
         return;
-      case "tabs":
+      case "tabs": {
+        // The canvas still shows the tab being left: its picture is taken before the next tab draws.
+        if (message.activeTabId !== activeTabRef.current) capturePreview(activeTabRef.current);
         setTabs(message.tabs);
         setActiveTabId(message.activeTabId);
+        // What was kept for tabs now closed goes with them.
+        const open = new Set(message.tabs.map((tab) => tab.id));
+        for (const id of [...pointerRef.current.keys()]) {
+          if (!open.has(id)) pointerRef.current.delete(id);
+        }
+        setFavicons((current) => prune(current, open));
+        setPreviews((current) => prune(current, open));
+        setCursor(pointerRef.current.get(message.activeTabId)?.cursor ?? "default");
+        return;
+      }
+      case "pointer":
+        pointerRef.current.set(message.tabId, { cursor: message.cursor, hscroll: message.hscroll });
+        if (message.tabId === activeTabRef.current) setCursor(message.cursor);
+        return;
+      case "favicon":
+        setFavicons((current) => {
+          const next = new Map(current);
+          if (message.icon) next.set(message.tabId, message.icon);
+          else next.delete(message.tabId);
+          return next;
+        });
         return;
       case "dialog": {
         const tab = tabsRef.current.find((candidate) => candidate.id === message.tabId);
@@ -705,9 +773,45 @@ export function BrowserWorkspace({
   const onDrawn = useCallback(
     (header: FrameHeader) => {
       stream.send({ type: "frame-ack", tabId: header.tabId, frameId: header.frameId });
+      drawTimes.current.push(performance.now());
+      previewDirty.current = true;
     },
     [stream],
   );
+  // Frames drawn over the last second, read once a second; a still page shows 0.
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => {
+      const since = performance.now() - 1_000;
+      drawTimes.current = drawTimes.current.filter((at) => at >= since);
+      setFps(drawTimes.current.length);
+    }, 1_000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [live]);
+  /** Keeps a small picture of the tab in front, from the canvas, for the strip's hover preview. */
+  const capturePreview = useCallback((tabId: string | null) => {
+    const canvas = viewportRef.current?.canvas();
+    if (!tabId || !canvas) return;
+    const picture = previewOf(canvas);
+    if (!picture) return;
+    previewDirty.current = false;
+    setPreviews((current) => {
+      const next = new Map(current);
+      next.set(tabId, picture);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => {
+      if (previewDirty.current) capturePreview(activeTabRef.current);
+    }, PREVIEW_INTERVAL_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [live, capturePreview]);
   const onReady = useCallback(() => {
     setFirstFrame(true);
   }, []);
@@ -1108,7 +1212,11 @@ export function BrowserWorkspace({
       <TabStrip
         tabs={tabs}
         activeTabId={activeTabId}
+        favicons={favicons}
+        previews={previews}
         onActivate={(id) => {
+          // The tab being left keeps its last picture.
+          capturePreview(activeTabId);
           send({ type: "activate-tab", tabId: id });
         }}
         onClose={(id) => {
@@ -1282,6 +1390,12 @@ export function BrowserWorkspace({
           onViewport={onViewport}
           onShortcut={onShortcut}
           onReady={onReady}
+          cursor={cursor}
+          canSwipe={() =>
+            activeTabRef.current !== null &&
+            pointerRef.current.get(activeTabRef.current)?.hscroll !== true
+          }
+          onGesture={onShortcut}
         />
         {activeTab?.error && live && (
           <NavigationErrorPage
@@ -1333,6 +1447,7 @@ export function BrowserWorkspace({
         profile={sessionProfile}
         remaining={remainingLabel(session.expiresAt, now)}
         sound={{ on: soundOn, unlocked: soundUnlocked, onToggle: toggleSound }}
+        link={{ latencyMs, fps }}
       />
 
       <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />

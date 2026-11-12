@@ -106,3 +106,14 @@ Measured on the long test page, 1280×800 at ratio 2 against ratio 1: Chromium
 scrolls at 19 frames a second against 21, Firefox at 8 against 9, with moving
 frames the same size (about 39 KB and 48 KB); the sharp frame is 170–190 KB and
 arrives 0.4–0.9 s after the page stops; a still page sends nothing further.
+
+## Addendum (2026-11-12): what the pointer is over, and site icons
+
+Two more things travel on the stream, both agent to viewer (Phase 10.1):
+`pointer` says what the pointer is over (the cursor the page asks for and
+whether anything there scrolls sideways), asked of the page by a script at
+most every 60 ms while the pointer moves and sent when the answer changes;
+`favicon` carries a tab's site icon as a data URL, fetched by the container
+through the session's own filtering proxy, so the same policy applies as to
+the page and the viewer never asks a site for anything. The viewer also
+times the ping it already sent, now every 5 s, and shows the round trip.
