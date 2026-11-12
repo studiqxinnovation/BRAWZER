@@ -260,11 +260,6 @@
       .dt-icons {
       visibility: hidden;
     }
-
-    /* The wallpaper the person chose (the default is the app's own): see :root below. */
-    :root:not([data-desktop="off"]) .ad-shell.dt-shell {
-      --ad-wallpaper: var(--wallpaper);
-    }
   }
 
   /* ── Windows ───────────────────────────────────────────────────────────── */
@@ -2969,6 +2964,15 @@ div:has(> .dt-os) > :not(.dt-os) {
 /* The wallpaper, as one value every surface reads: the shell, the lock screen. */
 :root {
   --wallpaper: var(--wp-brawzer);
+}
+/*
+ * The wallpaper the person chose is the desktop's background in every
+ * theme. Unlayered on purpose: the app shell's dark-theme night sky is
+ * unlayered too, and would otherwise win over the choice whenever the dark
+ * theme is on.
+ */
+:root:not([data-desktop="off"]) .ad-shell.dt-shell {
+  --ad-wallpaper: var(--wallpaper);
 }
 :root[data-wallpaper="aurora"] {
   --wallpaper: var(--wp-aurora);

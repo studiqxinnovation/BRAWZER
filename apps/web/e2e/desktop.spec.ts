@@ -99,6 +99,7 @@ test.describe("desktop", () => {
     await wallpapers.getByRole("radio", { name: "Saturn" }).click();
     await expect(html).toHaveAttribute("data-wallpaper", "saturn");
     await expect(html).toHaveAttribute("data-wallpaper-kind", "image");
+
     const chooser = page.waitForEvent("filechooser");
     await wallpapers.getByRole("button", { name: "Choose a photo…" }).click();
     await (
@@ -136,6 +137,16 @@ test.describe("desktop", () => {
     await wallpapers.getByRole("button", { name: "Done" }).click();
     await page.reload();
     await expect(html).toHaveAttribute("data-wallpaper", "ocean");
+    // The choice holds in the dark theme too: the shell keeps Ocean, not the default night sky.
+    const shellBackground = () =>
+      page.locator(".dt-shell").evaluate((element) => getComputedStyle(element).backgroundImage);
+    const inLight = await shellBackground();
+    expect(inLight).toContain("linear-gradient");
+    await page.getByRole("button", { name: "Use the dark theme" }).first().click();
+    await expect(html).toHaveAttribute("data-theme", "dark");
+    expect(await shellBackground()).toBe(inLight);
+    await page.getByRole("button", { name: "Use the light theme" }).first().click();
+    await expect(html).toHaveAttribute("data-theme", "light");
     // Kept with the account: a fresh tab gets it too.
     const fresh = await page.context().newPage();
     await fresh.goto("/app");
