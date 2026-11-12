@@ -134,10 +134,10 @@ export async function loadDesktopPrefs(): Promise<void> {
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-function savePrefs() {
+function savePrefs(leaving = false) {
   saveTimer = null;
   // Until the account's own choices arrive, a change applies here only (it mustn't overwrite them).
-  if (loaded === "yes") void putAppRecord("desktop", "state", prefs);
+  if (loaded === "yes") void putAppRecord("desktop", "state", prefs, { keepalive: leaving });
 }
 export function updateDesktopPrefs(patch: Partial<DesktopPrefs>) {
   prefs = { ...prefs, ...patch };
@@ -151,7 +151,7 @@ if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => {
     if (saveTimer) {
       clearTimeout(saveTimer);
-      savePrefs();
+      savePrefs(true);
     }
   });
 }
@@ -180,5 +180,3 @@ export function toggleFavourite(file: Favourite) {
       without.length === prefs.favourites.length ? [file, ...without].slice(0, 40) : without,
   });
 }
-
-export const isFavourite = (id: string) => prefs.favourites.some((entry) => entry.id === id);

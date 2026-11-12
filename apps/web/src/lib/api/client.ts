@@ -25,13 +25,42 @@ const unexpected: ApiFailure = {
  * first-party and never readable by scripts. Never throws: every outcome,
  * including a network failure, comes back as a result.
  */
-export async function apiRequest<T>(
+export function apiRequest<T>(
   path: `/${string}`,
   options: {
     method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
     body?: unknown;
     schema?: z.ZodType<T>;
+    /** Let the request finish even as the page unloads (a last save). */
+    keepalive?: boolean;
   } = {},
+): Promise<ApiResult<T>> {
+  // A page's parts each ask for what they need; while one GET is on its way,
+  // everyone asking for the same path gets that answer. Nothing is kept after
+  // it settles, so a read after a write still reads fresh.
+  if ((options.method ?? "GET") !== "GET" || typeof window === "undefined") {
+    return send(path, options);
+  }
+  const key = `${path}|${options.schema ? "s" : ""}`;
+  const pending = inFlight.get(key) as Promise<ApiResult<T>> | undefined;
+  if (pending) return pending;
+  const request = send(path, options).finally(() => {
+    inFlight.delete(key);
+  });
+  inFlight.set(key, request);
+  return request;
+}
+
+const inFlight = new Map<string, Promise<ApiResult<unknown>>>();
+
+async function send<T>(
+  path: `/${string}`,
+  options: {
+    method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+    body?: unknown;
+    schema?: z.ZodType<T>;
+    keepalive?: boolean;
+  },
 ): Promise<ApiResult<T>> {
   let response: Response;
   try {
@@ -44,6 +73,7 @@ export async function apiRequest<T>(
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       credentials: "same-origin",
       cache: "no-store",
+      ...(options.keepalive ? { keepalive: true } : {}),
     });
   } catch {
     return { ok: false, status: 0, error: unreachable };

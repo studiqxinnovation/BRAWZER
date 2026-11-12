@@ -66,3 +66,71 @@ describe("app records", () => {
     ).toEqual([]);
   });
 });
+
+describe("Exam Mode, enforced by the API", () => {
+  it("refuses browsers the exam doesn't allow, and ending it early without confirming it's you", async () => {
+    const client = h.browser();
+    const email = h.uniqueEmail("exam");
+    await h.signUp(client, email);
+    const running = { endsAt: Date.now() + 60 * 60_000, allowed: ["app:notepad"] };
+    expect(
+      (await client.put("/apps/exam-mode/records/current", { data: running })).statusCode,
+    ).toBe(200);
+
+    // No browser was allowed: a session can't start, whichever page asks.
+    const start = await client.post("/browser/sessions", {});
+    expect(start.statusCode, start.body).toBe(403);
+    expect(start.json<{ error: { message: string } }>().error.message).toContain("Exam Mode");
+
+    // Ending it early is a sensitive step: confirming it's you, within ten minutes.
+    await h.database.pool.query(
+      `update auth_sessions set reauthenticated_at = now() - interval '11 minutes'
+       where user_id = (select id from users where email = $1)`,
+      [email],
+    );
+    const early = await client.delete("/apps/exam-mode/records/current");
+    expect(early.statusCode).toBe(403);
+    expect(early.json<{ error: { code: string } }>().error.code).toBe("reauthentication_required");
+    expect(
+      (await client.post("/auth/reauthenticate", { password: "violet-harbor-lantern" })).statusCode,
+    ).toBe(200);
+    expect((await client.delete("/apps/exam-mode/records/current")).statusCode).toBe(204);
+
+    // With the exam over, browsers open and its record goes without confirming.
+    const over = { endsAt: Date.now() - 1_000, allowed: [] };
+    expect((await client.put("/apps/exam-mode/records/current", { data: over })).statusCode).toBe(
+      200,
+    );
+    await h.database.pool.query(
+      `update auth_sessions set reauthenticated_at = now() - interval '11 minutes'
+       where user_id = (select id from users where email = $1)`,
+      [email],
+    );
+    expect((await client.delete("/apps/exam-mode/records/current")).statusCode).toBe(204);
+  });
+});
+
+describe("app-record writes are rate limited", () => {
+  let limited: Harness;
+
+  beforeAll(async () => {
+    limited = await createHarness({ ipPrefix: "100.72.1", env: { RATE_LIMIT_SCALE: "1" } });
+  });
+
+  afterAll(async () => {
+    await limited.close();
+  });
+
+  it("answers 429 after 600 writes in a quarter of an hour", async () => {
+    const client = limited.browser();
+    await limited.signUp(client, limited.uniqueEmail("record-limit"));
+    for (let n = 0; n < 600; n += 1) {
+      const response = await client.put("/apps/focus-timer/records/state", { data: { n } });
+      expect(response.statusCode, `write ${String(n)}: ${response.body}`).toBe(200);
+    }
+    const over = await client.put("/apps/focus-timer/records/state", { data: { n: 600 } });
+    expect(over.statusCode).toBe(429);
+    // Reading is not limited.
+    expect((await client.get("/apps/focus-timer/records")).statusCode).toBe(200);
+  }, 120_000);
+});

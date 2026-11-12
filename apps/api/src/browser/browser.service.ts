@@ -60,6 +60,7 @@ import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 import { MetricsService } from "../metrics/metrics.service.js";
 import { type AfterCommit, TeamsService } from "../teams/teams.service.js";
+import { AppRecordsService } from "../app-records/app-records.service.js";
 import { HistoryService } from "../history/history.service.js";
 
 const logger = new Logger("Browser");
@@ -121,6 +122,7 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
     @Inject(EnginesService) private readonly engines: EnginesService,
     @Inject(REDIS) private readonly redis: Pick<Redis, "publish" | "set">,
     @Inject(TeamsService) private readonly teams: TeamsService,
+    @Inject(AppRecordsService) private readonly records: AppRecordsService,
     @Inject(HistoryService) private readonly history: HistoryService,
   ) {}
 
@@ -398,6 +400,15 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
         "conflict",
         409,
         `${engineDetails[engine].name} isn’t offered on this installation.`,
+      );
+    }
+    // Exam Mode (Phase 9) means it here too, not only on the desktop that set it.
+    const exam = await this.records.currentExam(userId);
+    if (exam && !exam.allowed.includes(`browser:${engine}`)) {
+      throw new ApiException(
+        "forbidden",
+        403,
+        `Not during Exam Mode: ${engineDetails[engine].name} isn’t one of the browsers you allowed until it ends.`,
       );
     }
     const privateViaUpstream = upstream !== null && profile?.privateThroughProxy === true;

@@ -23,6 +23,7 @@ import { type Notice, Notifications } from "@/components/home/header-actions";
 import { sharedComputerNotice, toNotices } from "@/components/home/notices";
 import { openCommandPalette } from "@/components/app-shell/command-palette";
 import { appNav } from "@/content/app";
+import { readPageMissing, subscribeToPageMissing } from "@/lib/desktop-focus";
 import { fetchSecurityEvents } from "@/lib/api/security";
 import { startEngine, useLaunchBrowser } from "@/lib/browser/use-launch";
 import { lockNow } from "@/lib/lock";
@@ -96,7 +97,10 @@ export function DashboardBar({
   const router = useRouter();
   const pathname = usePathname();
   const { launch } = useLaunchBrowser();
-  const page = pageFor(pathname);
+  const missing = useSyncExternalStore(subscribeToPageMissing, readPageMissing, () => false);
+  const page = missing
+    ? { href: pathname, name: "Not found", line: "This page doesn’t exist" }
+    : pageFor(pathname);
   const group = appNav.find((candidate) =>
     candidate.items.some((item) => pageFor(item.href).href === page.href),
   )?.label;

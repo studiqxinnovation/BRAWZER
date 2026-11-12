@@ -52,3 +52,18 @@ export const putAppRecordRequestSchema = z.object({
 
 export type AppRecord = z.infer<typeof appRecordSchema>;
 export type AppRecordList = z.infer<typeof appRecordListSchema>;
+
+/**
+ * Exam Mode's record ("exam-mode" / "current"): until `endsAt`, only the
+ * apps and browsers in `allowed` ("app:<id>", "browser:<engine>") open. The
+ * API refuses to start any other browser and to delete the record early
+ * without confirming it's you (Phase 9).
+ */
+export const examRecordSchema = z.object({
+  /** When it ends, in ms since 1970. */
+  endsAt: z.number(),
+  allowed: z.array(z.string()),
+});
+export type ExamRecord = z.infer<typeof examRecordSchema>;
+export const EXAM_APP = "exam-mode" as const;
+export const EXAM_KEY = "current" as const;

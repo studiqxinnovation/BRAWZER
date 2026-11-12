@@ -129,7 +129,7 @@ Engine API ([ADR 0012](adr/0012-cloud-browser-runtime-isolation.md)):
 
 - **A provider and the managed services themselves** (PostgreSQL, Valkey, the object store, a key service, ClamAV): provisioned per installation; the stacks reach them by address.
 - **A verified Resend sending domain.** It needs the website domain.
-- **A scheduler across several runtime hosts**, a warm pool, and the TURN servers for WebRTC streaming (Phase 3b).
+- **TURN servers for WebRTC streaming** (Phase 3b): declined after the spike; the frame stream is what ships. (The runtime-host scheduler and the warm pool were built in Phase 8.)
 - **An independent penetration test** and the isolation checks on a real host (runbook).
 
 ## Running the browser tests against a production build

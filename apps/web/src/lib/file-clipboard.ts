@@ -52,10 +52,3 @@ export function clearCutFile() {
   }
   for (const listener of listeners) listener();
 }
-
-export function subscribeToCutFile(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}

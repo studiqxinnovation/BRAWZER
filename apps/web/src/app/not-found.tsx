@@ -1,9 +1,11 @@
 import { Logo } from "@brawzer/ui/brand";
 import Link from "next/link";
+import { NotFoundMark } from "@/components/app-shell/not-found-mark";
 
 export default function NotFound() {
   return (
     <main className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-24">
+      <NotFoundMark />
       <Link href="/" className="self-start rounded-md" aria-label="Brawzer home">
         <Logo size={22} />
       </Link>

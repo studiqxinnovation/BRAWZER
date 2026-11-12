@@ -1,4 +1,4 @@
-import type { Plan, PlanLimits, PlanPrice, Usage } from "@brawzer/contracts";
+import type { PlanLimits, PlanPrice, Usage } from "@brawzer/contracts";
 import { formatBytes } from "./drive";
 
 /** A price as Stripe states it, in the person's locale. */
@@ -71,8 +71,4 @@ export function describeLimits(
       ratio: null,
     },
   ];
-}
-
-export function planLabel(plan: Plan): string {
-  return plan.price ? `${plan.name} · ${formatPrice(plan.price)}` : plan.name;
 }

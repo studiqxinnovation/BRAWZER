@@ -157,7 +157,10 @@ in the account's data export.
 - **Exam Mode**: for a set time, only the chosen apps and browsers open on
   the desktop (windows, the launcher and the Browser page keep to it), the
   classic layout stays off, a reload keeps to it, and ending early takes the
-  password. It's for the person's own focus, not proctoring.
+  password. The API means it too (reality audit, 2026-11-11): while an exam
+  runs it refuses to start a browser the exam doesn't allow, from any tab or
+  request, and deletes the exam's record early only after confirming it's
+  you. It's for the person's own focus, not proctoring.
 - **Money**: income and expenses by month and category; a month saved to
   Drive as CSV, with cells that look like formulas made safe.
 - **Invoices**: invoices and quotes with the business's details, lines, tax

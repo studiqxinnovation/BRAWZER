@@ -8,8 +8,6 @@ import type { WithClassName } from "../lib/types";
 
 export const Popover = BasePopover.Root;
 export const PopoverTrigger = BasePopover.Trigger;
-export const PopoverClose = BasePopover.Close;
-
 export interface PopoverContentProps {
   align?: "start" | "center" | "end";
   side?: "top" | "bottom" | "left" | "right";

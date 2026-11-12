@@ -1,6 +1,10 @@
 import {
   type AppRecord,
   type AppRecordApp,
+  EXAM_APP,
+  EXAM_KEY,
+  type ExamRecord,
+  examRecordSchema,
   MAX_APP_RECORD_BYTES,
   MAX_APP_RECORDS,
 } from "@brawzer/contracts";
@@ -10,6 +14,7 @@ import { ApiException } from "../common/api-exception.js";
 import { SECRET_BOX } from "../crypto/crypto.module.js";
 import type { SecretBox } from "../crypto/secret-box.js";
 import { DATABASE } from "../database/database.module.js";
+import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 
 /** Bound to the account, the app and the key: a record moved anywhere else won't open. */
 const contextOf = (userId: string, app: AppRecordApp, key: string) =>
@@ -25,7 +30,28 @@ export class AppRecordsService {
   constructor(
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(SECRET_BOX) private readonly box: SecretBox,
+    @Inject(RateLimiter) private readonly limiter: RateLimiter,
   ) {}
+
+  /** The exam running for this account, if any: what Exam Mode allows until when. */
+  async currentExam(userId: string): Promise<ExamRecord | null> {
+    const [row] = await this.database.db
+      .select({ sealed: schema.appRecords.sealed })
+      .from(schema.appRecords)
+      .where(
+        and(
+          eq(schema.appRecords.userId, userId),
+          eq(schema.appRecords.app, EXAM_APP),
+          eq(schema.appRecords.key, EXAM_KEY),
+        ),
+      )
+      .limit(1);
+    if (!row) return null;
+    const parsed = examRecordSchema.safeParse(
+      JSON.parse(await this.box.open(row.sealed, contextOf(userId, EXAM_APP, EXAM_KEY))),
+    );
+    return parsed.success && parsed.data.endsAt > Date.now() ? parsed.data : null;
+  }
 
   async list(userId: string, app: AppRecordApp): Promise<AppRecord[]> {
     const rows = await this.database.db
@@ -49,6 +75,8 @@ export class AppRecordsService {
   }
 
   async put(userId: string, app: AppRecordApp, key: string, data: unknown): Promise<AppRecord> {
+    // Every write seals with the key service: a loop mustn't be able to run it flat out.
+    await this.limiter.enforce(RATE_LIMITS.appRecordWritesPerAccount, userId);
     const json = JSON.stringify(data);
     const bytes = Buffer.byteLength(json, "utf8");
     if (bytes > MAX_APP_RECORD_BYTES) {

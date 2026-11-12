@@ -1,6 +1,7 @@
 "use client";
 
-import { z } from "zod";
+import { examRecordSchema } from "@brawzer/contracts";
+import type { z } from "zod";
 import { deleteAppRecord, fetchAppRecords, putAppRecord } from "./api/app-records";
 
 /**
@@ -9,12 +10,7 @@ import { deleteAppRecord, fetchAppRecords, putAppRecord } from "./api/app-record
  * with the account, so a reload or another tab keeps to it; ending it early
  * asks for the password.
  */
-export const examSchema = z.object({
-  /** When it ends, in ms since 1970. */
-  endsAt: z.number(),
-  /** "app:<id>" and "browser:<engine>". */
-  allowed: z.array(z.string()),
-});
+export const examSchema = examRecordSchema;
 export type Exam = z.infer<typeof examSchema>;
 
 let exam: Exam | null = null;

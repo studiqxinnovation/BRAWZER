@@ -4,6 +4,8 @@ import {
   type AppRecordList,
   appRecordAppSchema,
   appRecordKeySchema,
+  EXAM_APP,
+  EXAM_KEY,
   appRecordListSchema,
   appRecordSchema,
   putAppRecordRequestSchema,
@@ -34,6 +36,7 @@ import type { z } from "zod";
 import { SESSION_AUTH } from "../auth/auth.controller.js";
 import { CurrentAuth, SessionGuard } from "../auth/session.guard.js";
 import type { AuthContext } from "../auth/session.service.js";
+import { assertRecentAuth } from "../auth/recent-auth.guard.js";
 import { ApiException } from "../common/api-exception.js";
 import { AppRecordsService } from "./app-records.service.js";
 
@@ -77,7 +80,11 @@ export class AppRecordsController {
 
   @Delete(":app/records/:key")
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: "Delete a record" })
+  @ApiOperation({
+    summary: "Delete a record",
+    description:
+      "Ending a running Exam Mode early (its record, before its time) needs confirming it's you.",
+  })
   @ApiNoContentResponse({ description: "Deleted." })
   @ApiNotFoundResponse({ description: "There's no such record." })
   async remove(
@@ -85,6 +92,10 @@ export class AppRecordsController {
     @Param("key", { schema: appRecordKeySchema }) key: string,
     @CurrentAuth() auth: AuthContext,
   ): Promise<void> {
+    // Exam Mode means it: before its time is up, the record goes only after confirming it's you.
+    if (app === EXAM_APP && key === EXAM_KEY && (await this.records.currentExam(auth.user.id))) {
+      assertRecentAuth(auth);
+    }
     if (!(await this.records.remove(auth.user.id, app, key))) {
       throw new ApiException("not_found", 404, "That record doesn’t exist.");
     }

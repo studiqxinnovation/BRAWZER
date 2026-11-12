@@ -40,7 +40,7 @@ Brawzer's marketing and interface must never claim to be "100% invisible",
   - a `Permissions-Policy` that disables camera, microphone, location, payment, USB, serial, HID and Bluetooth
   - HSTS and `upgrade-insecure-requests` whenever the site is served over HTTPS (`NEXT_PUBLIC_SITE_URL` starts with `https://`)
 - **Fonts:** downloaded at build time and served from Brawzer's origin, so the browser never contacts a font provider.
-- **Appearance preferences:** theme, accent and the desktop's style and wallpaper are kept in `sessionStorage`, so they disappear when the browser closes. No cookies or `localStorage` are used.
+- **Appearance preferences:** theme and accent are kept in `sessionStorage`, so they disappear when the browser closes; the desktop's style and wallpaper are kept with the account (and mirrored in `sessionStorage` for the tab). No cookies or `localStorage` are used.
 - **Search engines:** every page is `noindex` and `robots.txt` disallows everything until launch (`SITE_INDEXING=enabled` turns indexing on). Account pages and signed-in pages are always `noindex`.
 - **Signed-in pages** (`/app`) are sent with `Cache-Control: no-store` and `X-Robots-Tag: noindex`. Visitors without a session cookie are redirected to sign in before anything renders; the page itself asks the API whether the session is valid.
 - **Account forms:** password fields are hidden by default (show/hide is opt-in) and warn when Caps Lock is on. "Keep me signed in" is off by default. After sign-in and sign-out the page fully reloads, because Next.js keeps recently visited pages mounted in memory; sign-out also replaces the history entry so Back doesn't return to the signed-in page.
@@ -176,7 +176,7 @@ A database lock ensures only one API instance runs it at a time.
 - **Writer** cleans any document it opens down to safe tags (no scripts, styles, embeds, event handlers or non-web links) and pastes text as plain text; Drive serves files so they can never run as a page.
 - **Money's CSV** prefixes cells that start with `=`, `+`, `-` or `@` so a spreadsheet won't run them as formulas; Calc's own CSV keeps the person's formulas, as that is the sheet they wrote.
 - **Send to Phone** shows a link to Drive's page for the file; it opens only after signing in on the phone.
-- **Exam Mode** is a focus tool kept with the account, not proctoring: ending it early takes the password.
+- **Exam Mode** is a focus tool kept with the account, not proctoring: ending it early takes confirming it's you, and the API enforces both the browsers it allows (a session that isn't allowed doesn't start, whatever asks) and that confirmation (the record can't be deleted early without it). App-record writes are rate limited per account (600 per 15 minutes).
 - **The Assistant and Study Notes** send what the person writes to Anthropic's API only when they ask, through Brawzer's API with the operator's key (never in the browser). Brawzer stores and logs none of it; the notes inside a Study Notes request are framed as material, not instructions; each account is limited to 60 requests an hour.
 
 ### Drive (Phase 4, [ADR 0011](adr/0011-drive-encryption-and-scanning.md))

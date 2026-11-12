@@ -12,6 +12,7 @@ import { RateLimitModule } from "../rate-limit/rate-limiter.js";
 import { RedisModule } from "../redis/redis.module.js";
 import { SecurityEventsModule } from "../security-events/security-events.js";
 import { TeamsModule } from "../teams/teams.module.js";
+import { AppRecordsModule } from "../app-records/app-records.module.js";
 import { HistoryModule } from "../history/history.module.js";
 import { BrowserController } from "./browser.controller.js";
 import { BrowserService } from "./browser.service.js";
@@ -40,6 +41,7 @@ import { WarmPoolService } from "./warm-pool.service.js";
     SiteRulesModule,
     BillingModule,
     TeamsModule,
+    AppRecordsModule,
     HistoryModule,
   ],
   controllers: [BrowserController],

@@ -119,14 +119,21 @@ test.describe("desktop", () => {
       "--wallpaper-image",
       /\/api\/v1\/drive\/files\/[0-9a-f-]{36}\/preview/,
     );
-    const kept = page.waitForResponse(
-      (response) =>
-        response.url().includes("/apps/desktop/records/state") &&
-        response.request().method() === "PUT",
-    );
+    // The last change is what the account keeps: wait for its save before leaving.
     await wallpapers.getByRole("radio", { name: "Ocean" }).click();
+    await expect(html).toHaveAttribute("data-wallpaper", "ocean");
+    await expect
+      .poll(
+        async () =>
+          (
+            (await (await page.request.get("/api/v1/apps/desktop/records")).json()) as {
+              records: { key: string; data: { wallpaper?: string } }[];
+            }
+          ).records.find((record) => record.key === "state")?.data.wallpaper,
+        { timeout: 10_000 },
+      )
+      .toBe("ocean");
     await wallpapers.getByRole("button", { name: "Done" }).click();
-    await kept;
     await page.reload();
     await expect(html).toHaveAttribute("data-wallpaper", "ocean");
     // Kept with the account: a fresh tab gets it too.
