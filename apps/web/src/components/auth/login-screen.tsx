@@ -48,16 +48,19 @@ export function LoginScreen({ children, notice }: { children: ReactNode; notice?
       <div aria-hidden="true" className="lp-stars" />
       <div aria-hidden="true" className="lp-stars lp-stars-far" />
       <div aria-hidden="true" className="lp-floor" />
-      <Clock />
-      <div className="lg-me">
-        <span className="lg-av" aria-hidden="true">
-          <Mark size={44} />
-        </span>
-        <p className="lg-welcome" aria-live="polite" />
-        {notice}
-        {children}
+      {/* Only this layer scrolls: the sky behind it never adds a scrollbar or shifts. */}
+      <div className="lg-scroll">
+        <Clock />
+        <div className="lg-me">
+          <span className="lg-av" aria-hidden="true">
+            <Mark size={44} />
+          </span>
+          <p className="lg-welcome" aria-live="polite" />
+          {notice}
+          {children}
+        </div>
+        <p className="lg-foot">Your computer in the cloud. Nothing is saved on this device.</p>
       </div>
-      <p className="lg-foot">Your computer in the cloud. Nothing is saved on this device.</p>
     </div>
   );
 }

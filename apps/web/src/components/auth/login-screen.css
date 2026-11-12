@@ -6,27 +6,45 @@
   position: fixed;
   inset: 0;
   z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9vh 20px 7vh;
   color: #f4f6fb;
   background:
     radial-gradient(120% 80% at 50% -10%, #111a3a 0%, transparent 60%),
     linear-gradient(180deg, #05060c 0%, #070a16 60%, #04050a 100%);
   isolation: isolate;
+  overflow: hidden;
+  transition: opacity 450ms ease;
+}
+
+/* The sky's layers stay put: no movement of the page, whatever they do. */
+.lg-screen > .lp-aurora,
+.lg-screen > .lp-stars,
+.lg-screen > .lp-floor {
+  contain: layout paint;
+}
+
+.lg-scroll {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 9vh 20px 7vh;
   overflow: hidden auto;
-  transition:
-    opacity 450ms ease,
-    transform 450ms ease;
+  scrollbar-gutter: stable;
 }
 
 /* Signed in: the screen lifts away, as the prototype's #login.out. */
 .lg-screen.lg-out {
   opacity: 0;
-  transform: scale(1.04);
   pointer-events: none;
+}
+
+.lg-out .lg-scroll {
+  transform: scale(1.04);
+  transition: transform 450ms ease;
 }
 
 .lg-clock {
@@ -124,17 +142,9 @@
   0%,
   100% {
     transform: translateY(0) scale(1);
-    box-shadow:
-      0 0 0 1.5px rgb(255 255 255 / 0.9),
-      0 0 0 7px rgb(255 255 255 / 0.08),
-      0 18px 40px rgb(0 0 0 / 0.55);
   }
   50% {
-    transform: translateY(-4px) scale(1.03);
-    box-shadow:
-      0 0 0 1.5px rgb(255 255 255 / 1),
-      0 0 0 12px rgb(255 255 255 / 0.05),
-      0 26px 48px rgb(0 0 0 / 0.6);
+    transform: translateY(-3px) scale(1.025);
   }
 }
 
