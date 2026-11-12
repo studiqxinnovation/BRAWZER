@@ -10,6 +10,8 @@ import {
   subscribeToDesktopPrefs,
   updateDesktopPrefs,
 } from "@/lib/desktop-prefs";
+import type { GlyphName } from "@/components/desktop/glyphs";
+import { GlyphSvg } from "@/components/glyph-tile";
 import { readDesktopStyle, subscribeToDesktop } from "@/lib/desktop";
 import { playSound } from "@/lib/sounds";
 import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/theme";
@@ -23,7 +25,7 @@ function Tile({
   pressed,
 }: {
   on?: boolean;
-  icon: string;
+  icon: GlyphName;
   label: string;
   sub?: string;
   onClick: () => void;
@@ -38,8 +40,8 @@ function Tile({
       aria-pressed={pressed}
       onClick={onClick}
     >
-      <span className="dt-cc-dot ad-emoji" aria-hidden="true">
-        {icon}
+      <span className="dt-cc-dot" aria-hidden="true">
+        <GlyphSvg glyph={icon} className="size-[15px]" />
       </span>
       <span>
         <b>{label}</b>
@@ -140,7 +142,7 @@ export function ControlCentre({
         <DialogTitle className="sr-only">Control Centre</DialogTitle>
         <Tile
           on
-          icon="📶"
+          icon="wifi"
           label="Network"
           sub={`Cloud · ${route ?? "…"}`}
           onClick={then(onNetwork)}
@@ -148,7 +150,7 @@ export function ControlCentre({
         <Tile
           on={prefs.dnd}
           pressed={prefs.dnd}
-          icon="🌙"
+          icon="moon"
           label="Do Not Disturb"
           sub={prefs.dnd ? "On" : "Off"}
           onClick={() => {
@@ -158,7 +160,7 @@ export function ControlCentre({
         <Tile
           on={dark}
           pressed={dark}
-          icon="◑"
+          icon="moon"
           label="Dark mode"
           sub={dark ? "On" : "Off"}
           onClick={() => {
@@ -168,7 +170,7 @@ export function ControlCentre({
         <Tile
           on={prefs.sounds}
           pressed={prefs.sounds}
-          icon="🔊"
+          icon="speaker"
           label="Sounds"
           sub={prefs.sounds ? "On" : "Off"}
           onClick={() => {
@@ -194,11 +196,11 @@ export function ControlCentre({
             updateDesktopPrefs({ volume: value });
           }}
         />
-        <Tile icon="📸" label="Screenshot" onClick={then(onScreenshot)} />
-        <Tile icon="🔒" label="Lock" onClick={then(onLock)} />
-        <Tile icon="📊" label="Usage" sub="Time per app" onClick={then(onUsage)} />
+        <Tile icon="camera" label="Screenshot" onClick={then(onScreenshot)} />
+        <Tile icon="lock" label="Lock" onClick={then(onLock)} />
+        <Tile icon="chart" label="Usage" sub="Time per app" onClick={then(onUsage)} />
         <Tile
-          icon="🧹"
+          icon="broom"
           label="Leave no trace"
           sub="Close everything"
           onClick={then(onLeaveNoTrace)}

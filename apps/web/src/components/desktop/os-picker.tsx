@@ -66,7 +66,7 @@ export function OsPicker({
             <span className="dt-os-d">Taskbar and Start menu, window buttons on the right</span>
           </button>
         </div>
-        <p className="dt-os-foot">You can change this any time in Settings → Desktop.</p>
+        <p className="dt-os-foot">You can change this any time in Account → Preferences.</p>
       </DialogContent>
     </Dialog>
   );

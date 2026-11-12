@@ -460,6 +460,13 @@
   }
 
   /* An app-icon tile for an emoji: glossy, lit from above, lifted off the card. */
+  .lp-tile-glyph {
+    width: 55%;
+    height: 55%;
+    color: #fff;
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.2));
+  }
+
   .lp-tile {
     display: grid;
     place-items: center;

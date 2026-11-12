@@ -51,12 +51,13 @@ import { resolveTheme, setThemePreference, subscribeToAppearance } from "@/lib/t
 import { clearClipboard, endEverySession, wipeThisComputer } from "@/lib/wipe";
 import { type AppWindowApi, AppWindowContext } from "./apps/app-window";
 import { saveToDrive } from "./apps/drive-save";
-import { appFor } from "./apps/open-with";
 import { type AppId, AppIcon, apps, dockSystemApps, Tile } from "./apps/registry";
 import { type WebApp, webAppById } from "./apps/web-apps";
 import { ContextMenuHost, type MenuEntry, openContextMenu } from "./context-menu";
 import { DashboardBar } from "./dashboard-bar";
+import { appFor } from "./apps/open-with";
 import { ControlCentre } from "./control-centre";
+import { clearRecentFiles, readRecentFiles } from "@/lib/recent-files";
 import {
   type BrowserOpen,
   type DesktopApi,
@@ -139,6 +140,17 @@ const CASCADE_Y = 42;
  * Where the nth new window goes: cascaded down and right by a title bar's
  * height, so every window behind keeps its title and buttons in view.
  */
+const BROWSER_WINDOW = { width: 780, height: 500 };
+
+/** Who wants to know when the start-up screen is taken away. */
+const bootListeners = new Set<() => void>();
+const subscribeToBoot = (listener: () => void) => {
+  bootListeners.add(listener);
+  return () => {
+    bootListeners.delete(listener);
+  };
+};
+
 function cascade(area: Rect, index: number, size?: { width: number; height: number }): Rect {
   const step = index % 4;
   const top = area.top + CASCADE_Y * (step + 1);
@@ -336,7 +348,8 @@ export function DesktopShell({
           );
         }
         added = true;
-        const size = content.kind === "app" ? apps[content.app] : undefined;
+        // Browsers open at the prototype's window size; apps at their own.
+        const size = content.kind === "app" ? apps[content.app] : BROWSER_WINDOW;
         return [
           ...current,
           {
@@ -629,11 +642,17 @@ export function DesktopShell({
     };
   }, [active, apply, loadDesk]);
 
-  // The start-up screen plays once; afterwards it's taken away.
+  // The start-up screen plays once; afterwards it's taken away ("Choose your desktop" waits behind it).
+  const booting = useSyncExternalStore(
+    subscribeToBoot,
+    () => Boolean(document.documentElement.dataset.boot),
+    () => false,
+  );
   useEffect(() => {
     if (!document.documentElement.dataset.boot) return;
     const timer = setTimeout(() => {
       delete document.documentElement.dataset.boot;
+      for (const listener of bootListeners) listener();
     }, 2_000);
     return () => {
       clearTimeout(timer);
@@ -1254,13 +1273,24 @@ export function DesktopShell({
     { label: "Upload files to the desktop…", onSelect: uploadToDesktop },
     "-",
     {
-      label: dashboard.hidden ? "Show Brawzer" : "Hide Brawzer",
+      label: dashboard.hidden ? "Show dashboard" : "Hide dashboard",
       onSelect: dashboard.hidden ? showDashboard : hideDashboard,
     },
     {
       label: "Open Files",
       onSelect: () => {
         openApp("files");
+      },
+    },
+    {
+      label: "Recent files",
+      children: recentMenu(),
+    },
+    {
+      label: "Search inside files…",
+      shortcut: "⌘⇧F",
+      onSelect: () => {
+        openApp("files", { search: "1" });
       },
     },
     { label: "All apps", onSelect: openLauncher },
@@ -1308,7 +1338,33 @@ export function DesktopShell({
       },
     },
     { label: "Lock screen", shortcut: "Ctrl+Shift+L", onSelect: () => void lockNow() },
+    "-",
+    { label: "Control Centre", onSelect: toggleControlCentre },
+    {
+      label: "Leave no trace…",
+      onSelect: () => {
+        setNoTrace("ask");
+      },
+    },
   ];
+
+  /** The files opened in this tab, newest first; a shared computer keeps nothing longer. */
+  const recentMenu = (): MenuEntry[] => {
+    const recent = readRecentFiles();
+    if (recent.length === 0) return [{ label: "Nothing opened yet", disabled: true }];
+    return [
+      ...recent.map((entry) => ({
+        label: entry.name,
+        onSelect: () => {
+          const app = appFor(entry);
+          if (app) openApp(app, { file: entry.id, name: entry.name });
+          else openApp("files");
+        },
+      })),
+      "-",
+      { label: "Clear recent", onSelect: clearRecentFiles },
+    ];
+  };
 
   function showMenu(event: ReactMouseEvent<HTMLElement>, entries: () => MenuEntry[]) {
     event.stopPropagation();
@@ -1411,7 +1467,7 @@ export function DesktopShell({
     },
   };
 
-  const pickerOpen = active && prefsLoaded && prefs.style === null && chosen === null;
+  const pickerOpen = active && prefsLoaded && prefs.style === null && chosen === null && !booting;
 
   return (
     <DesktopContext.Provider value={api}>

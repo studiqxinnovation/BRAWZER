@@ -116,19 +116,6 @@ export function CommandPalette() {
         run: () => void launch(engine),
       };
     }),
-    // The desktop's apps, where there is a desktop to open them on.
-    ...(desktop
-      ? appIds.map((app) => ({
-          key: `app:${app}`,
-          label: apps[app].name,
-          hint: "Open app",
-          words: `${apps[app].description} ${apps[app].category} app`,
-          icon: <AppIcon app={app} size={28} />,
-          run: () => {
-            desktop.openApp(app);
-          },
-        }))
-      : []),
     ...appNav.flatMap((group) =>
       group.items.map((item) => ({
         key: item.href,
@@ -142,6 +129,19 @@ export function CommandPalette() {
         },
       })),
     ),
+    // The desktop's apps, where there is a desktop to open them on.
+    ...(desktop
+      ? appIds.map((app) => ({
+          key: `app:${app}`,
+          label: apps[app].name,
+          hint: "Open app",
+          words: `${apps[app].description} ${apps[app].category} app`,
+          icon: <AppIcon app={app} size={28} />,
+          run: () => {
+            desktop.openApp(app);
+          },
+        }))
+      : []),
   ];
 
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);

@@ -613,3 +613,22 @@
     grid-column: auto;
   }
 }
+
+/* The dashboard's notices sit over the whole screen, as the prototype's .notif-panel. */
+.dt-notifs.hm-notices {
+  top: 40px;
+  right: 14px;
+  z-index: 300;
+  width: 300px;
+}
+
+.dt-notifs .hm-notice {
+  border-radius: 18px;
+  padding: 12px 14px;
+}
+
+.dt-notifs .hm-notice-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}

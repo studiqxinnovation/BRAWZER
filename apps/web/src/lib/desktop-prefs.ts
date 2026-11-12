@@ -26,6 +26,8 @@ export interface DesktopPrefs {
   brightness: number;
   /** What "Start Browsing" opens; null: Bee Browser, or the first offered. */
   defaultEngine: BrowserEngine | null;
+  /** Drive's starting folders and the welcome note were made (once per account). */
+  driveSetUp: boolean;
 }
 
 const prefsSchema = z.object({
@@ -37,6 +39,7 @@ const prefsSchema = z.object({
   volume: z.number().min(0).max(100).optional(),
   brightness: z.number().min(15).max(100).optional(),
   defaultEngine: browserEngineSchema.nullable().optional(),
+  driveSetUp: z.boolean().optional(),
 });
 
 const DEFAULT: DesktopPrefs = {
@@ -48,6 +51,7 @@ const DEFAULT: DesktopPrefs = {
   volume: 60,
   brightness: 100,
   defaultEngine: null,
+  driveSetUp: false,
 };
 
 let prefs: DesktopPrefs = DEFAULT;
@@ -90,6 +94,7 @@ export async function loadDesktopPrefs(): Promise<void> {
       volume: data.volume ?? DEFAULT.volume,
       brightness: data.brightness ?? DEFAULT.brightness,
       defaultEngine: data.defaultEngine ?? null,
+      driveSetUp: data.driveSetUp ?? false,
     };
   }
   loaded = "yes";

@@ -96,7 +96,10 @@ test.describe("home", () => {
       .first()
       .click();
     await expect(cards).toHaveCount(before - 1);
-    await expect(notices.getByRole("link", { name: "See all activity in Shield" })).toBeVisible();
+    // The classic page's notices end with a way to Shield; the desktop's slide in as the prototype's, bare.
+    await expect(notices.getByRole("link", { name: "See all activity in Shield" })).toHaveCount(
+      isMobile ? 1 : 0,
+    );
     await page.keyboard.press("Escape");
     await expect(bell).toHaveAttribute("aria-expanded", "false");
 

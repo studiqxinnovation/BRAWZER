@@ -5,6 +5,8 @@ import { DRIVE_TRASH_DAYS } from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
 import { useToast } from "@brawzer/ui/components/toast";
 import { ArrowLeft, RotateCcw, Search, Trash2 } from "lucide-react";
+import { readDesktopPrefs, updateDesktopPrefs } from "@/lib/desktop-prefs";
+import { rememberRecentFile } from "@/lib/recent-files";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createFolder,
@@ -58,6 +60,33 @@ const fileIcon = (file: DriveFile, size: number) => {
   return <Tile glyph={glyph} colour={colour} size={size} />;
 };
 
+const STARTING_FOLDERS = ["Desktop", "Documents", "Downloads", "Photos", "Screenshots", "Uploads"];
+const WELCOME = `Welcome to your cloud computer.
+
+Try these:
+- Right-click the desktop, a file, a dock icon or a window
+- Drag a window to the edge of the screen to snap it
+- Drop files from your computer onto the desktop to upload them
+- Get web apps and whole packs from the App Store
+- Add extensions to each browser on the Extensions page
+
+Everything runs in the cloud. Nothing stays on this computer.
+`;
+
+/** Drive's starting folders and the welcome note, made once for an account with an empty Drive. */
+async function setUpDrive(): Promise<void> {
+  let desktop: string | null = null;
+  for (const name of STARTING_FOLDERS) {
+    const made = await createFolder({ name, parentId: null, space: "personal" });
+    if (made.ok && name === "Desktop") desktop = made.data.id;
+  }
+  if (desktop) {
+    const note = new File([WELCOME], "Welcome to Brawzer.txt", { type: "text/plain" });
+    await uploadDriveFile(note, desktop, () => undefined).result;
+  }
+  updateDesktopPrefs({ driveSetUp: true });
+}
+
 /**
  * Files (and Trash): Drive as a file manager. Folders down the side, the
  * place's folders and files, opening each file in the app that shows it,
@@ -75,6 +104,10 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<"grid" | "list">("grid");
   const [query, setQuery] = useState("");
+  const searchBox = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (window.params.search) searchBox.current?.focus();
+  }, [window.params.search]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [newFolder, setNewFolder] = useState<string | null>(null);
   const upload = useRef<HTMLInputElement>(null);
@@ -86,6 +119,8 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
     setVersion((current) => current + 1);
   }, [setVersion]);
 
+  // The first time Drive is opened as a computer: the prototype's folders and its welcome note.
+  const settingUp = useRef(false);
   useEffect(() => {
     let cancelled = false;
     void Promise.all([
@@ -100,13 +135,22 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
       if (overview.ok) {
         setFolders(overview.data.folders);
         setUsage(overview.data.usage);
+        if (
+          !settingUp.current &&
+          !readDesktopPrefs().driveSetUp &&
+          overview.data.folders.length === 0 &&
+          overview.data.usage.fileCount === 0
+        ) {
+          settingUp.current = true;
+          void setUpDrive().then(load);
+        }
       }
       setFiles(listed.ok ? listed.data.files : []);
     });
     return () => {
       cancelled = true;
     };
-  }, [place, version]);
+  }, [place, version, load]);
 
   const folderName = (id: string | null) =>
     id === null ? "All files" : (folders.find((folder) => folder.id === id)?.name ?? "Folder");
@@ -147,6 +191,12 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
       });
       return;
     }
+    rememberRecentFile({
+      id: file.id,
+      name: file.name,
+      contentType: file.contentType,
+      status: file.status,
+    });
     window.openApp(app, { file: file.id, name: file.name });
   }
 
@@ -310,6 +360,7 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
                 Search Drive
               </label>
               <input
+                ref={searchBox}
                 id={`${window.id}-search`}
                 type="search"
                 value={query}

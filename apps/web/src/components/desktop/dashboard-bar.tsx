@@ -20,7 +20,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { type Notice, Notifications } from "@/components/home/header-actions";
-import { toNotices } from "@/components/home/notices";
+import { sharedComputerNotice, toNotices } from "@/components/home/notices";
 import { openCommandPalette } from "@/components/app-shell/command-palette";
 import { appNav } from "@/content/app";
 import { fetchSecurityEvents } from "@/lib/api/security";
@@ -111,7 +111,13 @@ export function DashboardBar({
   useEffect(() => {
     let cancelled = false;
     void fetchSecurityEvents(3).then((result) => {
-      if (!cancelled && result.ok) setNotices(toNotices(result.data.events, Date.now()));
+      if (cancelled || !result.ok) return;
+      const now = Date.now();
+      const shared = document.documentElement.dataset.sessionKeeper === "shared";
+      setNotices([
+        ...(shared ? [sharedComputerNotice(new Date(now).toISOString())] : []),
+        ...toNotices(result.data.events, now),
+      ]);
     });
     return () => {
       cancelled = true;

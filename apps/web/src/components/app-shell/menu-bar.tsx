@@ -18,6 +18,7 @@ import { EngineLogo } from "@/components/browser/engine-logo";
 import { type AppId, Tile } from "@/components/desktop/apps/registry";
 import { useDesktop } from "@/components/desktop/desktop-context";
 import type { GlyphName, TileColour } from "@/components/desktop/glyphs";
+import { GlyphSvg } from "@/components/glyph-tile";
 import { endBrowserSession, fetchBrowserOverview } from "@/lib/api/browser";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
 import { menuBarClock, subscribeToClock } from "@/lib/clock";
@@ -535,9 +536,7 @@ export function MenuBar() {
             setThemePreference(dark ? "light" : "dark");
           }}
         >
-          <span aria-hidden="true" className="ad-emoji">
-            {dark ? "☀️" : "🌙"}
-          </span>
+          <GlyphSvg glyph={dark ? "sun" : "moon"} className="size-[15px]" />
         </IconButton>
         {desktop && desktopOn && (
           <IconButton label="Control Centre" onClick={desktop.toggleControlCentre}>

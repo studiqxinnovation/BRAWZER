@@ -352,6 +352,39 @@ actions, and a form that opens under a row); pills; tables; the ring.
   accent, desktop style, wallpaper, shared-computer mode, idle timeout);
   Your data; Danger zone (sign out everywhere, delete the account).
 
+### The second look (2026-11-12)
+
+Compared screen by screen with the prototype again, and brought in line:
+
+- **Sign-in** is the prototype's log-in screen: the wallpaper behind a blur,
+  the time and date, Brawzer's mark where the prototype puts an initial, the
+  email and password pills with the arrow, and the real choices under them
+  (keep me signed in, passkey, phone, forgotten password, create an account).
+  No "any password works" and no guest mode: a sign-in is a sign-in.
+- **Notices** slide in over the whole screen at the top right, as the
+  prototype's do, each with its app tile, a line and the time; the first is
+  the shared-computer notice when the sign-in isn't kept.
+- **Drive**: Upload and New folder in the page head; the files in an info
+  card with the folder path and the search in its head.
+- **Files** makes the prototype's starting folders (Desktop, Documents,
+  Downloads, Photos, Screenshots, Uploads) and a "Welcome to Brawzer.txt"
+  note on the Desktop the first time an empty Drive is opened as a computer,
+  once per account (a desktop record flag).
+- **The desktop's right-click menu** gains Recent files (this tab's, in
+  sessionStorage), Search inside files…, Control Centre and Leave no trace…,
+  and says "Show dashboard" / "Hide dashboard".
+- **Account's Plan card** is the prototype's: the plan's name, "Current
+  plan", one line of limits and use, the upgrade button or why there is none.
+- **Browsers' Launch settings** show the installation's region and that the
+  screen size follows the window, as facts beside the default browser.
+- **Browser windows** open at the prototype's 780 by 500, and Bee's start
+  page is the prototype's: the tile, the name, the search pill, six
+  shortcuts and the isolation line.
+- **No emoji anywhere**: every one, on the public site and in the app
+  (greeting, notices, Control Centre, menu bar), is now one of the
+  prototype's Apple-style icon tiles (`components/glyph-tile.tsx`), and the
+  site keeps Apple's font stack first.
+
 ## Not built, and why
 
 These parts of the prototype only look like features, so Brawzer doesn't

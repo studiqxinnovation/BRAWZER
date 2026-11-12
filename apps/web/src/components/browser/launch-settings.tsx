@@ -12,7 +12,14 @@ import "@/components/app-shell/desktop.css";
  * The prototype's "Launch settings" card: which browser "Start Browsing" and
  * "Launch default" open. Kept with the account, so every device agrees.
  */
-export function LaunchSettings({ engines }: { engines: readonly BrowserEngine[] }) {
+export function LaunchSettings({
+  engines,
+  region,
+}: {
+  engines: readonly BrowserEngine[];
+  /** Where this installation runs its browsers, as it names it; null when it doesn't say. */
+  region: string | null;
+}) {
   const chosen = useSyncExternalStore(
     subscribeToDesktopPrefs,
     () => readDesktopPrefs().defaultEngine,
@@ -30,9 +37,23 @@ export function LaunchSettings({ engines }: { engines: readonly BrowserEngine[] 
           }}
           options={engines.map((engine) => ({ value: engine, label: engineDetails[engine].name }))}
         />
+        <Select
+          label="Region"
+          value="here"
+          disabled
+          options={[{ value: "here", label: region ?? "Where this installation runs" }]}
+        />
+        <Select
+          label="Screen size"
+          value="window"
+          disabled
+          options={[{ value: "window", label: "Matches the window" }]}
+        />
       </Grid>
       <p className="ad-stat-small">
-        What “Start Browsing” and “Launch default” open, with its first free profile.
+        “Start Browsing” and “Launch default” open the default browser with its first free profile.
+        Every browser runs in this installation’s region and fills its window; a profile’s proxy
+        changes where websites see it from.
       </p>
     </Card>
   );

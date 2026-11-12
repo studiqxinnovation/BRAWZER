@@ -3,6 +3,9 @@ import { cn } from "@brawzer/ui/lib/cn";
 import type { Route } from "next";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
+import { BeeArt, EngineLogo } from "@/components/browser/engine-logo";
+import type { GlyphName, TileColour } from "@/components/desktop/glyphs";
+import { GlyphSvg, GlyphTile } from "@/components/glyph-tile";
 import { Steps } from "@/components/site/blocks";
 import { BrowserPreview } from "@/components/site/browser-preview";
 import { ProtectionLists } from "@/components/site/illustrations";
@@ -13,37 +16,61 @@ import { MotionRoot, Reveal, TiltCard, TiltStage } from "./motion";
 
 const vars = (values: Record<string, string>) => values as CSSProperties;
 
-function Emoji({ children, className }: { children: string; className?: string }) {
+/** Bee Browser's own icon on its honey tile, as the Dock shows it. */
+function Bee({ size = 20 }: { size?: number }) {
   return (
-    <span aria-hidden="true" className={cn(styles.emoji, className)}>
-      {children}
+    <span
+      aria-hidden="true"
+      className="inline-flex shrink-0 items-center justify-center align-middle"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "23%",
+        background: "linear-gradient(145deg, #FFE566, #F5A623)",
+        boxShadow: "inset 0 0.5px 0 rgb(255 255 255 / 0.35), 0 1px 2px rgb(0 0 0 / 0.22)",
+      }}
+    >
+      <BeeArt size={Math.round(size * 0.76)} />
+    </span>
+  );
+}
+
+/** A browser's real logo, in a tile the size of the others. */
+function Browser({ engine, size = 20 }: { engine: "firefox" | "chrome"; size?: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-[23%] bg-white align-middle"
+      style={{ width: size, height: size }}
+    >
+      <EngineLogo engine={engine} size="sm" />
     </span>
   );
 }
 
 /** Things Brawzer does today, each one real: the band under the hero. */
-const capabilities = [
-  ["🐝", "Bee Browser, built on Chromium"],
-  ["🦊", "Firefox, if you prefer"],
-  ["🎭", "Profiles with their own cookies"],
-  ["📁", "Downloads saved to Drive, scanned"],
-  ["🌍", "A proxy for any profile"],
-  ["🛡️", "Site rules you set"],
-  ["🔑", "Passkeys and two-factor"],
-  ["🕘", "History only you can read"],
-  ["🔀", "Continue on another device"],
-  ["👥", "Team accounts"],
-  ["🧩", "Reviewed extensions"],
-  ["🔊", "Sound from the page"],
-] as const;
+const capabilities: readonly { icon: ReactNode; label: string }[] = [
+  { icon: <Bee />, label: "Bee Browser, built on Chromium" },
+  { icon: <Browser engine="firefox" />, label: "Firefox, if you prefer" },
+  { icon: <GlyphTile glyph="mask" colour="purple" />, label: "Profiles with their own cookies" },
+  { icon: <GlyphTile glyph="folder" colour="blue" />, label: "Downloads saved to Drive, scanned" },
+  { icon: <GlyphTile glyph="globe" colour="teal" />, label: "A proxy for any profile" },
+  { icon: <GlyphTile glyph="shield" colour="blue" />, label: "Site rules you set" },
+  { icon: <GlyphTile glyph="key" colour="orange" />, label: "Passkeys and two-factor" },
+  { icon: <GlyphTile glyph="clock" colour="indigo" />, label: "History only you can read" },
+  { icon: <GlyphTile glyph="shuffle" colour="green" />, label: "Continue on another device" },
+  { icon: <GlyphTile glyph="people" colour="pink" />, label: "Team accounts" },
+  { icon: <GlyphTile glyph="puzzle" colour="purple" />, label: "Reviewed extensions" },
+  { icon: <GlyphTile glyph="speaker" colour="teal" />, label: "Sound from the page" },
+];
 
-const placeEmoji: Record<(typeof places)[number], string> = {
-  "Internet cafés": "☕",
-  Libraries: "📚",
-  Hotels: "🏨",
-  Universities: "🎓",
-  "Shared offices": "🏢",
-  "Co-working spaces": "💻",
+const placeIcon: Record<(typeof places)[number], { glyph: GlyphName; colour: TileColour }> = {
+  "Internet cafés": { glyph: "cup", colour: "brown" },
+  Libraries: { glyph: "book", colour: "orange" },
+  Hotels: { glyph: "building", colour: "teal" },
+  Universities: { glyph: "cap", colour: "indigo" },
+  "Shared offices": { glyph: "building", colour: "gray" },
+  "Co-working spaces": { glyph: "laptop", colour: "blue" },
 };
 
 function Hero() {
@@ -68,7 +95,7 @@ function Hero() {
               "inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-footnote font-semibold",
             )}
           >
-            <Emoji>🐝</Emoji>
+            <Bee />
             Bee Browser · your browser, in Brawzer’s cloud
           </p>
           <h1
@@ -132,25 +159,25 @@ function Hero() {
                   className={cn(styles.chip, "top-[52%] -left-[7%] hidden sm:flex")}
                   style={vars({ "--z": "140px", "--delay": "-1s" })}
                 >
-                  <Emoji>🛡️</Emoji> Isolated in the cloud
+                  <GlyphTile glyph="shield" colour="blue" /> Isolated in the cloud
                 </span>
                 <span
                   className={cn(styles.chip, "-top-4 right-[6%] hidden md:flex")}
                   style={vars({ "--z": "190px", "--delay": "-3s" })}
                 >
-                  <Emoji>🔐</Emoji> History only you can read
+                  <GlyphTile glyph="lock" colour="green" /> History only you can read
                 </span>
                 <span
                   className={cn(styles.chip, "-right-[4%] bottom-[12%] hidden md:flex")}
                   style={vars({ "--z": "170px", "--delay": "-2s" })}
                 >
-                  <Emoji>📁</Emoji> Saved to Brawzer Drive
+                  <GlyphTile glyph="folder" colour="blue" /> Saved to Brawzer Drive
                 </span>
                 <span
                   className={cn(styles.chip, "-bottom-5 left-[8%] flex")}
                   style={vars({ "--z": "120px", "--delay": "-4s" })}
                 >
-                  <Emoji>✨</Emoji> Only pixels reach this screen
+                  <GlyphTile glyph="sparkle" colour="purple" /> Only pixels reach this screen
                 </span>
               </div>
             </div>
@@ -160,7 +187,7 @@ function Hero() {
 
       <div className={cn(styles.marquee, "relative mt-20 sm:mt-28")}>
         <ul aria-label="What Brawzer does" className={styles.track}>
-          {[...capabilities, ...capabilities].map(([emoji, label], index) => (
+          {[...capabilities, ...capabilities].map(({ icon, label }, index) => (
             <li
               key={`${label}-${String(index)}`}
               aria-hidden={index >= capabilities.length ? true : undefined}
@@ -169,7 +196,7 @@ function Hero() {
                 "flex items-center gap-2 rounded-full px-4 py-2 text-callout font-medium whitespace-nowrap",
               )}
             >
-              <Emoji>{emoji}</Emoji>
+              {icon}
               {label}
             </li>
           ))}
@@ -181,24 +208,24 @@ function Hero() {
 
 const flowNodes = [
   {
-    emoji: "💻",
+    icon: <GlyphSvg glyph="laptop" className="lp-tile-glyph" />,
     title: "The computer in front of you",
     body: "Shows the page’s pixels and sends your clicks and keys. Nothing else.",
     turn: "14deg",
   },
   {
-    emoji: "🐝",
+    icon: <BeeArt size="64%" />,
     title: "Your browser, in Brawzer’s cloud",
     body: "Runs in its own isolated container, with your profile’s cookies and sign-ins.",
     turn: "0deg",
   },
   {
-    emoji: "🌐",
+    icon: <GlyphSvg glyph="globe" className="lp-tile-glyph" />,
     title: "The web",
     body: "Websites see Brawzer’s cloud, or the proxy you chose, never that computer.",
     turn: "-14deg",
   },
-] as const;
+];
 
 function HowItWorks() {
   return (
@@ -242,7 +269,7 @@ function HowItWorks() {
                       "--to": index === 1 ? "#e8a020" : "#3366e8",
                     })}
                   >
-                    <Emoji>{node.emoji}</Emoji>
+                    {node.icon}
                   </span>
                   <h3 className="mt-4 text-body font-semibold text-ink">{node.title}</h3>
                   <p className="mt-2 text-callout text-pretty text-ink-secondary">{node.body}</p>
@@ -276,7 +303,7 @@ function HowItWorks() {
 }
 
 function FeatureCard({
-  emoji,
+  icon,
   colors,
   title,
   link,
@@ -285,7 +312,7 @@ function FeatureCard({
   delay,
   children,
 }: {
-  emoji: string;
+  icon: ReactNode;
   colors: [string, string];
   title: string;
   link?: { href: Route; label: string };
@@ -298,7 +325,7 @@ function FeatureCard({
     <Reveal delay={delay} className={className}>
       <TiltCard className="flex h-full flex-col rounded-[1.75rem] border border-line bg-surface p-7 shadow-sm sm:p-8">
         <span className={styles.tile} style={vars({ "--from": colors[0], "--to": colors[1] })}>
-          <Emoji>{emoji}</Emoji>
+          {icon}
         </span>
         <h3 className="mt-6 text-title-3 text-balance text-ink">{title}</h3>
         <p className="mt-3 text-callout text-pretty text-ink-secondary">{children}</p>
@@ -352,68 +379,72 @@ function ProfileFan() {
 function DriveDrop() {
   return (
     <div aria-hidden="true" className="flex items-end justify-center gap-3 pt-6">
-      {[
-        ["📄", "0ms"],
-        ["🖼️", "-1200ms"],
-        ["📊", "-2400ms"],
-      ].map(([icon, delay]) => (
+      {(
+        [
+          ["doc", "red", "0ms"],
+          ["image", "teal", "-1200ms"],
+          ["table", "green", "-2400ms"],
+        ] as const
+      ).map(([glyph, colour, delay]) => (
         <span
-          key={icon}
+          key={glyph}
           className={cn(
             styles.drop,
-            "text-2xl grid size-12 place-items-center rounded-xl border border-line bg-canvas-subtle",
+            "grid size-12 place-items-center rounded-xl border border-line bg-canvas-subtle",
           )}
-          style={vars({ "--delay": delay ?? "0ms" })}
+          style={vars({ "--delay": delay })}
         >
-          <Emoji>{icon ?? ""}</Emoji>
+          <GlyphTile glyph={glyph} colour={colour} size={28} />
         </span>
       ))}
       <span className="ml-2 flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-footnote font-medium text-success">
-        ✓ Scanned
+        <GlyphSvg glyph="check" className="size-3.5" style={{ strokeWidth: 3 }} /> Scanned
       </span>
     </div>
   );
 }
 
 const teamMembers = [
-  ["🧑‍💻", "#9db8ff", "#3366e8"],
-  ["👩‍🎨", "#ffb3c7", "#d6336c"],
-  ["🧑‍🔬", "#7ee0cf", "#0f7a80"],
-  ["👨‍🏫", "#ffd27a", "#e07a1f"],
-  ["👩‍💼", "#c4b5fd", "#7c3aed"],
+  ["A", "#9db8ff", "#3366e8"],
+  ["M", "#ffb3c7", "#d6336c"],
+  ["D", "#7ee0cf", "#0f7a80"],
+  ["J", "#ffd27a", "#e07a1f"],
+  ["S", "#c4b5fd", "#7c3aed"],
 ] as const;
 
 function TeamVisual() {
   return (
     <div aria-hidden="true" className="flex flex-wrap items-center gap-x-6 gap-y-4">
       <div className="flex -space-x-3">
-        {teamMembers.map(([emoji, from, to], index) => (
+        {teamMembers.map(([initial, from, to], index) => (
           <span
-            key={emoji}
+            key={initial}
             className={cn(
               styles.drop,
-              "text-2xl grid size-12 place-items-center rounded-full border-2 border-surface shadow-md",
+              "grid size-12 place-items-center rounded-full border-2 border-surface text-body font-bold text-white shadow-md",
             )}
             style={vars({
               background: `linear-gradient(150deg, ${from}, ${to})`,
               "--delay": `${String(-index * 300)}ms`,
             })}
           >
-            <Emoji>{emoji}</Emoji>
+            {initial}
           </span>
         ))}
       </div>
       <div className="flex flex-wrap gap-2">
-        {[
-          ["💳", "One plan"],
-          ["🌍", "Shared proxies"],
-          ["📁", "Shared Drive"],
-        ].map(([emoji, label]) => (
+        {(
+          [
+            ["card", "blue", "One plan"],
+            ["globe", "teal", "Shared proxies"],
+            ["folder", "blue", "Shared Drive"],
+          ] as const
+        ).map(([glyph, colour, label]) => (
           <span
             key={label}
             className="flex items-center gap-1.5 rounded-full border border-line bg-canvas-subtle px-3 py-1.5 text-footnote font-medium text-ink"
           >
-            <Emoji>{emoji ?? ""}</Emoji>
+            <GlyphTile glyph={glyph} colour={colour} size={18} />
             {label}
           </span>
         ))}
@@ -443,7 +474,7 @@ function Features() {
           <FeatureCard
             className="md:col-span-2"
             delay={0}
-            emoji="🎭"
+            icon={<GlyphSvg glyph="mask" className="lp-tile-glyph" />}
             colors={["#c4b5fd", "#7c3aed"]}
             title="A separate browser for every part of your life."
             link={{ href: "/profiles", label: "Explore profiles" }}
@@ -454,7 +485,7 @@ function Features() {
           </FeatureCard>
           <FeatureCard
             delay={100}
-            emoji="📁"
+            icon={<GlyphSvg glyph="folder" className="lp-tile-glyph" />}
             colors={["#9db8ff", "#3366e8"]}
             title="Downloads that never touch the computer."
             link={{ href: "/drive", label: "Explore Drive" }}
@@ -464,7 +495,7 @@ function Features() {
           </FeatureCard>
           <FeatureCard
             delay={0}
-            emoji="🦊"
+            icon={<Browser engine="firefox" size={34} />}
             colors={["#ffd27a", "#e07a1f"]}
             title="Bee Browser, or Firefox."
             link={{ href: "/product", label: "See everything in Brawzer" }}
@@ -474,7 +505,7 @@ function Features() {
           </FeatureCard>
           <FeatureCard
             delay={100}
-            emoji="🕘"
+            icon={<GlyphSvg glyph="clock" className="lp-tile-glyph" />}
             colors={["#7ee0cf", "#0f7a80"]}
             title="History only you can read."
           >
@@ -483,7 +514,7 @@ function Features() {
           </FeatureCard>
           <FeatureCard
             delay={200}
-            emoji="🔀"
+            icon={<GlyphSvg glyph="shuffle" className="lp-tile-glyph" />}
             colors={["#ffb3c7", "#d6336c"]}
             title="Pick up on the next computer."
           >
@@ -492,7 +523,7 @@ function Features() {
           <FeatureCard
             className="md:col-span-3"
             delay={0}
-            emoji="👥"
+            icon={<GlyphSvg glyph="people" className="lp-tile-glyph" />}
             colors={["#a5f3a1", "#2f9e44"]}
             title="Bring your team."
             visual={<TeamVisual />}
@@ -524,7 +555,7 @@ function Security() {
           <div aria-hidden="true" className="relative mx-auto hidden size-48 lg:block">
             <div className={styles.ring} />
             <div className="absolute inset-4 grid place-items-center rounded-full bg-surface shadow-lg">
-              <span className={cn(styles.emoji, "text-6xl")}>🛡️</span>
+              <GlyphTile glyph="shield" colour="blue" size={96} />
             </div>
           </div>
         </div>
@@ -551,7 +582,7 @@ function Places() {
         <div aria-hidden="true" className="relative mx-auto size-64 sm:size-72">
           <div className="absolute inset-[18%] rounded-full border border-dashed border-line-strong" />
           <div className="absolute inset-[38%] grid place-items-center rounded-full bg-surface shadow-lg">
-            <span className={cn(styles.emoji, "text-4xl")}>🐝</span>
+            <Bee size={56} />
           </div>
           <div className={styles.orbit}>
             {places.map((place, index) => (
@@ -563,9 +594,12 @@ function Places() {
                   "--radius": "7.5rem",
                 })}
               >
-                <span className={cn(styles.emoji, "border border-line bg-surface shadow-sm")}>
-                  {placeEmoji[place]}
-                </span>
+                <GlyphTile
+                  glyph={placeIcon[place].glyph}
+                  colour={placeIcon[place].colour}
+                  size={36}
+                  className="shadow-sm"
+                />
               </span>
             ))}
           </div>
@@ -583,7 +617,7 @@ function Places() {
                 key={place}
                 className="flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-body text-ink"
               >
-                <Emoji>{placeEmoji[place]}</Emoji>
+                <GlyphTile glyph={placeIcon[place].glyph} colour={placeIcon[place].colour} />
                 {place}
               </li>
             ))}

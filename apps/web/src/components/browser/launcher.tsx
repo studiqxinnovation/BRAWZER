@@ -240,7 +240,7 @@ export function Launcher({
           </div>
         )}
 
-        <LaunchSettings engines={overview.engines} />
+        <LaunchSettings engines={overview.engines} region={overview.region} />
 
         <ul aria-label="Browsers" className="bl-icons" data-launching={launching ?? undefined}>
           {overview.engines.map((engine, index) => (

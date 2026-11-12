@@ -16,6 +16,7 @@ import {
   Unavailable,
 } from "@/components/app-shell/page";
 import { formatBytes } from "@/lib/drive";
+import { DriveActions } from "@/components/drive/drive-actions";
 import { TrashPanel } from "@/components/drive/trash-panel";
 import { DriveManager } from "@/components/drive/drive-manager";
 import { serverGet, signInAgain } from "@/lib/server-api";
@@ -123,7 +124,7 @@ async function Contents({ searchParams }: Pick<PageProps<"/app/drive">, "searchP
 export default function DrivePage({ searchParams }: PageProps<"/app/drive">) {
   return (
     <PageContainer>
-      <PageHeader title="Drive">
+      <PageHeader title="Drive" action={<DriveActions />}>
         <p>
           Files that stay with your account, not the computer. Everything is scanned for malware and
           stored encrypted; saving a file to a computer is a deliberate step. In a team, its shared

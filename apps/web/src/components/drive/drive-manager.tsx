@@ -29,7 +29,6 @@ import {
   FileText,
   Folder,
   FolderInput,
-  FolderPlus,
   HardDriveDownload,
   Pencil,
   Search,
@@ -40,7 +39,7 @@ import {
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createContext, type SubmitEvent, useContext, useState } from "react";
+import { createContext, type SubmitEvent, useContext, useEffect, useState } from "react";
 import { Panel } from "@/components/app-shell/page";
 import type { ApiResult } from "@/lib/api/client";
 import { createFolder, deleteFile, deleteFolder, updateFile, updateFolder } from "@/lib/api/drive";
@@ -55,9 +54,10 @@ import {
 } from "@/lib/drive";
 import { timeAgo } from "@/lib/time";
 import { DeleteDialog, MoveDialog, NameDialog } from "./dialogs";
+import { DRIVE_NEW_FOLDER_EVENT, DRIVE_UPLOAD_EVENT } from "./drive-actions";
 import { PreviewDialog } from "./preview-dialog";
 import { SaveToComputerDialog } from "./save-to-computer";
-import { UploadButton, UploadList, useUploads } from "./uploads";
+import { UploadList, useUploads } from "./uploads";
 
 /** Which Drive the page shows; links, searches and new things stay in it. */
 const SpaceContext = createContext<DriveSpace>("personal");
@@ -410,8 +410,8 @@ function Breadcrumbs({
   const path = folderPath(folders, currentFolderId);
   const crumbs = [{ id: null as string | null, name: "Drive" }, ...path];
   return (
-    <nav aria-label="Folder path">
-      <ol className="flex flex-wrap items-center gap-1 text-callout">
+    <nav aria-label="Folder path" className="ad-info-title">
+      <ol className="flex flex-wrap items-center gap-1">
         {crumbs.map((crumb, index) => {
           const last = index === crumbs.length - 1;
           return (
@@ -538,6 +538,22 @@ export function DriveManager({
   const subfolders = searching ? [] : childFolders(folders, currentFolderId);
   const empty = subfolders.length === 0 && files.length === 0;
   const full = usage.fileCount >= usage.fileLimit || usage.usedBytes >= usage.limitBytes;
+  // The page head's Upload and New folder (DriveActions) ask through events.
+  useEffect(() => {
+    const onUpload = (event: Event) => {
+      const files = (event as CustomEvent<readonly File[]>).detail;
+      if (!full && files.length > 0) start(files);
+    };
+    const onNewFolder = () => {
+      if (usage.folderCount < usage.folderLimit) setNewFolder(true);
+    };
+    window.addEventListener(DRIVE_UPLOAD_EVENT, onUpload);
+    window.addEventListener(DRIVE_NEW_FOLDER_EVENT, onNewFolder);
+    return () => {
+      window.removeEventListener(DRIVE_UPLOAD_EVENT, onUpload);
+      window.removeEventListener(DRIVE_NEW_FOLDER_EVENT, onNewFolder);
+    };
+  }, [full, start, usage.folderCount, usage.folderLimit]);
 
   function changed(message: string) {
     toast.add({ type: "success", title: message });
@@ -573,44 +589,28 @@ export function DriveManager({
             what’s here. Deleting is for whoever added it, the owner and admins.
           </p>
         )}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          {searching ? (
-            <p className="text-callout text-ink-secondary">
-              {files.length === 0
-                ? `No files match “${query}”`
-                : `${String(files.length)} ${files.length === 1 ? "file matches" : "files match"} “${query}”`}
-            </p>
-          ) : (
-            <Breadcrumbs folders={folders} currentFolderId={currentFolderId} />
-          )}
-          <SearchForm query={query} />
-        </div>
-
-        {!searching && (
-          <div className="flex flex-wrap items-center gap-2">
-            <UploadButton onFiles={start} disabled={full} />
-            <Button
-              variant="secondary"
-              disabled={usage.folderCount >= usage.folderLimit}
-              onClick={() => {
-                setNewFolder(true);
-              }}
-            >
-              <FolderPlus aria-hidden="true" />
-              New folder
-            </Button>
-            {full && (
-              <p className="text-footnote text-ink-secondary">
-                Drive is full. Delete some files to upload more.
-              </p>
-            )}
-          </div>
+        {full && (
+          <p className="text-footnote text-ink-secondary">
+            Drive is full. Delete some files to upload more.
+          </p>
         )}
 
         <UploadList uploads={uploads} onDismiss={dismiss} onClearFinished={clearFinished} />
 
-        {empty ? (
-          <Panel>
+        <Panel>
+          <div className="ad-info-head flex-wrap gap-3">
+            {searching ? (
+              <p className="ad-info-title">
+                {files.length === 0
+                  ? `No files match “${query}”`
+                  : `${String(files.length)} ${files.length === 1 ? "file matches" : "files match"} “${query}”`}
+              </p>
+            ) : (
+              <Breadcrumbs folders={folders} currentFolderId={currentFolderId} />
+            )}
+            <SearchForm query={query} />
+          </div>
+          {empty ? (
             <EmptyState
               icon={searching ? <Search /> : <HardDriveDownload />}
               title={
@@ -628,9 +628,7 @@ export function DriveManager({
                   : "Upload a file from this device to carry it to your next computer. Everything is scanned for malware and stored encrypted."
               }
             />
-          </Panel>
-        ) : (
-          <Panel>
+          ) : (
             <ul
               aria-label={searching ? "Search results" : "Files and folders"}
               className="divide-y divide-line"
@@ -650,10 +648,11 @@ export function DriveManager({
                 />
               ))}
             </ul>
-          </Panel>
-        )}
-
-        <StorageMeter usage={usage} />
+          )}
+          <div className="border-t border-line px-4 py-2.5 sm:px-5">
+            <StorageMeter usage={usage} />
+          </div>
+        </Panel>
 
         <NameDialog
           open={newFolder}

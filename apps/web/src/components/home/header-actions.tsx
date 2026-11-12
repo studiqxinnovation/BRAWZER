@@ -1,11 +1,15 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { Button } from "@brawzer/ui/components/button";
 import { Kbd } from "@brawzer/ui/components/kbd";
 import { ArrowRight, Bell, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { openCommandPalette } from "@/components/app-shell/command-palette";
+import type { GlyphName, TileColour } from "@/components/desktop/glyphs";
+import { GlyphTile } from "@/components/glyph-tile";
+import { desktopActive } from "@/lib/desktop";
 
 const never = () => () => undefined;
 
@@ -36,9 +40,12 @@ export interface Notice {
   id: string;
   /** Where it comes from, as a notification says: "Shield · Security". */
   source: string;
-  emoji: string;
+  glyph: GlyphName;
+  colour: TileColour;
   tone: "danger" | "success" | "accent";
   title: string;
+  /** A line under the title, when there is more to say. */
+  description?: string;
   when: string;
   /** When it happened (ISO), to tell what's new since the person last looked. */
   at: string;
@@ -125,6 +132,24 @@ export function Notifications({
     });
   }
 
+  // Over the whole screen on the desktop (a portal, after hydration); in place elsewhere.
+  const portal = useSyncExternalStore(
+    never,
+    () => desktopActive(),
+    () => false,
+  );
+  const panel = (
+    <NoticePanel
+      id={panelId}
+      open={open}
+      compact={compact}
+      shown={shown}
+      onDismiss={(id) => {
+        setDismissed((current) => new Set([...current, id]));
+      }}
+    />
+  );
+
   return (
     <>
       <Button
@@ -146,48 +171,68 @@ export function Notifications({
           </span>
         )}
       </Button>
-      <section
-        id={panelId}
-        aria-label="Recent notices"
-        data-open={open || undefined}
-        className="hm-notices"
-      >
-        <ul className="flex flex-col gap-1.5">
-          {shown.map((notice, index) => (
-            <li
-              key={notice.id}
-              className="hm-notice"
-              style={{ transitionDelay: open ? `${String(index * 120)}ms` : "0ms" }}
-            >
-              <span aria-hidden="true" className={`hm-notice-icon hm-tint-${notice.tone}`}>
-                <span className="hm-emoji">{notice.emoji}</span>
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="hm-eyebrow">{notice.source}</p>
-                <p className="text-callout font-semibold text-ink">{notice.title}</p>
-                <p className="mt-0.5 text-caption text-ink-tertiary">{notice.when}</p>
-              </div>
-              <button
-                type="button"
-                className="hm-notice-close"
-                aria-label={`Dismiss “${notice.title}”`}
-                tabIndex={open ? 0 : -1}
-                onClick={() => {
-                  setDismissed((current) => new Set([...current, notice.id]));
-                }}
-              >
-                <X aria-hidden="true" className="size-3" />
-              </button>
-            </li>
-          ))}
-        </ul>
-        {open && (
-          <Link href="/app/shield" className="hm-notice hm-notice-more">
-            {shown.length === 0 ? "Nothing new. " : ""}See all activity in Shield
-            <ArrowRight aria-hidden="true" className="size-3.5" />
-          </Link>
-        )}
-      </section>
+      {compact && portal ? createPortal(panel, document.body) : panel}
     </>
+  );
+}
+
+/** The notices themselves, so the dashboard's can sit over the whole screen (a portal). */
+function NoticePanel({
+  id,
+  open,
+  compact,
+  shown,
+  onDismiss,
+}: {
+  id: string;
+  open: boolean;
+  compact: boolean;
+  shown: readonly Notice[];
+  onDismiss: (id: string) => void;
+}) {
+  return (
+    <section
+      id={id}
+      aria-label="Recent notices"
+      data-open={open || undefined}
+      className={compact ? "hm-notices dt-notifs" : "hm-notices"}
+    >
+      <ul className="flex flex-col gap-1.5">
+        {shown.map((notice, index) => (
+          <li
+            key={notice.id}
+            className="hm-notice"
+            style={{ transitionDelay: open ? `${String(index * 120)}ms` : "0ms" }}
+          >
+            <GlyphTile glyph={notice.glyph} colour={notice.colour} size={36} />
+            <div className="min-w-0 flex-1">
+              <p className="hm-eyebrow">{notice.source}</p>
+              <p className="text-callout font-semibold text-ink">{notice.title}</p>
+              {notice.description && (
+                <p className="mt-0.5 text-footnote text-ink-secondary">{notice.description}</p>
+              )}
+              <p className="mt-1 text-caption text-ink-tertiary">{notice.when}</p>
+            </div>
+            <button
+              type="button"
+              className="hm-notice-close"
+              aria-label={`Dismiss “${notice.title}”`}
+              tabIndex={open ? 0 : -1}
+              onClick={() => {
+                onDismiss(notice.id);
+              }}
+            >
+              <X aria-hidden="true" className="size-3" />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {open && !compact && (
+        <Link href="/app/shield" className="hm-notice hm-notice-more">
+          {shown.length === 0 ? "Nothing new. " : ""}See all activity in Shield
+          <ArrowRight aria-hidden="true" className="size-3.5" />
+        </Link>
+      )}
+    </section>
   );
 }
