@@ -90,6 +90,7 @@ export class EgressService implements OnApplicationShutdown {
       env: ["EGRESS_MODE=tester", `EGRESS_SECRET=${secret}`, ...this.commonEnv()],
       labels: { "brawzer.managed": "true", [TESTER_LABEL]: this.instance },
       publishPorts: [TESTER_PORT],
+      publishHostIp: this.config.browser.agentBind,
       network: this.config.browser.network,
       capAdd: [...EGRESS_CAPABILITIES],
       extraHosts: this.extraHosts(),
@@ -121,7 +122,7 @@ export class EgressService implements OnApplicationShutdown {
       }
       const hostPort = state.hostPorts[port];
       if (hostPort) {
-        const address = `127.0.0.1:${String(hostPort)}`;
+        const address = `${this.config.browser.agentHost}:${String(hostPort)}`;
         try {
           const response = await fetch(`http://${address}/healthz`, {
             signal: AbortSignal.timeout(1_000),

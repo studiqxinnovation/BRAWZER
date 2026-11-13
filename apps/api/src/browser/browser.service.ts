@@ -11,12 +11,14 @@ import {
 import {
   and,
   type BrowserSessionRow,
+  count,
   type DatabaseHandle,
   desc,
   eq,
   inArray,
   ne,
   schema,
+  sql,
 } from "@brawzer/db";
 import {
   Inject,
@@ -25,6 +27,7 @@ import {
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
 } from "@nestjs/common";
+import type { Redis } from "ioredis";
 import { SessionService } from "../auth/session.service.js";
 import { BillingService } from "../billing/billing.service.js";
 import { lockAccount } from "../common/account-lock.js";
@@ -35,6 +38,7 @@ import type { AppConfig } from "../config/env.js";
 import { SECRET_BOX } from "../crypto/crypto.module.js";
 import type { SecretBox } from "../crypto/secret-box.js";
 import { DATABASE } from "../database/database.module.js";
+import { REDIS } from "../redis/redis.module.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { ProfileDataService, ProfileDataTooLargeError } from "../profiles/profile-data.service.js";
@@ -46,6 +50,13 @@ import { StreamTickets } from "./stream-tickets.js";
 const logger = new Logger("Browser");
 const LIVE = ["starting", "running"] as const;
 const REAP_INTERVAL_MS = 30_000;
+/** Every API instance hears which sessions ended, whichever instance ended them (ADR 0016). */
+export const SESSION_ENDED_CHANNEL = "brawzer:browser:ended";
+/** Only one instance reaps at a time; the lock outlives a tick but not a crashed instance. */
+const REAPER_LOCK_KEY = "brawzer:browser:reaper";
+const REAPER_LOCK_MS = REAP_INTERVAL_MS - 5_000;
+/** The installation's live sessions are counted under one advisory lock, so two starts can't both pass. */
+const CAPACITY_LOCK_KEY = 0x62_72_63_70;
 
 /** The agent secret is sealed for one session only (ADR 0008). */
 const secretContext = (sessionId: string) => `browser-session:${sessionId}`;
@@ -86,6 +97,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
     @Inject(BillingService) private readonly billing: BillingService,
+    @Inject(REDIS) private readonly redis: Pick<Redis, "publish" | "set">,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -97,7 +109,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       logger.warn(`Reconciling runtimes failed: ${error instanceof Error ? error.message : ""}`);
     });
     this.timer = setInterval(() => {
-      void this.reap().catch((error: unknown) => {
+      void this.reapAsLeader().catch((error: unknown) => {
         logger.warn(`Reaping sessions failed: ${error instanceof Error ? error.message : ""}`);
       });
     }, REAP_INTERVAL_MS);
@@ -196,6 +208,20 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
 
     const row = await this.database.db.transaction(async (tx) => {
       await lockAccount(tx, userId);
+      // The installation's capacity, counted under one lock across every instance.
+      await tx.execute(sql`select pg_advisory_xact_lock(${CAPACITY_LOCK_KEY})`);
+      const [total] = await tx
+        .select({ count: count() })
+        .from(schema.browserSessions)
+        .where(inArray(schema.browserSessions.status, [...LIVE]));
+      if ((total?.count ?? 0) >= this.config.browser.maxLiveSessions) {
+        throw new ApiException(
+          "service_unavailable",
+          503,
+          "Brawzer’s cloud is at capacity right now. Try again in a few minutes.",
+          { headers: { "Retry-After": "60" } },
+        );
+      }
       const live = await tx
         .select({ id: schema.browserSessions.id })
         .from(schema.browserSessions)
@@ -379,6 +405,8 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     const ended = await this.markEnded(row.id, reason);
     if (!ended) return;
     this.events.emit("ended", row.id);
+    // Other instances may hold the viewer's relay.
+    this.redis.publish(SESSION_ENDED_CHANNEL, row.id).catch(() => undefined);
     if (row.containerId) {
       if (reason !== "account_deleted" && reason !== "runtime_failed") {
         await this.saveProfileData(row);
@@ -434,6 +462,18 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
   }
 
   // ── Housekeeping ──────────────────────────────────────────────────────
+
+  /** Reaps when this instance wins the lock for this tick; otherwise another one does. */
+  private async reapAsLeader(): Promise<void> {
+    let leader: string | null;
+    try {
+      leader = await this.redis.set(REAPER_LOCK_KEY, "1", "PX", REAPER_LOCK_MS, "NX");
+    } catch {
+      // Redis is away: reap anyway rather than let sessions outlive their limits.
+      leader = "OK";
+    }
+    if (leader === "OK") await this.reap();
+  }
 
   /** Idle and over-age sessions, and runtimes that died on their own. */
   async reap(now = new Date()): Promise<void> {

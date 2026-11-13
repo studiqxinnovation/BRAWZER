@@ -1,8 +1,11 @@
 # Deployment
 
-How Brawzer is built, checked and run outside a developer's machine. Production
-hosting is not chosen yet (Phase 7); everything here works on any host that
-runs containers.
+How Brawzer is built, checked and run outside a developer's machine. No
+hosting provider is assumed ([ADR 0016](adr/0016-production-hosting.md)):
+the app tier is a compose stack on any Linux host, sessions run on runtime
+hosts reached over mutual TLS, and the managed services are whatever speaks
+PostgreSQL, Valkey, S3 and the key service's API. Operations are in
+[RUNBOOK.md](RUNBOOK.md).
 
 ## Container images
 
@@ -33,9 +36,14 @@ reads `API_INTERNAL_URL` for server-side requests.
 
 ## Releasing
 
-1. Build and push both images (a registry is chosen with hosting).
-2. Run migrations once, with the new API image: `node dist/migrate.js`. It needs only `DATABASE_URL`.
-3. Start the new API, then the new web app.
+`.github/workflows/release.yml` builds the four images (API, web, runtime,
+egress) on a `v*` tag and pushes them to `ghcr.io/<owner>/brawzer-*` tagged
+with the version and the commit; every Monday it rebuilds `nightly` from
+`main` so base-image security updates reach the images. Deployments pin by
+digest. Then:
+
+1. Pull the runtime and egress images on the runtime host.
+2. Set the digests in `infra/production/production.env` and `docker compose -f infra/production/compose.yaml --env-file infra/production/production.env up -d --wait`: migrations run once from the API image, then the API instances, then the web app.
 
 The API refuses to start with an unsafe production configuration: plain HTTP,
 email that isn't Resend, a local encryption key, development proxy-test
@@ -111,7 +119,7 @@ Browser sessions run as containers started by the API through the Docker
 Engine API ([ADR 0012](adr/0012-cloud-browser-runtime-isolation.md)):
 
 - **The runtime image** is built from the repository root with `pnpm runtime:build` (`apps/runtime-agent/Dockerfile`: Debian's Chromium plus the agent, non-root). The API expects it under `BROWSER_RUNTIME_IMAGE` (default `brawzer-runtime:dev`); rebuild it for Chromium security updates.
-- **The engine socket** (`DOCKER_HOST`, or the usual socket locations) must be reachable by the API, which is root-equivalent on that host. The staging compose doesn't mount it into the API container, so the Browser page reports the runtime as unavailable there; how production starts sessions (and splits the orchestrator out of the API) is decided in Phase 7.
+- **The engine.** In development, the local socket (`DOCKER_HOST`, or the usual locations). In production, a runtime host's engine over `DOCKER_HOST=tcp://host:2376` with mutual TLS (`DOCKER_TLS_CA`, `DOCKER_TLS_CERT`, `DOCKER_TLS_KEY`), which the configuration requires; the socket is never mounted into the API container. `infra/production/runtime-host/README.md` provisions a host and `make-certs.sh` makes the certificates. The agent ports the engine publishes bind on the runtime host (`BROWSER_AGENT_BIND`, every interface for a remote engine: firewall them to the app tier) and are reached at `BROWSER_AGENT_HOST` (the engine's host by default). `BROWSER_CONTAINER_RUNTIME=runsc` runs sessions under gVisor. `BROWSER_MAX_LIVE_SESSIONS` bounds the installation. The staging stack runs sessions for real through a TLS-protected engine in a container.
 - **The stream URL** (`BROWSER_STREAM_URL`) is where the Browser page opens its WebSocket. It defaults to the API's own address, which works in development; in production it must be a `wss://` URL on the site's own origin, routed to the API by the edge (the web server's `/api/v1` rewrite doesn't carry WebSockets). A different origin needs `NEXT_PUBLIC_STREAM_ORIGIN` in the web app's build so the page's `connect-src` allows it.
 - **The egress image** (`apps/egress/Dockerfile`, built by `pnpm runtime:build` too, `EGRESS_IMAGE`) runs one sidecar per session and one proxy tester per API instance ([ADR 0014](adr/0014-egress-service.md)). Sidecars need `CAP_NET_ADMIN`, `SETUID` and `SETGID` (the orchestrator grants exactly those) and the kernel's nftables; the runtime shares each sidecar's network namespace. `PROXY_TEST_RUNNER` must be `egress` in production; `EGRESS_LOOPBACK_HOST` is for development only.
 - **Profile data and cloud browser downloads** use the same object store and scanner as Drive ([ADR 0013](adr/0013-profile-data-and-drive-hand-off.md)): profile archives under `profiles/<account>/`, downloads as Drive files. The runtime learns Drive's per-file limit from the API (`DRIVE_MAX_FILE_BYTES`, passed into the container); profile archives are capped at 256 MiB compressed. Budget object storage for both.
@@ -119,11 +127,10 @@ Engine API ([ADR 0012](adr/0012-cloud-browser-runtime-isolation.md)):
 
 ## Not done yet
 
-- **Image registry, production hosting and a managed key service:** chosen in Phase 7.
+- **A provider and the managed services themselves** (PostgreSQL, Valkey, the object store, a key service, ClamAV): provisioned per installation; the stacks reach them by address.
 - **A verified Resend sending domain.** It needs the website domain.
-- **Production hosting for cloud browser sessions** (where containers run, a warm pool, capacity limits, orphan reconciliation across instances) and the TURN servers for WebRTC streaming (Phase 3b): Phase 7.
-- **Automated image rebuilds for base-image security updates:** Phase 7.
-- **A reconciliation job for orphaned Drive objects** (a store failure during deletion): Phase 7.
+- **A scheduler across several runtime hosts**, a warm pool, and the TURN servers for WebRTC streaming (Phase 3b).
+- **An independent penetration test** and the isolation checks on a real host (runbook).
 
 ## Running the browser tests against a production build
 

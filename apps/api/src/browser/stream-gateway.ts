@@ -14,7 +14,14 @@ import {
   TRANSFER_CHUNK_BYTES,
   type TransferMessage,
 } from "@brawzer/contracts";
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnApplicationBootstrap,
+  type OnApplicationShutdown,
+} from "@nestjs/common";
+import type { Redis } from "ioredis";
 import type { FastifyRequest } from "fastify";
 import { WebSocket } from "ws";
 import { ApiException } from "../common/api-exception.js";
@@ -22,8 +29,9 @@ import { isAllowedOrigin, type RequestMeta, requestMeta } from "../common/reques
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 import { DriveService, type OpenedFile } from "../drive/drive.service.js";
+import { REDIS } from "../redis/redis.module.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
-import { BrowserService } from "./browser.service.js";
+import { BrowserService, SESSION_ENDED_CHANNEL } from "./browser.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 
 const logger = new Logger("StreamGateway");
@@ -93,8 +101,9 @@ interface IncomingTransfer {
  * streamed to the agent the same way.
  */
 @Injectable()
-export class StreamGateway {
+export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly relays = new Map<string, { close(code: number, reason: string): void }>();
+  private subscriber: Redis | null = null;
 
   constructor(
     @Inject(BrowserService) private readonly browser: BrowserService,
@@ -102,10 +111,34 @@ export class StreamGateway {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(DriveService) private readonly drive: DriveService,
     @Inject(SecurityEventsService) private readonly securityEvents: SecurityEventsService,
+    @Inject(REDIS) private readonly redis: Redis,
   ) {
     this.browser.events.on("ended", (sessionId: string) => {
       this.relays.get(sessionId)?.close(STREAM_CLOSE_CODES.ended, "ended");
     });
+  }
+
+  /** A session ended on any instance: cut its viewer here too (ADR 0016). */
+  onApplicationBootstrap(): void {
+    const subscriber = this.redis.duplicate({
+      enableOfflineQueue: true,
+      maxRetriesPerRequest: null,
+    });
+    subscriber.on("error", () => undefined);
+    subscriber.on("message", (channel: string, sessionId: string) => {
+      if (channel === SESSION_ENDED_CHANNEL) {
+        this.relays.get(sessionId)?.close(STREAM_CLOSE_CODES.ended, "ended");
+      }
+    });
+    subscriber.subscribe(SESSION_ENDED_CHANNEL).catch((error: unknown) => {
+      logger.warn(`Not subscribed to session ends: ${error instanceof Error ? error.message : ""}`);
+    });
+    this.subscriber = subscriber;
+  }
+
+  onApplicationShutdown(): void {
+    this.subscriber?.disconnect();
+    this.subscriber = null;
   }
 
   /** A fresh connection on /browser/sessions/:id/stream. */

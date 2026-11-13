@@ -1,0 +1,76 @@
+name: Release images
+
+# Builds the four images and pushes them to GitHub's container registry:
+# on a version tag with that version and the commit as tags, and weekly
+# from main as `nightly`, so base-image security updates (Node, Debian's
+# Chromium) reach the images even when nothing in Brawzer changed.
+on:
+  push:
+    tags: ["v*"]
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  images:
+    name: Build and push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            dockerfile: apps/api/Dockerfile
+          - name: web
+            dockerfile: apps/web/Dockerfile
+          - name: runtime
+            dockerfile: apps/runtime-agent/Dockerfile
+          - name: egress
+            dockerfile: apps/egress/Dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Sign in to the registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Tags for this build
+        id: tags
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/brawzer-${{ matrix.name }}"
+          if [ "$REF_TYPE" = "tag" ]; then
+            tags="$image:${REF_NAME#v} $image:sha-${GITHUB_SHA::12}"
+          else
+            tags="$image:nightly $image:sha-${GITHUB_SHA::12}"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+      - name: Build
+        env:
+          TAGS: ${{ steps.tags.outputs.tags }}
+          # The web image needs its public URL at build time; releases take it from a variable.
+          SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://brawzer.example' }}
+        run: |
+          set -- -f "${{ matrix.dockerfile }}" --label "org.opencontainers.image.revision=$GITHUB_SHA"
+          for tag in $TAGS; do set -- "$@" -t "$tag"; done
+          if [ "${{ matrix.name }}" = "web" ]; then
+            set -- "$@" --build-arg "NEXT_PUBLIC_SITE_URL=$SITE_URL" --build-arg API_INTERNAL_URL=http://api:4100
+          fi
+          docker build "$@" .
+      - name: Push
+        env:
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          for tag in $TAGS; do docker push "$tag"; done
+          first="${TAGS%% *}"
+          docker image inspect "$first" --format 'digest {{index .RepoDigests 0}}'

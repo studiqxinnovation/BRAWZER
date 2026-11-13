@@ -1,0 +1,19 @@
+# Production front door: publicly trusted certificates for {$SITE_HOST}.
+# API calls, the browser stream's WebSocket included, go straight to the
+# API; the web app never relays them, so the API sees the client address
+# from this proxy only (TRUST_PROXY).
+{
+	admin off
+}
+
+{$SITE_HOST} {
+	encode zstd gzip
+
+	handle /api/v1/* {
+		reverse_proxy api:4100
+	}
+
+	handle {
+		reverse_proxy web:3100
+	}
+}

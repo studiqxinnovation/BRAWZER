@@ -101,6 +101,56 @@ services:
       retries: 40
     networks: [staging]
 
+  # The runtime host, stood in by Docker-in-Docker with TLS (ADR 0016). It is
+  # privileged, which is why it is for staging only; production uses a real
+  # host with the same engine settings. Sessions run inside it.
+  runtime-engine:
+    image: docker:28.5.2-dind@sha256:2a232a42256f70d78e3cc5d2b5d6b3276710a0de0596c145f627ecfae90282ac
+    privileged: true
+    restart: unless-stopped
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+    volumes:
+      - engine-certs:/certs
+      - engine-data:/var/lib/docker
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "docker",
+          "--tlsverify",
+          "--tlscacert=/certs/server/ca.pem",
+          "--tlscert=/certs/client/cert.pem",
+          "--tlskey=/certs/client/key.pem",
+          "-H",
+          "tcp://127.0.0.1:2376",
+          "info",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [staging]
+
+  # One-off: builds the runtime and egress images into the staging engine.
+  runtime-images:
+    image: docker:28.5.2-cli@sha256:625d9431a9f54c5a2bc90f24f0e1c3d55b1349fd857dd85035f98c2c9acbdd4d
+    command:
+      - sh
+      - -c
+      - docker build -f apps/runtime-agent/Dockerfile -t brawzer-runtime:staging /repo
+        && docker build -f apps/egress/Dockerfile -t brawzer-egress:staging /repo
+    environment:
+      DOCKER_HOST: tcp://runtime-engine:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /certs/client
+    volumes:
+      - engine-certs:/certs:ro
+      - ../..:/repo:ro
+    depends_on:
+      runtime-engine: { condition: service_healthy }
+    restart: "no"
+    networks: [staging]
+
   # One-off: enables Transit and creates Brawzer's key-encryption key.
   openbao-init:
     <<: *api-image
@@ -152,12 +202,23 @@ services:
       CLAMAV_PORT: "3310"
       # Only the front door may report client addresses.
       TRUST_PROXY: 172.31.250.10
+      # Sessions run in the staging engine, reached over mutual TLS (ADR 0016).
+      DOCKER_HOST: tcp://runtime-engine:2376
+      DOCKER_TLS_CA: /certs/client/ca.pem
+      DOCKER_TLS_CERT: /certs/client/cert.pem
+      DOCKER_TLS_KEY: /certs/client/key.pem
+      BROWSER_RUNTIME_IMAGE: brawzer-runtime:staging
+      EGRESS_IMAGE: brawzer-egress:staging
+      BROWSER_STREAM_URL: wss://brawzer.localhost:${STAGING_PORT:-8443}
+    volumes:
+      - engine-certs:/certs:ro
     depends_on:
       redis: { condition: service_healthy }
       rustfs: { condition: service_healthy }
       clamav: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
       openbao-init: { condition: service_completed_successfully }
+      runtime-images: { condition: service_completed_successfully }
     networks: [staging]
 
   web:
@@ -203,3 +264,5 @@ volumes:
   redis-data:
   rustfs-data:
   caddy-data:
+  engine-certs:
+  engine-data:

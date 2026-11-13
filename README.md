@@ -15,8 +15,10 @@ Profiles, history and downloads stay with your account, not on the machine.
 > sound, WebRTC and Firefox are Phase 3b. Phase 4: Drive. Phase 5: an egress
 > sidecar per session, traffic through the profile's proxy, proxy tests out
 > of the API. Phase 6: plans with limits, Stripe billing, administration;
-> pricing itself is undecided and no price appears anywhere). Nothing is hosted
-> publicly yet (Phase 7). See [the Phase 3 review](docs/reviews/phase-3.md),
+> pricing itself is undecided and no price appears anywhere. Phase 7: production
+> hosting with runtime hosts over mutual TLS, several API instances, a release
+> pipeline and a runbook). Nothing is hosted publicly yet: that needs a provider,
+> a domain and a penetration test ([docs/RUNBOOK.md](docs/RUNBOOK.md)). See [the Phase 3 review](docs/reviews/phase-3.md),
 > [the Phase 4 review](docs/reviews/phase-4.md),
 > [the Phase 2 review](docs/reviews/phase-2.md) and
 > [the architecture](docs/ARCHITECTURE.md).
@@ -138,7 +140,7 @@ docs/
 
 The cloud browser's orchestrator and stream relay live in the API
 (`apps/api/src/browser`); the runtime agent is `apps/runtime-agent`. Splitting
-the orchestrator and relay into their own services is a Phase 7 item.
+the orchestrator and relay into their own services was dropped in Phase 7: the trust separation comes from running sessions on runtime hosts reached over mutual TLS ([ADR 0016](docs/adr/0016-production-hosting.md)).
 
 ## Configuration
 

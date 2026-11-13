@@ -189,6 +189,14 @@ A database lock ensures only one API instance runs it at a time.
 - **Sessions are bounded.** One live session per account, rate limits on starting and on tickets, 16 tabs (popup storms are closed before they run), 15 minutes without a viewer or 4 hours at most, orphaned containers removed when the API starts. The container is destroyed with every tab and page; under a profile that keeps its data, the engine is closed cleanly first and its profile directory (never its caches) archived and encrypted for the next session. Temporary sessions keep nothing.
 - **Only pixels and page state leave the container.** The security history records that a session started or ended and why, never what was browsed; data downloads list sessions, not pages.
 
+### Production hosting (Phase 7, [ADR 0016](adr/0016-production-hosting.md))
+
+- **Sessions run on runtime hosts**, reached over mutual TLS (required in production); the engine's socket is never mounted into the API. A runtime host holds no data: profile archives and Drive files live in the object store, session scratch space dies with the session.
+- **gVisor** (`BROWSER_CONTAINER_RUNTIME=runsc`) is the recommended runtime for session containers on top of the Phase 3 isolation.
+- **Several API instances** are safe: session ends are announced over Valkey (with the relay's 10-second validity check behind it), the reaper runs under a lock, the installation's live-session count is taken under a database lock.
+- **Nothing is left in the store:** objects no row refers to, older than an hour, are removed with the retention job.
+- **Images** are built in CI from pinned bases, pushed with the commit as a tag, pinned by digest in deployments, and rebuilt weekly for base-image security updates.
+
 ### Local infrastructure
 
 - **Network exposure:** services bind to `127.0.0.1` only.
@@ -202,7 +210,7 @@ A database lock ensures only one API instance runs it at a time.
 - **CI:** every GitHub Action is pinned to a full commit SHA, the workflow token is read-only, checkout keeps no credentials, and pnpm comes from npm at the pinned version. CI fails on high or critical advisories.
 - **Images:** base images are pinned by digest; the API and web images run as an unprivileged user and are built from the lockfile ([DEPLOYMENT.md](DEPLOYMENT.md)).
 
-## Remaining risks (reviewed in milestones 1.6, 2.8, 4.5, 3.6, 3.9, 5.5 and 6.5)
+## Remaining risks (reviewed in milestones 1.6, 2.8, 4.5, 3.6, 3.9, 5.5, 6.5 and 7.5)
 
 The Phase 1 and Phase 2 security reviews ([phase 1](reviews/phase-1.md),
 [phase 2](reviews/phase-2.md)) closed most earlier gaps. These remain,
@@ -213,23 +221,23 @@ deliberately:
 - **Timing.** Responses for existing and unknown addresses differ by a few database queries (milliseconds). Password hashing dominates, but this is not constant-time.
 - **Email delivery has no retry queue.** A failed send is logged; the person can request another email.
 - **Rate limits during a Redis outage are per API instance.** Each instance falls back to its own counters, so with several instances the effective limit multiplies until Redis returns.
-- **Client addresses in production.** The web server's rewrite keeps a client-supplied `X-Forwarded-For`, so it must not be listed in `TRUST_PROXY`. Production should route `/api/v1` to the API at the edge and trust only the edge (Phase 7).
+- **Client addresses in production.** The web server's rewrite keeps a client-supplied `X-Forwarded-For`, so it must not be listed in `TRUST_PROXY`; the production stack routes `/api/v1` to the API at the edge and trusts only the edge.
 - **No scanner catches everything.** ClamAV runs with bundled signatures locally and in CI; production must keep them updated (`freshclam`). Drive says so where files are saved to a computer.
-- **A store failure after a record is deleted leaves an orphaned object.** Deletion removes the database row first and the object second; a store outage in between is logged, not retried. The object is ciphertext without its key, so nothing is readable; a reconciliation job (Phase 7) will remove orphans.
+- **A store failure after a record is deleted leaves an orphaned object** until the maintenance job removes it (within six hours, once it is an hour old). The object is ciphertext without its key, so nothing is readable meanwhile.
 - **PDF previews aren't sandboxed by CSP** because Chromium's viewer doesn't render inside a sandboxed response. The viewer's own scripting can't reach Brawzer's page, and the PDF is served with `nosniff` from its own URL.
 - **Dependency advisories.** Three moderate advisories in transitive dependencies, none reachable: `esbuild` inside the development-only `drizzle-kit` (affects esbuild's own dev server, never started), and `glob`/`minimatch` inside `@fastify/static` (need attacker-controlled glob patterns; it only serves the API docs' assets, which are off in production). Patched versions are too new for the 7-day policy; re-check on 2026-11-13.
 - **New-device detection can be imitated.** The key comes from the self-reported user agent and the network prefix, so someone who copies both looks like a known device. It informs; it never blocks a sign-in.
 - **Deletion is immediate.** By decision there's no grace period, so a stolen session that can pass "confirm it's you" could delete the account.
-- **Containers share the host kernel.** Chromium's sandbox, the capability drop and the seccomp profile reduce the escape surface; gVisor or micro-VMs are evaluated before production (Phase 7).
+- **Containers share the runtime host's kernel** unless gVisor is configured, which production settings recommend; an installation without it keeps the Phase 3 isolation and should say so.
 - **The cloud browser can reach any public address.** The egress enforces the address rules, a port policy and a block list of the engine's services, not a per-account allow-list of destinations; that is a product decision for later.
 - **SOCKS4 proxies see names resolved by the egress** because the protocol can't carry a name; SOCKS4a, SOCKS5 and HTTP proxies get names unresolved.
 - **A running browser session isn't cut when the monthly cap is reached**; the cap applies at the next start.
 - **The webhook route has no rate limit of its own**; a flood of forged events costs one signature check each.
 - **The egress sidecar starts as root** to install its firewall, then drops to an unprivileged user before it listens (checked in CI); it holds `CAP_NET_ADMIN`, `SETUID` and `SETGID` until then. It runs no page content.
-- **The Docker socket is root-equivalent.** The API process that starts runtime containers must be trusted on that machine; the orchestrator is split out before production (Phase 7).
-- **One API instance.** Revocation events that cut streams are in-process and each instance runs its own reaper; several instances need shared infrastructure (Phase 7).
+- **The engine is root-equivalent on its runtime host.** In production that host runs nothing else and is firewalled to the app tier; in development it is the developer's engine.
+- **Published agent ports on a runtime host** are reachable by whoever can reach the host; the per-session secret gates every connection, and the host firewall should allow only the app tier.
 - **A profile directory is trusted by the next engine that opens it.** It is Brawzer's own authenticated ciphertext, but a compromised engine could craft one that attacks the next engine opening it, as with any browser profile; the runtime's isolation contains that engine.
-- **The relay holds a download in memory while Drive takes it**, bounded by the per-file limit (100 MB in development). A production relay streams through a bounded queue (Phase 7).
+- **The relay holds a download in memory while Drive takes it**, bounded by the per-file limit (100 MB in development).
 - **Development differences.** On localhost, `Clear-Site-Data` omits `"cookies"` (all localhost apps share cookies), and cookies are not `Secure`.
 
 ## Planned controls

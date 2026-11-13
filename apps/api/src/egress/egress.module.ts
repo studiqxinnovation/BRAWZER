@@ -14,7 +14,7 @@ import { DOCKER, EgressService } from "./egress.service.js";
     {
       provide: DOCKER,
       inject: [APP_CONFIG],
-      useFactory: (config: AppConfig) => new DockerClient(config.browser.dockerSocket),
+      useFactory: (config: AppConfig) => new DockerClient(config.browser.docker),
     },
     EgressService,
   ],

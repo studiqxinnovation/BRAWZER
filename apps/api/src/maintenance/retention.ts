@@ -10,6 +10,8 @@ import {
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 import { DATABASE, DatabaseModule } from "../database/database.module.js";
+import { StorageModule } from "../storage/storage.module.js";
+import { OrphanService } from "./orphans.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -47,6 +49,7 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
   constructor(
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(OrphanService) private readonly orphans: OrphanService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -65,7 +68,12 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
   private async runSafely(): Promise<void> {
     try {
       const result = await this.run();
-      if (result) logger.log(`Removed expired data: ${JSON.stringify(result)}`);
+      if (result) {
+        logger.log(`Removed expired data: ${JSON.stringify(result)}`);
+        // Same lock holder, same cadence: objects nothing refers to any more.
+        const orphans = await this.orphans.run();
+        if (orphans.removed > 0) logger.log(`Orphaned objects: ${JSON.stringify(orphans)}`);
+      }
     } catch (error) {
       logger.error(`Retention run failed: ${error instanceof Error ? error.message : "unknown"}`);
     }
@@ -128,8 +136,8 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
 }
 
 @Module({
-  imports: [DatabaseModule],
-  providers: [RetentionService],
+  imports: [DatabaseModule, StorageModule],
+  providers: [RetentionService, OrphanService],
   exports: [RetentionService],
 })
 export class MaintenanceModule {}

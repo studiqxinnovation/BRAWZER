@@ -83,6 +83,7 @@ export class OrchestratorService {
       ],
       labels: { "brawzer.managed": "true", [SESSION_LABEL]: sessionId, [EGRESS_LABEL]: "true" },
       publishPorts: [AGENT_PORT, EGRESS_HEALTH_PORT],
+      publishHostIp: this.config.browser.agentBind,
       network: browser.network,
       capAdd: [...EGRESS_CAPABILITIES],
       extraHosts: this.egress.extraHosts(),
@@ -107,6 +108,7 @@ export class OrchestratorService {
         ],
         labels: { "brawzer.managed": "true", [SESSION_LABEL]: sessionId },
         publishPorts: [],
+        publishHostIp: this.config.browser.agentBind,
         network: `container:${egressId}`,
         seccompProfile,
         memoryBytes: 2048 * MiB,
@@ -114,6 +116,8 @@ export class OrchestratorService {
         pidsLimit: 1024,
         shmBytes: 512 * MiB,
         tmpfsBytes: 1024 * MiB,
+        // gVisor or another registered runtime in production (ADR 0016).
+        runtime: this.config.browser.containerRuntime ?? undefined,
       });
       await this.docker.startContainer(containerId);
       const agentAddress = await this.waitUntilReady(containerId, egressId);
@@ -182,7 +186,7 @@ export class OrchestratorService {
       if (!egressState?.running) throw new Error("The egress sidecar stopped while starting");
       const hostPort = egressState.hostPorts[AGENT_PORT];
       if (hostPort) {
-        address = `127.0.0.1:${String(hostPort)}`;
+        address = `${this.config.browser.agentHost}:${String(hostPort)}`;
         try {
           const response = await fetch(`http://${address}/healthz`, {
             signal: AbortSignal.timeout(1_000),
