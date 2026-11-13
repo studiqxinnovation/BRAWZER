@@ -140,6 +140,8 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
           return { title: `Signed out ${devices} after a password reset`, tone: "neutral" };
         case "password_changed":
           return { title: `Signed out ${devices} after a password change`, tone: "neutral" };
+        case "email_change_undone":
+          return { title: `Signed out ${devices} after undoing an email change`, tone: "neutral" };
         case "signed_out_everywhere_else":
           return { title: `Signed out ${devices} from Sessions`, tone: "neutral" };
         case "signed_out_remotely":
@@ -173,6 +175,8 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
       return { title: "Email change requested", tone: "neutral" };
     case "email.changed":
       return { title: "Email address changed", tone: "success" };
+    case "email.change_undone":
+      return { title: "Email change undone, new password set", tone: "success" };
     case "data.exported":
       return { title: "Account data downloaded", tone: "neutral" };
     case "profile.created":

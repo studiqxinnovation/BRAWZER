@@ -42,4 +42,6 @@ export const EMAIL_LINK_LIFETIME_SECONDS = {
   verify_email: DAY,
   reset_password: 30 * MINUTE,
   change_email: DAY,
+  /** Long enough for someone to notice a change they didn't make. */
+  undo_email_change: 7 * DAY,
 } as const;

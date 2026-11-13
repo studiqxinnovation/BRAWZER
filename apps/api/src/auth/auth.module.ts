@@ -42,6 +42,7 @@ import { SessionsController } from "./sessions.controller.js";
     MfaService,
     PasskeyService,
     EmailTokenService,
+    BreachedPasswordCheck,
   ],
 })
 export class AuthModule {}

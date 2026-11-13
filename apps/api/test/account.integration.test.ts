@@ -316,3 +316,103 @@ describe("the Shield overview", () => {
     expect((await h.browser().get("/security/overview")).statusCode).toBe(401);
   });
 });
+
+describe("undoing an email change", () => {
+  /** Changes `email` to a new address through the real flow; returns the undo link's token. */
+  async function changed(tag: string) {
+    const { email, client } = await account(tag);
+    const newEmail = h.uniqueEmail(`${tag}-new`);
+    await client.post("/account/email", { email: newEmail });
+    const token = h.tokenIn(await h.waitForEmail(newEmail, "Confirm your new email address"));
+    expect((await h.browser().post("/account/email/confirm", { token })).statusCode).toBe(200);
+    const notice = await h.waitForEmail(email, "Your Brawzer email address was changed");
+    expect(notice).toContain("/undo-email-change#token=");
+    return { email, newEmail, client, undoToken: h.tokenIn(notice) };
+  }
+
+  it("restores the old address, sets a new password and signs out every device", async () => {
+    const { email, newEmail, client, undoToken } = await changed("undo");
+    const phone = h.browser(IPHONE_SAFARI);
+    await h.signIn(phone, newEmail);
+
+    const weak = await h.browser().post("/account/email/undo", {
+      token: undoToken,
+      password: "password1234",
+    });
+    expect(weak.statusCode).toBe(400);
+    expect(h.errorOf(weak).code).toBe("validation_failed");
+
+    const undone = await h.browser().post("/account/email/undo", {
+      token: undoToken,
+      password: "copper-meadow-whistle",
+    });
+    expect(undone.statusCode, undone.body).toBe(200);
+    expect(undone.json<{ email: string }>().email).toBe(email);
+
+    // Every device is out, including the one that made the change.
+    expect((await client.get("/auth/session")).statusCode).toBe(401);
+    expect((await phone.get("/auth/session")).statusCode).toBe(401);
+    // The new address and the old password are both gone.
+    expect(
+      (await h.browser().post("/auth/login", { email: newEmail, password: PASSWORD })).statusCode,
+    ).toBe(401);
+    expect((await h.browser().post("/auth/login", { email, password: PASSWORD })).statusCode).toBe(
+      401,
+    );
+    await h.signIn(h.browser(), email, "copper-meadow-whistle");
+
+    await h.waitForEmail(email, "Your Brawzer email address was restored");
+    await h.waitForEmail(newEmail, "This address was removed from a Brawzer account");
+    expect(await h.eventTypes(email)).toEqual(
+      expect.arrayContaining(["email.change_undone", "password.reset", "sessions.revoked"]),
+    );
+
+    // The link works once.
+    const again = await h.browser().post("/account/email/undo", {
+      token: undoToken,
+      password: "copper-meadow-whistle",
+    });
+    expect(again.statusCode).toBe(400);
+    expect(h.errorOf(again).code).toBe("token_invalid");
+  });
+
+  it("cancels a later pending change and refuses if the old address is now someone else's", async () => {
+    const { newEmail, client, undoToken } = await changed("undo-pending");
+    // A further change is requested but not confirmed; undoing cancels it.
+    await h.signIn(client, newEmail);
+    const third = h.uniqueEmail("undo-third");
+    expect((await client.post("/account/email", { email: third })).statusCode).toBe(202);
+    const thirdToken = h.tokenIn(await h.waitForEmail(third, "Confirm your new email address"));
+    expect(
+      (
+        await h
+          .browser()
+          .post("/account/email/undo", { token: undoToken, password: "copper-meadow-whistle" })
+      ).statusCode,
+    ).toBe(200);
+    const stale = await h.browser().post("/account/email/confirm", { token: thirdToken });
+    expect(stale.statusCode).toBe(400);
+
+    const taken = await changed("undo-taken");
+    // Someone else registered and confirmed the old address in the meantime.
+    // (That inbox already holds the original sign-up email, so wait for the second one.)
+    const newcomer = h.browser();
+    expect(
+      (await newcomer.post("/auth/register", { email: taken.email, password: PASSWORD }))
+        .statusCode,
+    ).toBe(202);
+    const signUpToken = h.tokenIn(await h.waitForEmail(taken.email, "Confirm your email", 2));
+    expect(
+      (await newcomer.post("/auth/verify-email", { token: signUpToken, password: PASSWORD }))
+        .statusCode,
+    ).toBe(200);
+    const refused = await h.browser().post("/account/email/undo", {
+      token: taken.undoToken,
+      password: "copper-meadow-whistle",
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(h.errorOf(refused).code).toBe("conflict");
+    // The account keeps its current address and password.
+    await h.signIn(h.browser(), taken.newEmail, PASSWORD);
+  });
+});

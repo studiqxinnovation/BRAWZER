@@ -2,6 +2,7 @@ import {
   accountExportSchema,
   type ChangePasswordRequest,
   confirmEmailChangeResponseSchema,
+  undoEmailChangeResponseSchema,
   currentSessionResponseSchema,
   messageResponseSchema,
   reauthenticateResponseSchema,
@@ -58,6 +59,14 @@ export const confirmEmailChange = (token: string) =>
     method: "POST",
     body: { token },
     schema: confirmEmailChangeResponseSchema,
+  });
+
+/** Undoes an email change with the token from the old address's link; sets a new password. */
+export const undoEmailChange = (token: string, password: string) =>
+  apiRequest("/account/email/undo", {
+    method: "POST",
+    body: { token, password },
+    schema: undoEmailChangeResponseSchema,
   });
 
 /** Deletes the account immediately. Needs a recent sign-in. */

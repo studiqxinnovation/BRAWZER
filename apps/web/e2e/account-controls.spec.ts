@@ -48,7 +48,7 @@ test.describe("account controls", () => {
     // Only shown once the page has read the link in the browser.
     const confirm = page.getByRole("button", { name: "Confirm new email address" });
     await expect(confirm).toBeVisible();
-    expect(new URL(page.url()).hash).toBe("");
+    await expect.poll(() => new URL(page.url()).hash).toBe("");
     expect(await wcagViolations(page)).toEqual([]);
     await confirm.click();
     await expect(
@@ -149,5 +149,71 @@ test.describe("Shield", () => {
     await alerts.getByRole("link", { name: "This wasn’t me" }).click();
     await expect(page).toHaveURL(/\/app\/sessions$/);
     await expect(page.getByText("Safari on iOS").first()).toBeVisible();
+  });
+});
+
+test.describe("undoing an email change", () => {
+  test("the old address restores itself with a new password", async ({ page, baseURL }) => {
+    const email = await signedIn(page, baseURL, "undo-email");
+    const newEmail = uniqueEmail("undo-new");
+    const origin = new URL(baseURL ?? "").origin;
+    // The change itself, as the account-controls test covers it in the browser.
+    expect(
+      (
+        await page.request.post("/api/v1/account/email", {
+          data: { email: newEmail },
+          headers: { origin },
+        })
+      ).status(),
+    ).toBe(202);
+    const confirmLink = await linkFromEmail(
+      page.request,
+      newEmail,
+      "Confirm your new email address",
+      baseURL ?? "",
+    );
+    const confirmToken = new URL(confirmLink).hash.replace("#token=", "");
+    expect(
+      (
+        await page.request.post("/api/v1/account/email/confirm", {
+          data: { token: confirmToken },
+          headers: { origin },
+        })
+      ).status(),
+    ).toBe(200);
+
+    const undoLink = await linkFromEmail(
+      page.request,
+      email,
+      "Your Brawzer email address was changed",
+      baseURL ?? "",
+    );
+    await page.goto(undoLink);
+    await expect(page.getByRole("heading", { name: "Undo an email change" })).toBeVisible();
+    await expect.poll(() => new URL(page.url()).hash).toBe("");
+    expect(await wcagViolations(page)).toEqual([]);
+
+    const password = page.getByLabel("New password", { exact: true });
+    await password.fill("password1234");
+    await page.getByRole("button", { name: "Restore my address and set this password" }).click();
+    await expect(
+      page.getByText("That password is too common. Choose something harder to guess."),
+    ).toBeVisible();
+    await password.fill("copper-meadow-whistle");
+    await page.getByRole("button", { name: "Restore my address and set this password" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Your email address was restored" }),
+    ).toBeVisible();
+    await expect(page.getByText(email)).toBeVisible();
+    // The session that made the change is gone.
+    expect((await page.request.get("/api/v1/auth/session/status")).status()).toBe(401);
+
+    await page.getByRole("link", { name: "Sign in" }).click();
+    await expect(page).toHaveURL(/\/sign-in$/);
+    await expect(page.getByRole("button", { name: "Sign in with a passkey" })).toBeVisible();
+    await page.getByRole("textbox", { name: "Email" }).fill(email);
+    await page.getByLabel("Password", { exact: true }).fill("copper-meadow-whistle");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(/\/app$/);
   });
 });

@@ -7,6 +7,8 @@ import {
   confirmEmailChangeMessage,
   type EmailContent,
   emailChangedMessage,
+  emailChangeRevertedMessage,
+  emailChangeUndoneMessage,
   emailChangeRequestedMessage,
   emailInUseMessage,
   mfaDisabledMessage,
@@ -89,8 +91,25 @@ export class EmailService {
     this.dispatch(to, emailChangeRequestedMessage(maskEmail(newEmail), this.now()));
   }
 
-  sendEmailChanged(to: string, newEmail: string): void {
-    this.dispatch(to, emailChangedMessage(maskEmail(newEmail), this.now()));
+  /** To the old address, with the link that undoes the change. */
+  sendEmailChanged(to: string, newEmail: string, undoToken: string): void {
+    this.dispatch(
+      to,
+      emailChangedMessage(
+        maskEmail(newEmail),
+        this.now(),
+        this.link("/undo-email-change", undoToken),
+      ),
+    );
+  }
+
+  sendEmailChangeUndone(to: string): void {
+    this.dispatch(to, emailChangeUndoneMessage(this.now(), this.link("/sign-in")));
+  }
+
+  /** To the address that was removed by the undo. */
+  sendEmailChangeReverted(to: string): void {
+    this.dispatch(to, emailChangeRevertedMessage(this.now()));
   }
 
   sendAccountDeleted(to: string): void {

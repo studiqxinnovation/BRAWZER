@@ -64,7 +64,7 @@ below has a test.
 
 - **Proxy tests run inside the API.** Address rules are the only barrier between a test and Brawzer's own network until Phase 5 moves tests and traffic into an isolated egress service. That isolation is required before launch.
 - **New-device detection can be imitated** by copying a browser's user agent and network. It informs; it never blocks.
-- **No undo for an email change.** The old address is told twice; the owner can still sign in with the password and change it back.
+- **No undo for an email change.** _Fixed after this review:_ the old address now gets an undo link (see SECURITY.md).
 - **Deletion is immediate**, by decision, so a stolen session that passes "confirm it's you" could delete the account.
 - **Computers without Bluetooth** can't use a phone's passkey, because QR sign-in (2.7) wasn't built. Password sign-in, with a code if two-factor is on, still works there.
 - Carried over from Phase 1: public pages still allow inline scripts; others can trigger the password lockout (passkeys avoid it); rate limits are per API instance during a Redis outage.
@@ -78,12 +78,12 @@ milestone.
 
 ## Decisions needed from you
 
-| Decision                                             | Current working default                                               |
-| ---------------------------------------------------- | --------------------------------------------------------------------- |
-| Logo concept and accent colour                       | Stack logo, Cobalt accent                                             |
-| Pricing and plans                                    | None shown                                                            |
-| Website domain                                       | `localhost`. Decides where passkeys work and the email sending domain |
-| Hosting and key service                              | Not chosen. Production refuses to start without a key service         |
-| An "undo email change" link for the old address      | Not built. Recommended before launch                                  |
-| "Confirm it's you" before changing a profile's proxy | Not required while no traffic flows; recommended from Phase 5         |
-| When to build phone sign-in by QR code (2.7)         | Not scheduled                                                         |
+| Decision                                             | Current working default                                                                                                    |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Logo concept and accent colour                       | Stack logo, Cobalt accent                                                                                                  |
+| Pricing and plans                                    | None shown                                                                                                                 |
+| Website domain                                       | `localhost`. Decides where passkeys work and the email sending domain                                                      |
+| Hosting and key service                              | Not chosen. Production refuses to start without a key service                                                              |
+| An "undo email change" link for the old address      | Built after this review: a 7-day single-use link that restores the address, sets a new password and signs out every device |
+| "Confirm it's you" before changing a profile's proxy | Not required while no traffic flows; recommended from Phase 5                                                              |
+| When to build phone sign-in by QR code (2.7)         | Not scheduled                                                                                                              |
