@@ -126,6 +126,10 @@
 }
 
 /* Signed in: the mark cheers, "Welcome" takes the form's place, then the screen lifts away. */
+.lg-av:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 5px;
+}
 .lg-done .lg-av {
   animation: lg-cheer 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }

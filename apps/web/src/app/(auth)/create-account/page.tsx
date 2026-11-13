@@ -27,12 +27,19 @@ export default function CreateAccountPage() {
     <div className="w-full max-w-5xl">
       <div className="grid overflow-hidden rounded-2xl border border-line bg-surface shadow-lg md:grid-cols-[1.05fr_1fr]">
         <aside className="ca-panel flex flex-col gap-7 p-8 sm:p-10">
-          <div className="flex items-center gap-3">
+          {/* A plain link: leaving the strict-policy pages is a full load (content/site.ts). */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- a full load, on purpose */}
+          <a
+            href="/"
+            aria-label="Brawzer home"
+            title="Back to the Brawzer home page"
+            className="flex w-fit items-center gap-3 rounded-xl"
+          >
             <span className="flex size-10 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15">
               <Mark size={22} />
             </span>
             <span className="ca-eyebrow">Brawzer</span>
-          </div>
+          </a>
           <div className="flex flex-col gap-3">
             <h2 className="ca-title">Your computer, in the cloud.</h2>
             <p className="ca-lead text-callout">
