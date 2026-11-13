@@ -34,6 +34,15 @@ export function startEngine(engines: readonly BrowserEngine[]): BrowserEngine {
   return engines.includes("bee") ? "bee" : (engines[0] ?? "bee");
 }
 
+/**
+ * Launches under way, by profile, engine or web app. Starting a browser takes
+ * a few seconds, and a second click on its icon in that time (a double-click,
+ * as on any desktop) used to run a second launch that found the session still
+ * starting and opened its window too early. The second click now does nothing:
+ * the first one opens the window when the browser is running.
+ */
+const launching = new Set<string>();
+
 export function useLaunchBrowser(
   options: {
     /**
@@ -75,6 +84,21 @@ export function useLaunchBrowser(
    * profile rather than the browser's first free one.
    */
   async function launch(
+    engine: BrowserEngine,
+    known?: { profiles: readonly Profile[]; sessions: readonly BrowserSession[] },
+    options: { open?: BrowserOpen; profileId?: string } = {},
+  ) {
+    const key = options.profileId ?? engine;
+    if (launching.has(key)) return;
+    launching.add(key);
+    try {
+      await launchOnce(engine, known, options);
+    } finally {
+      launching.delete(key);
+    }
+  }
+
+  async function launchOnce(
     engine: BrowserEngine,
     known?: { profiles: readonly Profile[]; sessions: readonly BrowserSession[] },
     options: { open?: BrowserOpen; profileId?: string } = {},
@@ -136,6 +160,17 @@ export function useLaunchBrowser(
    * bar. Back to it if it's open.
    */
   async function launchWebApp(engine: BrowserEngine, app: WebApp) {
+    const key = `app:${app.id}`;
+    if (launching.has(key)) return;
+    launching.add(key);
+    try {
+      await launchWebAppOnce(engine, app);
+    } finally {
+      launching.delete(key);
+    }
+  }
+
+  async function launchWebAppOnce(engine: BrowserEngine, app: WebApp) {
     setOpening(engine);
     const [overview, list] = await Promise.all([fetchBrowserOverview(), fetchProfiles()]);
     if (!overview.ok) {

@@ -37,6 +37,7 @@ import {
 } from "react";
 import {
   endBrowserSession,
+  fetchBrowserOverview,
   handOffBrowserSession,
   requestStreamTicket,
   startBrowserSession,
@@ -290,7 +291,11 @@ export function BrowserWorkspace({
       ? (initial.sessions.find((candidate) => candidate.id === select.session) ?? null)
       : initial.session;
   const [phase, setPhase] = useState<Phase>(
-    attachTo?.status === "running" ? { kind: "connecting", session: attachTo } : { kind: "idle" },
+    attachTo?.status === "running"
+      ? { kind: "connecting", session: attachTo }
+      : attachTo?.status === "starting"
+        ? { kind: "starting" }
+        : { kind: "idle" },
   );
   const [startError, setStartError] = useState<string | null>(null);
   const [tabs, setTabs] = useState<TabState[]>([]);
@@ -867,6 +872,47 @@ export function BrowserWorkspace({
     }
   }
 
+  /**
+   * The session was still starting when this page loaded (a window opened a
+   * moment early, or the page was reloaded mid-start): wait for it to be
+   * running and attach, rather than call a browser that is about to appear
+   * gone.
+   */
+  async function awaitStart(session: BrowserSession) {
+    connectRun.current += 1;
+    const run = connectRun.current;
+    const short = engineDetails[session.engine].short;
+    const giveUpAt = performance.now() + (BROWSER_LIMITS.startTimeoutSeconds + 15) * 1_000;
+    const gaveUp = (message: string) => {
+      setStartError(message);
+      setPhase({ kind: "idle" });
+    };
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      if (run !== connectRun.current) return;
+      const overview = await fetchBrowserOverview();
+      if (run !== connectRun.current) return;
+      if (!overview.ok) {
+        if (overview.status === 401) {
+          leaveSignedInArea("expired");
+          return;
+        }
+        if (performance.now() < giveUpAt) continue;
+        gaveUp(overview.error.message);
+        return;
+      }
+      const now = overview.data.sessions.find((candidate) => candidate.id === session.id);
+      if (now?.status === "running") {
+        void connect(now);
+        return;
+      }
+      if (!now || performance.now() > giveUpAt) {
+        gaveUp(`${short} didn’t start. Close this and open it again.`);
+        return;
+      }
+    }
+  }
+
   // Reattach to a session that was already running when the page loaded. On
   // the desktop, the browser is in its own window: this page is the launcher.
   useEffect(() => {
@@ -875,6 +921,7 @@ export function BrowserWorkspace({
       return;
     }
     if (attachTo?.status === "running") void connect(attachTo);
+    else if (attachTo?.status === "starting") void awaitStart(attachTo);
     return () => {
       connectRun.current += 1;
       stream.close();
@@ -1391,7 +1438,21 @@ export function BrowserWorkspace({
     viewportRef.current?.focus();
   }
 
-  if (embedded && (phase.kind === "idle" || phase.kind === "starting")) {
+  if (embedded && phase.kind === "starting") {
+    return (
+      <div
+        role="status"
+        className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"
+      >
+        <Spinner className="size-5" />
+        <p className="text-callout text-ink-secondary">
+          {attachTo ? engineDetails[attachTo.engine].short : "This browser"} is starting…
+        </p>
+      </div>
+    );
+  }
+
+  if (embedded && phase.kind === "idle") {
     // A desktop window shows one browser; opening others is the desktop's.
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">

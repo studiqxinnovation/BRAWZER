@@ -523,6 +523,79 @@ test.describe("desktop", () => {
     await expect(page.getByText("Bee Browser closed")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByLabel("Status")).toContainText("0 of 3 browsers running");
   });
+
+  test("a second click while a browser is starting doesn’t open its window early, and a window waits for a starting browser", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "Starts a real browser on the desktop.");
+    test.setTimeout(150_000);
+    await signedIn(page, baseURL, "desktop-second-click");
+
+    // The start's answer is held back, as a slow start would hold it.
+    let starts = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/v1/browser/sessions", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      starts += 1;
+      const response = await route.fetch();
+      await held;
+      await route.fulfill({ response });
+    });
+
+    const dock = page.getByRole("navigation", { name: "Dock" });
+    const icon = dock.getByRole("button", { name: /^Bee Browser/ });
+    await icon.click();
+    let sessionId = "";
+    await expect
+      .poll(
+        async () => {
+          const overview = await page.request.get("/api/v1/browser");
+          const body = (await overview.json()) as { sessions?: { id: string }[] };
+          sessionId = body.sessions?.[0]?.id ?? "";
+          return sessionId;
+        },
+        { timeout: 30_000 },
+      )
+      .not.toBe("");
+    // A second click, as a double-click or an impatient one would be.
+    await icon.click();
+
+    // A window opened on a browser that is still starting waits for it.
+    const early = await page.context().newPage();
+    await early.goto(`/app/browser/window?session=${sessionId}&embedded=1`);
+    await expect
+      .poll(() => early.getByTestId("browser-viewport").getAttribute("data-frames"), {
+        timeout: 90_000,
+      })
+      .not.toBe("0");
+    await expect(early.getByText("This browser isn’t running any more.")).toHaveCount(0);
+    await early.close();
+
+    // The second click opened nothing and started nothing.
+    const window = page.getByRole("region", { name: "Bee Browser window" });
+    await expect(window).toHaveCount(0);
+    expect(starts).toBe(1);
+
+    // The first click's window arrives when the start answers, streaming.
+    release();
+    await expect(window).toBeVisible({ timeout: 60_000 });
+    const frame = window.frameLocator("iframe");
+    await expect
+      .poll(() => frame.getByTestId("browser-viewport").getAttribute("data-frames"), {
+        timeout: 60_000,
+      })
+      .not.toBe("0");
+    await expect(frame.getByText("This browser isn’t running any more.")).toHaveCount(0);
+    expect(starts).toBe(1);
+
+    await window.getByRole("button", { name: "Close Bee Browser" }).click();
+    await expect(page.getByText("Bee Browser closed")).toBeVisible({ timeout: 30_000 });
+  });
 });
 
 test.describe("desktop as a computer's own", () => {
