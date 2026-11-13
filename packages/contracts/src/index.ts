@@ -19,3 +19,4 @@ export * from "./history.ts";
 export * from "./app-records.ts";
 export * from "./assistant.ts";
 export * from "./web-apps.ts";
+export * from "./staff.ts";

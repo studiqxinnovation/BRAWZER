@@ -62,7 +62,10 @@ export const appNav: readonly AppNavGroup[] = [
 /** Shown to administrators only (the API decides who those are). */
 export const adminNav: AppNavGroup = {
   label: "Administration",
-  items: [{ href: "/app/admin", label: "Admin", icon: ShieldEllipsis, status: "available" }],
+  items: [
+    { href: "/admin", label: "Admin console", icon: ShieldEllipsis, status: "available" },
+    { href: "/app/admin", label: "Reported pages", icon: ShieldEllipsis, status: "available" },
+  ],
 };
 
 export interface PlannedModule {

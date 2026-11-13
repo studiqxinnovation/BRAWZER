@@ -1,5 +1,5 @@
 import { connection } from "next/server";
-import { securityOverviewSchema } from "@brawzer/contracts";
+import { isStaffRole, securityOverviewSchema } from "@brawzer/contracts";
 import { Logo } from "@brawzer/ui/brand";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -47,7 +47,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       </>
     );
   }
-  const admin = Promise.resolve(session.kind === "ok" && session.data.account.role === "admin");
+  const admin = Promise.resolve(session.kind === "ok" && isStaffRole(session.data.account.role));
   // Shield's count of things to do, beside it in the navigation; nothing if it can't be read.
   const counts = {
     "/app/shield": serverGet("/security/overview", securityOverviewSchema).then((result) =>
@@ -59,7 +59,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       <SkipLink />
       <DesktopShell
         email={lock?.email ?? ""}
-        admin={session.kind === "ok" && session.data.account.role === "admin"}
+        admin={session.kind === "ok" && isStaffRole(session.data.account.role)}
         menuBar={<MenuBar />}
         overlays={
           <>

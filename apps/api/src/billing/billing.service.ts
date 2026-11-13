@@ -109,6 +109,11 @@ export class BillingService {
     return this.stripe !== null;
   }
 
+  /** A plan's limits by code; the free plan's for a code that isn't configured. */
+  limitsOfPlan(code: string): PlanLimits {
+    return this.catalogue.limits(code);
+  }
+
   // ── Limits, for every other module ──────────────────────────────────
 
   /**

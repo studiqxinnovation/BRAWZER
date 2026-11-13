@@ -357,22 +357,41 @@ export class PasskeyService {
   }
 
   async remove(auth: AuthContext, id: string, meta: RequestMeta): Promise<void> {
+    await this.removeFor(auth.user, auth.session.id, id, meta);
+  }
+
+  /** Staff remove a passkey the customer lost (Phase 11); the owner is told as usual. */
+  async removeForUser(userId: string, id: string, meta: RequestMeta): Promise<string> {
+    const [user] = await this.database.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+    if (!user) throw new ApiException("not_found", 404, "That account doesn’t exist.");
+    return this.removeFor(user, null, id, meta);
+  }
+
+  private async removeFor(
+    user: { id: string; email: string },
+    sessionId: string | null,
+    id: string,
+    meta: RequestMeta,
+  ): Promise<string> {
     const [row] = await this.database.db
       .delete(schema.webauthnCredentials)
       .where(
-        and(
-          eq(schema.webauthnCredentials.id, id),
-          eq(schema.webauthnCredentials.userId, auth.user.id),
-        ),
+        and(eq(schema.webauthnCredentials.id, id), eq(schema.webauthnCredentials.userId, user.id)),
       )
       .returning();
     if (!row) throw new ApiException("not_found", 404, "That passkey doesn’t exist.");
     await this.events.record({
       type: "passkey.removed",
-      userId: auth.user.id,
-      sessionId: auth.session.id,
+      userId: user.id,
+      ...(sessionId ? { sessionId } : {}),
       meta,
+      ...(sessionId ? {} : { metadata: { by: "staff" } }),
     });
-    this.email.sendPasskeyRemoved(auth.user.email, row.name);
+    this.email.sendPasskeyRemoved(user.email, row.name);
+    return row.name;
   }
 }

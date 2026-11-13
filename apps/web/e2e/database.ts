@@ -36,3 +36,8 @@ export async function expireIdentityConfirmation(email: string): Promise<void> {
 export async function makeAdministrator(email: string): Promise<void> {
   await database().query("update users set role = 'admin' where email = $1", [email]);
 }
+
+/** Gives an account a staff role (care, billing, …), as a founder would from the console. */
+export async function setRole(email: string, role: string): Promise<void> {
+  await database().query("update users set role = $2 where email = $1", [email, role]);
+}

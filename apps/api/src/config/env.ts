@@ -207,6 +207,8 @@ export const envSchema = z.object({
   BILLING_PLANS: z.string().optional(),
   /** Comma-separated addresses that are administrators when their accounts exist. */
   ADMIN_EMAILS: z.string().optional(),
+  /** Whether staff need a passkey or an authenticator app to use the admin console. Required in production. */
+  STAFF_SECOND_FACTOR: z.enum(["required", "optional"]).optional(),
   /** Bearer token a scraper presents at GET /api/metrics; required in production (Phase 8, idea 17). */
   METRICS_TOKEN: z.string().min(16).optional(),
   /** The Assistant and Study Notes (Phase 9): off unless set. Server-side only. */
@@ -352,6 +354,7 @@ export interface AppConfig {
   readonly assistant: AssistantConfig;
   /** Lower-cased addresses of administrators. */
   readonly adminEmails: readonly string[];
+  readonly staffSecondFactorRequired: boolean;
   readonly metricsToken: string | null;
   /** The API server, or the operator CLI (Phase 8, idea 23). */
   readonly role: "server" | "cli";
@@ -631,6 +634,8 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       baseUrl: values.ANTHROPIC_BASE_URL ?? null,
     }),
     adminEmails,
+    staffSecondFactorRequired:
+      (values.STAFF_SECOND_FACTOR ?? (isProduction ? "required" : "optional")) === "required",
     metricsToken: values.METRICS_TOKEN ?? null,
     role: values.BRAWZER_ROLE,
     storage: Object.freeze({

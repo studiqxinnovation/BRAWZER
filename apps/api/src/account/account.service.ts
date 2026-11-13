@@ -249,6 +249,15 @@ export class AccountService {
         details: ["email: Type your email address exactly as it is shown."],
       });
     }
+    await this.deleteFor(user, "by its owner");
+  }
+
+  /** Staff delete an account from the console (Phase 11), with a reason in the audit log. */
+  async deleteByStaff(user: { id: string; email: string }): Promise<void> {
+    await this.deleteFor(user, "by staff");
+  }
+
+  private async deleteFor(user: { id: string; email: string }, how: string): Promise<void> {
     // A team it owns with others must be handed over first; one it owns alone goes with it.
     await this.teams.beforeAccountDeletion(user.id);
     // Containers and Drive objects aren't rows: stop and list them first.
@@ -261,7 +270,7 @@ export class AccountService {
     await this.drive.removeAllObjects(objectKeys);
     await this.profileData.removeObjects(profileObjectKeys);
     this.email.sendAccountDeleted(user.email);
-    logger.log(`Account ${user.id} deleted by its owner`);
+    logger.log(`Account ${user.id} deleted ${how}`);
   }
 
   /** Everything Brawzer holds about the account, except secrets. */

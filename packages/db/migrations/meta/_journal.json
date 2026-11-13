@@ -239,6 +239,13 @@
       "when": 1794520255391,
       "tag": "0033_email_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794536999567,
+      "tag": "0034_staff",
+      "breakpoints": true
     }
   ]
 }

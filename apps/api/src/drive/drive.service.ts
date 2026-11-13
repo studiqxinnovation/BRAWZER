@@ -887,7 +887,11 @@ export class DriveService implements OnModuleInit {
 
   /** Puts a file back in its folder, renamed "name (2)" if the name is taken meanwhile. */
   async restoreFile(auth: AuthContext, id: string): Promise<DriveFile> {
-    const userId = auth.user.id;
+    return this.restoreFileFor(auth.user.id, id);
+  }
+
+  /** Puts a file back from Trash for this account; staff do this from the console. */
+  async restoreFileFor(userId: string, id: string): Promise<DriveFile> {
     const { row, scope } = await this.findFile(userId, id, "trash");
     if (!mayDelete(scope, row)) throw cannotDelete();
     const restored = await this.database.db.transaction(async (tx) => {

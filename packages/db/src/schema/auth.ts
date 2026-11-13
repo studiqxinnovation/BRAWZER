@@ -13,7 +13,15 @@ import {
 import { id, timestamptz } from "./columns.ts";
 
 /** Must match `accountRoles` in @brawzer/contracts (a test in the API enforces this). */
-export const accountRole = pgEnum("account_role", ["user", "admin"]);
+export const accountRole = pgEnum("account_role", [
+  "user",
+  "admin",
+  "care",
+  "billing",
+  "sales",
+  "technical",
+  "security",
+]);
 
 export const users = pgTable("users", {
   id: id(),
@@ -25,6 +33,9 @@ export const users = pgTable("users", {
   planSource: text().notNull().default("free"),
   /** An administrator's reason for setting the plan. */
   planNote: text(),
+  /** Suspended by staff (Phase 11): sign-in refused, sessions ended, data kept. */
+  suspendedAt: timestamptz(),
+  suspendedReason: text(),
   emailVerifiedAt: timestamptz(),
   /** argon2id hash. Nullable for future passkey-only accounts. */
   passwordHash: text(),

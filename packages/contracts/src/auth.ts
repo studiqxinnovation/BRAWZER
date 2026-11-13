@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { accountRoleSchema } from "./staff.ts";
 
 export const PASSWORD_MIN_LENGTH = 10;
 export const PASSWORD_MAX_LENGTH = 128;
@@ -85,7 +86,7 @@ export const accountSchema = z.object({
   email: z.email(),
   emailVerified: z.boolean(),
   /** Administrators see the Admin page. */
-  role: z.enum(["user", "admin"]),
+  role: accountRoleSchema,
   /** The plan the account is on (Phase 6). */
   planCode: z.string(),
   createdAt: z.iso.datetime(),

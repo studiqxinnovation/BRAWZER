@@ -64,7 +64,11 @@ export type RevocationReason =
   | "password_changed"
   | "email_change_undone"
   | "signed_out_remotely"
-  | "signed_out_everywhere_else";
+  | "signed_out_everywhere_else"
+  /** Staff signed the account out from the admin console (Phase 11). */
+  | "signed_out_by_staff"
+  /** Staff suspended the account (Phase 11). */
+  | "suspended";
 
 @Injectable()
 export class SessionService {
@@ -190,6 +194,11 @@ export class SessionService {
       )
       .limit(1);
     if (!row) return null;
+    // Suspended by staff: the session ends now, as if signed out.
+    if (row.user.suspendedAt !== null) {
+      await this.revoke(row.session.id, "suspended");
+      return null;
+    }
 
     const idleMs = now.getTime() - row.session.lastSeenAt.getTime();
     if (idleMs > sessionLifetime(row.session.persistent).idleSeconds * 1000) {

@@ -234,6 +234,19 @@ export class AuthService {
     }
 
     await this.limiter.reset(RATE_LIMITS.signInFailuresPerAccount, input.email);
+    if (user.suspendedAt !== null) {
+      await this.events.record({
+        type: "sign_in.failed",
+        userId: user.id,
+        meta,
+        metadata: { reason: "suspended" },
+      });
+      throw new ApiException(
+        "forbidden",
+        403,
+        "This account is suspended. Contact support if you think that’s a mistake.",
+      );
+    }
     if (needsRehash(passwordHash)) {
       await this.database.db
         .update(schema.users)

@@ -121,8 +121,7 @@ export const checkoutResponseSchema = z.object({
 
 // ── Administration ───────────────────────────────────────────────────────
 
-export const accountRoles = ["user", "admin"] as const;
-export const accountRoleSchema = z.enum(accountRoles);
+import { accountRoleSchema } from "./staff.ts";
 
 export const adminAccountSummarySchema = z.object({
   id: z.uuid(),
@@ -180,7 +179,6 @@ export type SubscriptionStatus = z.infer<typeof subscriptionStatusSchema>;
 export type Usage = z.infer<typeof usageSchema>;
 export type BillingOverview = z.infer<typeof billingOverviewSchema>;
 export type CheckoutRequest = z.infer<typeof checkoutRequestSchema>;
-export type AccountRole = z.infer<typeof accountRoleSchema>;
 export type AdminAccountSummary = z.infer<typeof adminAccountSummarySchema>;
 export type AdminAccount = z.infer<typeof adminAccountSchema>;
 export type AdminAccountList = z.infer<typeof adminAccountListSchema>;

@@ -37,5 +37,6 @@ import { AccountService } from "./account.service.js";
   ],
   controllers: [AccountController],
   providers: [AccountService],
+  exports: [AccountService],
 })
 export class AccountModule {}

@@ -4,15 +4,37 @@ import { BillingModule } from "../billing/billing.module.js";
 import { DatabaseModule } from "../database/database.module.js";
 import { MaintenanceModule } from "../maintenance/retention.js";
 import { BrowserModule } from "../browser/browser.module.js";
+import { AccountModule } from "../account/account.module.js";
+import { DriveModule } from "../drive/drive.module.js";
 import { AdminController } from "./admin.controller.js";
 import { AdminGuard } from "./admin.guard.js";
 import { AdminService } from "./admin.service.js";
+import { StaffAuditService } from "./audit.service.js";
+import { CompanyService } from "./company.service.js";
+import { ConsoleController } from "./console.controller.js";
+import { CustomersService } from "./customers.service.js";
+import { StaffGuard } from "./staff.guard.js";
 
-/** Administration (Phase 6): account lookup and manual plans. */
+/** Administration (Phase 6) and the admin console (Phase 11). */
 @Module({
-  imports: [AuthModule, DatabaseModule, BillingModule, MaintenanceModule, BrowserModule],
-  controllers: [AdminController],
-  providers: [AdminService, AdminGuard],
-  exports: [AdminService],
+  imports: [
+    AuthModule,
+    DatabaseModule,
+    BillingModule,
+    MaintenanceModule,
+    BrowserModule,
+    DriveModule,
+    AccountModule,
+  ],
+  controllers: [AdminController, ConsoleController],
+  providers: [
+    AdminService,
+    AdminGuard,
+    StaffGuard,
+    StaffAuditService,
+    CustomersService,
+    CompanyService,
+  ],
+  exports: [AdminService, StaffAuditService],
 })
 export class AdminModule {}
