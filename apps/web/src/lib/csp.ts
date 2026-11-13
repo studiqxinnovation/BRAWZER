@@ -9,6 +9,7 @@ import { themeBootstrapScript } from "./theme";
  */
 export const STRICT_CSP_PATHS = [
   "/app",
+  "/admin",
   "/sign-in",
   "/create-account",
   "/verify-email",

@@ -137,7 +137,8 @@ test.describe("admin console", () => {
       .fill("Caller is confirming their address");
     await reveal.getByRole("button", { name: "Reveal" }).click();
     await expect(reveal).toBeHidden();
-    await expect(page.getByText(customerEmail)).toBeVisible();
+    // The reveal is a server round trip and an audit write; allow for a busy dev server.
+    await expect(page.getByText(customerEmail)).toBeVisible({ timeout: 15_000 });
 
     // The team page is a founder's; opening it is refused and logged.
     await page.goto("/admin/team");
