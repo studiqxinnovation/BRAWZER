@@ -33,6 +33,9 @@ const availableEngineSchema = z.literal("chromium", {
 /** Temporary limit until plans exist (Phase 6). */
 export const MAX_PROFILES = 10;
 
+/** The most a profile's saved browsing data may take (compressed). */
+export const MAX_PROFILE_DATA_BYTES = 256 * 1024 * 1024;
+
 /** Control characters and bidirectional overrides could disguise a name. */
 const DISGUISING_CHARACTERS = /[\p{Cc}‪-‮⁦-⁩]/u;
 
@@ -53,6 +56,15 @@ export const profileSchema = z.object({
   position: z.number().int().nonnegative(),
   /** The proxy this profile will browse through (Phase 5), or null. */
   proxyId: z.uuid().nullable(),
+  /** Whether cookies, history and site data are kept between sessions. */
+  keepData: z.boolean(),
+  /** The saved browsing data, if any: how much (compressed) and when it was last saved. */
+  data: z
+    .object({
+      bytes: z.number().int().nonnegative(),
+      savedAt: z.iso.datetime(),
+    })
+    .nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -74,10 +86,15 @@ export const updateProfileRequestSchema = z
     name: profileNameSchema.optional(),
     color: profileColorSchema.optional(),
     proxyId: z.uuid({ error: "Choose one of your proxies." }).nullable().optional(),
+    keepData: z.boolean().optional(),
   })
   .refine(
-    (value) => value.name !== undefined || value.color !== undefined || value.proxyId !== undefined,
-    { error: "Change the name, colour or proxy." },
+    (value) =>
+      value.name !== undefined ||
+      value.color !== undefined ||
+      value.proxyId !== undefined ||
+      value.keepData !== undefined,
+    { error: "Change the name, colour, proxy or what is kept." },
   );
 
 export const reorderProfilesRequestSchema = z.object({

@@ -153,6 +153,7 @@ const SHORTCUTS: readonly { keys: readonly string[]; does: string }[] = [
   { keys: ["Alt", "W"], does: "Close tab" },
   { keys: ["Delete"], does: "Close the focused tab" },
   { keys: ["Alt", "R"], does: "Reload" },
+  { keys: ["Alt", "P"], does: "Save the page as a PDF in Drive" },
   { keys: ["Alt", "←"], does: "Back" },
   { keys: ["Alt", "→"], does: "Forward" },
   { keys: ["Shift", "Esc"], does: "Leave the page, back to Brawzer’s controls" },

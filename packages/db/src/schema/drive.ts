@@ -15,7 +15,7 @@ import { id, timestamptz } from "./columns.ts";
 
 /** These must match @brawzer/contracts (a test in the API enforces this). */
 export const driveFileStatus = pgEnum("drive_file_status", ["clean", "infected"]);
-export const driveFileSource = pgEnum("drive_file_source", ["upload"]);
+export const driveFileSource = pgEnum("drive_file_source", ["upload", "browser"]);
 
 /** Root-level rows have no parent; the unique indexes treat them as one folder. */
 const ROOT = sql`'00000000-0000-0000-0000-000000000000'::uuid`;

@@ -25,8 +25,8 @@ does.
 
 ## Boundaries: what Phase 4 does not do
 
-- **No downloads from the cloud browser, no uploads to websites from Drive, no printing to Drive.** They need the runtime (Phase 3). The Drive page says so.
-- **No persistent browser profiles** (cookies and history kept between sessions). Also Phase 3 work; it moves to a later plan.
+- **No downloads from the cloud browser, no uploads to websites from Drive, no printing to Drive.** They need the runtime (Phase 3). _Built on 2026-11-08 as milestone 3.7 ([plan](phase-3-files-and-profiles.md))._
+- **No persistent browser profiles** (cookies and history kept between sessions). _Built on 2026-11-08 as milestone 3.8._
 - **No sharing** of files with other people. Drive is private to the account.
 - **No plans or paid storage.** Temporary limits apply: 100 MB per file, 2 GB and 2,000 files per account.
 

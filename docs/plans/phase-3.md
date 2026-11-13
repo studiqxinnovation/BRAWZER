@@ -1,7 +1,7 @@
 # Phase 3 plan: the cloud browser
 
 - **Status:** Accepted 2026-11-07 under the standing instruction to build every phase; decisions taken as recommended (table at the end).
-- **Progress:** Built 2026-11-08: 3.1 (ADR 0006), 3.2 runtime agent and image, 3.3 orchestrator, 3.4 sessions, tickets and relay, 3.5 Browser workspace, 3.6 [review](../reviews/phase-3.md). Isolation details in [ADR 0012](../adr/0012-cloud-browser-runtime-isolation.md). Two deviations from the plan below are recorded in the decisions table (6 and 7).
+- **Progress:** Built 2026-11-08: 3.1 (ADR 0006), 3.2 runtime agent and image, 3.3 orchestrator, 3.4 sessions, tickets and relay, 3.5 Browser workspace, 3.6 [review](../reviews/phase-3.md). Isolation details in [ADR 0012](../adr/0012-cloud-browser-runtime-isolation.md). Two deviations from the plan below are recorded in the decisions table (6 and 7). The two boundaries below on kept data and Drive were closed on 2026-11-08 by milestones 3.7 and 3.8 ([plan](phase-3-files-and-profiles.md)).
 - **Date:** 2026-11-07
 - **Builds on:** Phase 2 ([review](../reviews/phase-2.md)), [ADR 0006](../adr/0006-browser-streaming.md) (streaming), [ADR 0010](../adr/0010-proxy-tests-and-ssrf.md) (address rules).
 

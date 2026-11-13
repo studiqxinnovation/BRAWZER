@@ -36,6 +36,8 @@ import type { SecretBox } from "../crypto/secret-box.js";
 import { DATABASE } from "../database/database.module.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
+import { ProfileDataService, ProfileDataTooLargeError } from "../profiles/profile-data.service.js";
+import { ProfilesService } from "../profiles/profiles.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 
@@ -78,6 +80,8 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     @Inject(SecurityEventsService) private readonly securityEvents: SecurityEventsService,
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
     @Inject(SessionService) private readonly sessions: SessionService,
+    @Inject(ProfilesService) private readonly profiles: ProfilesService,
+    @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -167,17 +171,11 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     meta: RequestMeta,
   ): Promise<BrowserSession> {
     const userId = auth.user.id;
-    if (profileId) {
-      const [profile] = await this.database.db
-        .select({ id: schema.profiles.id })
-        .from(schema.profiles)
-        .where(and(eq(schema.profiles.id, profileId), eq(schema.profiles.userId, userId)))
-        .limit(1);
-      if (!profile) {
-        throw new ApiException("validation_failed", 400, "Choose one of your profiles.", {
-          details: ["profileId: Choose one of your profiles."],
-        });
-      }
+    const profile = profileId ? await this.profiles.find(userId, profileId) : undefined;
+    if (profileId && !profile) {
+      throw new ApiException("validation_failed", 400, "Choose one of your profiles.", {
+        details: ["profileId: Choose one of your profiles."],
+      });
     }
     const secret = randomBytes(32).toString("base64url");
 
@@ -217,7 +215,9 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
         .update(schema.browserSessions)
         .set({ agentSecret: await this.box.seal(secret, secretContext(row.id)) })
         .where(eq(schema.browserSessions.id, row.id));
-      started = await this.orchestrator.start(row.id, secret);
+      // A profile that keeps its data starts from what was saved last time.
+      const restore = profile?.keepData ? await this.profileData.open(profile) : null;
+      started = await this.orchestrator.start(row.id, secret, restore);
     } catch (error) {
       logger.warn(
         `Runtime for session ${row.id} failed to start: ${error instanceof Error ? error.message : ""}`,
@@ -361,7 +361,12 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     const ended = await this.markEnded(row.id, reason);
     if (!ended) return;
     this.events.emit("ended", row.id);
-    if (row.containerId) await this.orchestrator.stop(row.containerId);
+    if (row.containerId) {
+      if (reason !== "account_deleted" && reason !== "runtime_failed") {
+        await this.saveProfileData(row);
+      }
+      await this.orchestrator.stop(row.containerId);
+    }
     if (reason !== "account_deleted") {
       await this.securityEvents.record({
         type: "browser.session_ended",
@@ -370,6 +375,33 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
         meta: meta ?? { ip: null, userAgent: null },
         metadata: { reason },
       });
+    }
+  }
+
+  /**
+   * Before the container goes: if the session ran under a profile that keeps
+   * its data, the engine is closed cleanly and the profile archived. A
+   * failure here never stops the session from ending; the previous data stays.
+   */
+  private async saveProfileData(row: BrowserSessionRow): Promise<void> {
+    if (!row.profileId || !row.agentAddress || row.status !== "running") return;
+    const profile = await this.profiles.find(row.userId, row.profileId);
+    if (!profile?.keepData) return;
+    try {
+      const secret = await this.box.open(row.agentSecret, secretContext(row.id));
+      const archive = await this.orchestrator.packProfile(row.agentAddress, secret);
+      const { bytes } = await this.profileData.save(profile, archive);
+      logger.log(`Saved ${String(bytes)} bytes of profile data for session ${row.id}`);
+    } catch (error) {
+      if (error instanceof ProfileDataTooLargeError) {
+        logger.warn(
+          `Profile data for session ${row.id} is over the limit; the previous data is kept`,
+        );
+      } else {
+        logger.warn(
+          `Saving profile data for session ${row.id} failed: ${error instanceof Error ? error.message : ""}`,
+        );
+      }
     }
   }
 

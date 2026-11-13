@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { index, integer, pgEnum, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  boolean,
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  text,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { users } from "./auth.ts";
 import { id, timestamptz } from "./columns.ts";
 import { proxies } from "./proxies.ts";
@@ -20,9 +30,11 @@ export const profileColor = pgEnum("profile_color", [
 export const browserEngine = pgEnum("browser_engine", ["chromium", "firefox"]);
 
 /**
- * A browser profile. In Phase 2 a profile is organisation only (name, colour,
- * order); its browsing data arrives with the cloud browser (Phase 3) and
- * persistent encrypted storage (Phase 4).
+ * A browser profile: a name, a colour, a place in the list, and (since the
+ * cloud browser) the browsing data kept between sessions. That data lives in
+ * the object store under `dataObjectKey`, encrypted with its own key (ADR
+ * 0011, as for Drive files); `dataWrappedKey` is that key sealed by the key
+ * service and bound to this account and profile.
  */
 export const profiles = pgTable(
   "profiles",
@@ -39,6 +51,13 @@ export const profiles = pgTable(
     position: integer().notNull(),
     /** Cleared when the proxy is deleted. Traffic goes through it from Phase 5. */
     proxyId: uuid().references(() => proxies.id, { onDelete: "set null" }),
+    /** Whether browsing data (cookies, history, site data) is saved when a session ends. */
+    keepData: boolean().notNull().default(true),
+    dataObjectKey: text().unique("profiles_data_object_key_unique"),
+    dataWrappedKey: text(),
+    /** Size of the saved data as stored (compressed, before encryption). */
+    dataBytes: bigint({ mode: "number" }),
+    dataSavedAt: timestamptz(),
     createdAt: timestamptz().notNull().defaultNow(),
     updatedAt: timestamptz().notNull().defaultNow(),
   },

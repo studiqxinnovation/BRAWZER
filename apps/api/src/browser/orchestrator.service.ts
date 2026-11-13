@@ -1,6 +1,7 @@
 import { BROWSER_LIMITS } from "@brawzer/contracts";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { APP_CONFIG } from "../config/config.module.js";
+import { Readable } from "node:stream";
 import type { AppConfig } from "../config/env.js";
 import { DockerClient } from "./docker.js";
 import seccompProfile from "./runtime-seccomp.json" with { type: "json" };
@@ -19,6 +20,8 @@ export interface StartedRuntime {
 }
 
 const logger = new Logger("Orchestrator");
+/** Closing the engine and archiving a large profile can take a while. */
+const PACK_TIMEOUT_MS = 120_000;
 
 /**
  * Starts and stops runtime containers on the local Docker engine (Phase 3
@@ -42,7 +45,16 @@ export class OrchestratorService {
     }
   }
 
-  async start(sessionId: string, secret: string): Promise<StartedRuntime> {
+  /**
+   * Starts a container, restores the profile's data into it (if any) and
+   * then starts the engine. The agent waits for that order: the data must be
+   * in place before Chromium opens its profile.
+   */
+  async start(
+    sessionId: string,
+    secret: string,
+    profileData: Readable | null = null,
+  ): Promise<StartedRuntime> {
     const { browser } = this.config;
     await this.docker.ensureNetwork(browser.network);
     const containerId = await this.docker.createContainer({
@@ -52,6 +64,7 @@ export class OrchestratorService {
         `BRAWZER_SESSION_SECRET=${secret}`,
         `BRAWZER_SESSION_ID=${sessionId}`,
         `BRAWZER_AGENT_PORT=${String(AGENT_PORT)}`,
+        `BRAWZER_MAX_FILE_BYTES=${String(this.config.drive.maxFileBytes)}`,
         ...(browser.testSite ? ["BRAWZER_TEST_SITE=true"] : []),
       ],
       labels: { "brawzer.managed": "true", [SESSION_LABEL]: sessionId },
@@ -67,14 +80,53 @@ export class OrchestratorService {
     try {
       await this.docker.startContainer(containerId);
       const agentAddress = await this.waitUntilReady(containerId);
+      const headers = { authorization: `Bearer ${secret}` };
+      if (profileData) {
+        const restored = await fetch(`http://${agentAddress}/profile`, {
+          method: "PUT",
+          headers,
+          body: Readable.toWeb(profileData) as unknown as ReadableStream,
+          duplex: "half",
+          signal: AbortSignal.timeout(BROWSER_LIMITS.startTimeoutSeconds * 1000),
+        });
+        if (!restored.ok)
+          throw new Error(`Restoring the profile failed (${String(restored.status)})`);
+      }
+      const started = await fetch(`http://${agentAddress}/start`, {
+        method: "POST",
+        headers,
+        signal: AbortSignal.timeout(BROWSER_LIMITS.startTimeoutSeconds * 1000),
+      });
+      if (!started.ok) {
+        const body = (await started.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `The engine didn't start (${String(started.status)})`);
+      }
       return { containerId, agentAddress };
     } catch (error) {
+      if (profileData && !profileData.destroyed) profileData.destroy();
       await this.stop(containerId);
       throw error;
     }
   }
 
-  /** Polls the agent's health route until it is ready, or gives up. */
+  /**
+   * Asks the agent to close the engine cleanly and hand over the profile's
+   * data as an archive. The viewer is cut off first; the container is still
+   * running afterwards and is stopped by the caller.
+   */
+  async packProfile(agentAddress: string, secret: string): Promise<Readable> {
+    const response = await fetch(`http://${agentAddress}/pack`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${secret}` },
+      signal: AbortSignal.timeout(PACK_TIMEOUT_MS),
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(`Packing the profile failed (${String(response.status)})`);
+    }
+    return Readable.fromWeb(response.body);
+  }
+
+  /** Polls the agent's health route until the agent answers, or gives up. */
   private async waitUntilReady(containerId: string): Promise<string> {
     const deadline = Date.now() + BROWSER_LIMITS.startTimeoutSeconds * 1000;
     let address: string | null = null;

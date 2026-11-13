@@ -90,7 +90,7 @@ function handleTestSiteRequest(req: http.IncomingMessage, res: http.ServerRespon
 <button class="box" style="top:120px" onclick="alert('Hello from the test site')">Show message</button>
 <form action="/search"><input class="box" style="top:200px" name="q" placeholder="Search"></form>
 <a class="box" style="top:280px" href="/download">Download a file</a>
-<input class="box" style="top:360px" type="file">
+<input class="box" style="top:360px" type="file" onchange="document.title=[...this.files].map(f=>f.name+' '+f.size).join(', ')">
 <button class="box" style="top:440px" onclick="window.open('/second')">Open popup</button>
 <a class="box" style="top:520px" href="file:///etc/hostname">Local file</a>
 <a class="box" style="top:600px" href="http://127.0.0.1:4100/">Private address</a>`,
@@ -105,13 +105,55 @@ function handleTestSiteRequest(req: http.IncomingMessage, res: http.ServerRespon
       send(200, page(`Results for ${q}`, `<h1>Results for ${escapeHtml(q)}</h1>`));
       return;
     }
-    case "/download":
+    case "/download": {
+      // ?bytes= picks the size (1 KiB by default); ?name= the suggested filename.
+      const bytes = Math.min(
+        Number(url.searchParams.get("bytes") ?? "1024") || 1024,
+        512 * 1024 * 1024,
+      );
+      const name = (url.searchParams.get("name") ?? "brawzer-test.bin").replace(/["\\\r\n]/g, "");
       res.writeHead(200, {
         "content-type": "application/octet-stream",
-        "content-disposition": 'attachment; filename="brawzer-test.bin"',
+        "content-disposition": `attachment; filename="${name}"`,
+        "content-length": String(bytes),
       });
-      res.end(Buffer.alloc(1024));
+      // A recognisable pattern, streamed in pieces so large files don't sit in memory.
+      let sent = 0;
+      const piece = Buffer.alloc(64 * 1024, "brawzer-test-pattern ");
+      const write = () => {
+        while (sent < bytes) {
+          const chunk = piece.subarray(0, Math.min(piece.length, bytes - sent));
+          sent += chunk.length;
+          if (!res.write(chunk)) {
+            res.once("drain", write);
+            return;
+          }
+        }
+        res.end();
+      };
+      write();
       return;
+    }
+    case "/upload":
+      send(
+        200,
+        page(
+          "Upload page",
+          `<h1>Upload page</h1>
+<input class="box" style="top:40px" type="file" multiple onchange="document.title=[...this.files].map(f=>f.name+' '+f.size).join(', ')">`,
+        ),
+      );
+      return;
+    case "/set-cookie":
+      send(200, page("Cookie set", "<h1>Cookie set</h1>"), {
+        "set-cookie": "brawzer_test=kept; Max-Age=86400; Path=/; SameSite=Lax",
+      });
+      return;
+    case "/cookie": {
+      const cookie = req.headers.cookie ?? "none";
+      send(200, page(`Cookie: ${cookie}`, `<h1>Cookie: ${escapeHtml(cookie)}</h1>`));
+      return;
+    }
     default:
       send(404, page("Not found", "<h1>Not found</h1>"));
   }

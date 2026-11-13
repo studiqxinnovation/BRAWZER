@@ -70,10 +70,7 @@ export const plannedModules = {
       "Install extensions from a reviewed list into a single profile.",
       "Extensions run in the cloud browser, never on the computer you’re using.",
     ],
-    requires: [
-      "Persistent, encrypted profiles (planned after Phase 3)",
-      "A reviewed extension catalogue",
-    ],
+    requires: ["A reviewed extension catalogue", "Extension installs into a profile's kept data"],
   },
 } as const satisfies Record<string, PlannedModule>;
 
@@ -152,6 +149,24 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
       return { title: "Profile created", tone: "neutral" };
     case "profile.deleted":
       return { title: "Profile deleted", tone: "neutral" };
+    case "profile.data_cleared":
+      return { title: "A profile’s browsing data was cleared", tone: "neutral" };
+    case "browser.file_saved":
+      return {
+        title:
+          details.kind === "print"
+            ? "Page saved as a PDF to Drive from the cloud browser"
+            : "File downloaded to Drive by the cloud browser",
+        tone: "neutral",
+      };
+    case "browser.file_sent":
+      return {
+        title:
+          details.count === 1
+            ? "A Drive file was given to a website in the cloud browser"
+            : `${String(details.count ?? 0)} Drive files were given to a website in the cloud browser`,
+        tone: "neutral",
+      };
     case "proxy.created":
       return { title: "Proxy added", tone: "neutral" };
     case "proxy.updated":

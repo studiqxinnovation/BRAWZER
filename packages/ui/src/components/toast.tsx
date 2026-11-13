@@ -8,7 +8,7 @@ import { cn } from "../lib/cn";
 export const ToastProvider = Toast.Provider;
 
 /**
- * Shows notifications: `useToast().add({ title, description, type })`.
+ * Shows notifications: `useToast().add({ title, description, type, actionProps })`.
  * `type` is "success", "error" or omitted for neutral information.
  */
 export const useToast = Toast.useToastManager;
@@ -44,6 +44,9 @@ function ToastList() {
             <Toast.Description className="mt-0.5 text-footnote text-ink-secondary">
               {toast.description}
             </Toast.Description>
+          )}
+          {toast.actionProps && (
+            <Toast.Action className="mt-2 inline-flex h-7 cursor-pointer items-center rounded-md border border-line bg-surface px-2.5 text-footnote font-medium text-ink outline-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" />
           )}
         </div>
         <Toast.Close

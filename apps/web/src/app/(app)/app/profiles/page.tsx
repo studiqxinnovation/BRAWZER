@@ -30,8 +30,8 @@ export default function ProfilesPage() {
     <PageContainer>
       <PageHeader title="Profiles">
         <p>
-          Separate browsers for work, personal life, research and anything else. Each will keep its
-          own cookies, history, extensions and proxy.
+          Separate browsers for work, personal life, research and anything else. Each keeps its own
+          cookies, history and sign-ins, encrypted, between sessions.
         </p>
       </PageHeader>
       <div className="flex flex-col gap-10">
@@ -39,16 +39,15 @@ export default function ProfilesPage() {
           <Profiles />
         </Suspense>
         <DevState
-          title="Browsing in a profile isn’t available yet"
-          milestone="Phase 3"
+          title="Proxies and extensions aren’t used by profiles yet"
+          milestone="Phases 4 and 5"
           requires={[
-            "The cloud browser (Phase 3)",
-            "Each profile’s own cookies, history and sign-ins, stored encrypted (Phase 4)",
             "Browsing through each profile’s proxy (Phase 5)",
+            "Extensions installed into a profile (Phase 4)",
           ]}
         >
-          Today, profiles organise your account: names, colours, order and which proxy each will
-          use. They open in the cloud browser when it arrives.
+          Today, a profile opens in the cloud browser with its own cookies, history, sign-ins and
+          site data, saved encrypted between sessions (or starting clean every time, if you prefer).
         </DevState>
       </div>
     </PageContainer>

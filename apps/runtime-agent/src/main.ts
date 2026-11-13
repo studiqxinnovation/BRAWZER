@@ -1,11 +1,14 @@
+import path from "node:path";
+import type { Readable } from "node:stream";
 import { STREAM_CLOSE_CODES } from "@brawzer/contracts";
-import { launchChromium } from "./chromium.ts";
+import { type LaunchedChromium, launchChromium } from "./chromium.ts";
 import { readConfig } from "./config.ts";
 import { BrowserEngine } from "./engine.ts";
 import { log } from "./log.ts";
-import { createFilteringProxy } from "./proxy.ts";
-import { createAgentServer } from "./server.ts";
+import { packProfile, restoreProfile } from "./profile-data.ts";
 import type { ProxyOverride } from "./proxy.ts";
+import { createFilteringProxy } from "./proxy.ts";
+import { type AgentLifecycle, type AgentState, createAgentServer } from "./server.ts";
 import {
   createTestSite,
   generateTestSiteCertificate,
@@ -40,19 +43,13 @@ const proxy = createFilteringProxy({
 });
 await new Promise<void>((resolve) => proxy.listen(config.proxyPort, "127.0.0.1", resolve));
 
-const chromium = launchChromium({
-  binary: config.chromiumBinary,
-  scratchDir: config.scratchDir,
-  proxyPort: config.proxyPort,
-  viewport: config.initialViewport,
-  trustedSpkiHashes,
-});
-const engine = new BrowserEngine(chromium.cdp, config.initialViewport);
-const server = createAgentServer(engine, config.sessionSecret) as ReturnType<
-  typeof createAgentServer
-> & { closeViewer(code: number, reason: string): void };
-
+// The engine starts when the orchestrator says so, after any profile data
+// has been restored (PUT /profile, then POST /start).
+let state: AgentState = "waiting";
+let chromium: LaunchedChromium | null = null;
+let engine: BrowserEngine | null = null;
 let exiting = false;
+
 function exit(code: number, reason: string): void {
   if (exiting) return;
   exiting = true;
@@ -60,15 +57,74 @@ function exit(code: number, reason: string): void {
   server.closeViewer(STREAM_CLOSE_CODES.runtimeClosed, reason);
   const killTimer = setTimeout(() => process.exit(code), 3_000);
   killTimer.unref();
-  void engine.close().finally(() => {
-    chromium.process.kill("SIGTERM");
+  void stopEngine().finally(() => {
     server.close(() => process.exit(code));
   });
 }
 
-chromium.cdp.onClose((error) => {
-  exit(1, error.message);
-});
+/** Closes the engine and waits for the process to leave, so its files are complete. */
+async function stopEngine(): Promise<void> {
+  const launched = chromium;
+  const running = engine;
+  chromium = null;
+  engine = null;
+  if (!launched || !running) return;
+  const exited = new Promise<void>((resolve) => {
+    if (launched.process.exitCode !== null || launched.process.signalCode !== null) {
+      resolve();
+      return;
+    }
+    launched.process.once("exit", () => resolve());
+  });
+  await running.close();
+  const forceTimer = setTimeout(() => launched.process.kill("SIGKILL"), 8_000);
+  forceTimer.unref();
+  await exited;
+  clearTimeout(forceTimer);
+}
+
+const lifecycle: AgentLifecycle = {
+  state: () => state,
+  engine: () => engine,
+  restore: (archive: Readable) => restoreProfile(config.scratchDir, archive),
+  async start() {
+    state = "starting";
+    const launched = launchChromium({
+      binary: config.chromiumBinary,
+      scratchDir: config.scratchDir,
+      proxyPort: config.proxyPort,
+      viewport: config.initialViewport,
+      trustedSpkiHashes,
+    });
+    const started = new BrowserEngine(launched.cdp, config.initialViewport, {
+      downloadDir: path.join(config.scratchDir, "downloads"),
+      uploadDir: path.join(config.scratchDir, "uploads"),
+      maxFileBytes: config.maxFileBytes,
+    });
+    chromium = launched;
+    engine = started;
+    launched.cdp.onClose((error) => {
+      // The engine left on its own (crash, kill): the session is over.
+      if (state === "running" || state === "starting") exit(1, error.message);
+    });
+    try {
+      await started.start();
+    } catch (error) {
+      state = "stopped";
+      throw error;
+    }
+    state = "running";
+    log("info", "engine ready");
+  },
+  async pack() {
+    state = "stopped";
+    await stopEngine();
+    return packProfile(config.scratchDir);
+  },
+};
+
+const server = createAgentServer(lifecycle, config.sessionSecret);
+
 process.on("SIGTERM", () => {
   exit(0, "SIGTERM");
 });
@@ -76,10 +132,5 @@ process.on("SIGINT", () => {
   exit(0, "SIGINT");
 });
 
-try {
-  await engine.start();
-} catch (error) {
-  exit(1, `engine start failed: ${error instanceof Error ? error.message : "unknown"}`);
-}
 await new Promise<void>((resolve) => server.listen(config.port, "0.0.0.0", resolve));
 log("info", "agent ready", { port: config.port });

@@ -28,6 +28,7 @@ import {
 import { FormMessage } from "@brawzer/ui/components/form-message";
 import { Select } from "@brawzer/ui/components/select";
 import { useToast } from "@brawzer/ui/components/toast";
+import { Switch } from "@brawzer/ui/components/switch";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type SubmitEvent, useRef, useState } from "react";
@@ -36,7 +37,14 @@ import { focusFirstInvalid } from "@/components/auth/auth-ui";
 import { LocalDate } from "@/components/local-date";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { type ApiResult, fieldErrorsFromDetails, fieldErrorsFromIssues } from "@/lib/api/client";
-import { createProfile, deleteProfile, reorderProfiles, updateProfile } from "@/lib/api/profiles";
+import {
+  clearProfileData,
+  createProfile,
+  deleteProfile,
+  reorderProfiles,
+  updateProfile,
+} from "@/lib/api/profiles";
+import { formatBytes } from "@/lib/drive";
 import { initialOf, profileColorShades } from "@/lib/profiles";
 import { leaveSignedInArea } from "@/lib/session-channel";
 import { EngineChoice, ProfileNameAndColor } from "./profile-fields";
@@ -157,6 +165,7 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [open, setOpen] = useState(false);
+  const [keepData, setKeepData] = useState(profile.keepData);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -166,6 +175,7 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
     if (!next) {
       setErrors({});
       setFailure(null);
+      setKeepData(profile.keepData);
     }
   }
 
@@ -177,6 +187,7 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
       name: data.get("name"),
       color: data.get("color"),
       ...(proxyChoice === null ? {} : { proxyId: proxyChoice === NO_PROXY ? null : proxyChoice }),
+      keepData,
     });
     setFailure(null);
     if (!parsed.success) {
@@ -233,6 +244,18 @@ function EditProfile({ profile, proxies }: { profile: Profile; proxies: readonly
               To give this profile a proxy, add one on the Proxy page first.
             </p>
           )}
+          <label className="flex items-start justify-between gap-4">
+            <span>
+              <span className="block text-callout font-medium text-ink">
+                Keep browsing data between sessions
+              </span>
+              <span className="block text-footnote text-ink-secondary">
+                Cookies, history, sign-ins and site data are saved encrypted when a session ends and
+                restored next time. Off: every session starts clean.
+              </span>
+            </span>
+            <Switch checked={keepData} onCheckedChange={setKeepData} />
+          </label>
           <DialogFooter className="mt-1">
             <Button
               variant="secondary"
@@ -285,13 +308,62 @@ function DeleteProfile({ profile }: { profile: Profile }) {
       <AlertDialogContent>
         <AlertDialogTitle>Delete “{profile.name}”?</AlertDialogTitle>
         <AlertDialogDescription>
-          Its name and colour are removed. Profiles don’t hold any browsing data yet, so nothing
-          else is lost.
+          {profile.data
+            ? `Its saved browsing data (${formatBytes(profile.data.bytes)} of cookies, history and site data) is deleted with it.`
+            : "Its name and colour are removed. It holds no saved browsing data."}
         </AlertDialogDescription>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="secondary" />}>Cancel</AlertDialogClose>
           <Button variant="danger" loading={pending} onClick={() => void remove()}>
             Delete profile
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function ClearProfileData({ profile }: { profile: Profile }) {
+  const router = useRouter();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+
+  async function clear() {
+    setPending(true);
+    const result = await clearProfileData(profile.id);
+    setPending(false);
+    if (result.ok) {
+      setOpen(false);
+      toast.add({ type: "success", title: `Cleared the browsing data of “${profile.name}”` });
+      router.refresh();
+    } else if (result.status === 401) {
+      leaveSignedInArea("expired");
+    } else {
+      toast.add({
+        type: "error",
+        title: "Couldn’t clear the browsing data",
+        description: result.error.message,
+      });
+    }
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger render={<Button variant="ghost" size="sm" />}>
+        Clear data<span className="sr-only"> of {profile.name}</span>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogTitle>Clear the browsing data of “{profile.name}”?</AlertDialogTitle>
+        <AlertDialogDescription>
+          The cookies, history, sign-ins and site data saved for this profile (
+          {profile.data ? formatBytes(profile.data.bytes) : "nothing"}) are deleted. The next
+          session starts clean. The profile itself stays.
+        </AlertDialogDescription>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button variant="secondary" />}>Keep it</AlertDialogClose>
+          <Button variant="danger" loading={pending} onClick={() => void clear()}>
+            Clear data
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -377,6 +449,14 @@ export function ProfilesManager({
                       : ""}{" "}
                     · Created <LocalDate iso={profile.createdAt} />
                   </p>
+                  <p className="text-footnote text-ink-secondary">
+                    {profile.keepData
+                      ? profile.data
+                        ? `Keeps browsing data · ${formatBytes(profile.data.bytes)} saved `
+                        : "Keeps browsing data · nothing saved yet"
+                      : "Starts every session clean"}
+                    {profile.keepData && profile.data && <LocalDate iso={profile.data.savedAt} />}
+                  </p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-1">
@@ -399,6 +479,7 @@ export function ProfilesManager({
                   <ArrowDown aria-hidden="true" />
                 </Button>
                 <EditProfile profile={profile} proxies={proxies} />
+                {profile.data && <ClearProfileData profile={profile} />}
                 {profiles.length > 1 && <DeleteProfile profile={profile} />}
               </div>
             </li>

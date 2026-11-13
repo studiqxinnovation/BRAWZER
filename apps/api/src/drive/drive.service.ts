@@ -3,6 +3,7 @@ import type { Readable } from "node:stream";
 import {
   DRIVE_LIMITS,
   type DriveFile,
+  type DriveFileSource,
   type DriveFolder,
   type DriveOverview,
   type DriveUsage,
@@ -105,6 +106,10 @@ export interface UploadInput {
   /** As the browser sent it; cleaned up here. */
   filename: string;
   stream: Readable;
+  /** This device (the default) or the cloud browser. */
+  source?: DriveFileSource;
+  /** For the security history: what the cloud browser produced. */
+  kind?: "download" | "print";
 }
 
 export interface OpenedFile {
@@ -375,7 +380,7 @@ export class DriveService {
    * file is kept in quarantine: visible and deletable, never openable.
    */
   async upload(
-    auth: AuthContext,
+    auth: { user: { id: string }; session: { id: string } },
     folderId: string | null,
     input: UploadInput,
     meta: RequestMeta,
@@ -445,7 +450,7 @@ export class DriveService {
             contentType: stored.contentType,
             status: stored.verdict.verdict,
             threat: stored.verdict.verdict === "infected" ? stored.verdict.signature : null,
-            source: "upload",
+            source: input.source ?? "upload",
             wrappedKey,
             objectKey,
           })
@@ -458,13 +463,73 @@ export class DriveService {
       throw error;
     }
 
+    const fromBrowser = input.source === "browser";
     await this.events.record({
-      type: row.status === "infected" ? "drive.file_quarantined" : "drive.file_uploaded",
+      type:
+        row.status === "infected"
+          ? "drive.file_quarantined"
+          : fromBrowser
+            ? "browser.file_saved"
+            : "drive.file_uploaded",
       userId,
       sessionId: auth.session.id,
       meta,
+      ...(fromBrowser ? { metadata: { kind: input.kind ?? "download" } } : {}),
     });
     return toFile(row);
+  }
+
+  /** The folder with that name at the top level, created if it's missing. */
+  async ensureFolder(userId: string, name: string): Promise<string> {
+    const [existing] = await this.database.db
+      .select({ id: schema.driveFolders.id })
+      .from(schema.driveFolders)
+      .where(
+        and(
+          eq(schema.driveFolders.userId, userId),
+          isNull(schema.driveFolders.parentId),
+          sql`lower(${schema.driveFolders.name}) = lower(${name})`,
+        ),
+      )
+      .limit(1);
+    if (existing) return existing.id;
+    try {
+      const [created] = await this.database.db
+        .insert(schema.driveFolders)
+        .values({ userId, parentId: null, name })
+        .returning({ id: schema.driveFolders.id });
+      if (!created) throw new Error("Folder insert returned nothing");
+      return created.id;
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      // Made in the meantime by another request.
+      return this.ensureFolder(userId, name);
+    }
+  }
+
+  /**
+   * Clean files of the account, by id, for handing to a page in the cloud
+   * browser. Unknown, foreign and quarantined ids are left out.
+   */
+  async openForBrowser(userId: string, ids: readonly string[]): Promise<OpenedFile[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.database.db
+      .select()
+      .from(schema.driveFiles)
+      .where(
+        and(
+          eq(schema.driveFiles.userId, userId),
+          inArray(schema.driveFiles.id, [...ids]),
+          eq(schema.driveFiles.status, "clean"),
+        ),
+      );
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const opened: OpenedFile[] = [];
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (row) opened.push(await this.openRow(row));
+    }
+    return opened;
   }
 
   private tooManyFiles() {

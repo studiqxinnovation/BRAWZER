@@ -9,6 +9,7 @@ import {
   type Profile,
   type RefusedAction,
   type TabState,
+  type TransferMessage,
   type Viewport,
 } from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
@@ -25,6 +26,7 @@ import {
   LockOpen,
   Maximize2,
   Plus,
+  Printer,
   RotateCw,
   Square,
   X,
@@ -43,6 +45,7 @@ import { displayUrl, hostOf, resolveTyped } from "@/lib/browser/input";
 import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/stream";
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
 import { EndSessionDialog, PageDialog, type PageDialogState, ShortcutsPopover } from "./dialogs";
+import { type ChooserRequest, DrivePicker } from "./drive-picker";
 import { StartPanel } from "./start-panel";
 import { BrowserViewport, type Shortcut, type ViewportHandle } from "./viewport";
 
@@ -56,16 +59,15 @@ type Phase =
 const REFUSALS: Record<RefusedAction, { title: string; description: string }> = {
   download: {
     title: "Download refused",
-    description:
-      "The cloud browser doesn’t save files yet. Downloads will go to Drive in a later milestone.",
+    description: "The page started too many downloads at once.",
   },
   upload: {
-    title: "Upload refused",
-    description: "The page asked for a file. The cloud browser can’t reach this computer’s files.",
+    title: "The page didn’t get a file",
+    description: "The cloud browser can’t reach this computer’s files, and Drive couldn’t answer.",
   },
   print: {
     title: "Printing isn’t available",
-    description: "Printed pages will be saved to Drive in a later milestone.",
+    description: "Use “Save as PDF” to keep a page in Drive.",
   },
   "blocked-url": {
     title: "Address blocked",
@@ -74,6 +76,51 @@ const REFUSALS: Record<RefusedAction, { title: string; description: string }> = 
 };
 
 const RECONNECT_ATTEMPTS = 2;
+
+/** What to tell the person about a file on its way to Drive. Quiet states return null. */
+function describeTransfer(
+  message: TransferMessage,
+): { title: string; description?: string; type: "info" | "success" | "error" } | null {
+  const what = message.kind === "print" ? "page" : "download";
+  switch (message.state) {
+    case "started":
+      return message.kind === "print"
+        ? { title: `Saving “${message.filename}” to Drive…`, type: "info" }
+        : { title: `Downloading “${message.filename}” to Drive…`, type: "info" };
+    case "received":
+      return null;
+    case "saved":
+      return {
+        title: `“${message.filename}” is in Drive`,
+        description: "In the Downloads folder, scanned and encrypted.",
+        type: "success",
+      };
+    case "quarantined":
+      return {
+        title: `“${message.filename}” was quarantined`,
+        description: `The malware scan found ${message.reason ?? "a threat"}. It is in Drive, but can’t be opened or saved to a computer.`,
+        type: "error",
+      };
+    case "too_large":
+      return {
+        title: `“${message.filename}” wasn’t saved`,
+        description: `The ${what} is larger than Drive’s per-file limit.`,
+        type: "error",
+      };
+    case "canceled":
+      return {
+        title: `“${message.filename}” was cancelled`,
+        description: "The page or the cloud browser gave up on it.",
+        type: "error",
+      };
+    case "failed":
+      return {
+        title: `“${message.filename}” wasn’t saved`,
+        description: message.reason ?? "Drive couldn’t take it.",
+        type: "error",
+      };
+  }
+}
 
 const coarseQuery = () => window.matchMedia("(pointer: coarse)");
 const isCoarsePointer = () => coarseQuery().matches;
@@ -118,11 +165,17 @@ export function BrowserWorkspace({
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [engine, setEngine] = useState("");
   const [dialog, setDialog] = useState<PageDialogState | null>(null);
+  const [chooser, setChooser] = useState<ChooserRequest | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [ending, setEnding] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [firstFrame, setFirstFrame] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  /** The profile of the session that ran last, for what the end message says. */
+  const [lastProfileId, setLastProfileId] = useState<string | null>(
+    initial.session?.profileId ?? null,
+  );
+  const lastProfile = profiles.find((profile) => profile.id === lastProfileId) ?? null;
   const coarsePointer = useSyncExternalStore(subscribeCoarsePointer, isCoarsePointer, () => false);
 
   const viewportRef = useRef<ViewportHandle>(null);
@@ -158,6 +211,7 @@ export function BrowserWorkspace({
         }
         setPhase({ kind: "ended", message });
         setDialog(null);
+        setChooser(null);
         return;
       }
       handleMessage(event.message);
@@ -192,6 +246,28 @@ export function BrowserWorkspace({
       case "refused":
         toast.add({ ...REFUSALS[message.action], type: "error" });
         return;
+      case "transfer": {
+        const described = describeTransfer(message);
+        if (!described) return;
+        toast.add({
+          ...described,
+          ...(message.state === "saved" || message.state === "quarantined"
+            ? {
+                actionProps: {
+                  children: "Open Drive",
+                  onClick: () => window.open("/app/drive", "_blank", "noopener"),
+                },
+              }
+            : {}),
+        });
+        return;
+      }
+      case "file-chooser": {
+        const tab = tabsRef.current.find((candidate) => candidate.id === message.tabId);
+        const host = hostOf(tab?.url ?? "");
+        setChooser({ ...message, host: host === "" ? null : host });
+        return;
+      }
       case "error":
         if (message.code === "replaced" || message.code === "ended") {
           setPhase({ kind: "ended", message: message.message });
@@ -234,6 +310,7 @@ export function BrowserWorkspace({
       return;
     }
     attempts.current = 0;
+    setLastProfileId(result.data.profileId);
     await connect(result.data);
   }
 
@@ -355,6 +432,9 @@ export function BrowserWorkspace({
         case "reload":
           if (tab) send({ type: "reload", tabId: tab.id });
           return;
+        case "print":
+          if (tab) send({ type: "print", tabId: tab.id });
+          return;
       }
     },
     [tabs, activeTabId, send],
@@ -392,7 +472,10 @@ export function BrowserWorkspace({
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-5 py-8 sm:px-8 sm:py-12">
         <h1 className="text-title-1 text-ink">Browser</h1>
         <FormMessage tone="info" title="Session over">
-          {phase.message} Nothing from it is kept.
+          {phase.message}{" "}
+          {lastProfile?.keepData
+            ? `Its cookies, history and site data were saved to the “${lastProfile.name}” profile; nothing stays on this computer.`
+            : "Nothing from it is kept."}
         </FormMessage>
         <div>
           <Button
@@ -574,6 +657,19 @@ export function BrowserWorkspace({
             />
           </div>
         </form>
+        <Tooltip content="Save as PDF in Drive (Alt+P)">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Save page as PDF in Drive"
+            disabled={!activeTab || activeTab.url === "about:blank"}
+            onClick={() => {
+              onShortcut("print");
+            }}
+          >
+            <Printer aria-hidden="true" />
+          </Button>
+        </Tooltip>
         {coarsePointer && (
           <Button
             variant="ghost"
@@ -653,6 +749,21 @@ export function BrowserWorkspace({
             });
           }
           setDialog(null);
+          viewportRef.current?.focus();
+        }}
+      />
+      <DrivePicker
+        request={chooser}
+        onAnswer={(fileIds) => {
+          if (chooser) {
+            send({
+              type: "file-chooser",
+              tabId: chooser.tabId,
+              chooserId: chooser.chooserId,
+              fileIds,
+            });
+          }
+          setChooser(null);
           viewportRef.current?.focus();
         }}
       />

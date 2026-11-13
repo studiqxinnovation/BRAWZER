@@ -12,6 +12,8 @@ export interface AgentConfig {
   testSite: boolean;
   /** Writable scratch space; the root file system is read-only. */
   scratchDir: string;
+  /** The largest file the engine may download or print; Drive's per-file limit, set by the orchestrator. */
+  maxFileBytes: number;
   initialViewport: { width: number; height: number };
 }
 
@@ -29,6 +31,7 @@ export function readConfig(env: NodeJS.ProcessEnv): AgentConfig {
     proxyPort: 3128,
     testSite: env.BRAWZER_TEST_SITE === "true",
     scratchDir: env.BRAWZER_SCRATCH_DIR ?? "/tmp",
+    maxFileBytes: Math.max(1, Number(env.BRAWZER_MAX_FILE_BYTES ?? "") || 100 * 1024 * 1024),
     initialViewport: {
       width: Math.min(1280, BROWSER_LIMITS.viewport.maxWidth),
       height: Math.min(800, BROWSER_LIMITS.viewport.maxHeight),
