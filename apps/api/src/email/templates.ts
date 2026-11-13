@@ -319,3 +319,22 @@ export function newDeviceSignInMessage(
     footnote: "Brawzer sends this when a browser or network is new to your account.",
   });
 }
+
+export function phoneSignInMessage(
+  device: string | null,
+  ip: string | null,
+  when: string,
+  url: string,
+): EmailContent {
+  const where = device ?? "a computer";
+  return compose("You approved a sign-in from your phone", {
+    preheader: `${where} is now signed in to your account.`,
+    heading: "Sign-in approved from your phone",
+    paragraphs: [
+      `On ${when} you approved, from your phone, a sign-in to your Brawzer account on ${where}${ip ? ` (IP address ${ip})` : ""}. That computer now has a shared-computer session, which ends when its browser closes or after a while without activity.`,
+      "If you didn’t approve this, sign that device out in Sessions and change your password.",
+    ],
+    action: { label: "Review sessions", url },
+    footnote: "Brawzer sends this every time a sign-in is approved from a phone.",
+  });
+}

@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { horizontalOverflow, wcagViolations } from "./accessibility";
-import { createConfirmedAccount, linkFromEmail, uniqueEmail } from "./mailbox";
+import { createConfirmedAccount, linkFromEmail, otherDevice, uniqueEmail } from "./mailbox";
 
 // Requires the local services (`pnpm infra:up`): real API, Postgres, Valkey and Mailpit.
 
@@ -58,6 +58,8 @@ test.describe("account journey", () => {
       expires: -1,
     });
 
+    // The session keeper marks <html> after hydration; clicking earlier does nothing.
+    await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/sign-in\?signed_out=1$/);
     await expect(page.getByText("You’ve signed out")).toBeVisible();
@@ -244,5 +246,51 @@ test.describe("before the page is interactive", () => {
       expect(new URL(page.url()).search, path).toBe("");
     }
     await context.close();
+  });
+});
+
+test.describe("sign in with your phone", () => {
+  test("sign in on a computer by approving from a signed-in phone", async ({
+    page,
+    browser,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The computer side is a desktop; the phone side is its own context.");
+    test.setTimeout(60_000);
+    const email = uniqueEmail("phone");
+    const password = "violet-harbor-lantern";
+    await createConfirmedAccount(page.request, baseURL ?? "", email, password);
+
+    // The computer: a code and a number, nothing typed.
+    await page.goto("/sign-in");
+    await page.getByRole("link", { name: "Sign in with your phone" }).click();
+    await expect(page.getByRole("heading", { name: "Sign in with your phone" })).toBeVisible();
+    const qr = page.getByRole("img", { name: "QR code to scan with your phone" });
+    await expect(qr).toBeVisible();
+    const approvalUrl = (await qr.getAttribute("data-approval-url")) ?? "";
+    expect(approvalUrl).toContain("/app/approve-sign-in?r=");
+    const code = (await page.locator("p.font-mono").textContent())?.trim() ?? "";
+    expect(code).toMatch(/^[1-9][0-9]$/);
+    expect(await wcagViolations(page)).toEqual([]);
+
+    // The phone: signed in, scans the code, sees the computer, picks the number.
+    const phone = await otherDevice(browser, baseURL ?? "", email, password);
+    const phonePage = await phone.newPage();
+    // The QR code carries the site's own origin; the test stack is reached under another name.
+    const approval = new URL(approvalUrl);
+    await phonePage.goto(`${approval.pathname}${approval.search}`);
+    await expect(phonePage.getByRole("heading", { name: "Approve a sign-in" })).toBeVisible();
+    await expect(phonePage.getByText("Chrome", { exact: false }).first()).toBeVisible();
+    expect(await wcagViolations(phonePage)).toEqual([]);
+    const choices = phonePage.getByRole("group", { name: "The number on the computer" });
+    await expect(choices.getByRole("button")).toHaveCount(3);
+    await choices.getByRole("button", { name: code, exact: true }).click();
+    await expect(phonePage.getByText("Signed in on the computer")).toBeVisible();
+
+    // The computer is in, with a shared-computer session.
+    await expect(page).toHaveURL(/\/app$/, { timeout: 15_000 });
+    await expect(page.getByText("Shared-computer mode").first()).toBeVisible();
+    await phone.close();
   });
 });

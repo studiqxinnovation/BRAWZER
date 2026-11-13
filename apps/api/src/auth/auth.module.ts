@@ -11,6 +11,8 @@ import { EmailTokenService } from "./email-token.service.js";
 import { MfaController } from "./mfa/mfa.controller.js";
 import { MfaService } from "./mfa/mfa.service.js";
 import { NewDeviceService } from "./new-device.service.js";
+import { PhoneSignInController } from "./phone/phone-sign-in.controller.js";
+import { PhoneSignInService } from "./phone/phone-sign-in.service.js";
 import { PasskeyService } from "./passkeys/passkey.service.js";
 import { PasskeysController } from "./passkeys/passkeys.controller.js";
 import { RecentAuthGuard } from "./recent-auth.guard.js";
@@ -20,7 +22,13 @@ import { SessionsController } from "./sessions.controller.js";
 
 @Module({
   imports: [DatabaseModule, RateLimitModule, EmailModule, SecurityEventsModule],
-  controllers: [AuthController, SessionsController, PasskeysController, MfaController],
+  controllers: [
+    AuthController,
+    SessionsController,
+    PasskeysController,
+    MfaController,
+    PhoneSignInController,
+  ],
   providers: [
     AuthService,
     SessionService,
@@ -32,6 +40,7 @@ import { SessionsController } from "./sessions.controller.js";
     PasskeyService,
     MfaService,
     NewDeviceService,
+    PhoneSignInService,
   ],
   // Later modules (profiles, sessions, Drive) protect their routes with SessionGuard.
   exports: [

@@ -14,6 +14,7 @@ import {
   mfaDisabledMessage,
   mfaEnabledMessage,
   newDeviceSignInMessage,
+  phoneSignInMessage,
   passkeyAddedMessage,
   passkeyRemovedMessage,
   passwordChangedMessage,
@@ -118,6 +119,10 @@ export class EmailService {
 
   sendNewDeviceSignIn(to: string, device: string, ip: string | null): void {
     this.dispatch(to, newDeviceSignInMessage(device, ip, this.now(), this.link("/app/sessions")));
+  }
+
+  sendPhoneSignIn(to: string, device: string | null, ip: string | null): void {
+    this.dispatch(to, phoneSignInMessage(device, ip, this.now(), this.link("/app/sessions")));
   }
 
   sendMfaEnabled(to: string): void {

@@ -8,7 +8,13 @@ import { type ReactNode, useState } from "react";
 import { AppNav } from "./nav";
 
 /** Phones and small windows: the same navigation in a drawer. */
-export function MobileNav({ account, admin = false }: { account: ReactNode; admin?: boolean }) {
+export function MobileNav({
+  account,
+  admin,
+}: {
+  account: ReactNode;
+  admin?: Promise<boolean> | undefined;
+}) {
   const [open, setOpen] = useState(false);
 
   return (

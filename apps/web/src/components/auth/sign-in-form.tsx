@@ -151,6 +151,11 @@ export function SignInForm() {
         </>
       )}
 
+      <p className="text-footnote text-ink-secondary">
+        No Bluetooth on this computer?{" "}
+        <TextLink href="/sign-in/phone">Sign in with your phone</TextLink> instead.
+      </p>
+
       <Field name="email" invalid={Boolean(errors.email)}>
         <FieldLabel>Email</FieldLabel>
         <Input
