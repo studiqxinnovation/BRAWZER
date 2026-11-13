@@ -97,7 +97,9 @@ export type DesktopRequest =
   /** Drive files dropped on the window, at a point in the window's own coordinates. */
   | { type: "brawzer:drop"; fileIds: string[]; x: number; y: number }
   /** A page's image, dragged out of the window onto Files or the desktop: save it to Drive. */
-  | { type: "brawzer:save-image"; url: string };
+  | { type: "brawzer:save-image"; url: string }
+  /** The desktop's Sound volume, 0 to 100, for the session's sound. */
+  | { type: "brawzer:volume"; volume: number };
 
 const uuid = /^[0-9a-f-]{36}$/i;
 
@@ -105,6 +107,13 @@ export function parseDesktopRequest(data: unknown): DesktopRequest | null {
   if (typeof data !== "object" || data === null || !("type" in data)) return null;
   const message = data as Record<string, unknown>;
   if (message.type === "brawzer:screenshot") return { type: "brawzer:screenshot" };
+  if (message.type === "brawzer:volume") {
+    const volume =
+      typeof message.volume === "number" && Number.isFinite(message.volume) ? message.volume : null;
+    return volume === null
+      ? null
+      : { type: "brawzer:volume", volume: Math.min(100, Math.max(0, volume)) };
+  }
   if (message.type === "brawzer:drop") {
     const fileIds = Array.isArray(message.fileIds)
       ? message.fileIds.filter((id): id is string => typeof id === "string" && uuid.test(id))

@@ -62,6 +62,7 @@ import {
   useDesktop,
 } from "@/components/desktop/desktop-context";
 import { desktopActive, subscribeToDesktop } from "@/lib/desktop";
+import { readDesktopPrefs, subscribeToDesktopPrefs } from "@/lib/desktop-prefs";
 import { isLocked, subscribeToLock } from "@/lib/lock";
 import { examAllows } from "@/lib/exam";
 import {
@@ -298,6 +299,15 @@ export function BrowserWorkspace({
   const findTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** The session's sound, played here; on by default, muted from the status bar. */
   const audioRef = useRef(new AudioPlayer());
+  // The desktop's Sound volume: read here on the Browser page; a framed window is told by message.
+  const desktopVolume = useSyncExternalStore(
+    subscribeToDesktopPrefs,
+    () => readDesktopPrefs().volume,
+    () => 100,
+  );
+  useEffect(() => {
+    if (!embedded) audioRef.current.setVolume(desktopVolume / 100);
+  }, [desktopVolume, embedded]);
   const [soundOn, setSoundOn] = useState(true);
   const [soundUnlocked, setSoundUnlocked] = useState(false);
   useEffect(() => {
@@ -1268,6 +1278,8 @@ export function BrowserWorkspace({
       if (!message) return;
       if (message.type === "brawzer:screenshot") {
         void latest.current.saveScreenshot();
+      } else if (message.type === "brawzer:volume") {
+        audioRef.current.setVolume(message.volume / 100);
       } else if (message.type === "brawzer:drop") {
         const point = viewportRef.current?.pointAt(message.x, message.y);
         if (point) void latest.current.dropFiles(point, { fileIds: message.fileIds, files: [] });

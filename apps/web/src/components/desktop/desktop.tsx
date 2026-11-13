@@ -529,6 +529,16 @@ export function DesktopShell({
     [workArea, toast],
   );
 
+  // The Sound volume slider reaches every browser window as it moves.
+  useEffect(() => {
+    for (const frame of frames.current.values()) {
+      frame.contentWindow?.postMessage(
+        { type: "brawzer:volume", volume: prefs.volume },
+        window.location.origin,
+      );
+    }
+  }, [prefs.volume]);
+
   const openSession = useCallback(
     (session: BrowserSession, open?: BrowserOpen) => {
       openWindow({ kind: "browser", session, open });
@@ -2531,6 +2541,13 @@ export function DesktopShell({
                       }}
                       title={`${label}, streamed from Brawzer’s cloud`}
                       src={frameSource(entry.id, entry.content.open)}
+                      onLoad={(event) => {
+                        // The desktop's Sound volume reaches the frame as soon as it's up.
+                        event.currentTarget.contentWindow?.postMessage(
+                          { type: "brawzer:volume", volume: readDesktopPrefs().volume },
+                          window.location.origin,
+                        );
+                      }}
                       data-session={entry.id}
                       className="dt-frame"
                       allow="clipboard-read; clipboard-write; autoplay; fullscreen"

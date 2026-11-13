@@ -13,9 +13,12 @@ const MAX_LAG_SECONDS = 0.6;
  */
 export class AudioPlayer {
   private context: AudioContext | null = null;
+  private gain: GainNode | null = null;
   private cursor = 0;
   private lastSeq = -1;
   private enabled = true;
+  /** 0 to 1: the desktop's Sound volume. */
+  private volume = 1;
 
   /** Whether the browser lets the sound play yet (a gesture is needed first). */
   get unlocked(): boolean {
@@ -30,15 +33,29 @@ export class AudioPlayer {
   unlock(): void {
     try {
       this.context ??= new AudioContext();
+      if (!this.gain) {
+        this.gain = this.context.createGain();
+        this.gain.gain.value = this.volume;
+        this.gain.connect(this.context.destination);
+      }
       if (this.context.state !== "running") void this.context.resume();
     } catch {
       this.context = null;
+      this.gain = null;
     }
   }
 
   setOn(on: boolean): void {
     this.enabled = on;
     if (!on) this.cursor = 0;
+  }
+
+  /** The desktop's Sound volume, 0 to 1, applied to everything the session plays. */
+  setVolume(volume: number): void {
+    this.volume = Math.min(1, Math.max(0, volume));
+    if (this.gain && this.context) {
+      this.gain.gain.setTargetAtTime(this.volume, this.context.currentTime, 0.02);
+    }
   }
 
   play(header: AudioChunkHeader, samples: Uint8Array): void {
@@ -56,7 +73,7 @@ export class AudioPlayer {
     }
     const source = context.createBufferSource();
     source.buffer = buffer;
-    source.connect(context.destination);
+    source.connect(this.gain ?? context.destination);
     const now = context.currentTime;
     // A gap in sequence numbers, or a cursor that fell behind: start afresh a little ahead.
     if (
@@ -74,6 +91,7 @@ export class AudioPlayer {
   close(): void {
     void this.context?.close().catch(() => undefined);
     this.context = null;
+    this.gain = null;
     this.cursor = 0;
   }
 }
