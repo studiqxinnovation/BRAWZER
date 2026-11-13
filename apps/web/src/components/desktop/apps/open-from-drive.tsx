@@ -12,7 +12,7 @@ import { FileText, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { listDriveFiles } from "@/lib/api/drive";
 
-/** Picks a file of one kind from anywhere in Drive, found by typing. */
+/** Picks a file of these kinds from anywhere in Drive, found by typing. */
 export function OpenFromDrive({
   open,
   onOpenChange,
@@ -23,7 +23,7 @@ export function OpenFromDrive({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  kind: DriveFileKind;
+  kind: DriveFileKind | readonly DriveFileKind[];
   /** Only names ending like these, such as [".csv"]; none: every file of the kind. */
   accept?: readonly string[];
   title: string;
@@ -32,16 +32,21 @@ export function OpenFromDrive({
   const [files, setFiles] = useState<readonly DriveFile[] | null>(null);
   const [query, setQuery] = useState("");
 
+  const kinds = typeof kind === "string" ? kind : kind.join(",");
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    void listDriveFiles({ kind }).then((result) => {
-      if (!cancelled) setFiles(result.ok ? result.data.files : []);
+    void Promise.all(
+      kinds.split(",").map((one) => listDriveFiles({ kind: one as DriveFileKind })),
+    ).then((results) => {
+      if (cancelled) return;
+      const found = results.flatMap((result) => (result.ok ? result.data.files : []));
+      setFiles(found.sort((a, b) => a.name.localeCompare(b.name)));
     });
     return () => {
       cancelled = true;
     };
-  }, [open, kind]);
+  }, [open, kinds]);
 
   const shown = (files ?? []).filter(
     (file) =>

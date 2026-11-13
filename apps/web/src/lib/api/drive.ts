@@ -1,5 +1,6 @@
 import {
   apiErrorSchema,
+  type CopyFileRequest,
   type CreateFolderRequest,
   downloadTicketSchema,
   type DriveFile,
@@ -133,6 +134,35 @@ export async function readDriveText(id: string): Promise<ApiResult<string>> {
     return { ok: false, status: 0, error: unreachable };
   }
 }
+
+/** A clean file's bytes, for an app that reads Office files, through the same route. */
+export async function readDriveBytes(id: string): Promise<ApiResult<Uint8Array>> {
+  try {
+    const response = await fetch(previewUrl(id), { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        error: { code: "not_found", message: "That file can’t be opened here." },
+      };
+    }
+    return {
+      ok: true,
+      status: response.status,
+      data: new Uint8Array(await response.arrayBuffer()),
+    };
+  } catch {
+    return { ok: false, status: 0, error: unreachable };
+  }
+}
+
+/** A copy of the file: beside it, in a folder, or at the top level with null. */
+export const copyDriveFile = (id: string, body: CopyFileRequest = {}) =>
+  apiRequest(`/drive/files/${encodeURIComponent(id)}/copy`, {
+    method: "POST",
+    body,
+    schema: driveFileSchema,
+  });
 
 /** A single-use link to save the file to this computer. Needs a recent sign-in. */
 export const requestDownloadTicket = (id: string) =>

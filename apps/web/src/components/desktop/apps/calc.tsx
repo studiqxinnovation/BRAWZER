@@ -1,16 +1,23 @@
 "use client";
 
+import { OFFICE_TYPES } from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
+import { useToast } from "@brawzer/ui/components/toast";
 import { type KeyboardEvent, useMemo, useRef, useState } from "react";
 import { useAppWindow } from "./app-window";
 import { COLUMNS, display, evaluate, fromCsv, ROWS, toCsv } from "./calc-engine";
+import { cellsToXlsx, xlsxToCells } from "./office/xlsx";
 import { OpenFromDrive } from "./open-from-drive";
 import { templateById } from "./templates";
 import { useDriveDocument } from "./use-drive-document";
 
-/** Calc: a sheet with formulas, kept in Drive as CSV (formulas as written). */
+/** An Excel workbook, by its name: opened from .xlsx and saved back as one. */
+const isExcel = (name: string) => /\.xlsx$/i.test(name);
+
+/** Calc: a sheet with formulas, kept in Drive as CSV (formulas as written) or an Excel workbook. */
 export default function CalcApp() {
   const window = useAppWindow();
+  const toast = useToast();
   const template = templateById(window.params.template);
   const [cells, setCells] = useState<Record<string, string>>(() =>
     template?.cells && !window.params.file ? { ...template.cells } : {},
@@ -26,7 +33,31 @@ export default function CalcApp() {
     onLoad: (text) => {
       setCells(fromCsv(text));
     },
+    binary: isExcel,
+    onLoadBytes: (bytes, name) => {
+      const imported = xlsxToCells(bytes);
+      if (!imported) {
+        toast.add({
+          type: "error",
+          title: `“${name}” isn’t an Excel workbook`,
+          description: "Only .xlsx files made by Excel, Numbers or LibreOffice open here.",
+        });
+        return;
+      }
+      setCells(imported.cells);
+      if (imported.beyond > 0) {
+        toast.add({
+          type: "info",
+          title: `${String(imported.beyond)} cell${imported.beyond === 1 ? "" : "s"} left out`,
+          description: `Calc shows the first sheet, ${String(COLUMNS.length)} columns by ${String(ROWS)} rows.`,
+        });
+      }
+    },
   });
+  const save = () =>
+    void (isExcel(document.doc.name)
+      ? document.save(cellsToXlsx(cells), undefined, OFFICE_TYPES.excel)
+      : document.save(toCsv(cells)));
   const results = useMemo(() => evaluate(cells), [cells]);
 
   function set(address: string, raw: string) {
@@ -47,7 +78,7 @@ export default function CalcApp() {
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>, address: string) {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();
-      void document.save(toCsv(cells));
+      save();
     } else if (event.key === "Enter") {
       event.preventDefault();
       move(address, 0, event.shiftKey ? -1 : 1);
@@ -104,12 +135,7 @@ export default function CalcApp() {
         >
           Open…
         </Button>
-        <Button
-          size="sm"
-          variant="primary"
-          loading={document.saving}
-          onClick={() => void document.save(toCsv(cells))}
-        >
+        <Button size="sm" variant="primary" loading={document.saving} onClick={save}>
           Save to Drive
         </Button>
       </div>
@@ -181,6 +207,7 @@ export default function CalcApp() {
         </span>
         <span>
           SUM · AVERAGE · MIN · MAX · COUNT · ROUND · ABS · + − × ÷ ^ ·{" "}
+          {isExcel(document.doc.name) ? "Excel workbook · " : ""}
           {document.doc.fileId
             ? document.dirty
               ? "Not saved yet"
@@ -191,8 +218,8 @@ export default function CalcApp() {
       <OpenFromDrive
         open={picking}
         onOpenChange={setPicking}
-        kind="text"
-        accept={[".csv"]}
+        kind={["text", "sheets"]}
+        accept={[".csv", ".xlsx"]}
         title="Open a sheet"
         onChoose={(file) => void document.open(file.id, file.name)}
       />

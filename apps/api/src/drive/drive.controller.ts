@@ -16,6 +16,7 @@ import {
   driveOverviewSchema,
   driveSpaceQuerySchema,
   driveSpaceSchema,
+  copyFileRequestSchema,
   updateFileRequestSchema,
   updateFolderRequestSchema,
 } from "@brawzer/contracts";
@@ -225,6 +226,28 @@ export class DriveController {
     @Req() request: FastifyRequest,
   ): Promise<void> {
     await this.drive.deleteFile(auth, id, requestMeta(request));
+  }
+
+  @Post("files/:id/copy")
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: driveFileSchema })
+  @ApiOperation({
+    summary: "Copy a file",
+    description:
+      "A new file with the same content, scanned and encrypted on its own. `folderId: null` puts it at the top level; left out, it goes beside the original.",
+  })
+  @ApiCreatedResponse({ description: "The copy.", standardSchema: driveFileSchema })
+  @ApiNotFoundResponse({ description: "No such file or folder on this account." })
+  @ApiForbiddenResponse({ description: "The file is quarantined." })
+  copyFile(
+    @Param("id", { schema: idSchema }) id: string,
+    @Body({ schema: copyFileRequestSchema }) body: z.output<typeof copyFileRequestSchema>,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<DriveFile> {
+    return this.drive.copyFile(auth, id, body.folderId, requestMeta(request));
   }
 
   @Put("files/:id/content")

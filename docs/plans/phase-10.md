@@ -23,6 +23,7 @@ real; nothing an account owns is kept on the device.
 | 10.5 | The moving page as video (VP8 over the stream, decoded with WebCodecs)                                                            | **Done** 2026-11-12 |
 | 10.6 | Email that a computer's owner expects: welcome, billing, quarantines, team updates, administrators, preferences, delivery reports | **Done** 2026-11-12 |
 | 10.7 | The Brawzer Suite (Writer, Calc, Slides), more web apps with their sites' own icons, Apple-style app icons, Bee's own mark        | **Done** 2026-11-12 |
+| 10.8 | The Suite reads and writes Word, Excel and PowerPoint; files paste, drop, cut and copy; the starter web apps                      | **Done** 2026-11-12 |
 
 ## 10.1 The cloud browser as a computer's own
 
@@ -205,3 +206,42 @@ transport with Resend behind it in production. Added:
   Brawzer's; Bee is one of the browsers a Brawzer computer runs, beside
   Chrome and Firefox, and has a mark of its own on its honey tile.
 - Launchpad sits beside the Brawzer button in the Dock.
+
+## 10.8 Office files in the Suite, the file clipboard, the starter web apps
+
+What the owner found after 10.7: a `.docx` copied in from the computer
+did nothing, "Paste" on the desktop was always grey, and WhatsApp and
+the other web apps were nowhere to be seen until installed from the App
+Store.
+
+- **Word, Excel and PowerPoint files** open in Writer, Calc and Slides,
+  and save back as the same kind of file (`apps/office/`). The readers
+  and writers are Brawzer's own, on top of a zip library: a Word file's
+  paragraphs, headings, quotes, lists, bold, italic, underline, strike,
+  alignment and links become Writer's HTML (tables one line per row,
+  pictures counted and left out, said in a notice); an Excel file's
+  first sheet becomes Calc's cells, formulas kept where the file has
+  their text, cells past the grid counted; a PowerPoint file's slides
+  become title, points and the first picture (kept in Drive's Photos).
+  Saving writes real styles, numbering, inline strings, formulas with
+  cached values (and `fullCalcOnLoad`), and a 16:9 deck in the chosen
+  theme with pictures embedded, which Word, Excel, PowerPoint, Pages,
+  Numbers, Keynote and LibreOffice open. The API recognises the three
+  types from their bytes, lists them as the kinds `documents`, `sheets`
+  and `presentations`, and lets their apps read them through the
+  preview route (still sandboxed; nothing else binary passes). A
+  document's name decides its format: rename `.html` to `.docx` and the
+  next save is a Word file.
+- **The file clipboard**: Cut, Copy and Paste on the desktop and in
+  Files, from the menus, the toolbar and the keyboard. A copy is made
+  by the API (`POST /drive/files/:id/copy`): the file's bytes read
+  back and stored again as a new upload, scanned and encrypted with a
+  key of its own, numbered when the name is taken. A file copied on the
+  computer and pasted on the desktop or into a folder is uploaded, as
+  is one dragged in from the computer. Files makes its starting folders
+  around a Desktop folder the desktop made first.
+- **The starter web apps**: WhatsApp, Telegram, ChatGPT, Claude,
+  YouTube and Spotify are on every desktop from the first sign-in, in
+  Launchpad and the Dock, seeded once per account (a `webAppsSeeded`
+  flag), so removing one sticks.
+- A notification's close button is a 24px target.

@@ -13,9 +13,21 @@ import { type DesktopStyle, setDesktopStyle } from "./desktop";
  * apps, the style chosen when it was first opened, and Control Centre's
  * Do Not Disturb, sounds, volume and brightness.
  */
+/** The web apps every desktop starts with; the App Store adds and removes the rest. */
+export const starterWebApps: readonly string[] = [
+  "whatsapp",
+  "telegram",
+  "chatgpt",
+  "claude",
+  "youtube",
+  "spotify",
+];
+
 export interface DesktopPrefs {
   pinned: readonly AppId[];
   webApps: readonly string[];
+  /** The starter web apps were put in once; removing them after that sticks. */
+  webAppsSeeded: boolean;
   /** Null until the person picks one ("Choose your desktop"). */
   style: "mac" | "windows" | null;
   dnd: boolean;
@@ -65,6 +77,7 @@ export interface Favourite {
 const prefsSchema = z.object({
   pinned: z.array(z.string()).optional(),
   webApps: z.array(z.string()).optional(),
+  webAppsSeeded: z.boolean().optional(),
   style: z.enum(["mac", "windows"]).nullable().optional(),
   dnd: z.boolean().optional(),
   sounds: z.boolean().optional(),
@@ -104,7 +117,8 @@ const prefsSchema = z.object({
 
 const DEFAULT: DesktopPrefs = {
   pinned: defaultPinnedApps,
-  webApps: [],
+  webApps: starterWebApps,
+  webAppsSeeded: true,
   style: null,
   dnd: false,
   sounds: true,
@@ -122,6 +136,13 @@ const DEFAULT: DesktopPrefs = {
   windowRects: {},
   avatar: null,
 };
+
+/** The saved web apps, with the starter ones added the first time an account is seen since they exist. */
+function seedWebApps(saved: readonly string[], seeded: boolean): readonly string[] {
+  const known = saved.filter((id) => webAppById(id) !== undefined);
+  if (seeded) return known;
+  return [...known, ...starterWebApps.filter((id) => !known.includes(id))];
+}
 
 let prefs: DesktopPrefs = DEFAULT;
 let loaded: "no" | "loading" | "yes" = "no";
@@ -156,7 +177,8 @@ export async function loadDesktopPrefs(): Promise<void> {
     const data = parsed.data;
     prefs = {
       pinned: data.pinned ? data.pinned.filter(isAppId) : DEFAULT.pinned,
-      webApps: (data.webApps ?? []).filter((id) => webAppById(id) !== undefined),
+      webApps: seedWebApps(data.webApps ?? [], data.webAppsSeeded ?? false),
+      webAppsSeeded: true,
       style: data.style ?? null,
       dnd: data.dnd ?? DEFAULT.dnd,
       sounds: data.sounds ?? DEFAULT.sounds,

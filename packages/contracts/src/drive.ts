@@ -37,12 +37,34 @@ export const PREVIEWABLE_TYPES = [
   "audio/x-flac",
 ] as const;
 
+/** Office files the Brawzer Suite opens: Word, Excel and PowerPoint. */
+export const OFFICE_TYPES = {
+  word: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  excel: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  powerpoint: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+} as const;
+
 /** What the desktop's viewers list across Drive: Photos, PDF Viewer, Music, the editors. */
-export const driveFileKinds = ["images", "pdfs", "audio", "text"] as const;
+export const driveFileKinds = [
+  "images",
+  "pdfs",
+  "audio",
+  "text",
+  "documents",
+  "sheets",
+  "presentations",
+] as const;
 export type DriveFileKind = (typeof driveFileKinds)[number];
 
 export const isPreviewable = (contentType: string): boolean =>
   (PREVIEWABLE_TYPES as readonly string[]).includes(contentType);
+
+export const isOfficeType = (contentType: string): boolean =>
+  (Object.values(OFFICE_TYPES) as readonly string[]).includes(contentType);
+
+/** What an app on the desktop can read through the preview route: previewable files and Office files. */
+export const isAppOpenable = (contentType: string): boolean =>
+  isPreviewable(contentType) || isOfficeType(contentType);
 
 export const driveFileStatusSchema = z.enum(driveFileStatuses);
 export const driveFileSourceSchema = z.enum(driveFileSources);
@@ -175,6 +197,11 @@ export const updateFileRequestSchema = z
   })
   .refine((value) => Object.keys(value).length > 0, { error: "Change at least one thing." });
 
+export const copyFileRequestSchema = z.object({
+  /** Where the copy goes; null: the top level; absent: beside the original. */
+  folderId: z.uuid({ error: "That isn’t a folder ID." }).nullable().optional(),
+});
+
 export const downloadTicketSchema = z.object({
   /** Path of the content, with the ticket; valid once, for DOWNLOAD_TICKET_SECONDS. */
   url: z.string(),
@@ -197,4 +224,5 @@ export type DriveFileList = z.infer<typeof driveFileListSchema>;
 export type CreateFolderRequest = z.input<typeof createFolderRequestSchema>;
 export type UpdateFolderRequest = z.input<typeof updateFolderRequestSchema>;
 export type UpdateFileRequest = z.input<typeof updateFileRequestSchema>;
+export type CopyFileRequest = z.input<typeof copyFileRequestSchema>;
 export type DownloadTicket = z.infer<typeof downloadTicketSchema>;

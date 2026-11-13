@@ -21,6 +21,7 @@ import { flushSync } from "react-dom";
 import { EngineLogo } from "@/components/browser/engine-logo";
 import { endBrowserSession, fetchBrowserOverview } from "@/lib/api/browser";
 import {
+  copyDriveFile,
   createFolder,
   deleteFile,
   emptyTrash,
@@ -29,7 +30,12 @@ import {
   updateFile,
 } from "@/lib/api/drive";
 import { NameDialog } from "@/components/drive/dialogs";
-import { clearCutFile, cutFile, readCutFile } from "@/lib/file-clipboard";
+import {
+  type ClipboardFile,
+  clearClipboardFile,
+  holdFile,
+  readClipboardFile,
+} from "@/lib/file-clipboard";
 import { clearIconPositions, readIconPositions } from "@/lib/icon-positions";
 import { fetchSecurityOverview } from "@/lib/api/security";
 import { useLaunchBrowser } from "@/lib/browser/use-launch";
@@ -851,24 +857,118 @@ export function DesktopShell({
     [toast],
   );
 
-  /** Pastes the cut file into the Desktop folder: a move. */
+  /** Pastes the held file into the Desktop folder: a move when it was cut, a copy when copied. */
   async function pasteOnDesktop() {
-    const cut = readCutFile();
-    if (!cut) return;
+    const held = readClipboardFile();
+    if (!held) return;
     const folderId = await desktopFolderId();
     if (!folderId) {
       fileFailed("Couldn’t paste it", "The Desktop folder couldn’t be made.");
       return;
     }
-    const result = await updateFile(cut.id, { folderId });
+    const result =
+      held.mode === "cut"
+        ? await updateFile(held.id, { folderId })
+        : await copyDriveFile(held.id, { folderId });
     if (!result.ok) {
       fileFailed("Couldn’t paste it", result.error.message);
       return;
     }
-    clearCutFile();
-    toast.add({ type: "success", title: `Moved “${cut.name}” to the desktop` });
+    if (held.mode === "cut") clearClipboardFile();
+    toast.add({
+      type: "success",
+      title:
+        held.mode === "cut"
+          ? `Moved “${held.name}” to the desktop`
+          : `Copied “${held.name}” to the desktop`,
+    });
     loadDesk();
   }
+
+  /** Files from this computer, onto the desktop: uploaded to Drive's Desktop folder. */
+  const putOnDesktop = useCallback(
+    (files: readonly File[]) => {
+      if (files.length === 0) return;
+      void Promise.all(
+        files.map((file) =>
+          saveToDrive({ name: file.name, content: file, type: file.type, folder: "Desktop" }),
+        ),
+      ).then((results) => {
+        const failed = results.find((result) => !result.ok);
+        const quarantined = results.filter(
+          (result) => result.ok && result.data.status !== "clean",
+        ).length;
+        if (failed) {
+          toast.add({
+            type: "error",
+            title: "Some files didn’t upload",
+            description: failed.error.message,
+          });
+        } else if (quarantined > 0) {
+          toast.add({
+            type: "error",
+            title: `${String(quarantined)} file${quarantined === 1 ? " was" : "s were"} quarantined`,
+            description: "It matched known malware. The rest are on the desktop.",
+          });
+        } else {
+          toast.add({
+            type: "success",
+            title: `${String(files.length)} file${files.length === 1 ? "" : "s"} on the desktop`,
+            description: "They’re in Drive’s “Desktop” folder, scanned and encrypted.",
+          });
+        }
+        loadDesk();
+      });
+    },
+    [loadDesk, toast],
+  );
+
+  /** Cut or copy a desktop file, to paste on the desktop or in a folder. */
+  const holdDeskFile = useCallback(
+    (file: DriveFile, mode: ClipboardFile["mode"]) => {
+      holdFile({ id: file.id, name: file.name, folderId: file.folderId, mode });
+      toast.add({
+        type: "info",
+        title: `${mode === "cut" ? "Cut" : "Copied"} “${file.name}”`,
+        description: "Paste it into another folder, or on the desktop.",
+      });
+    },
+    [toast],
+  );
+
+  // Paste on the desktop: files copied on this computer are uploaded; a file
+  // cut or copied here is moved or copied. Only while nothing editable has the focus.
+  const pasteRef = useRef({ pasteOnDesktop, putOnDesktop, focused });
+  useEffect(() => {
+    pasteRef.current = { pasteOnDesktop, putOnDesktop, focused };
+  });
+  useEffect(() => {
+    if (!active) return;
+    const onPaste = (event: ClipboardEvent) => {
+      if (isLocked() || pasteRef.current.focused !== "desktop") return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.closest("input, textarea, select, [role=dialog]"))
+      ) {
+        return;
+      }
+      const files = Array.from(event.clipboardData?.files ?? []);
+      if (files.length > 0) {
+        event.preventDefault();
+        pasteRef.current.putOnDesktop(files);
+        return;
+      }
+      if (readClipboardFile()) {
+        event.preventDefault();
+        void pasteRef.current.pasteOnDesktop();
+      }
+    };
+    document.addEventListener("paste", onPaste);
+    return () => {
+      document.removeEventListener("paste", onPaste);
+    };
+  }, [active]);
 
   async function moveDeskFile(file: DriveFile, folderId: string | null, where: string) {
     const result = await updateFile(file.id, { folderId });
@@ -1776,34 +1876,13 @@ export function DesktopShell({
     input.type = "file";
     input.multiple = true;
     input.addEventListener("change", () => {
-      const files = [...(input.files ?? [])];
-      void Promise.all(
-        files.map((file) =>
-          saveToDrive({ name: file.name, content: file, type: file.type, folder: "Desktop" }),
-        ),
-      ).then((results) => {
-        const failed = results.find((result) => !result.ok);
-        if (failed) {
-          toast.add({
-            type: "error",
-            title: "Some files didn’t upload",
-            description: failed.error.message,
-          });
-        } else {
-          toast.add({
-            type: "success",
-            title: `${String(files.length)} file${files.length === 1 ? "" : "s"} on the desktop`,
-            description: "They’re in Drive’s “Desktop” folder, scanned and encrypted.",
-          });
-        }
-        loadDesk();
-      });
+      putOnDesktop([...(input.files ?? [])]);
     });
     input.click();
   };
 
   const desktopMenu = (): MenuEntry[] => {
-    const cut = readCutFile();
+    const held = readClipboardFile();
     const placed = Object.keys(readIconPositions()).length > 0;
     return [
       {
@@ -1835,8 +1914,8 @@ export function DesktopShell({
       {
         label: "Paste",
         shortcut: keyOf("V"),
-        disabled: !cut,
-        sub: cut ? `“${cut.name}”, cut` : undefined,
+        disabled: !held,
+        sub: held ? `“${held.name}”, ${held.mode === "cut" ? "cut" : "copied"}` : undefined,
         onSelect: () => void pasteOnDesktop(),
       },
       { label: "Upload files to the desktop…", onSelect: uploadToDesktop },
@@ -1979,12 +2058,14 @@ export function DesktopShell({
         label: "Cut",
         shortcut: keyOf("X"),
         onSelect: () => {
-          cutFile({ id: file.id, name: file.name, folderId: file.folderId });
-          toast.add({
-            type: "info",
-            title: `Cut “${file.name}”`,
-            description: "Paste it into another folder, or on the desktop.",
-          });
+          holdDeskFile(file, "cut");
+        },
+      },
+      {
+        label: "Copy",
+        shortcut: keyOf("C"),
+        onSelect: () => {
+          holdDeskFile(file, "copy");
         },
       },
       "-",
@@ -2159,13 +2240,20 @@ export function DesktopShell({
           onContextMenu={(event: ReactMouseEvent<HTMLElement>) => {
             showMenu(event, desktopMenu);
           }}
-          // An image dragged out of a cloud browser's page onto the desktop goes to Drive.
+          // An image dragged out of a cloud browser's page onto the desktop goes to
+          // Drive, as do files dragged in from this computer.
           onDragOver={(event) => {
-            if (!event.dataTransfer.types.includes(DRAG_PAGE_IMAGE_TYPE)) return;
+            const { types } = event.dataTransfer;
+            if (!types.includes(DRAG_PAGE_IMAGE_TYPE) && !types.includes("Files")) return;
             event.preventDefault();
             event.dataTransfer.dropEffect = "copy";
           }}
           onDrop={(event) => {
+            if (event.dataTransfer.files.length > 0) {
+              event.preventDefault();
+              putOnDesktop(Array.from(event.dataTransfer.files));
+              return;
+            }
             const carried = event.dataTransfer.getData(DRAG_PAGE_IMAGE_TYPE);
             if (!carried) return;
             event.preventDefault();
@@ -2205,6 +2293,7 @@ export function DesktopShell({
             onFileMenu={(event, file) => {
               showMenu(event, () => deskFileMenu(file));
             }}
+            onHoldFile={holdDeskFile}
             onIconMenu={(event, open) => {
               showMenu(event, () => [{ label: "Open", onSelect: open }]);
             }}

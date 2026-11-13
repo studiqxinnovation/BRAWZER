@@ -1,4 +1,5 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { crc32 } from "node:zlib";
 import {
   accountExportSchema,
   downloadTicketSchema,
@@ -538,6 +539,130 @@ describe("Trash and saving new versions", () => {
     const { client: stranger } = await account("drive-version-stranger");
     expect(
       (await stranger.raw("PUT", `/drive/files/${file.id}/content`, body, headers)).statusCode,
+    ).toBe(404);
+  });
+});
+
+/** A stored (uncompressed) zip of these entries, as Office files are zips. */
+function storedZip(entries: readonly { name: string; content: Buffer }[]): Buffer {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name);
+    const crc = crc32(entry.content);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(entry.content.length, 18);
+    local.writeUInt32LE(entry.content.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(entry.content.length, 20);
+    central.writeUInt32LE(entry.content.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    locals.push(local, name, entry.content);
+    centrals.push(central, name);
+    offset += local.length + name.length + entry.content.length;
+  }
+  const centralSize = centrals.reduce((total, part) => total + part.length, 0);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralSize, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, ...centrals, end]);
+}
+
+const DOCX = storedZip([
+  {
+    name: "[Content_Types].xml",
+    content: Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+    ),
+  },
+  {
+    name: "_rels/.rels",
+    content: Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+    ),
+  },
+  {
+    name: "word/document.xml",
+    content: Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello from Word</w:t></w:r></w:p></w:body></w:document>',
+    ),
+  },
+]);
+
+describe("Office files and copies", () => {
+  it("recognises a Word file, lists it as a document and lets its app read it", async () => {
+    const { client } = await account("drive-office");
+    const file = await upload(client, "Essay.docx", DOCX);
+    expect(file.contentType).toBe(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+    expect(file.previewable).toBe(false);
+    const documents = await client.get("/drive/files?kind=documents");
+    expect(driveFileListSchema.parse(documents.json()).files.map((f) => f.name)).toEqual([
+      "Essay.docx",
+    ]);
+    expect(
+      driveFileListSchema.parse((await client.get("/drive/files?kind=text")).json()).files,
+    ).toEqual([]);
+    const read = await client.get(`/drive/files/${file.id}/preview`);
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.headers["content-security-policy"]).toContain("sandbox");
+    expect(read.rawPayload.equals(DOCX)).toBe(true);
+
+    const archive = await upload(
+      client,
+      "stuff.zip",
+      storedZip([{ name: "a.txt", content: Buffer.from("a") }]),
+    );
+    expect(archive.contentType).toBe("application/zip");
+    expect((await client.get(`/drive/files/${archive.id}/preview`)).statusCode).toBe(415);
+  });
+
+  it("copies a file beside the original, into a folder, never for a stranger", async () => {
+    const { client, email } = await account("drive-copy");
+    const file = await upload(client, "Essay.docx", DOCX);
+    const beside = await client.post(`/drive/files/${file.id}/copy`, {});
+    expect(beside.statusCode, beside.body).toBe(201);
+    const copy = driveFileSchema.parse(beside.json());
+    expect(copy).toMatchObject({
+      name: "Essay (2).docx",
+      folderId: null,
+      size: DOCX.length,
+      contentType: file.contentType,
+      status: "clean",
+    });
+    expect(copy.id).not.toBe(file.id);
+    expect((await client.get(`/drive/files/${copy.id}/preview`)).rawPayload.equals(DOCX)).toBe(
+      true,
+    );
+    expect(await objectKeysOf(email)).toHaveLength(2);
+
+    const folder = await createFolder(client, "Drafts");
+    const into = await client.post(`/drive/files/${file.id}/copy`, { folderId: folder.id });
+    expect(into.statusCode, into.body).toBe(201);
+    expect(driveFileSchema.parse(into.json())).toMatchObject({
+      name: "Essay.docx",
+      folderId: folder.id,
+    });
+    expect((await filesIn(client, folder.id)).map((f) => f.name)).toEqual(["Essay.docx"]);
+
+    const { client: stranger } = await account("drive-copy-stranger");
+    expect((await stranger.post(`/drive/files/${file.id}/copy`, {})).statusCode).toBe(404);
+    expect(
+      (await client.post(`/drive/files/${file.id}/copy`, { folderId: randomUUID() })).statusCode,
     ).toBe(404);
   });
 });

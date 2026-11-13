@@ -1,10 +1,15 @@
 "use client";
 
+import { OFFICE_TYPES } from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
+import { useToast } from "@brawzer/ui/components/toast";
 import { ChevronDown, ChevronUp, ImagePlus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { photoWallpaperUrl } from "@/lib/desktop";
+import { previewUrl } from "@/lib/api/drive";
 import { useAppWindow } from "./app-window";
+import { saveToDrive } from "./drive-save";
+import { deckToPptx, type Picture, pptxToSlides } from "./office/pptx";
 import { OpenFromDrive } from "./open-from-drive";
 import { type Slide, type SlideDeck, templateById } from "./templates";
 import { useDriveDocument } from "./use-drive-document";
@@ -222,8 +227,32 @@ function Presentation({
 }
 
 /** Slides: presentations with themes and pictures from Drive, kept in Drive as JSON. */
+/** A PowerPoint file, by its name: opened from .pptx and saved back as one. */
+const isPowerPoint = (name: string) => /\.pptx$/i.test(name);
+
+/** A picture from Drive with its size, for a PowerPoint file; null when it's gone. */
+async function loadPicture(fileId: string): Promise<Picture | null> {
+  try {
+    const response = await fetch(previewUrl(fileId), { credentials: "same-origin" });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    const bitmap = await createImageBitmap(blob);
+    const picture = {
+      bytes: new Uint8Array(await blob.arrayBuffer()),
+      type: blob.type,
+      width: bitmap.width,
+      height: bitmap.height,
+    };
+    bitmap.close();
+    return picture;
+  } catch {
+    return null;
+  }
+}
+
 export default function SlidesApp() {
   const window = useAppWindow();
+  const toast = useToast();
   const template = templateById(window.params.template);
   const [deck, setDeck] = useState<SlideDeck>(() =>
     template?.deck && !window.params.file
@@ -242,6 +271,43 @@ export default function SlidesApp() {
     onLoad: (text) => {
       setDeck(parseDeck(text));
       setCurrent(0);
+    },
+    binary: isPowerPoint,
+    onLoadBytes: (bytes, name) => {
+      const imported = pptxToSlides(bytes);
+      if (!imported) {
+        toast.add({
+          type: "error",
+          title: `“${name}” isn’t a PowerPoint file`,
+          description: "Only .pptx files made by PowerPoint, Keynote or LibreOffice open here.",
+        });
+        return;
+      }
+      // Its pictures go to Drive's Photos, where picture slides find them.
+      void Promise.all(
+        imported.map(async (entry): Promise<Slide> => {
+          let imageId: string | undefined;
+          if (entry.picture) {
+            const saved = await saveToDrive({
+              name: `${name.replace(/\.pptx$/i, "")} ${entry.picture.name}`,
+              content: entry.picture.bytes,
+              type: entry.picture.type,
+              folder: "Photos",
+            });
+            if (saved.ok && saved.data.status === "clean") imageId = saved.data.id;
+          }
+          return {
+            id: newId(),
+            layout: entry.layout === "picture" && !imageId ? "bullets" : entry.layout,
+            title: entry.title,
+            body: entry.body,
+            ...(imageId ? { imageId } : {}),
+          };
+        }),
+      ).then((slides) => {
+        setDeck((d) => ({ ...d, slides: slides.length ? slides : [blankSlide("title")] }));
+        setCurrent(0);
+      });
     },
   });
 
@@ -308,6 +374,12 @@ export default function SlidesApp() {
   }
 
   function save() {
+    if (isPowerPoint(document.doc.name)) {
+      void deckToPptx(deck, loadPicture).then((bytes) =>
+        document.save(bytes, undefined, OFFICE_TYPES.powerpoint),
+      );
+      return;
+    }
     void document.save(JSON.stringify(deck));
   }
 
@@ -515,7 +587,10 @@ export default function SlidesApp() {
         <span>
           Slide {index + 1} of {deck.slides.length}
         </span>
-        <span>{document.doc.fileId && !document.dirty ? "Saved in Drive" : "Not saved yet"}</span>
+        <span>
+          {isPowerPoint(document.doc.name) ? "PowerPoint file · " : ""}
+          {document.doc.fileId && !document.dirty ? "Saved in Drive" : "Not saved yet"}
+        </span>
       </div>
 
       <OpenFromDrive
@@ -523,8 +598,8 @@ export default function SlidesApp() {
         onOpenChange={(open) => {
           if (!open) setPicking(null);
         }}
-        kind="text"
-        accept={[".slides"]}
+        kind={["text", "presentations"]}
+        accept={[".slides", ".pptx"]}
         title="Open a presentation"
         onChoose={(file) => {
           setPicking(null);

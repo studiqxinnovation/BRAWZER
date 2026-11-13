@@ -1,11 +1,13 @@
 "use client";
 
+import { OFFICE_TYPES } from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
 import { useToast } from "@brawzer/ui/components/toast";
 import { AlignCenter, AlignLeft, List, ListOrdered, Undo2 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useAppWindow } from "./app-window";
 import { OpenFromDrive } from "./open-from-drive";
+import { docxToHtml, htmlToDocx } from "./office/docx";
 import { htmlDocument, sanitizeHtml } from "./sanitize-html";
 import { templateById } from "./templates";
 import { useDriveDocument } from "./use-drive-document";
@@ -40,7 +42,10 @@ function Tool({ label, icon, onClick }: { label: string; icon: ReactNode; onClic
   );
 }
 
-/** Writer: documents with headings, lists and emphasis, kept in Drive as HTML. */
+/** A Word document, by its name: opened from .docx and saved back as one. */
+const isWord = (name: string) => /\.docx$/i.test(name);
+
+/** Writer: documents with headings, lists and emphasis, kept in Drive as HTML or Word files. */
 export default function WriterApp() {
   const window = useAppWindow();
   const page = useRef<HTMLDivElement>(null);
@@ -57,6 +62,27 @@ export default function WriterApp() {
     onLoad: (text) => {
       if (page.current) page.current.innerHTML = sanitizeHtml(text);
       count();
+    },
+    binary: isWord,
+    onLoadBytes: (bytes, name) => {
+      const imported = docxToHtml(bytes);
+      if (!imported) {
+        toast.add({
+          type: "error",
+          title: `“${name}” isn’t a Word document`,
+          description: "Only .docx files made by Word, Pages or LibreOffice open here.",
+        });
+        return;
+      }
+      if (page.current) page.current.innerHTML = sanitizeHtml(imported.html);
+      count();
+      if (imported.pictures > 0) {
+        toast.add({
+          type: "info",
+          title: `${String(imported.pictures)} picture${imported.pictures === 1 ? "" : "s"} left out`,
+          description: "Writer keeps the text, headings, lists and links of a Word file.",
+        });
+      }
     },
   });
 
@@ -106,6 +132,10 @@ export default function WriterApp() {
 
   function save() {
     const body = sanitizeHtml(page.current?.innerHTML ?? "");
+    if (isWord(document.doc.name)) {
+      void document.save(htmlToDocx(body), undefined, OFFICE_TYPES.word);
+      return;
+    }
     const title = document.doc.name.replace(/\.html?$/i, "");
     void document.save(htmlDocument(title, body));
   }
@@ -251,6 +281,7 @@ export default function WriterApp() {
           {words} words · {characters} characters
         </span>
         <span>
+          {isWord(document.doc.name) ? "Word document · " : ""}
           {document.doc.fileId
             ? document.dirty
               ? "Not saved yet"
@@ -261,8 +292,8 @@ export default function WriterApp() {
       <OpenFromDrive
         open={picking}
         onOpenChange={setPicking}
-        kind="text"
-        accept={[".html", ".htm", ".txt", ".md"]}
+        kind={["text", "documents"]}
+        accept={[".html", ".htm", ".txt", ".md", ".docx"]}
         title="Open a document"
         onChoose={(file) => void document.open(file.id, file.name)}
       />

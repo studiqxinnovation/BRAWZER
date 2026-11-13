@@ -6,11 +6,18 @@ import { Button } from "@brawzer/ui/components/button";
 import { useToast } from "@brawzer/ui/components/toast";
 import { ArrowLeft, RotateCcw, Search, Trash2 } from "lucide-react";
 import { readDesktopPrefs, updateDesktopPrefs } from "@/lib/desktop-prefs";
+import {
+  clearClipboardFile,
+  holdFile,
+  readClipboardFile,
+  subscribeToClipboardFile,
+} from "@/lib/file-clipboard";
 import { notify } from "@/lib/notifications";
 import { DRAG_FILE_TYPE, DRAG_PAGE_IMAGE_TYPE, postToBrowserWindow } from "../desktop-context";
 import { rememberRecentFile } from "@/lib/recent-files";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
+  copyDriveFile,
   createFolder,
   deleteFile,
   deleteForever,
@@ -75,10 +82,16 @@ Try these:
 Everything runs in the cloud. Nothing stays on this computer.
 `;
 
-/** Drive's starting folders and the welcome note, made once for an account with an empty Drive. */
-async function setUpDrive(): Promise<void> {
-  let desktop: string | null = null;
+/**
+ * Drive's starting folders and the welcome note, made once for an account
+ * that hasn't made anything of its own yet. A Desktop folder the desktop
+ * made for a pasted or dropped file is kept, and the rest made around it.
+ */
+async function setUpDrive(existing: readonly DriveFolder[]): Promise<void> {
+  let desktop: string | null =
+    existing.find((folder) => folder.parentId === null && folder.name === "Desktop")?.id ?? null;
   for (const name of STARTING_FOLDERS) {
+    if (existing.some((folder) => folder.parentId === null && folder.name === name)) continue;
     const made = await createFolder({ name, parentId: null, space: "personal" });
     if (made.ok && name === "Desktop") desktop = made.data.id;
   }
@@ -139,14 +152,12 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
       if (overview.ok) {
         setFolders(overview.data.folders);
         setUsage(overview.data.usage);
-        if (
-          !settingUp.current &&
-          !readDesktopPrefs().driveSetUp &&
-          overview.data.folders.length === 0 &&
-          overview.data.usage.fileCount === 0
-        ) {
+        const own = overview.data.folders.some(
+          (folder) => folder.parentId !== null || !STARTING_FOLDERS.includes(folder.name),
+        );
+        if (!settingUp.current && !readDesktopPrefs().driveSetUp && !own) {
           settingUp.current = true;
-          void setUpDrive().then(load);
+          void setUpDrive(overview.data.folders).then(load);
         }
       }
       setFiles(listed.ok ? listed.data.files : []);
@@ -204,6 +215,39 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
     window.openApp(app, { file: file.id, name: file.name });
   }
 
+  const held = useSyncExternalStore(subscribeToClipboardFile, readClipboardFile, () => null);
+
+  /** Cut or copy the selected file, to paste in another folder or on the desktop. */
+  function hold(file: DriveFile, mode: "cut" | "copy") {
+    holdFile({ id: file.id, name: file.name, folderId: file.folderId, mode });
+    toast.add({
+      type: "info",
+      title: `${mode === "cut" ? "Cut" : "Copied"} “${file.name}”`,
+      description: "Paste it into another folder, or on the desktop.",
+    });
+  }
+
+  /** Pastes the held file here: a move when it was cut, a copy when copied. */
+  async function paste() {
+    const file = readClipboardFile();
+    if (!file || place.kind !== "folder") return;
+    const result =
+      file.mode === "cut"
+        ? await updateFile(file.id, { folderId: place.id })
+        : await copyDriveFile(file.id, { folderId: place.id });
+    if (!result.ok) {
+      toast.add({ type: "error", title: "Couldn’t paste it", description: result.error.message });
+      return;
+    }
+    if (file.mode === "cut") clearClipboardFile();
+    toast.add({
+      type: "success",
+      title: `${file.mode === "cut" ? "Moved" : "Copied"} “${file.name}” to ${here}`,
+    });
+    setSelected(result.data.id);
+    load();
+  }
+
   async function moveToTrash(file: DriveFile) {
     const result = await deleteFile(file.id);
     if (!result.ok) {
@@ -244,7 +288,7 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
     load();
   }
 
-  async function uploadFiles(list: FileList | null) {
+  async function uploadFiles(list: FileList | readonly File[] | null) {
     if (!list || place.kind !== "folder") return;
     for (const file of Array.from(list)) {
       const result = await uploadDriveFile(file, place.id, () => undefined).result;
@@ -283,7 +327,36 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
   const trash = place.kind === "trash";
 
   return (
-    <div className="ap-body">
+    // Keys for the selected file; a paste anywhere in the window that isn't a field.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      className="ap-body"
+      onKeyDown={(event) => {
+        if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+        const key = event.key.toLowerCase();
+        const target = event.target;
+        if (target instanceof HTMLElement && target.closest("input, textarea, select")) return;
+        if ((key === "x" || key === "c") && current && !trash) {
+          event.preventDefault();
+          hold(current, key === "x" ? "cut" : "copy");
+        }
+      }}
+      onPaste={(event) => {
+        const target = event.target;
+        if (target instanceof HTMLElement && target.closest("input, textarea, select")) return;
+        if (trash || place.kind !== "folder") return;
+        const files = Array.from(event.clipboardData.files);
+        if (files.length > 0) {
+          event.preventDefault();
+          void uploadFiles(files);
+          return;
+        }
+        if (readClipboardFile()) {
+          event.preventDefault();
+          void paste();
+        }
+      }}
+    >
       <div className="ap-split">
         <nav className="ap-side" aria-label="Places">
           <span className="ap-side-h" aria-hidden="true">
@@ -410,6 +483,16 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
             </span>
             {!trash && (
               <>
+                {held && (
+                  <Button
+                    size="sm"
+                    disabled={place.kind !== "folder"}
+                    title={`“${held.name}”, ${held.mode === "cut" ? "cut" : "copied"}`}
+                    onClick={() => void paste()}
+                  >
+                    Paste
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   disabled={place.kind !== "folder"}
@@ -521,13 +604,21 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
               // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
               <ul
                 className={view === "grid" ? "ap-file-grid" : "ap-file-list"}
-                // An image dragged out of a cloud browser's page lands in Drive (Downloads), saved by the container.
+                // An image dragged out of a cloud browser's page lands in Drive (Downloads),
+                // saved by the container; files from this computer are uploaded here.
                 onDragOver={(event) => {
-                  if (!event.dataTransfer.types.includes(DRAG_PAGE_IMAGE_TYPE)) return;
+                  const { types } = event.dataTransfer;
+                  const files = types.includes("Files") && !trash && place.kind === "folder";
+                  if (!types.includes(DRAG_PAGE_IMAGE_TYPE) && !files) return;
                   event.preventDefault();
                   event.dataTransfer.dropEffect = "copy";
                 }}
                 onDrop={(event) => {
+                  if (event.dataTransfer.files.length > 0) {
+                    event.preventDefault();
+                    void uploadFiles(Array.from(event.dataTransfer.files));
+                    return;
+                  }
                   const carried = event.dataTransfer.getData(DRAG_PAGE_IMAGE_TYPE);
                   if (!carried) return;
                   event.preventDefault();
@@ -693,6 +784,24 @@ export function FilesBrowser({ start }: { start: "drive" | "trash" }) {
                     }}
                   >
                     Rename
+                  </button>
+                  <button
+                    type="button"
+                    className="ap-text-button"
+                    onClick={() => {
+                      hold(current, "cut");
+                    }}
+                  >
+                    Cut
+                  </button>
+                  <button
+                    type="button"
+                    className="ap-text-button"
+                    onClick={() => {
+                      hold(current, "copy");
+                    }}
+                  >
+                    Copy
                   </button>
                   <button
                     type="button"

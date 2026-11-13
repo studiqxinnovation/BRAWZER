@@ -1444,11 +1444,12 @@
   }
   .dt-nc-x {
     position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
+    top: 0.375rem;
+    right: 0.375rem;
     display: grid;
-    width: 1.25rem;
-    height: 1.25rem;
+    /* 24px: the smallest target a finger can be expected to hit (WCAG 2.5.8). */
+    width: 1.5rem;
+    height: 1.5rem;
     place-items: center;
     border: 0;
     border-radius: 999px;

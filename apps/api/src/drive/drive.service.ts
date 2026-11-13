@@ -10,7 +10,9 @@ import {
   type DriveOverview,
   type DriveSpace,
   type DriveUsage,
+  isAppOpenable,
   isPreviewable,
+  OFFICE_TYPES,
   type TeamRole,
 } from "@brawzer/contracts";
 import {
@@ -153,6 +155,9 @@ const KIND_TYPES: Record<DriveFileKind, string> = {
   pdfs: "application/pdf",
   audio: "audio/%",
   text: "text/plain",
+  documents: OFFICE_TYPES.word,
+  sheets: OFFICE_TYPES.excel,
+  presentations: OFFICE_TYPES.powerpoint,
 };
 const kindFilter = (kind: DriveFileKind) => like(schema.driveFiles.contentType, KIND_TYPES[kind]);
 
@@ -1075,10 +1080,10 @@ export class DriveService implements OnModuleInit {
     return { file: toFile(row, scope), body: object.pipe(body) };
   }
 
-  /** For showing a clean, previewable file in the browser. */
+  /** For showing a clean, previewable file in the browser, or reading an Office file into its app. */
   async openForPreview(userId: string, id: string): Promise<OpenedFile> {
     const { row, scope } = await this.findFile(userId, id);
-    if (row.status === "clean" && !isPreviewable(row.contentType)) {
+    if (row.status === "clean" && !isAppOpenable(row.contentType)) {
       throw new ApiException(
         "unsupported_media_type",
         415,
@@ -1086,6 +1091,30 @@ export class DriveService implements OnModuleInit {
       );
     }
     return this.openRow(row, scope);
+  }
+
+  /**
+   * A copy of a clean file, as a new upload: scanned and encrypted with its
+   * own key, named like the original (numbered if that name is taken).
+   * Into the folder given, the top level with null, or beside the original.
+   */
+  async copyFile(
+    auth: { user: { id: string }; session: { id: string } },
+    id: string,
+    folderId: string | null | undefined,
+    meta: RequestMeta,
+  ): Promise<DriveFile> {
+    const { row, scope } = await this.findFile(auth.user.id, id);
+    if (row.trashedAt) throw fileNotFound();
+    const opened = await this.openRow(row, scope);
+    const target = folderId === undefined ? row.folderId : folderId;
+    return this.upload(
+      auth,
+      target,
+      { filename: row.name, stream: opened.body },
+      meta,
+      scope.kind === "team" ? "team" : "personal",
+    );
   }
 
   /** A single-use ticket to save the file to a computer. Logged in the security history. */

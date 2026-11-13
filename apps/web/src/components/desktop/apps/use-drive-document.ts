@@ -2,7 +2,7 @@
 
 import { useToast } from "@brawzer/ui/components/toast";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { readDriveText, updateFile } from "@/lib/api/drive";
+import { readDriveBytes, readDriveText, updateFile } from "@/lib/api/drive";
 import { useAppWindow } from "./app-window";
 import { saveToDrive } from "./drive-save";
 
@@ -16,19 +16,24 @@ export interface DriveDocument {
  * A document an editor keeps in Drive: opened from the window's `file`
  * param (or a Drive file chosen later), saved over the same file, or as a
  * new one. The window's title follows its name, with • while it has
- * unsaved changes.
+ * unsaved changes. Files `binary` claims (Office files) arrive as bytes.
  */
 export function useDriveDocument({
   defaultName,
   folder,
   type,
   onLoad,
+  binary,
+  onLoadBytes,
 }: {
   defaultName: string;
   /** Where a new document goes, such as "Documents". */
   folder: string;
   type: string;
   onLoad: (text: string, name: string) => void;
+  /** Which names are read as bytes, for `onLoadBytes`. */
+  binary?: (name: string) => boolean;
+  onLoadBytes?: (bytes: Uint8Array, name: string) => void;
 }) {
   const toast = useToast();
   const window = useAppWindow();
@@ -39,15 +44,16 @@ export function useDriveDocument({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(Boolean(window.params.file));
-  const loadRef = useRef(onLoad);
+  const loadRef = useRef({ onLoad, binary, onLoadBytes });
   useEffect(() => {
-    loadRef.current = onLoad;
+    loadRef.current = { onLoad, binary, onLoadBytes };
   });
 
   const open = useCallback(
     async (fileId: string, name: string) => {
       setLoading(true);
-      const result = await readDriveText(fileId);
+      const asBytes = Boolean(loadRef.current.binary?.(name) && loadRef.current.onLoadBytes);
+      const result = asBytes ? await readDriveBytes(fileId) : await readDriveText(fileId);
       setLoading(false);
       if (!result.ok) {
         toast.add({
@@ -57,7 +63,8 @@ export function useDriveDocument({
         });
         return;
       }
-      loadRef.current(result.data, name);
+      if (typeof result.data === "string") loadRef.current.onLoad(result.data, name);
+      else loadRef.current.onLoadBytes?.(result.data, name);
       setDoc({ fileId, name });
       setDirty(false);
     },
@@ -79,13 +86,13 @@ export function useDriveDocument({
   }, [doc.name, dirty, setTitle]);
 
   const save = useCallback(
-    async (content: BlobPart, as?: string) => {
+    async (content: BlobPart, as?: string, contentType?: string) => {
       setSaving(true);
       const name = as ?? doc.name;
       const result = await saveToDrive({
         name,
         content,
-        type,
+        type: contentType ?? type,
         folder: doc.fileId && !as ? undefined : folder,
         replaces: as ? null : doc.fileId,
       });

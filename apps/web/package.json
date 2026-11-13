@@ -16,6 +16,7 @@
   "dependencies": {
     "@brawzer/contracts": "workspace:*",
     "@brawzer/ui": "workspace:*",
+    "fflate": "catalog:",
     "@simplewebauthn/browser": "catalog:",
     "lucide-react": "catalog:",
     "motion": "catalog:",

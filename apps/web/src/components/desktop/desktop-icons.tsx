@@ -1,6 +1,6 @@
 "use client";
 
-import type { DriveFile } from "@brawzer/contracts";
+import { type DriveFile, OFFICE_TYPES } from "@brawzer/contracts";
 import {
   type KeyboardEvent,
   type MouseEvent,
@@ -28,9 +28,15 @@ export function fileTile(
   if (contentType === "application/pdf") return { glyph: "file", colour: "red" };
   if (contentType.startsWith("image/")) return { glyph: "image", colour: "teal" };
   if (contentType.startsWith("audio/")) return { glyph: "music", colour: "pink" };
-  if (extension === "csv") return { glyph: "table", colour: "green" };
-  if (extension === "slides") return { glyph: "play", colour: "orange" };
-  if (extension === "html" || extension === "htm") return { glyph: "doc", colour: "blue" };
+  if (extension === "csv" || contentType === OFFICE_TYPES.excel) {
+    return { glyph: "table", colour: "green" };
+  }
+  if (extension === "slides" || contentType === OFFICE_TYPES.powerpoint) {
+    return { glyph: "play", colour: "orange" };
+  }
+  if (extension === "html" || extension === "htm" || contentType === OFFICE_TYPES.word) {
+    return { glyph: "doc", colour: "blue" };
+  }
   if (contentType === "text/plain") return { glyph: "doc", colour: "gray" };
   return { glyph: "archive", colour: "brown" };
 }
@@ -59,6 +65,7 @@ export function DesktopIcons({
   onOpenFile,
   onFileMenu,
   onIconMenu,
+  onHoldFile,
 }: {
   style: "mac" | "windows";
   files: readonly DriveFile[];
@@ -67,6 +74,8 @@ export function DesktopIcons({
   onOpenFile: (file: DriveFile) => void;
   onFileMenu: (event: MouseEvent<HTMLElement>, file: DriveFile) => void;
   onIconMenu: (event: MouseEvent<HTMLElement>, open: () => void) => void;
+  /** Cmd/Ctrl+X or C on a file: cut or copy it, to paste elsewhere. */
+  onHoldFile: (file: DriveFile, mode: "cut" | "copy") => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const positions = useSyncExternalStore(
@@ -192,6 +201,11 @@ export function DesktopIcons({
               onDoubleClick={icon.open}
               onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
                 if (event.key === "Enter") icon.open();
+                const key = event.key.toLowerCase();
+                if ((event.metaKey || event.ctrlKey) && icon.file && (key === "x" || key === "c")) {
+                  event.preventDefault();
+                  onHoldFile(icon.file, key === "x" ? "cut" : "copy");
+                }
               }}
               onContextMenu={(event) => {
                 setSelected(icon.key);
