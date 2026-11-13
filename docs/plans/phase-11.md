@@ -19,13 +19,13 @@ buttons, nothing on the device.
 
 ## Milestones
 
-| #    | Milestone                                                                                                                              | Status                                                                                                                                |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| 11.1 | The console: shell, staff roles and permissions, the audit log, company overview, customers and the customer 360, organisations, team  | Done                                                                                                                                  |
-| 11.2 | Customer care: support tickets (a Help app for customers, the inbox for staff), account recovery, announcements, incidents and status  | Done                                                                                                                                  |
-| 11.3 | Billing: subscriptions, invoices and refunds through Stripe, coupons, finance reports, approvals                                       | Done                                                                                                                                  |
-| 11.4 | Technical: fleet and runtime hosts, live sessions, browser images, the extension catalogue, network, queues and health                 | Done                                                                                                                                  |
-| 11.5 | Security and compliance: threats and sign-ins, blocked addresses, abuse reports and suspension, privacy and legal requests, compliance | In progress: threats, blocked addresses, abuse and legal holds done; privacy requests, compliance, data map, goals, weekly email next |
+| #    | Milestone                                                                                                                              | Status |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 11.1 | The console: shell, staff roles and permissions, the audit log, company overview, customers and the customer 360, organisations, team  | Done   |
+| 11.2 | Customer care: support tickets (a Help app for customers, the inbox for staff), account recovery, announcements, incidents and status  | Done   |
+| 11.3 | Billing: subscriptions, invoices and refunds through Stripe, coupons, finance reports, approvals                                       | Done   |
+| 11.4 | Technical: fleet and runtime hosts, live sessions, browser images, the extension catalogue, network, queues and health                 | Done   |
+| 11.5 | Security and compliance: threats and sign-ins, blocked addresses, abuse reports and suspension, privacy and legal requests, compliance | Done   |
 
 ## The prototype's pages, and what each one is here
 
@@ -126,3 +126,9 @@ buttons, nothing on the device.
 - **Abuse reports** (`abuse_reports`): logged against an account with who told us; warn emails the acceptable-use warning with the note; suspend uses the existing suspension and places a legal hold so the evidence stays; not abuse closes it. Each decision is audited against the account.
 - **Legal requests & holds** (`legal_requests`, `legal_holds`): requests from police and courts with a due date, answered or refused; a hold stops every deletion of the account (`AccountService.deleteFor` refuses with a 409, which covers the customer’s own request and staff deletion) until released.
 - **Tests**: `apps/api/test/security-console.integration.test.ts` (a block refuses a network at sign-in and sign-up and lifts; warn by email; suspend with a hold that blocks deletion; release then delete) and `apps/web/e2e/security.spec.ts`.
+- **Privacy requests** (`privacy_requests`): copy, correction or deletion, with the 30-day deadline from receipt; completing a deletion deletes the account through the console’s deletion (a legal hold refuses it and the request stays open with its deadline); the record stays after the account is gone.
+- **Compliance** (`compliance_items`): seeded with Brawzer-specific controls the first time, then edited; ticking records who and when; the audit log keeps every change. Policies and training records are not tracked here.
+- **Data map & suppliers**: suppliers from configuration (Stripe, the email transport, the object store, Anthropic, the cloud browser hosts), retention from the code’s constants (`RETENTION`, `HISTORY_LIMITS`, `DRIVE_TRASH_DAYS`, the security history setting), locations from configuration.
+- **Goals** (`goals`): a number, a target, a unit, an owner and a quarter end; all staff update, founders add and remove.
+- **Weekly email** (`console_settings`): on or off, Monday hour (UTC) and recipients (full or short); sent by the API every Monday from that hour, once a week, from the company overview, support stats, recovery and incidents; “Send me a test now”.
+- **Tests**: `apps/api/test/compliance-console.integration.test.ts` and `apps/web/e2e/compliance.spec.ts`.

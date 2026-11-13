@@ -51,6 +51,7 @@ import {
   recoveryWaitingMessage,
   ticketReceivedMessage,
   ticketReplyMessage,
+  weeklySummaryMessage,
 } from "./templates.js";
 import { createTransport, type EmailTransport, maskEmail } from "./transports.js";
 
@@ -220,6 +221,19 @@ export class EmailService {
         ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${admin}` } : {}),
       });
     }
+  }
+
+  // ── The weekly founder email ─────────────────────────────────────────
+
+  sendWeeklySummary(
+    to: string,
+    weekOf: string,
+    facts: readonly (readonly [string, string])[],
+    needsYou: readonly string[],
+  ): void {
+    this.dispatch(to, weeklySummaryMessage(weekOf, facts, needsYou, this.link("/admin")), {
+      category: "weekly",
+    });
   }
 
   // ── Abuse ────────────────────────────────────────────────────────────

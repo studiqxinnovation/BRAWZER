@@ -18,3 +18,4 @@ export * from "./staff.ts";
 export * from "./support.ts";
 export * from "./care.ts";
 export * from "./security-console.ts";
+export * from "./compliance.ts";

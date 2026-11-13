@@ -30,6 +30,8 @@ import { RateLimitModule } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsModule } from "../security-events/security-events.js";
 import { SecurityConsoleController } from "./security-console.controller.js";
 import { SecurityConsoleService } from "./security-console.service.js";
+import { ComplianceConsoleController } from "./compliance-console.controller.js";
+import { ComplianceConsoleService } from "./compliance-console.service.js";
 import { EgressModule } from "../egress/egress.module.js";
 
 /** Administration (Phase 6) and the admin console (Phase 11). */
@@ -60,6 +62,7 @@ import { EgressModule } from "../egress/egress.module.js";
     BillingConsoleController,
     TechConsoleController,
     SecurityConsoleController,
+    ComplianceConsoleController,
   ],
   providers: [
     AdminService,
@@ -71,6 +74,7 @@ import { EgressModule } from "../egress/egress.module.js";
     BillingConsoleService,
     TechConsoleService,
     SecurityConsoleService,
+    ComplianceConsoleService,
   ],
   exports: [AdminService, StaffAuditService],
 })

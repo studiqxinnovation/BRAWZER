@@ -45,6 +45,10 @@ import {
   Ban,
   Scale,
   Shield,
+  ClipboardCheck,
+  FileText,
+  Mail,
+  Map as MapIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -85,6 +89,11 @@ const ICONS: Record<string, typeof Gauge> = {
   coupons: Tag,
   finance: ChartColumn,
   trials: Target,
+  privacy: FileText,
+  compliance: ClipboardCheck,
+  dataMap: MapIcon,
+  goals: Target,
+  weekly: Mail,
   security: Shield,
   abuse: Ban,
   legal: Scale,

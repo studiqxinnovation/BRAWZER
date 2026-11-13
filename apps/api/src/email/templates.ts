@@ -771,6 +771,30 @@ export function abuseWarningMessage(kind: string, note: string, url: string): Em
   });
 }
 
+export function weeklySummaryMessage(
+  weekOf: string,
+  facts: readonly (readonly [string, string])[],
+  needsYou: readonly string[],
+  url: string,
+): EmailContent {
+  return compose(`Brawzer this week: ${weekOf}`, {
+    preheader: facts
+      .slice(0, 3)
+      .map(([label, value]) => `${label} ${value}`)
+      .join(" · "),
+    heading: `The week of ${weekOf}`,
+    paragraphs: [
+      "Where Brawzer stands this Monday, from the console’s own figures. Nothing here is estimated.",
+      ...(needsYou.length
+        ? [`Needs you: ${needsYou.join("; ")}.`]
+        : ["Nothing is waiting for you in the console."]),
+    ],
+    facts,
+    action: { label: "Open the console", url },
+    footnote: "You get this because the weekly email is on in the console. Turn it off there.",
+  });
+}
+
 export function adminNoticeMessage(
   kind: "sign-up" | "subscription" | "report" | "quarantine" | "ticket" | "recovery",
   facts: readonly (readonly [string, string])[],

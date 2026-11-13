@@ -64,6 +64,14 @@ import {
   type LogAbuseRequest,
   type LogLegalRequest,
   threatsSchema,
+  complianceListSchema,
+  dataMapSchema,
+  goalListSchema,
+  type GoalRequest,
+  type LogPrivacyRequest,
+  privacyRequestListSchema,
+  weeklyPreviewSchema,
+  type WeeklySettings,
 } from "@brawzer/contracts";
 import { z } from "zod";
 import { apiRequest } from "./client";
@@ -410,3 +418,61 @@ export const releaseLegalHold = (customerId: string) =>
     method: "DELETE",
     schema: legalSchema,
   });
+
+/* ── Compliance (11.5) ── */
+
+export const fetchPrivacyRequests = () =>
+  apiRequest("/console/compliance/privacy", { schema: privacyRequestListSchema });
+export const logPrivacyRequest = (body: LogPrivacyRequest) =>
+  apiRequest("/console/compliance/privacy", {
+    method: "POST",
+    body,
+    schema: privacyRequestListSchema,
+  });
+export const completePrivacyRequest = (id: string, note: string) =>
+  apiRequest(`/console/compliance/privacy/${encodeURIComponent(id)}/complete`, {
+    method: "POST",
+    body: { note },
+    schema: privacyRequestListSchema,
+  });
+export const fetchCompliance = () =>
+  apiRequest("/console/compliance/checklist", { schema: complianceListSchema });
+export const addComplianceItem = (body: { framework: string; item: string }) =>
+  apiRequest("/console/compliance/checklist", {
+    method: "POST",
+    body,
+    schema: complianceListSchema,
+  });
+export const toggleComplianceItem = (id: string, done: boolean) =>
+  apiRequest(`/console/compliance/checklist/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: { done },
+    schema: complianceListSchema,
+  });
+export const removeComplianceItem = (id: string) =>
+  apiRequest(`/console/compliance/checklist/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    schema: complianceListSchema,
+  });
+export const fetchDataMap = () =>
+  apiRequest("/console/compliance/datamap", { schema: dataMapSchema });
+export const fetchGoals = () => apiRequest("/console/compliance/goals", { schema: goalListSchema });
+export const addGoal = (body: GoalRequest) =>
+  apiRequest("/console/compliance/goals", { method: "POST", body, schema: goalListSchema });
+export const updateGoal = (id: string, body: { current: number; target?: number }) =>
+  apiRequest(`/console/compliance/goals/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body,
+    schema: goalListSchema,
+  });
+export const removeGoal = (id: string) =>
+  apiRequest(`/console/compliance/goals/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    schema: goalListSchema,
+  });
+export const fetchWeekly = () =>
+  apiRequest("/console/compliance/weekly", { schema: weeklyPreviewSchema });
+export const setWeekly = (body: WeeklySettings) =>
+  apiRequest("/console/compliance/weekly", { method: "PUT", body, schema: weeklyPreviewSchema });
+export const sendWeeklyTest = () =>
+  apiRequest<undefined>("/console/compliance/weekly/test", { method: "POST" });

@@ -26,3 +26,4 @@ export * from "./recovery.ts";
 export * from "./billing-console.ts";
 export * from "./tech.ts";
 export * from "./security-console.ts";
+export * from "./compliance.ts";

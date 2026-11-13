@@ -87,6 +87,10 @@ export const staffPermissions = {
   finance: ["admin", "billing"],
   /** Read-only technical pages. */
   tech: ["admin", "technical"],
+  /** Update a goal's numbers. */
+  goals: ["admin", "care", "billing", "sales", "technical", "security"],
+  /** The weekly founder email's settings. */
+  weekly: ["admin"],
   incident: ["admin", "technical"],
   deleteData: ["admin", "security"],
   notes: ["admin", "care", "billing", "sales", "technical", "security"],
@@ -283,11 +287,46 @@ export const adminPages: readonly AdminPage[] = [
     path: "abuse",
   },
   {
+    key: "privacy",
+    title: "Privacy requests",
+    group: "Compliance",
+    roles: ["admin", "security"],
+    path: "privacy",
+  },
+  {
     key: "legal",
     title: "Legal requests & holds",
     group: "Compliance",
     roles: ["admin", "security"],
     path: "legal",
+  },
+  {
+    key: "compliance",
+    title: "Compliance",
+    group: "Compliance",
+    roles: ["admin", "security"],
+    path: "compliance",
+  },
+  {
+    key: "dataMap",
+    title: "Data map & suppliers",
+    group: "Compliance",
+    roles: ["admin", "security"],
+    path: "datamap",
+  },
+  {
+    key: "goals",
+    title: "Goals",
+    group: "Company",
+    roles: ["admin", "care", "billing", "sales", "technical", "security"],
+    path: "goals",
+  },
+  {
+    key: "weekly",
+    title: "Weekly email",
+    group: "Company",
+    roles: ["admin"],
+    path: "weekly",
   },
   {
     key: "audit",
