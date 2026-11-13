@@ -24,10 +24,22 @@ export const emailLinkTokenSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{43}$/, "This link isn’t valid. Request a new one.");
 
+/** The person's name as they want to be addressed: one line, trimmed. */
+export const nameSchema = z
+  .string({ error: "Enter your name." })
+  .trim()
+  .min(1, "Enter your name.")
+  .max(80, "That name is too long.")
+  .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value), "Enter your name.");
+
 export const registerRequestSchema = z.object({
+  name: nameSchema,
   email: emailSchema,
   password: newPasswordSchema,
 });
+
+export const updateNameRequestSchema = z.object({ name: nameSchema });
+export const accountNameSchema = z.object({ name: nameSchema });
 
 export const loginRequestSchema = z.object({
   email: emailSchema,
@@ -84,6 +96,8 @@ export const emailDeliveryProblemSchema = z.enum(["bounced", "complained"]);
 export const accountSchema = z.object({
   id: z.uuid(),
   email: z.email(),
+  /** Given at sign-up; null on accounts from before names were asked for. */
+  name: z.string().nullable(),
   emailVerified: z.boolean(),
   /** Administrators see the Admin page. */
   role: accountRoleSchema,
@@ -185,6 +199,8 @@ export type RegisterRequest = z.infer<typeof registerRequestSchema>;
 export type LoginRequest = z.input<typeof loginRequestSchema>;
 export type ResetPasswordRequest = z.infer<typeof resetPasswordRequestSchema>;
 export type VerifyEmailRequest = z.input<typeof verifyEmailRequestSchema>;
+export type UpdateNameRequest = z.infer<typeof updateNameRequestSchema>;
+export type AccountName = z.infer<typeof accountNameSchema>;
 export type Account = z.infer<typeof accountSchema>;
 export type SessionInfo = z.infer<typeof sessionInfoSchema>;
 export type CurrentSessionResponse = z.infer<typeof currentSessionResponseSchema>;

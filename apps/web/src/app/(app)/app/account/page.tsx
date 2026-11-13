@@ -14,6 +14,7 @@ import { ChangePasswordForm } from "@/components/account/change-password-form";
 import { DeleteAccount } from "@/components/account/delete-account";
 import { DownloadData } from "@/components/account/download-data";
 import { EmailPreferences } from "@/components/account/email-preferences";
+import { NameSection } from "@/components/account/name-section";
 import { PasskeysSection } from "@/components/account/passkeys-section";
 import { PlanSection } from "@/components/account/plan-section";
 import { DesktopStyleSegment, WallpaperButton } from "@/components/account/preference-controls";
@@ -50,17 +51,21 @@ async function ProfileCard() {
           className="ad-pav"
           style={{ background: "linear-gradient(145deg, #5e5ce6, #0a84ff)" }}
         >
-          {account.email.slice(0, 1).toUpperCase()}
+          {(account.name ?? account.email).slice(0, 1).toUpperCase()}
         </span>
         <div className="min-w-0">
           <p className="ad-li-title">
-            <span className="truncate">{account.email}</span>
+            <span className="truncate">{account.name ?? account.email}</span>
             {account.emailVerified && <Pill tone="green">Confirmed</Pill>}
           </p>
           <p className="ad-li-sub">
+            {account.name && <>{account.email} · </>}
             Since <LocalDate iso={account.createdAt} />
           </p>
         </div>
+      </div>
+      <div>
+        <NameSection name={account.name} />
       </div>
       <div>
         <ChangeEmail currentEmail={account.email} />

@@ -301,10 +301,14 @@ export class EmailService {
 
   // ── After sign-up, billing, Drive and teams ──────────────────────────
 
-  sendWelcome(to: string): void {
-    this.dispatch(to, welcomeMessage(this.link("/app"), `${this.config.webOrigin}/security`), {
-      category: "welcome",
-    });
+  sendWelcome(to: string, name: string | null = null): void {
+    this.dispatch(
+      to,
+      welcomeMessage(this.link("/app"), `${this.config.webOrigin}/security`, name),
+      {
+        category: "welcome",
+      },
+    );
   }
 
   sendSubscriptionStarted(

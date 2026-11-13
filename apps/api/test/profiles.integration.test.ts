@@ -49,9 +49,10 @@ describe("a new account's profiles", () => {
   it("include Personal when a reset link is what confirmed the account", async () => {
     const email = h.uniqueEmail("profiles-reset");
     const client = h.browser();
-    expect((await client.post("/auth/register", { email, password: PASSWORD })).statusCode).toBe(
-      202,
-    );
+    expect(
+      (await client.post("/auth/register", { name: "Ana Silva", email, password: PASSWORD }))
+        .statusCode,
+    ).toBe(202);
     await client.post("/auth/password/forgot", { email });
     const token = h.tokenIn(await h.waitForEmail(email, "Reset your Brawzer password"));
     const reset = await client.post("/auth/password/reset", {

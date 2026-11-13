@@ -29,10 +29,12 @@ export async function AccountPanel() {
         aria-hidden="true"
         className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-callout font-semibold text-accent-ink uppercase"
       >
-        {account.email.slice(0, 1)}
+        {(account.name ?? account.email).slice(0, 1)}
       </span>
       <span className="flex min-w-0 flex-col">
-        <span className="truncate text-callout font-medium text-ink">{account.email}</span>
+        <span className="truncate text-callout font-medium text-ink">
+          {account.name ?? account.email}
+        </span>
         <span className="truncate text-footnote text-ink-secondary">
           {session.persistent ? "Kept signed in" : "Shared-computer mode"}
         </span>

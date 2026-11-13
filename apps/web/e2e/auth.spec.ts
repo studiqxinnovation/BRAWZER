@@ -19,6 +19,7 @@ const SESSION_COOKIE = "brawzer_session";
 // Next keeps the previous page mounted (hidden) after client navigation, so
 // field locators must ignore hidden copies. Password inputs have no ARIA
 // role, hence getByLabel plus a visibility filter.
+const nameField = (page: Page) => page.getByRole("textbox", { name: "Your name" });
 const emailField = (page: Page) => page.getByRole("textbox", { name: "Email" });
 const passwordField = (page: Page, label = "Password") =>
   page.getByLabel(label, { exact: true }).filter({ visible: true });
@@ -36,6 +37,7 @@ test.describe("account journey", () => {
   }) => {
     const email = uniqueEmail("journey");
     await page.goto("/create-account");
+    await nameField(page).fill("Ana Silva");
     await emailField(page).fill(email);
     await passwordField(page).fill(PASSWORD);
     await page.getByRole("button", { name: "Create account" }).click();
@@ -135,6 +137,7 @@ test.describe("account journey", () => {
     await expect(emailField(page)).toBeFocused();
 
     await page.goto("/create-account");
+    await nameField(page).fill("Ana Silva");
     await emailField(page).fill("someone@example.com");
     await passwordField(page).fill("short");
     await page.getByRole("button", { name: "Create account" }).click();
@@ -233,7 +236,7 @@ test.describe("accessibility of account pages", () => {
   }) => {
     await page.goto("/create-account");
     await page.getByRole("button", { name: "Create account" }).click();
-    await expect(page.getByText("Enter your email address.")).toBeVisible();
+    await expect(page.getByText("Enter your name.")).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);
 
     const email = uniqueEmail("a11y");

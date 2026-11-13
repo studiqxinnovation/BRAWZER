@@ -85,6 +85,14 @@ export class AccountService {
     return { preferences, deliveryProblem: await this.delivery.problemFor(auth.user.email) };
   }
 
+  async updateName(auth: AuthContext, name: string): Promise<{ name: string }> {
+    await this.database.db
+      .update(schema.users)
+      .set({ name, updatedAt: new Date() })
+      .where(eq(schema.users.id, auth.user.id));
+    return { name };
+  }
+
   /** One click from an email's footer, signed in or not. */
   async unsubscribe(token: string, meta: RequestMeta): Promise<UnsubscribeResponse> {
     await this.limiter.enforce(RATE_LIMITS.linkAttemptsPerIp, ipOf(meta));

@@ -59,6 +59,7 @@ function accountOf(user: User): CurrentSessionResponse["account"] {
   return {
     id: user.id,
     email: user.email,
+    name: user.name,
     emailVerified: user.emailVerifiedAt !== null,
     role: user.role,
     planCode: user.planCode,

@@ -91,7 +91,7 @@ export async function createConfirmedAccount(
 ): Promise<void> {
   const origin = new URL(baseURL).origin;
   const registered = await request.post("/api/v1/auth/register", {
-    data: { email, password },
+    data: { name: "Test Person", email, password },
     headers: { origin },
   });
   expect(registered.status()).toBe(202);

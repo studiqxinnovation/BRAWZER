@@ -1,0 +1,64 @@
+@layer components {
+  /* The introduction beside the sign-up form: graphite, a soft brand glow, a faint grid. */
+  .ca-panel {
+    position: relative;
+    overflow: hidden;
+    color: #e8eaee;
+    background:
+      radial-gradient(120% 90% at 0% 0%, rgb(94 92 230 / 0.38), transparent 60%),
+      radial-gradient(90% 70% at 100% 100%, rgb(10 132 255 / 0.28), transparent 60%),
+      linear-gradient(rgb(255 255 255 / 0.035) 1px, transparent 1px) 0 0 / 40px 40px,
+      linear-gradient(90deg, rgb(255 255 255 / 0.035) 1px, transparent 1px) 0 0 / 40px 100%,
+      #0f1115;
+  }
+  .ca-panel::after {
+    content: "";
+    position: absolute;
+    inset: auto -20% -40% auto;
+    width: 60%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgb(255 255 255 / 0.08), transparent 65%);
+    pointer-events: none;
+  }
+  .ca-eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgb(232 234 238 / 0.6);
+  }
+  .ca-title {
+    font-size: clamp(1.6rem, 2.4vw, 2.1rem);
+    line-height: 1.12;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  .ca-lead {
+    color: rgb(232 234 238 / 0.72);
+    text-wrap: pretty;
+  }
+  .ca-facts {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 14px;
+  }
+  .ca-facts li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    color: rgb(232 234 238 / 0.9);
+  }
+  .ca-foot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 18px;
+    border-top: 1px solid rgb(255 255 255 / 0.12);
+    font-size: 12.5px;
+    color: rgb(232 234 238 / 0.6);
+  }
+}

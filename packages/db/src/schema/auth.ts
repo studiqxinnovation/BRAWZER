@@ -27,6 +27,8 @@ export const users = pgTable("users", {
   id: id(),
   /** Stored trimmed and lower-cased; unique. */
   email: text().notNull().unique("users_email_unique"),
+  /** What the person asked to be called, given at sign-up; null on older accounts. */
+  name: text(),
   role: accountRole().notNull().default("user"),
   /** The plan in force (Phase 6): the free plan, or one from the subscription or an administrator. */
   planCode: text().notNull().default("free"),

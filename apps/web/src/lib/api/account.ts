@@ -11,6 +11,7 @@ import {
   accountEmailSchema,
   type UpdateEmailPreferencesRequest,
   unsubscribeResponseSchema,
+  accountNameSchema,
 } from "@brawzer/contracts";
 import { apiRequest } from "./client";
 
@@ -74,6 +75,10 @@ export const undoEmailChange = (token: string, password: string) =>
 
 /** Deletes the account immediately. Needs a recent sign-in. */
 export const fetchAccountEmail = () => apiRequest("/account/email", { schema: accountEmailSchema });
+
+/** Changes the name on the account. */
+export const updateName = (name: string) =>
+  apiRequest("/account/name", { method: "PATCH", body: { name }, schema: accountNameSchema });
 
 export const updateEmailPreferences = (patch: UpdateEmailPreferencesRequest) =>
   apiRequest("/account/email-preferences", {

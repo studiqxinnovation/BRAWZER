@@ -13,6 +13,8 @@ import {
   unsubscribeRequestSchema,
   unsubscribeResponseSchema,
   updateEmailPreferencesRequestSchema,
+  accountNameSchema,
+  updateNameRequestSchema,
 } from "@brawzer/contracts";
 import {
   Body,
@@ -145,6 +147,23 @@ export class AccountController {
     body: z.infer<typeof updateEmailPreferencesRequestSchema>,
   ) {
     return this.account.updateEmailPreferences(auth, body);
+  }
+
+  @Patch("name")
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: accountNameSchema })
+  @ApiOperation({
+    summary: "Change the name on the account",
+    description:
+      "What Brawzer calls the person, in the app and in email. One line, up to 80 characters.",
+  })
+  @ApiOkResponse({ standardSchema: accountNameSchema })
+  updateName(
+    @CurrentAuth() auth: AuthContext,
+    @Body({ schema: updateNameRequestSchema }) body: z.infer<typeof updateNameRequestSchema>,
+  ) {
+    return this.account.updateName(auth, body.name);
   }
 
   @Post("unsubscribe")

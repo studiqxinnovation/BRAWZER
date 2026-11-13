@@ -111,6 +111,7 @@ export class AuthService {
       .insert(schema.users)
       .values({
         email: input.email,
+        name: input.name,
         // Administrators are named by the installation (ADMIN_EMAILS), never by a request.
         role: this.config.adminEmails.includes(input.email) ? "admin" : "user",
       })
@@ -132,6 +133,11 @@ export class AuthService {
       this.email.sendAccountExists(existing.email);
       return;
     }
+    // Not confirmed yet: the latest sign-up attempt's name is the one that counts.
+    await this.database.db
+      .update(schema.users)
+      .set({ name: input.name, updatedAt: new Date() })
+      .where(eq(schema.users.id, existing.id));
     const token = await this.emailTokens.issue(existing.id, "verify_email", {
       pendingPasswordHash,
     });
@@ -185,10 +191,11 @@ export class AuthService {
       metadata: { method: "sign_up_link" },
     });
     // The account exists now: welcome the person, and tell whoever runs Brawzer.
-    this.email.sendWelcome(result.user.email);
+    this.email.sendWelcome(result.user.email, result.user.name);
     this.email.notifyAdmins(
       "sign-up",
       [
+        ["Name", result.user.name ?? "(not given)"],
         ["Email", result.user.email],
         ["When", new Date().toISOString()],
       ],

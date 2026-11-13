@@ -448,12 +448,19 @@ export function teamInvitationMessage(team: string, invitedBy: string, url: stri
 
 // ── After sign-up ───────────────────────────────────────────────────────
 
-export function welcomeMessage(appUrl: string, securityUrl: string): EmailContent {
+export function welcomeMessage(
+  appUrl: string,
+  securityUrl: string,
+  name: string | null = null,
+): EmailContent {
+  const greeting = name
+    ? `Thanks for confirming your email, ${name}.`
+    : "Thanks for confirming your email.";
   return compose("Welcome to Brawzer", {
     preheader: "Your computer in the cloud is ready.",
     heading: "Your computer in the cloud is ready",
     paragraphs: [
-      "Thanks for confirming your email. Brawzer runs a whole computer for you in the cloud: browsers that open in an isolated container, Drive for your files, and a desktop of apps, all reached from any device without leaving anything behind on it.",
+      `${greeting} Brawzer runs a whole computer for you in the cloud: browsers that open in an isolated container, Drive for your files, and a desktop of apps, all reached from any device without leaving anything behind on it.`,
       "Three things to try first: open a cloud browser from the Dock, drop a file into Drive, and look at Shield, where every sign-in and change to your account is listed.",
       "Brawzer never sees your passwords, and a page in a cloud browser can't reach this computer. If anything about your account changes, an email like this one tells you.",
     ],

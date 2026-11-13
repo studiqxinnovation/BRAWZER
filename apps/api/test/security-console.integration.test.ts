@@ -80,6 +80,7 @@ describe("threats and blocked addresses", () => {
     expect(refused.statusCode).toBe(403);
     expect(h.errorOf(refused).message).toContain("network");
     const refusedSignUp = await inside.post("/auth/register", {
+      name: "Ana Silva",
       email: h.uniqueEmail("blocked"),
       password: "violet-harbor-lantern",
     });

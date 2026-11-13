@@ -152,7 +152,9 @@ const errorOf = (response: LightMyRequestResponse) => apiErrorSchema.parse(respo
 
 /** Registers and confirms an account; the browser ends up signed in. */
 async function signUp(client: Browser, email: string, password: string): Promise<void> {
-  expect((await client.post("/auth/register", { email, password })).statusCode).toBe(202);
+  expect(
+    (await client.post("/auth/register", { name: "Ana Silva", email, password })).statusCode,
+  ).toBe(202);
   const token = tokenIn(await waitForEmail(email, "Confirm your email"));
   const response = await client.post("/auth/verify-email", { token, password });
   expect(response.statusCode).toBe(200);
@@ -176,6 +178,7 @@ describe("sign-up and email confirmation", () => {
     const password = "violet-harbor-lantern";
 
     const registered = await client.post("/auth/register", {
+      name: "Ana Silva",
       email: ` ${email.toUpperCase()} `,
       password,
     });
@@ -220,9 +223,21 @@ describe("sign-up and email confirmation", () => {
 
     const client = browser();
     const responses = [
-      await client.post("/auth/register", { email: fresh, password: "amber-river-compass" }),
-      await client.post("/auth/register", { email: fresh, password: "amber-river-compass" }),
-      await client.post("/auth/register", { email: confirmed, password: "amber-river-compass" }),
+      await client.post("/auth/register", {
+        name: "Ana Silva",
+        email: fresh,
+        password: "amber-river-compass",
+      }),
+      await client.post("/auth/register", {
+        name: "Ana Silva",
+        email: fresh,
+        password: "amber-river-compass",
+      }),
+      await client.post("/auth/register", {
+        name: "Ana Silva",
+        email: confirmed,
+        password: "amber-river-compass",
+      }),
     ];
     for (const response of responses) {
       expect(response.statusCode).toBe(202);
@@ -241,11 +256,16 @@ describe("sign-up and email confirmation", () => {
     const victim = browser();
 
     await attacker.post("/auth/register", {
+      name: "Ana Silva",
       email: victimEmail,
       password: "attacker-chosen-secret",
     });
     await waitForEmail(victimEmail, "Confirm your email", 1);
-    await victim.post("/auth/register", { email: victimEmail, password: "victims-own-passphrase" });
+    await victim.post("/auth/register", {
+      name: "Ana Silva",
+      email: victimEmail,
+      password: "victims-own-passphrase",
+    });
     await waitForEmail(victimEmail, "Confirm your email", 2);
     const [victimLink, attackerLink] = await allTokens(victimEmail, "Confirm your email");
     if (!victimLink || !attackerLink) throw new Error("expected two links");
@@ -283,6 +303,7 @@ describe("sign-up and email confirmation", () => {
 
   it("rejects easily guessed passwords with a field-level message", async () => {
     const response = await browser().post("/auth/register", {
+      name: "Ana Silva",
       email: uniqueEmail("weak"),
       password: "password1234",
     });
@@ -293,7 +314,11 @@ describe("sign-up and email confirmation", () => {
   });
 
   it("validates input with the shared contract", async () => {
-    const response = await browser().post("/auth/register", { email: "nope", password: "short" });
+    const response = await browser().post("/auth/register", {
+      name: "Ana Silva",
+      email: "nope",
+      password: "short",
+    });
     expect(errorOf(response).details).toEqual([
       "email: Enter a valid email address, like name@example.com.",
       "password: Use at least 10 characters.",
@@ -372,7 +397,11 @@ describe("sign-in", () => {
   it("sends a new confirmation link to someone who signs in before confirming", async () => {
     const email = uniqueEmail("unconfirmed");
     const client = browser();
-    await client.post("/auth/register", { email, password: "violet-harbor-lantern" });
+    await client.post("/auth/register", {
+      name: "Ana Silva",
+      email,
+      password: "violet-harbor-lantern",
+    });
     await waitForEmail(email, "Confirm your email", 1);
 
     const wrong = await client.post("/auth/login", { email, password: "something-else-entirely" });

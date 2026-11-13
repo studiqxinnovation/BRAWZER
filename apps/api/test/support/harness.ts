@@ -166,7 +166,11 @@ export async function createHarness(options: { ipPrefix: string; env?: NodeJS.Pr
 
   /** Registers and confirms an account; the browser ends up signed in. */
   async function signUp(client: TestBrowser, email: string, password = "violet-harbor-lantern") {
-    const registered = await client.post("/auth/register", { email, password });
+    const registered = await client.post("/auth/register", {
+      name: "Test Person",
+      email,
+      password,
+    });
     if (registered.statusCode !== 202) throw new Error(`register: ${registered.body}`);
     const token = tokenIn(await waitForEmail(email, "Confirm your email"));
     const verified = await client.post("/auth/verify-email", { token, password });
