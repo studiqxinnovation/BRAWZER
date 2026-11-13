@@ -21,7 +21,7 @@ Deliberate deviations from the production plan, for a first installation:
 ## Steps
 
 1. Put `HOSTMAN_TOKEN` in the repository's `.env` and add `~/.ssh/brawzer-hostman.pub` to the account under the name `brawzer-deploy` (the API token can do it: `POST /api/v1/ssh-keys`).
-2. `node infra/hostman/provision.mjs --plan` shows what would be created and the price; without `--plan` it creates what's missing, waits until everything is on, and writes `state.json` (addresses) and `secrets.env` (generated database passwords, mode 0600). Both are git-ignored.
+2. `node infra/hostman/provision.mjs --plan` shows what would be created and the price; without `--plan` it creates what's missing, waits until everything is on, and writes `state.json` (addresses) and `secrets.env` (generated database passwords, mode 0600). Both are git-ignored. The bucket's secret key is masked by Hostman's API: copy the real one from the dashboard (S3 Storage, the bucket, Settings, S3 Parameters) into `secrets.env` as `STORAGE_SECRET_ACCESS_KEY`.
 3. `node infra/hostman/deploy.mjs` needs `SITE_HOST` (the domain, with its A record pointing at the app server), `RESEND_API_KEY` and `ADMIN_EMAILS` in `.env`. It prepares both hosts (hardening, Docker TLS for the engine, gVisor, firewall), builds the images, writes `infra/production/production.env` from the state, starts the stack and runs the checks from the runbook.
 
 ## Operate
