@@ -101,6 +101,12 @@ frame once the page stops:
   if one takes more than 1.5 s to be drawn the agent pauses sharp frames for
   30 s: a slow connection gets the stream it had before, never a backlog.
 - The pointer is mapped in the page's CSS pixels whatever the frame's scale.
+- Once the sharp picture is up, a lone frame (a blinking text cursor, a
+  clock) no longer replaces it with a soft frame: the agent acknowledges
+  the frame and refreshes the sharp picture instead, at most once a second.
+  Only sustained movement, three frames within 700 ms, returns the stream
+  to moving frames. Before this, a page with a blinking cursor flickered
+  between soft and sharp twice a second.
 
 Measured on the long test page, 1280×800 at ratio 2 against ratio 1: Chromium
 scrolls at 19 frames a second against 21, Firefox at 8 against 9, with moving

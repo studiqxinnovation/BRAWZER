@@ -100,6 +100,11 @@ const JPEG_QUALITY = 0.6;
 const SHARP_QUALITY = 0.85;
 /** No change for this long means the page has stopped moving. */
 const STILL_MS = 300;
+/** What counts as the page moving once it has its sharp picture: this many changed captures within the window. */
+const MOTION_FRAMES = 3;
+const MOTION_WINDOW_MS = 700;
+/** Sharp pictures refreshed for lone changes come no closer together than this. */
+const SHARP_MIN_INTERVAL_MS = 1_000;
 /** A sharp frame that takes longer than this to be drawn says the connection can't afford them. */
 const SHARP_SLOW_MS = 1_500;
 /** How long sharp frames pause after a slow one. */
@@ -200,6 +205,10 @@ export class FirefoxEngine implements Engine {
   private sharpDone = false;
   /** When the page was last seen unchanged after a change; 0 while it moves. */
   private stillSince = 0;
+  /** The sharp picture is what the viewer shows: lone changes refresh it rather than replace it. */
+  private sharpHold = false;
+  private sharpSentAt = 0;
+  private changeTimes: number[] = [];
   /** Until when sharp frames are skipped because the last one was slow to arrive. */
   private sharpBackoffUntil = 0;
   private snapshotQueued = false;
@@ -848,9 +857,12 @@ export class FirefoxEngine implements Engine {
             !this.sharpDone &&
             this.viewport.scale > 1 &&
             Date.now() >= this.sharpBackoffUntil &&
-            Date.now() - this.stillSince >= STILL_MS
+            Date.now() - this.stillSince >= STILL_MS &&
+            Date.now() - this.sharpSentAt >= SHARP_MIN_INTERVAL_MS
           ) {
             this.sharpDone = true;
+            this.sharpHold = true;
+            this.sharpSentAt = Date.now();
             await this.sendSharp(tab, viewer);
             continue;
           }
@@ -861,6 +873,18 @@ export class FirefoxEngine implements Engine {
         idle = IDLE_MIN_MS;
         this.lastFrameHash = hash;
         this.sharpDone = false;
+        const now = Date.now();
+        this.changeTimes = this.changeTimes.filter((at) => now - at < MOTION_WINDOW_MS);
+        this.changeTimes.push(now);
+        if (this.sharpHold && this.changeTimes.length < MOTION_FRAMES && this.viewport.scale > 1) {
+          // A lone change while the sharp picture is up (a blinking cursor, a clock
+          // tick): the viewer keeps the sharp picture and gets a fresh one shortly,
+          // rather than a soft frame and then a sharp one, over and over.
+          this.stillSince = now;
+          await new Promise((resolve) => setTimeout(resolve, IDLE_MIN_MS));
+          continue;
+        }
+        this.sharpHold = false;
         this.stillSince = 0;
         const encoder = this.videoEncoder();
         if (encoder) {

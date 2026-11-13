@@ -153,6 +153,15 @@ const JPEG_QUALITY = 60;
 const SHARP_QUALITY = 85;
 /** No frame for this long means the page has stopped moving. */
 const STILL_MS = 300;
+/**
+ * What counts as the page moving once it has its sharp picture: this many
+ * frames within the window. A lone frame now and then (a blinking cursor, a
+ * clock) refreshes the sharp picture instead of trading it for a soft one.
+ */
+const MOTION_FRAMES = 3;
+const MOTION_WINDOW_MS = 700;
+/** Sharp pictures refreshed for lone frames come no closer together than this. */
+const SHARP_MIN_INTERVAL_MS = 1_000;
 /** A sharp frame that takes longer than this to be drawn says the connection can't afford them. */
 const SHARP_SLOW_MS = 2_500;
 /** How long sharp frames pause after a slow one: a little, then longer the more slow ones in a row. */
@@ -333,6 +342,11 @@ export class BrowserEngine implements Engine {
   private sharpInFlight: { tabId: string; frameId: number; sentAt: number } | null = null;
   /** Whether the page showing now has had its sharp frame. */
   private sharpDone = false;
+  /** The sharp picture is what the viewer shows: lone frames refresh it rather than replace it. */
+  private sharpHold = false;
+  private sharpSentAt = 0;
+  /** When the last few screencast frames arrived, to tell sustained movement from a lone frame. */
+  private frameTimes: number[] = [];
   /** Until when sharp frames are skipped because the last one was slow to arrive, and how many were. */
   private sharpBackoffUntil = 0;
   private sharpSlowCount = 0;
@@ -1465,6 +1479,7 @@ export class BrowserEngine implements Engine {
     this.viewport = viewport;
     if (!changed) return;
     this.sharpDone = false;
+    this.sharpHold = false;
     await Promise.all(
       [...this.tabs.values()].map((tab) =>
         this.cdp
@@ -1523,6 +1538,8 @@ export class BrowserEngine implements Engine {
     tab.screencasting = false;
     tab.inFlight.clear();
     if (this.sharpInFlight?.tabId === tab.id) this.sharpInFlight = null;
+    this.sharpHold = false;
+    this.frameTimes = [];
     this.clearStill();
     await this.cdp.send("Page.stopScreencast", {}, tab.sessionId).catch(() => undefined);
   }
@@ -1535,7 +1552,7 @@ export class BrowserEngine implements Engine {
   }
 
   /** (Re)starts the count to the page's sharp frame; a new frame of a moving page starts it over. */
-  private armStill(): void {
+  private armStill(delayMs = STILL_MS): void {
     this.clearStill();
     if (this.viewport.scale <= 1 || this.sharpDone || !this.viewer) return;
     if (this.sharpInFlight && Date.now() - this.sharpInFlight.sentAt > SHARP_LOST_MS) {
@@ -1544,7 +1561,7 @@ export class BrowserEngine implements Engine {
     this.stillTimer = setTimeout(() => {
       this.stillTimer = null;
       void this.sendSharp();
-    }, STILL_MS);
+    }, delayMs);
   }
 
   /**
@@ -1604,6 +1621,8 @@ export class BrowserEngine implements Engine {
     tab.inFlight.set(frameId, SHARP_FRAME);
     this.sharpInFlight = { tabId: tab.id, frameId, sentAt: Date.now() };
     this.sharpDone = true;
+    this.sharpHold = true;
+    this.sharpSentAt = Date.now();
   }
 
   private sharpDrawn(frameId: number): void {
@@ -1632,6 +1651,18 @@ export class BrowserEngine implements Engine {
     }
     // The page moved: its sharp frame, if it had one, is out of date.
     this.sharpDone = false;
+    const now = Date.now();
+    this.frameTimes = this.frameTimes.filter((at) => now - at < MOTION_WINDOW_MS);
+    this.frameTimes.push(now);
+    if (this.sharpHold && this.frameTimes.length < MOTION_FRAMES && this.viewport.scale > 1) {
+      // A lone frame while the sharp picture is up (a blinking cursor, a clock
+      // tick): the viewer keeps the sharp picture and gets a fresh one shortly,
+      // rather than a soft frame and then a sharp one, over and over.
+      void this.ack(tab, frame.sessionId);
+      this.armStill(Math.max(STILL_MS, this.sharpSentAt + SHARP_MIN_INTERVAL_MS - now));
+      return;
+    }
+    this.sharpHold = false;
     const image = Buffer.from(frame.data, "base64");
     const encoder = this.videoEncoder();
     if (encoder) {
