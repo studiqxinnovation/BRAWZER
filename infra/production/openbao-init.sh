@@ -45,25 +45,66 @@ unseal_if_needed() {
   fi
 }
 
+# What the API may do with the key: wrap and unwrap data keys (ADR 0008),
+# re-wrap them after a rotation, and read the key's version. Written on every
+# start, so a policy change here reaches a running installation.
+write_policy() {
+  bao policy write brawzer-api - <<EOF
+path "$MOUNT/encrypt/$KEY"           { capabilities = ["update"] }
+path "$MOUNT/decrypt/$KEY"           { capabilities = ["update"] }
+path "$MOUNT/rewrap/$KEY"            { capabilities = ["update"] }
+path "$MOUNT/datakey/plaintext/$KEY" { capabilities = ["update"] }
+path "$MOUNT/keys/$KEY"              { capabilities = ["read"] }
+path "$MOUNT/keys/$KEY/rotate"       { capabilities = ["update"] }
+EOF
+}
+
+# The API's token is periodic: it lives as long as it is renewed within the
+# period, which the watch loop below does. A plain orphan token would expire
+# after the server's default 32 days and take every encrypted value with it.
+TOKEN_PERIOD="${VAULT_TOKEN_PERIOD:-768h}"
+create_api_token() {
+  bao token create -policy=brawzer-api -orphan -period="$TOKEN_PERIOD" \
+    -display-name=brawzer-api -format=json \
+    | json_field client_token > "$KEYS/api-token.tmp"
+  [ -s "$KEYS/api-token.tmp" ] || { log "no token came back"; exit 1; }
+  mv "$KEYS/api-token.tmp" "$KEYS/api-token"
+}
+
 configure() {
   log "configuring transit"
   umask 077
   export BAO_TOKEN="$(root_token)"
   bao secrets list -format=json | grep -q "\"$MOUNT/\"" || bao secrets enable -path="$MOUNT" transit >/dev/null
   bao write -f "$MOUNT/keys/$KEY" type=aes256-gcm96 >/dev/null
-  bao policy write brawzer-api - <<EOF
-path "$MOUNT/encrypt/$KEY"  { capabilities = ["update"] }
-path "$MOUNT/decrypt/$KEY"  { capabilities = ["update"] }
-path "$MOUNT/rewrap/$KEY"   { capabilities = ["update"] }
-path "$MOUNT/keys/$KEY"     { capabilities = ["read"] }
-path "$MOUNT/keys/$KEY/rotate" { capabilities = ["update"] }
-EOF
-  bao token create -policy=brawzer-api -orphan -display-name=brawzer-api -format=json \
-    | json_field client_token > "$KEYS/api-token.tmp"
-  [ -s "$KEYS/api-token.tmp" ] || { log "no token came back"; exit 1; }
-  mv "$KEYS/api-token.tmp" "$KEYS/api-token"
+  write_policy
+  create_api_token
   unset BAO_TOKEN
   log "configured: transit \"$MOUNT\", key \"$KEY\", API token in $KEYS/api-token"
+}
+
+# On a server configured by an earlier version of this script: the policy is
+# brought up to date, and a token that would expire is replaced by a periodic
+# one. A replaced token has to reach the API (deploy.mjs rewrites
+# production.env from $KEYS/api-token), so the log says so.
+reconcile() {
+  umask 077
+  export BAO_TOKEN="$(root_token)"
+  write_policy >/dev/null
+  period="$(BAO_TOKEN="$(cat "$KEYS/api-token")" bao token lookup -format=json 2>/dev/null | json_field period)"
+  case "$period" in
+    "" | 0 | 0s)
+      log "API token is not periodic (it would expire); replacing it"
+      create_api_token
+      log "API token replaced: deploy again so the API uses the new one"
+      ;;
+  esac
+  unset BAO_TOKEN
+}
+
+# Renews the API's periodic token with its own authority (renew-self needs no policy).
+renew_api_token() {
+  BAO_TOKEN="$(cat "$KEYS/api-token")" bao token renew >/dev/null 2>&1 && log "API token renewed"
 }
 
 wait_for_server
@@ -73,8 +114,17 @@ fi
 [ -f "$KEYS/init.json" ] || { log "server is initialised but $KEYS/init.json is missing"; exit 1; }
 unseal_if_needed
 [ -s "$KEYS/api-token" ] || configure
+reconcile
+renew_api_token || log "API token renewal failed"
 log "watching"
+i=0
 while true; do
   sleep 30
   unseal_if_needed || true
+  # Once an hour; the period is 32 days, so a long outage of this keeper still leaves time.
+  i=$((i + 1))
+  if [ "$i" -ge 120 ]; then
+    i=0
+    renew_api_token || log "API token renewal failed"
+  fi
 done

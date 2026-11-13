@@ -19,6 +19,7 @@ database.
 - `GET /api/metrics` on each API instance (Prometheus text format; `Authorization: Bearer $METRICS_TOKEN`), to scrape and alert on: `brawzer_sessions_live{host}` against `brawzer_runtime_host_capacity{host}`, `brawzer_runtime_host_healthy{host}` and `brawzer_runtime_available`, `brawzer_session_starts_failed_total` and `brawzer_sessions_ended_total{reason="runtime_failed"}`, `brawzer_stream_viewers`, `brawzer_frames_dropped_total` against `brawzer_frames_relayed_total`, `brawzer_transfers_total{kind,state}` and `brawzer_transfer_pauses_total`, `brawzer_scan_seconds` (sum and count: the mean scan time) and `brawzer_scanner_unavailable_total`, `brawzer_stripe_webhooks_total{result}`, `brawzer_warm_pool_waiting`, `brawzer_maintenance_last_run_timestamp_seconds`, `brawzer_build_info{version}`. Counters are per instance and reset with it.
 - The API's logs: `Runtime unavailable`, `Egress tester unavailable`, `Reaping sessions failed`, `Saving profile data … failed`, `Removed orphaned` and `Retention run` lines are the ones to alert on or graph.
 - `docker ps --filter label=brawzer.managed` on a runtime host: the live sessions, two containers each.
+- `node infra/hostman/smoke.mjs` after any change to the hosts: one line per step, exit 1 on the first failure, and it deletes its own account.
 - Stripe's dashboard: webhook deliveries failing means plans stop following subscriptions; the route answers 401 to a bad signature and 204 otherwise.
 
 ## Incidents
@@ -39,6 +40,13 @@ database.
 Sign-ins keep working; anything that opens an encrypted value (a proxy
 test, a session start under a proxy or a profile with data, Drive previews
 and downloads) fails with 503 until it returns. Nothing is lost.
+
+A `Key service responded 403` line in the API's log is not an outage: the
+API's token lacks a path or has expired. With the self-hosted OpenBao
+(`infra/production/services.yaml`), the keeper writes the `brawzer-api`
+policy and renews the API's periodic token on every start and every hour;
+start it afresh (`docker compose -f services.yaml --env-file services.env up -d --force-recreate openbao-unseal`),
+then deploy again so a replaced token reaches `production.env`.
 
 ### The object store or scanner is unavailable
 
@@ -77,6 +85,40 @@ API's own configuration: in production
 Exit codes: 0 done, 1 failed (or another instance holds the job's lock), 2
 not understood. Certificates for a runtime host stay a script:
 `infra/production/runtime-host/make-certs.sh`.
+
+### Backups
+
+On the app host, `brawzer-backup` (from `infra/production/backup/backup.sh`,
+installed by `deploy.mjs` with a cron entry at 03:30 UTC) writes three
+parts to `backups/<stamp>/` in the installation's bucket: the database
+(`pg_dump`, custom format), the key service's unseal material and file
+storage (`openbao.tar.gz`), and the stack's settings files. Each part is
+encrypted with AES-256 (`gpg --symmetric`) under a passphrase kept in
+`/etc/brawzer/backup/passphrase` on the host **and** as `BACKUP_PASSPHRASE`
+in the operator's `infra/hostman/secrets.env`, because a backup must be
+readable when the host is gone. Thirty days are kept; the log is
+`/var/log/brawzer-backup.log`. Drive and profile objects are not copied:
+they are already in the bucket, as ciphertext whose keys the backup holds.
+Valkey (rate limits, stream tickets) and Caddy's certificates are not
+backed up; both rebuild themselves.
+
+Monthly drill: `brawzer-restore latest --check` restores the newest backup
+into a scratch database beside the live one, counts its tables and accounts,
+lists the two archives and drops the scratch database. A good run ends with
+`restore drill passed for <stamp>` and the table and migration counts the
+live database has. `brawzer-restore list` shows what is in the bucket.
+
+### Restoring from a backup
+
+On a prepared host (`bootstrap-host.sh`, Docker, the stack files from the
+repository), with `/etc/brawzer/backup/env` and `passphrase` copied from the
+operator's files:
+
+1. `brawzer-restore <stamp> --to /root/restore` decrypts the three parts.
+2. Put `settings.tar.gz` back in `/srv/brawzer/production` and `openbao.tar.gz` back at `/` (it holds `etc/brawzer/openbao` and the `openbao-data` volume), **before** the key service starts: a fresh OpenBao would make a new key that opens nothing.
+3. Start the services stack; then `docker exec -i brawzer-services-postgres-1 pg_restore -U brawzer -d brawzer --clean --if-exists --no-owner < /root/restore/database.dump`.
+4. Start the application stack and run `node infra/hostman/deploy.mjs --check`; sign in and open a Drive file to prove the keys line up.
+5. Remove `/root/restore`: it holds the database password and the unseal keys.
 
 ### Rolling a release
 
@@ -157,4 +199,5 @@ on for them.
 
 - An independent penetration test of the app tier and a runtime host, with the threat model in [SECURITY.md](SECURITY.md); the isolation tests to repeat are the by-hand checks in the Phase 3 and 5 reviews (a runtime's engine user has no route out and no DNS; a session can't reach private addresses or the engine's services).
 - A verified Resend sending domain, a real `SITE_HOST`, live Stripe keys if plans are offered.
-- Backups of PostgreSQL and the object store, and a restore rehearsal: objects are useless without their rows and the key service.
+- A restore drill that passed (above), and the backup passphrase kept somewhere other than the host.
+- The end-to-end check, `node infra/hostman/smoke.mjs`: sign-up, confirmation email, a session under gVisor, frames on the stream, a clean runtime host, the account deleted.

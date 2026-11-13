@@ -125,12 +125,20 @@ Engine API ([ADR 0012](adr/0012-cloud-browser-runtime-isolation.md)):
 - **Profile data and cloud browser downloads** use the same object store and scanner as Drive ([ADR 0013](adr/0013-profile-data-and-drive-hand-off.md)): profile archives under `profiles/<account>/`, downloads as Drive files. The runtime learns Drive's per-file limit from the API (`DRIVE_MAX_FILE_BYTES`, passed into the container); profile archives are capped at 256 MiB compressed. Budget object storage for both.
 - **The test site** (`BROWSER_TEST_SITE`) serves `testsite.invalid` over HTTP and HTTPS inside each runtime for the browser tests (the HTTPS certificate is made per container and trusted only by that container's engine, for that one key). Development and CI only; refused in production.
 
+## The first installation
+
+brawzer.com runs on two Hostman servers in New York with the services
+self-hosted beside the app tier; [infra/hostman/README.md](../infra/hostman/README.md)
+is the record of what was created, how it is deployed
+(`node infra/hostman/deploy.mjs`), backed up and tested
+(`node infra/hostman/smoke.mjs`). Nothing in the code depends on that choice.
+
 ## Not done yet
 
-- **A provider and the managed services themselves** (PostgreSQL, Valkey, the object store, a key service, ClamAV): provisioned per installation; the stacks reach them by address.
-- **A verified Resend sending domain.** It needs the website domain.
+- **A provider and the managed services themselves** (PostgreSQL, Valkey, the object store, a key service, ClamAV) are provisioned per installation; the stacks reach them by address. `infra/hostman/` does it for Hostman, with the services on the app host rather than managed.
 - **TURN servers for WebRTC streaming** (Phase 3b): declined after the spike; the frame stream is what ships. (The runtime-host scheduler and the warm pool were built in Phase 8.)
 - **An independent penetration test** and the isolation checks on a real host (runbook).
+- **Backups in a second place.** `backup.sh` keeps encrypted copies in the installation's own bucket (runbook, "Backups"); a copy with another provider is the operator's choice.
 
 ## Email through Resend
 
@@ -145,8 +153,9 @@ To send for real:
    `EMAIL_FROM=Brawzer <no-reply@your-domain>` on the API (from the secret
    manager, never in the repository). `EMAIL_REPLY_TO` is optional.
 3. Add a webhook in Resend pointing at `https://<api>/api/v1/webhooks/resend`
-   for the events `email.bounced` and `email.complained`, and set its
-   signing secret as `RESEND_WEBHOOK_SECRET=whsec_…`. From then on a hard
+   for the events `email.bounced` and `email.complained` (the dashboard, or
+   `POST https://api.resend.com/webhooks`, whose answer carries the signing
+   secret once), and set its signing secret as `RESEND_WEBHOOK_SECRET=whsec_…`. From then on a hard
    bounce or a spam complaint stops every further email to that address, and
    the person's Account page says so until they change it. Without the
    secret the route answers 404 and bounces go unnoticed.

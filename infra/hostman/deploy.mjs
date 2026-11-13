@@ -9,10 +9,12 @@
 //   node infra/hostman/deploy.mjs --check        # only the checks at the end
 //
 // Reads from the repository's .env: SITE_HOST (the domain, pointing at the
-// app host), RESEND_API_KEY, EMAIL_FROM, ADMIN_EMAILS, and optionally
-// RESEND_WEBHOOK_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
-// BILLING_PLANS, ANTHROPIC_API_KEY. Secrets go to the host over SSH and into
-// files with mode 0600; nothing is printed.
+// app host), RESEND_API_KEY and ADMIN_EMAILS. Production-only settings come
+// from infra/hostman/secrets.env (never from the development .env): EMAIL_FROM
+// (default no-reply at SITE_HOST), EMAIL_REPLY_TO, RESEND_WEBHOOK_SECRET,
+// STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, BILLING_PLANS, ANTHROPIC_API_KEY.
+// Secrets go to the host over SSH and into files with mode 0600; nothing is
+// printed.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -151,13 +153,12 @@ if (onlyCheck) {
 
 const RESEND_API_KEY = need("RESEND_API_KEY");
 const ADMIN_EMAILS = need("ADMIN_EMAILS");
-const EMAIL_FROM = process.env.EMAIL_FROM ?? `Brawzer <no-reply@${SITE_HOST}>`;
+const EMAIL_FROM = secrets.EMAIL_FROM ?? `Brawzer <no-reply@${SITE_HOST}>`;
 const POSTGRES_PASSWORD = need("POSTGRES_PASSWORD", secrets);
 const VALKEY_PASSWORD = need("VALKEY_PASSWORD", secrets);
 const STORAGE_ACCESS_KEY_ID = need("STORAGE_ACCESS_KEY_ID", secrets);
 const STORAGE_SECRET_ACCESS_KEY = need("STORAGE_SECRET_ACCESS_KEY", secrets);
-if (!secrets.METRICS_TOKEN) {
-  secrets.METRICS_TOKEN = randomBytes(24).toString("base64url");
+function saveSecrets() {
   writeFileSync(
     secretsFile,
     `${Object.entries(secrets)
@@ -165,6 +166,16 @@ if (!secrets.METRICS_TOKEN) {
       .join("\n")}\n`,
     { mode: 0o600 },
   );
+}
+if (!secrets.METRICS_TOKEN) {
+  secrets.METRICS_TOKEN = randomBytes(24).toString("base64url");
+  saveSecrets();
+}
+// The backups' passphrase: generated once, kept here as well as on the host,
+// because a backup must be readable when the host is gone.
+if (!secrets.BACKUP_PASSPHRASE) {
+  secrets.BACKUP_PASSPHRASE = randomBytes(32).toString("base64url");
+  saveSecrets();
 }
 
 console.log(`\n1. Source and production files to ${app.publicIp}`);
@@ -216,8 +227,12 @@ ssh(
   `set -e; cd /srv/brawzer/production
 docker network inspect brawzer_app >/dev/null 2>&1 || docker network create --subnet 172.30.0.0/24 brawzer_app >/dev/null
 docker compose -f services.yaml --env-file services.env up -d --wait --quiet-pull 2>&1 | tail -1
+# The keeper is stateless and its script may have changed: start it afresh so it
+# brings the policy and the API token up to date before the settings are written.
+docker compose -f services.yaml --env-file services.env up -d --force-recreate openbao-unseal 2>&1 | tail -1
 docker compose -f services.yaml --env-file services.env ps --format "  {{.Service}}: {{.Status}}"
-for i in $(seq 1 30); do [ -s /etc/brawzer/openbao/api-token ] && break; sleep 2; done
+for i in $(seq 1 45); do docker compose -f services.yaml --env-file services.env logs --since 2m openbao-unseal 2>/dev/null | grep -q "openbao-keeper: watching" && break; sleep 2; done
+docker compose -f services.yaml --env-file services.env logs --since 2m openbao-unseal 2>/dev/null | grep "openbao-keeper:" | sed 's/^.*openbao-keeper:/  keeper:/'
 [ -s /etc/brawzer/openbao/api-token ] || { echo "OpenBao's keeper has not produced the API token"; exit 1; }`,
 );
 
@@ -245,7 +260,8 @@ docker save brawzer-runtime:local brawzer-egress:local | ssh -o BatchMode=yes ro
 
 console.log("\n4. Production settings");
 const vaultToken = ssh(app.publicIp, "cat /etc/brawzer/openbao/api-token", { quiet: true }).trim();
-const optional = (name) => (process.env[name] ? `${name}=${process.env[name]}\n` : "");
+// Production-only settings live in secrets.env, not in the development .env.
+const optional = (name) => (secrets[name] ? `${name}=${secrets[name]}\n` : "");
 const productionEnv = `# Written by infra/hostman/deploy.mjs on ${new Date().toISOString()}. Not in git.
 API_IMAGE=brawzer-api:local
 WEB_IMAGE=brawzer-web:local
@@ -258,7 +274,7 @@ REDIS_URL=redis://:${VALKEY_PASSWORD}@valkey:6379
 EMAIL_TRANSPORT=resend
 RESEND_API_KEY=${RESEND_API_KEY}
 EMAIL_FROM=${EMAIL_FROM}
-${optional("RESEND_WEBHOOK_SECRET")}KEY_PROVIDER=vault
+${optional("EMAIL_REPLY_TO")}${optional("RESEND_WEBHOOK_SECRET")}KEY_PROVIDER=vault
 VAULT_ADDR=http://openbao:8200
 VAULT_TOKEN=${vaultToken}
 PROXY_TEST_URL=${origin}/api/v1/network/echo
@@ -290,7 +306,7 @@ sshWrite(app.publicIp, "/srv/brawzer/production/production.env", productionEnv);
 console.log("  written to /srv/brawzer/production/production.env (mode 600)");
 
 if (apiOnly) {
-  console.log("\n5. Migrations and the API only");
+  console.log("\n6. Migrations and the API only");
   ssh(
     app.publicIp,
     `set -e; cd /srv/brawzer/production
@@ -301,7 +317,31 @@ echo "  health from inside the network: $(docker run --rm --network brawzer_app 
   process.exit(0);
 }
 
-console.log("\n5. The stack (migrations, API, web, Caddy)");
+console.log("\n5. Backups: nightly to the bucket, encrypted");
+ssh(app.publicIp, "mkdir -p /etc/brawzer/backup && chmod 700 /etc/brawzer/backup");
+sshWrite(
+  app.publicIp,
+  "/etc/brawzer/backup/env",
+  `S3_ENDPOINT=https://s3.hmstorage.net
+S3_REGION=us-2
+S3_BUCKET=${state.bucket.name}
+S3_ACCESS_KEY_ID=${STORAGE_ACCESS_KEY_ID}
+S3_SECRET_ACCESS_KEY=${STORAGE_SECRET_ACCESS_KEY}
+KEEP_DAYS=30
+`,
+);
+sshWrite(app.publicIp, "/etc/brawzer/backup/passphrase", `${secrets.BACKUP_PASSPHRASE}\n`);
+ssh(
+  app.publicIp,
+  `set -e
+install -m 755 /srv/brawzer/src/infra/production/backup/backup.sh /usr/local/sbin/brawzer-backup
+install -m 755 /srv/brawzer/src/infra/production/backup/restore.sh /usr/local/sbin/brawzer-restore
+printf '%s\n' 'SHELL=/bin/bash' 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' '30 3 * * * root /usr/local/sbin/brawzer-backup >> /var/log/brawzer-backup.log 2>&1' > /etc/cron.d/brawzer-backup
+chmod 644 /etc/cron.d/brawzer-backup
+echo "  brawzer-backup installed; runs at 03:30 UTC (log: /var/log/brawzer-backup.log)"`,
+);
+
+console.log("\n6. The stack (migrations, API, web, Caddy)");
 ssh(
   app.publicIp,
   `set -e; cd /srv/brawzer/production
