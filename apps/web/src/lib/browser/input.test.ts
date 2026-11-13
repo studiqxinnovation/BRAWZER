@@ -8,16 +8,18 @@ describe("resolveTyped", () => {
     expect(resolveTyped("example.com")).toBe("https://example.com");
     expect(resolveTyped("news.example.org/path?x=1")).toBe("https://news.example.org/path?x=1");
     expect(resolveTyped("localhost:3000")).toBe("https://localhost:3000");
-    expect(resolveTyped("how to tie a knot")).toBe("https://duckduckgo.com/?q=how+to+tie+a+knot");
-    expect(resolveTyped("brawzer")).toBe("https://duckduckgo.com/?q=brawzer");
+    expect(resolveTyped("how to tie a knot")).toBe(
+      "https://www.google.com/search?q=how+to+tie+a+knot",
+    );
+    expect(resolveTyped("brawzer")).toBe("https://www.google.com/search?q=brawzer");
     expect(resolveTyped("")).toBe("about:blank");
   });
 
   it("never opens other schemes", () => {
     expect(resolveTyped("javascript:alert(1)")).toBe(
-      "https://duckduckgo.com/?q=javascript%3Aalert%281%29",
+      "https://www.google.com/search?q=javascript%3Aalert%281%29",
     );
-    expect(resolveTyped("file:///etc/passwd")).toMatch(/^https:\/\/duckduckgo\.com\//);
+    expect(resolveTyped("file:///etc/passwd")).toMatch(/^https:\/\/www\.google\.com\/search\?/);
   });
 });
 

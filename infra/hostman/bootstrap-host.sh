@@ -82,6 +82,26 @@ if [ "$ROLE" = runtime ]; then
     apt-get install -y -q runsc
   fi
 
+  # Register runsc as a Docker runtime, and tell it to use the kernel network
+  # stack of the namespace it is placed in (`--network=host`), not gVisor's own
+  # userspace netstack. A session's runtime container shares the egress
+  # sidecar's network namespace (ADR 0012, 0014); gVisor's default sandbox
+  # netstack would take that namespace's interface into userspace, leaving the
+  # runc egress with no routes and a separate loopback, so the runtime could
+  # not reach the egress proxy and nothing would browse. Host mode keeps
+  # gVisor's syscall sandbox; the egress nftables firewall still confines the
+  # namespace. Written with jq so other daemon settings (TLS, hosts) are kept.
+  python3 - <<'PY'
+import json, os
+p = "/etc/docker/daemon.json"
+d = json.load(open(p)) if os.path.exists(p) else {}
+rs = d.setdefault("runtimes", {}).setdefault("runsc", {"path": "/usr/bin/runsc"})
+args = [a for a in rs.get("runtimeArgs", []) if not a.startswith("--network=")]
+rs["runtimeArgs"] = args + ["--network=host"]
+json.dump(d, open(p, "w"), indent=2)
+PY
+  systemctl reload docker || systemctl restart docker
+
   # Session agent ports are published by Docker on random high ports. The
   # DOCKER-USER chain is where Docker lets the host have a say: only the app
   # tier may open connections to them. Re-applied after every engine start.

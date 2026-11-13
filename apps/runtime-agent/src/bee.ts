@@ -48,7 +48,7 @@ p{margin:0;color:var(--t3);font-size:11px}
 <body>
 <span class="tile"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="${MARK_PATH}" fill="currentColor"/></svg></span>
 <h1>Bee Browser</h1>
-<form action="https://duckduckgo.com/" method="get"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input name="q" placeholder="Search the web or type a website" autocomplete="off" aria-label="Search the web" autofocus><button type="submit">Search</button></form>
+<form action="https://www.google.com/search" method="get"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input name="q" placeholder="Search the web or type a website" autocomplete="off" aria-label="Search the web" autofocus><button type="submit">Search</button></form>
 <nav class="short" aria-label="Shortcuts">${SHORTCUTS.map(
   ([name, href, colour]) =>
     `<a class="sc" href="${href}"><b style="background:${colour}">${name[0] ?? ""}</b>${name}</a>`,
@@ -66,7 +66,7 @@ export function createBeeHome(): http.Server {
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
       "content-security-policy":
-        "default-src 'none'; style-src 'unsafe-inline'; form-action https://duckduckgo.com",
+        "default-src 'none'; style-src 'unsafe-inline'; form-action https://www.google.com",
       "cache-control": "no-store",
     });
     res.end(req.method === "HEAD" ? undefined : page);

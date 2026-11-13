@@ -57,8 +57,7 @@ export function fitViewport(width: number, height: number, pixelRatio = 1): View
 
 /**
  * What to open for what someone typed in the address bar: an address when it
- * looks like one, otherwise a search. Searches go to DuckDuckGo, which keeps
- * no profile of the person.
+ * looks like one, otherwise a search. Searches go to Google.
  */
 export function resolveTyped(input: string): string {
   const value = input.trim();
@@ -77,7 +76,7 @@ export function resolveTyped(input: string): string {
 }
 
 export function searchUrl(query: string): string {
-  return `https://duckduckgo.com/?${new URLSearchParams({ q: query }).toString()}`;
+  return `https://www.google.com/search?${new URLSearchParams({ q: query }).toString()}`;
 }
 
 /** The address as shown: no scheme for https, nothing for a blank tab. */
