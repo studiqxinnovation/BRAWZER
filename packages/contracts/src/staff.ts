@@ -85,6 +85,8 @@ export const staffPermissions = {
   approve: ["admin"],
   /** Read-only money pages. */
   finance: ["admin", "billing"],
+  /** Read-only technical pages. */
+  tech: ["admin", "technical"],
   incident: ["admin", "technical"],
   deleteData: ["admin", "security"],
   notes: ["admin", "care", "billing", "sales", "technical", "security"],
@@ -216,6 +218,48 @@ export const adminPages: readonly AdminPage[] = [
     group: "Customer care",
     roles: ["admin", "care", "technical"],
     path: "announce",
+  },
+  {
+    key: "fleet",
+    title: "Fleet & regions",
+    group: "Technical",
+    roles: ["admin", "technical"],
+    path: "fleet",
+  },
+  {
+    key: "sessions",
+    title: "Live sessions",
+    group: "Technical",
+    roles: ["admin", "technical", "care"],
+    path: "sessions",
+  },
+  {
+    key: "images",
+    title: "Browser images",
+    group: "Technical",
+    roles: ["admin", "technical"],
+    path: "images",
+  },
+  {
+    key: "extensions",
+    title: "Extension catalogue",
+    group: "Technical",
+    roles: ["admin", "technical", "security"],
+    path: "extensions",
+  },
+  {
+    key: "network",
+    title: "Proxy & Shield",
+    group: "Technical",
+    roles: ["admin", "technical"],
+    path: "network",
+  },
+  {
+    key: "jobs",
+    title: "Queues & health",
+    group: "Technical",
+    roles: ["admin", "technical"],
+    path: "jobs",
   },
   {
     key: "incidents",

@@ -46,6 +46,6 @@ import { WarmPoolService } from "./warm-pool.service.js";
   ],
   controllers: [BrowserController],
   providers: [OrchestratorService, WarmPoolService, StreamTickets, BrowserService, StreamGateway],
-  exports: [BrowserService, StreamGateway, OrchestratorService],
+  exports: [BrowserService, StreamGateway, OrchestratorService, WarmPoolService],
 })
 export class BrowserModule {}

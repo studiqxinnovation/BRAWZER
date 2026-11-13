@@ -22,6 +22,11 @@ import { CareConsoleController } from "./care-console.controller.js";
 import { RecoveryConsoleController } from "./recovery-console.controller.js";
 import { BillingConsoleController } from "./billing-console.controller.js";
 import { BillingConsoleService } from "./billing-console.service.js";
+import { TechConsoleController } from "./tech-console.controller.js";
+import { TechConsoleService } from "./tech-console.service.js";
+import { HealthModule } from "../health/health.module.js";
+import { EmailModule } from "../email/email.js";
+import { EgressModule } from "../egress/egress.module.js";
 
 /** Administration (Phase 6) and the admin console (Phase 11). */
 @Module({
@@ -36,6 +41,9 @@ import { BillingConsoleService } from "./billing-console.service.js";
     SupportModule,
     CareModule,
     RecoveryModule,
+    HealthModule,
+    EgressModule,
+    EmailModule,
   ],
   controllers: [
     AdminController,
@@ -44,6 +52,7 @@ import { BillingConsoleService } from "./billing-console.service.js";
     CareConsoleController,
     RecoveryConsoleController,
     BillingConsoleController,
+    TechConsoleController,
   ],
   providers: [
     AdminService,
@@ -53,6 +62,7 @@ import { BillingConsoleService } from "./billing-console.service.js";
     CustomersService,
     CompanyService,
     BillingConsoleService,
+    TechConsoleService,
   ],
   exports: [AdminService, StaffAuditService],
 })

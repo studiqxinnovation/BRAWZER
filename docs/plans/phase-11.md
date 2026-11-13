@@ -24,7 +24,7 @@ buttons, nothing on the device.
 | 11.1 | The console: shell, staff roles and permissions, the audit log, company overview, customers and the customer 360, organisations, team  | Done    |
 | 11.2 | Customer care: support tickets (a Help app for customers, the inbox for staff), account recovery, announcements, incidents and status  | Done    |
 | 11.3 | Billing: subscriptions, invoices and refunds through Stripe, coupons, finance reports, approvals                                       | Done    |
-| 11.4 | Technical: fleet and runtime hosts, live sessions, browser images, the extension catalogue, network, queues and health                 | Planned |
+| 11.4 | Technical: fleet and runtime hosts, live sessions, browser images, the extension catalogue, network, queues and health                 | Done    |
 | 11.5 | Security and compliance: threats and sign-ins, blocked addresses, abuse reports and suspension, privacy and legal requests, compliance | Planned |
 
 ## The prototype's pages, and what each one is here
@@ -108,3 +108,14 @@ buttons, nothing on the device.
 - **Accounts likely to upgrade**: free accounts by browsing minutes over 30 days, Drive use, live sessions and last activity. No score, no automatic offers.
 - **Honest omissions**: no payment retries from here (Stripe runs them), no credits or balances, no cancellation offers, no CRM pipeline, no VAT report.
 - **Tests**: `apps/api/test/billing-console.integration.test.ts` against the Stripe double (which now answers invoices, refunds, coupons and promotion codes) and `apps/web/e2e/money.spec.ts`.
+
+## 11.4 Technical
+
+- **Fleet**: `GET /console/tech/fleet` joins the existing admin runtime view (hosts, health, live, capacity, warm pool) with Docker’s container list per host and 24-hour figures from `browser_sessions`: started, ended, never started, median seconds to first frame.
+- **Live sessions**: machine facts only (account handle, engine, host, profile, timings, viewers from this instance’s stream relays, proxy, extension count); End with a reason, audited; refreshes every 30 seconds.
+- **Browser images**: the configured runtime and egress images, the API version, engines offered (`BROWSER_ENGINES`) with live sessions and profiles per engine.
+- **Extension catalogue** (`extension_policies`): the catalogue from the contracts with installs counted from profiles; allowed, under review or blocked. Blocking (permission `extModerate`: founder, technical, security) needs a reason, removes the slug from every profile, emails each affected account, and `ProfilesService.update` refuses blocked slugs with the reason.
+- **Proxy & Shield**: counts of saved proxies by protocol and test state, the latest failed tests (protocol, reached, signed in, reason only), live sessions through a proxy, site rule counts.
+- **Queues & health**: the health probes, retention’s last run (`RetentionService.lastRunAt`), warm pool, starts, and open requests, reports and quarantined files.
+- **Honest omissions**: no host CPU or memory, no per-session frame rate or latency, no browser version read at run time, no rollout percentages, no job queue, no exit-address pool or block lists.
+- **Tests**: `apps/api/test/tech-console.integration.test.ts` and `apps/web/e2e/tech.spec.ts`.

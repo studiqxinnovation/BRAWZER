@@ -742,6 +742,21 @@ export function recoveryReleasedMessage(url: string): EmailContent {
   });
 }
 
+export function extensionBlockedMessage(name: string, reason: string, url: string): EmailContent {
+  return compose(`${name} was removed from your Brawzer browsers`, {
+    preheader: "Brawzer’s team blocked an extension you had installed.",
+    heading: `${name} has been removed`,
+    paragraphs: [
+      `Brawzer’s team blocked the extension “${name}” for everyone, so it has been removed from your browser profiles. It won’t load in your next session.`,
+      `Why: ${reason}`,
+      "Your profiles, files and settings are otherwise unchanged. The Extensions page shows what is still available.",
+    ],
+    action: { label: "Open Extensions", url },
+    footnote:
+      "Extensions run inside your cloud browser, so a harmful one could read what you do there. Blocking is how we keep that from happening.",
+  });
+}
+
 export function adminNoticeMessage(
   kind: "sign-up" | "subscription" | "report" | "quarantine" | "ticket" | "recovery",
   facts: readonly (readonly [string, string])[],

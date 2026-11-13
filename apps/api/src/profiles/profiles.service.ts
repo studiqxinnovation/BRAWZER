@@ -1,4 +1,9 @@
-import { type BrowserEngine, type Profile, type ProfileColor } from "@brawzer/contracts";
+import {
+  type BrowserEngine,
+  catalogueEntry,
+  type Profile,
+  type ProfileColor,
+} from "@brawzer/contracts";
 import {
   and,
   asc,
@@ -8,6 +13,7 @@ import {
   type ProfileRow,
   schema,
   sql,
+  inArray,
 } from "@brawzer/db";
 import { Inject, Injectable } from "@nestjs/common";
 import type { AuthContext } from "../auth/session.service.js";
@@ -151,6 +157,26 @@ export class ProfilesService {
       extensions?: string[] | undefined;
     },
   ): Promise<Profile> {
+    if (input.extensions?.length) {
+      // Brawzer's team may have blocked an extension for everyone (Phase 11.4).
+      const blocked = await this.database.db
+        .select({ slug: schema.extensionPolicies.slug, reason: schema.extensionPolicies.reason })
+        .from(schema.extensionPolicies)
+        .where(
+          and(
+            inArray(schema.extensionPolicies.slug, input.extensions),
+            eq(schema.extensionPolicies.status, "blocked"),
+          ),
+        );
+      if (blocked.length > 0) {
+        const names = blocked.map((entry) => catalogueEntry(entry.slug)?.name ?? entry.slug);
+        throw new ApiException(
+          "validation_failed",
+          422,
+          `${names.join(", ")} ${names.length === 1 ? "is" : "are"} blocked by Brawzer’s team${blocked[0]?.reason ? `: ${blocked[0].reason}` : "."}`,
+        );
+      }
+    }
     if (input.proxyId) {
       // Only the account's own proxies, or its team's (ADR 0019), can be assigned.
       const [proxy] = await this.database.db

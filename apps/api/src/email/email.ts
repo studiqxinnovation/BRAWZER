@@ -43,6 +43,7 @@ import {
   resetPasswordMessage,
   type SignedOutScope,
   verifyEmailMessage,
+  extensionBlockedMessage,
   recoveryCancelledMessage,
   recoveryConfirmMessage,
   recoveryReleasedMessage,
@@ -218,6 +219,12 @@ export class EmailService {
         ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${admin}` } : {}),
       });
     }
+  }
+
+  // ── Extensions ───────────────────────────────────────────────────────
+
+  sendExtensionBlocked(to: string, name: string, reason: string): void {
+    this.dispatch(to, extensionBlockedMessage(name, reason, this.link("/app/extensions")));
   }
 
   // ── Account recovery ─────────────────────────────────────────────────

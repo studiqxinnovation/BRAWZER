@@ -50,6 +50,13 @@ import {
   refundResultSchema,
   subscriptionListSchema,
   upgradeSignalListSchema,
+  browserImagesSchema,
+  fleetSchema,
+  liveSessionListSchema,
+  moderatedExtensionListSchema,
+  networkSchema,
+  type SetExtensionStatusRequest,
+  techHealthSchema,
 } from "@brawzer/contracts";
 import { z } from "zod";
 import { apiRequest } from "./client";
@@ -330,3 +337,28 @@ export const decideApproval = (id: string, approve: boolean, reason: string) =>
   );
 export const fetchUpgradeSignals = () =>
   apiRequest("/console/billing/upgrade-signals", { schema: upgradeSignalListSchema });
+
+/* ── Technical (11.4) ── */
+
+export const fetchFleet = () => apiRequest("/console/tech/fleet", { schema: fleetSchema });
+export const fetchLiveSessions = () =>
+  apiRequest("/console/tech/sessions", { schema: liveSessionListSchema });
+export const endLiveSession = (id: string, reason: string) =>
+  apiRequest(`/console/tech/sessions/${encodeURIComponent(id)}/end`, {
+    method: "POST",
+    body: { reason },
+    schema: liveSessionListSchema,
+  });
+export const fetchBrowserImages = () =>
+  apiRequest("/console/tech/images", { schema: browserImagesSchema });
+export const fetchModeratedExtensions = () =>
+  apiRequest("/console/tech/extensions", { schema: moderatedExtensionListSchema });
+export const setExtensionStatus = (slug: string, body: SetExtensionStatusRequest) =>
+  apiRequest(`/console/tech/extensions/${encodeURIComponent(slug)}`, {
+    method: "PUT",
+    body,
+    schema: moderatedExtensionListSchema,
+  });
+export const fetchNetwork = () => apiRequest("/console/tech/network", { schema: networkSchema });
+export const fetchTechHealth = () =>
+  apiRequest("/console/tech/health", { schema: techHealthSchema });

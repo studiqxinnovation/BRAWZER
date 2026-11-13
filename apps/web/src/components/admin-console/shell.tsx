@@ -36,6 +36,12 @@ import {
   Receipt,
   Tag,
   Target,
+  Activity,
+  Cpu,
+  Globe,
+  Layers,
+  Puzzle,
+  Server,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -76,6 +82,12 @@ const ICONS: Record<string, typeof Gauge> = {
   coupons: Tag,
   finance: ChartColumn,
   trials: Target,
+  fleet: Server,
+  sessions: Activity,
+  images: Layers,
+  extensions: Puzzle,
+  network: Globe,
+  jobs: Cpu,
   announce: Megaphone,
   incidents: TriangleAlert,
 };

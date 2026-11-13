@@ -135,6 +135,11 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
     });
   }
 
+  /** Pages watching this session from this instance (one relay per session). */
+  viewersOf(sessionId: string): number {
+    return this.relays.has(sessionId) ? 1 : 0;
+  }
+
   /** A session ended on any instance: cut its viewer here too (ADR 0016). */
   onApplicationBootstrap(): void {
     this.metrics.gauge("brawzer_stream_viewers", "Pages watching a session on this instance.", () =>

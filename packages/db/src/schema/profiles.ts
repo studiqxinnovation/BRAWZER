@@ -98,3 +98,19 @@ export const profiles = pgTable(
 );
 
 export type ProfileRow = typeof profiles.$inferSelect;
+
+/* Must match `extensionStatuses` in @brawzer/contracts (tech.ts). */
+export const extensionStatus = pgEnum("extension_status", ["allowed", "review", "blocked"]);
+
+/**
+ * Moderation of the extension catalogue (Phase 11.4). A blocked extension
+ * can't be installed and is removed from every profile; a reason is kept and
+ * emailed to the people who had it.
+ */
+export const extensionPolicies = pgTable("extension_policies", {
+  slug: text().primaryKey(),
+  status: extensionStatus().notNull().default("allowed"),
+  reason: text(),
+  changedById: uuid().references(() => users.id, { onDelete: "set null" }),
+  changedAt: timestamptz().notNull().defaultNow(),
+});

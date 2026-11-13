@@ -77,6 +77,11 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
 
   private lastRun: Date | null = null;
 
+  /** When retention last ran in this process, for the console. */
+  get lastRunAt(): Date | null {
+    return this.lastRun;
+  }
+
   onApplicationBootstrap(): void {
     this.metrics.gauge(
       "brawzer_maintenance_last_run_timestamp_seconds",

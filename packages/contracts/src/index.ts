@@ -24,3 +24,4 @@ export * from "./support.ts";
 export * from "./care.ts";
 export * from "./recovery.ts";
 export * from "./billing-console.ts";
+export * from "./tech.ts";
