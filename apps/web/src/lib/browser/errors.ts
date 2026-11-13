@@ -7,6 +7,7 @@ export type NavigationErrorKind =
   | "unreachable"
   | "timeout"
   | "certificate"
+  | "secure"
   | "redirect"
   | "address"
   | "other";
@@ -39,8 +40,12 @@ const KINDS: readonly [NavigationErrorKind, RegExp][] = [
   ],
   [
     "certificate",
-    /^(ERR_CERT_|ERR_SSL_|ERR_BAD_SSL|nssFailure2|nssBadCert|sslv3Used|certerror|SEC_ERROR|SSL_ERROR|MOZILLA_PKIX)/,
+    /^(ERR_CERT_|ERR_BAD_SSL|ERR_SSL_PINNED_KEY|ERR_SSL_CLIENT_AUTH|nssBadCert|certerror|SEC_ERROR|MOZILLA_PKIX|SSL_ERROR_BAD_CERT)/,
   ],
+  // The handshake itself failed: the site closed the connection, or the two
+  // sides share no protocol. Firefox reports most of these as nssFailure2,
+  // which says nothing about certificates.
+  ["secure", /^(ERR_SSL_|nssFailure2|sslv3Used|SSL_ERROR)/],
   ["redirect", /^(ERR_TOO_MANY_REDIRECTS|redirectLoop)/],
   [
     "address",
@@ -101,6 +106,12 @@ export function describeNavigationError(code: string, url: string): NavigationEr
         kind,
         title: "This website’s certificate can’t be trusted",
         detail: `${site} presented a certificate Brawzer couldn’t verify, so nothing was sent to it. If this is a site you know, its certificate may have expired.`,
+      };
+    case "secure":
+      return {
+        kind,
+        title: "A secure connection couldn’t be made",
+        detail: `${site} closed the connection before it was secure, so nothing was sent to it. The site may be refusing connections from this address, or be down.`,
       };
     case "redirect":
       return {

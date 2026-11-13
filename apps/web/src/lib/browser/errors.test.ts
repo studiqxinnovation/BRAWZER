@@ -11,7 +11,11 @@ describe("navigation errors", () => {
     expect(navigationErrorKind("ERR_CONNECTION_TIMED_OUT")).toBe("timeout");
     expect(navigationErrorKind("netTimeout")).toBe("timeout");
     expect(navigationErrorKind("ERR_CERT_DATE_INVALID")).toBe("certificate");
-    expect(navigationErrorKind("nssFailure2")).toBe("certificate");
+    expect(navigationErrorKind("nssBadCert")).toBe("certificate");
+    expect(navigationErrorKind("SSL_ERROR_BAD_CERT_DOMAIN")).toBe("certificate");
+    expect(navigationErrorKind("nssFailure2")).toBe("secure");
+    expect(navigationErrorKind("ERR_SSL_PROTOCOL_ERROR")).toBe("secure");
+    expect(navigationErrorKind("SSL_ERROR_NO_CYPHER_OVERLAP")).toBe("secure");
     expect(navigationErrorKind("ERR_TOO_MANY_REDIRECTS")).toBe("redirect");
     expect(navigationErrorKind("ERR_UNKNOWN_URL_SCHEME")).toBe("address");
     expect(navigationErrorKind("BRAWZER_REFUSED_UNRESOLVED")).toBe("unresolved");
@@ -21,6 +25,13 @@ describe("navigation errors", () => {
     expect(navigationErrorKind("BRAWZER_REFUSED_POLICY")).toBe("policy");
     expect(navigationErrorKind("ERR_SOMETHING_NEW")).toBe("other");
     expect(navigationErrorKind("")).toBe("other");
+  });
+
+  it("doesn’t blame a certificate for a handshake the site refused", () => {
+    const text = describeNavigationError("nssFailure2", "https://whoer.net/");
+    expect(text.title).toBe("A secure connection couldn’t be made");
+    expect(text.detail).toContain("“whoer.net”");
+    expect(text.detail).not.toMatch(/certificate/i);
   });
 
   it("names the host and never the engine", () => {
