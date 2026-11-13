@@ -28,6 +28,18 @@ const BANNER_MS = 6_000;
 const never = () => () => undefined;
 const nowMinute = () => Math.floor(Date.now() / 30_000);
 
+/**
+ * Which notifications have already been shown as a banner, for this tab.
+ * Module scope, not a per-mount ref: the desktop remounts the banner strip
+ * whenever it changes which surface is active, and a per-mount set would
+ * replay every notification still in the list on each remount — the "it keeps
+ * popping when nothing is new" effect. The backlog already present when the
+ * strip first mounts is marked seen without a banner, so only notifications
+ * that arrive afterwards pop.
+ */
+const bannered = new Set<string>();
+let bannerPrimed = false;
+
 const usePrefs = () =>
   useSyncExternalStore(subscribeToDesktopPrefs, readDesktopPrefs, defaultDesktopPrefs);
 
@@ -41,17 +53,23 @@ export function NotificationBanners() {
   const all = useSyncExternalStore(subscribeToNotifications, readNotifications, readNotifications);
   const prefs = usePrefs();
   const [showing, setShowing] = useState<readonly string[]>([]);
-  const seen = useRef(new Set<string>());
   const settings = useRef(prefs);
   useEffect(() => {
     settings.current = prefs;
   }, [prefs]);
 
   useEffect(() => {
+    // First appearance: adopt whatever is already in the list without a
+    // banner, so the backlog doesn't pop. Only what arrives after this does.
+    if (!bannerPrimed) {
+      bannerPrimed = true;
+      for (const entry of all) bannered.add(entry.id);
+      return;
+    }
     const timers: ReturnType<typeof setTimeout>[] = [];
     for (const entry of all) {
-      if (seen.current.has(entry.id)) continue;
-      seen.current.add(entry.id);
+      if (bannered.has(entry.id)) continue;
+      bannered.add(entry.id);
       if (settings.current.dnd) continue;
       setShowing((current) => [entry.id, ...current].slice(0, 4));
       if (settings.current.sounds) playSound("note");
@@ -110,7 +128,7 @@ function NotificationCard({
   const when = "when" in entry ? entry.when : whenLabel(entry.at, minute * 30_000);
   const body = (
     <>
-      <GlyphTile glyph={entry.glyph} colour={entry.colour} size={36} />
+      <GlyphTile glyph={entry.glyph} colour={entry.colour} size={28} />
       <div className="min-w-0 flex-1">
         <p className="dt-nc-src">{entry.source}</p>
         <p className="dt-nc-title">{entry.title}</p>
