@@ -144,6 +144,21 @@ function checks() {
   }).stdout;
   for (const h of ["strict-transport-security", "content-security-policy", "x-frame-options"])
     console.log(`  ${h}: ${headers.toLowerCase().includes(h) ? "present" : "MISSING"}`);
+  // Read only. Without this setting sessions start and stream but cannot load
+  // a page (runtime-host/README.md, step 1); nothing else here would notice.
+  try {
+    const runsc = ssh(runtime.publicIp, "docker info --format '{{json .Runtimes.runsc}}'", {
+      quiet: true,
+    });
+    console.log(
+      runsc.includes("--network=host")
+        ? "  runtime host: runsc uses the kernel network stack"
+        : `  runtime host: runsc is NOT set to --network=host, so sessions cannot browse.
+    Fix: ssh root@${runtime.publicIp} 'bash -s' < infra/production/runtime-host/runsc-host-network.sh`,
+    );
+  } catch (error) {
+    console.log(`  runtime host: could not be asked (${error.message})`);
+  }
 }
 
 if (onlyCheck) {

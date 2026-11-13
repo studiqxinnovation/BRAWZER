@@ -2,8 +2,10 @@
 // A live test of a production installation, end to end, as a new person
 // would meet it: sign up with the smoke mailbox, receive the confirmation
 // email through Resend, confirm, start a cloud browser session, watch its
-// stream deliver frames, end it, check the runtime host is clean, and delete
-// the account. Prints one line per step; exits 1 on the first failure.
+// stream deliver frames, load a real page from the internet in it (the
+// session's whole path out: engine, filtering proxy, egress sidecar), end it,
+// check its containers are gone, and delete the account. Prints one line per
+// step; exits 1 on the first failure.
 //
 //   node infra/hostman/smoke.mjs
 //
@@ -43,6 +45,8 @@ const SMOKE_MAILBOX = need("SMOKE_MAILBOX", secrets);
 const origin = `https://${SITE_HOST}`;
 const api = `${origin}/api/v1`;
 const key = process.env.HOSTMAN_SSH_KEY ?? path.join(os.homedir(), ".ssh", "brawzer-hostman");
+/** The page the session is asked to load: small, public, and always there. */
+const SMOKE_PAGE = process.env.SMOKE_PAGE ?? "https://example.com/";
 
 // The protocol pieces the page uses, from the contracts package's build.
 const protocol = await import(
@@ -210,7 +214,8 @@ if (ticket.status !== 200) {
 step(`stream ticket for ${ticket.json.url}`);
 
 const stream = await new Promise((resolve) => {
-  const counts = { frames: 0, video: 0, audio: 0, messages: {} };
+  const counts = { frames: 0, video: 0, audio: 0, messages: {}, page: null };
+  let tabId = null;
   const socket = new WebSocket(ticket.json.url, { headers: { origin }, perMessageDeflate: false });
   socket.binaryType = "nodebuffer";
   const done = (why) => {
@@ -222,7 +227,16 @@ const stream = await new Promise((resolve) => {
     }
     resolve({ ...counts, why });
   };
-  const timer = setTimeout(() => done("10 seconds elapsed"), 10_000);
+  const timer = setTimeout(() => done("40 seconds elapsed"), 40_000);
+  // The page asked for, once the engine says how it went: loaded, or why not.
+  const watch = (tabs) => {
+    const tab = tabs?.find((candidate) => candidate.id === tabId);
+    if (!tab || !tab.url.startsWith(SMOKE_PAGE) || counts.page) return;
+    if (tab.error) counts.page = { ok: false, why: tab.error.code };
+    else if (!tab.loading) counts.page = { ok: true, title: tab.title };
+    // A moment more, so the page's own picture is among the frames counted.
+    if (counts.page) setTimeout(() => done("the page settled"), 1_500);
+  };
   socket.on("open", () => {
     socket.send(JSON.stringify({ type: "ticket", ticket: ticket.json.ticket }));
     socket.send(
@@ -239,6 +253,11 @@ const stream = await new Promise((resolve) => {
         const message = JSON.parse(data.toString());
         counts.messages[message.type] = (counts.messages[message.type] ?? 0) + 1;
         if (message.type === "error") done(`agent error: ${JSON.stringify(message)}`);
+        if (message.type === "welcome" && tabId === null) {
+          tabId = message.activeTabId ?? message.tabs[0]?.id ?? null;
+          if (tabId) socket.send(JSON.stringify({ type: "navigate", tabId, url: SMOKE_PAGE }));
+        }
+        if (message.type === "tabs") watch(message.tabs);
       } catch {
         // Ignored.
       }
@@ -259,9 +278,18 @@ step(
   `stream: ${stream.frames} picture frame(s), ${stream.video} video chunk(s); messages ${JSON.stringify(stream.messages)}; ${stream.why}`,
 );
 if (stream.frames + stream.video === 0) {
-  console.error("FAILED: the stream delivered no frames in 10 seconds");
+  console.error("FAILED: the stream delivered no frames");
   await cleanUp(1);
 }
+if (!stream.page?.ok) {
+  console.error(
+    `FAILED: the session could not load ${SMOKE_PAGE}: ${stream.page?.why ?? "no answer in 40 seconds"}. ` +
+      "Sessions start but cannot browse: check the egress sidecar's log, and that the runtime " +
+      'host\'s runsc runtime has runtimeArgs ["--network=host"] (infra/production/runtime-host/README.md).',
+  );
+  await cleanUp(1);
+}
+step(`a real page loaded in the session: ${SMOKE_PAGE} (“${stream.page.title}”)`);
 
 const ended = await call("DELETE", `/browser/sessions/${session.id}`);
 if (ended.status !== 204) {
@@ -269,12 +297,14 @@ if (ended.status !== 204) {
   await cleanUp(1);
 }
 step("session ended (204)");
+const endedId = session.id;
 session = null;
 
 let left = "";
 for (let attempt = 0; attempt < 15; attempt += 1) {
+  // Only this session's pair: other people's sessions are none of this test's business.
   left = sshRuntime(
-    "docker ps -a --filter label=brawzer.managed --format '{{.Names}} {{.Status}}'",
+    `docker ps -a --filter label=brawzer.managed --filter name=${endedId} --format '{{.Names}} {{.Status}}'`,
   );
   if (!left) break;
   await sleep(2000);
@@ -283,7 +313,7 @@ if (left) {
   console.error(`FAILED: containers still on the runtime host: ${left}`);
   await cleanUp(1);
 }
-step("runtime host clean: no session containers left");
+step("runtime host clean: the session's containers are gone");
 
 let delivery = confirmation.lastEvent;
 for (

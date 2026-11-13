@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BROWSER_LIMITS,
   CLIPBOARD_MAX_CHARS,
   type AgentMessage,
   type Bookmark,
@@ -100,9 +101,15 @@ import { BrowserViewport, type Shortcut, type ViewportHandle } from "./viewport"
 type Phase =
   | { kind: "idle" }
   | { kind: "starting" }
-  | { kind: "connecting"; session: BrowserSession }
+  /** `again`: coming back to a session this window was already showing. */
+  | { kind: "connecting"; session: BrowserSession; again?: boolean }
   | { kind: "live"; session: BrowserSession }
   | { kind: "ended"; message: string }
+  /**
+   * This window couldn't get its stream back, which says nothing about the
+   * session: it runs on in the cloud, and the window can try again.
+   */
+  | { kind: "lost"; session: BrowserSession; message: string }
   /** Another window or tab took the stream; the session runs on there. */
   | { kind: "elsewhere"; session: BrowserSession }
   /** The sign-in is locked: the stream stopped, and comes back on unlocking. */
@@ -136,7 +143,14 @@ const REFUSALS: Record<RefusedAction, { title: string; description: string }> = 
   },
 };
 
-const RECONNECT_ATTEMPTS = 2;
+/** Streams that open and drop again in a row before the window stops trying on its own. */
+const RECONNECT_ATTEMPTS = 5;
+/**
+ * How long a window keeps asking for its stream while Brawzer's service
+ * doesn't answer: longer than the service takes to restart for an update,
+ * so a session in the cloud is back in its window without anyone's help.
+ */
+const RECONNECT_WINDOW_MS = 90_000;
 /** How often the tab in front has its preview picture refreshed, if it has drawn since. */
 const PREVIEW_INTERVAL_MS = 4_000;
 const PREVIEW_WIDTH = 288;
@@ -402,6 +416,8 @@ export function BrowserWorkspace({
   const addressRef = useRef<HTMLInputElement>(null);
   const viewport = useRef<Viewport>({ width: 1280, height: 800, scale: 1 });
   const attempts = useRef(0);
+  /** Counts connect() calls: a newer one, or the window closing, stops an older one's waiting. */
+  const connectRun = useRef(0);
   /** Set while this page ends the session itself: the server's own notice then says less. */
   const endingRef = useRef(false);
   const pendingOpen = useRef<BrowserOpen | undefined>(openOnStart);
@@ -458,10 +474,20 @@ export function BrowserWorkspace({
         const { message, retry } = describeClose(event.code);
         if (retry && attempts.current < RECONNECT_ATTEMPTS) {
           attempts.current += 1;
-          setTimeout(() => void connect(current.session), 1_000);
+          const { session } = current;
+          setTimeout(() => {
+            // Locked, ended or closed in the meantime: nothing to come back to.
+            const now = phaseRef.current;
+            if ((now.kind !== "live" && now.kind !== "connecting") || now.session.id !== session.id)
+              return;
+            void connect(session, true);
+          }, attempts.current * 1_000);
           return;
         }
-        setPhase({ kind: "ended", message });
+        // A dropped connection isn't the session's end: it runs on in the cloud.
+        setPhase(
+          retry ? { kind: "lost", session: current.session, message } : { kind: "ended", message },
+        );
         setDialog(null);
         setChooser(null);
         return;
@@ -653,29 +679,55 @@ export function BrowserWorkspace({
     }
   }
 
-  async function connect(session: BrowserSession) {
-    setPhase({ kind: "connecting", session });
+  /**
+   * Opens the session's stream in this window. While Brawzer's service
+   * doesn't answer (it restarts for an update; the network blinks), the
+   * session is still running in the cloud, so this keeps asking for a while
+   * rather than calling the session over; only the service saying the session
+   * is gone ends it here.
+   */
+  async function connect(session: BrowserSession, again = false) {
+    connectRun.current += 1;
+    const run = connectRun.current;
+    // Another connect took over, the window closed, or the session was locked or ended meanwhile.
+    const superseded = () => run !== connectRun.current || phaseRef.current.kind !== "connecting";
+    setPhase({ kind: "connecting", session, again });
     setFirstFrame(false);
     // The viewport stays mounted through a reconnect: it must report the new stream's first frame.
     viewportRef.current?.restart();
-    const ticket = await requestStreamTicket(session.id);
-    if (!ticket.ok) {
+    const giveUpAt = performance.now() + RECONNECT_WINDOW_MS;
+    for (let wait = 1_000; ; wait = Math.min(wait + 1_000, 5_000)) {
+      const ticket = await requestStreamTicket(session.id);
+      if (run !== connectRun.current) return;
+      if (ticket.ok) {
+        if (superseded()) return;
+        openVideo();
+        stream.open(ticket.data.url, ticket.data.ticket, viewport.current, codecsRef.current);
+        return;
+      }
       if (ticket.status === 401) {
         leaveSignedInArea("expired");
         return;
       }
+      if (superseded()) return;
       if (ticket.status === 423) {
         setPhase({ kind: "locked", session });
         return;
       }
-      setPhase({
-        kind: "ended",
-        message: ticket.status === 404 ? "This browser session has ended." : ticket.error.message,
-      });
-      return;
+      if (ticket.status === 404) {
+        setPhase({ kind: "ended", message: "This browser session has ended." });
+        return;
+      }
+      // No answer, or a gateway's: the service is away, not the session.
+      const away = ticket.status === 0 || ticket.status >= 500;
+      if (!away || performance.now() + wait > giveUpAt) {
+        setPhase({ kind: "lost", session, message: ticket.error.message });
+        return;
+      }
+      setPhase({ kind: "connecting", session, again: true });
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      if (superseded()) return;
     }
-    openVideo();
-    stream.open(ticket.data.url, ticket.data.ticket, viewport.current, codecsRef.current);
   }
 
   async function start(profileId: string | null, resume = false, engine?: BrowserEngine) {
@@ -824,6 +876,7 @@ export function BrowserWorkspace({
     }
     if (attachTo?.status === "running") void connect(attachTo);
     return () => {
+      connectRun.current += 1;
       stream.close();
     };
     // Once, for the initial session only.
@@ -1428,6 +1481,43 @@ export function BrowserWorkspace({
     );
   }
 
+  if (phase.kind === "lost") {
+    const lost = phase.session;
+    return (
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-5 py-8 sm:px-8 sm:py-12">
+        <h1 className="text-title-1 text-ink">Browser</h1>
+        <FormMessage tone="info" title="Connection lost">
+          {phase.message} This window lost its connection; the session wasn’t ended.{" "}
+          {engineDetails[lost.engine].short} keeps running in Brawzer’s cloud with its tabs as they
+          are, for up to {BROWSER_LIMITS.idleMinutes} minutes with nobody viewing it.
+        </FormMessage>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={() => {
+              attempts.current = 0;
+              void connect(lost, true);
+            }}
+          >
+            Reconnect
+          </Button>
+          {mode === "window" && (
+            <Button
+              variant="secondary"
+              size="lg"
+              onClick={() => {
+                closeWindow(lost.id);
+              }}
+            >
+              Close this window
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (phase.kind === "ended") {
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-5 py-8 sm:px-8 sm:py-12">
@@ -1752,7 +1842,9 @@ export function BrowserWorkspace({
             <div className="flex items-center gap-3 text-callout text-ink-secondary">
               <Spinner className="size-5" />
               {phase.kind === "connecting"
-                ? "Connecting to your browser…"
+                ? phase.again
+                  ? "Reconnecting to your browser…"
+                  : "Connecting to your browser…"
                 : "Waiting for the page…"}
             </div>
           </div>

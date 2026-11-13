@@ -348,6 +348,85 @@ test.describe("browser", () => {
     });
   });
 
+  test("waits out a restart of the service, and says the connection was lost rather than the session over", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The streamed page is driven with a mouse; one run covers it.");
+    test.setTimeout(150_000);
+    const streams: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/browser\/sessions\/[^/]+\/stream$/, (socket) => {
+      socket.connectToServer();
+      streams.push(socket);
+    });
+    // The service as the page sees it: answering, restarting behind its gateway, or refusing.
+    let service: "up" | "restarting" | "refusing" = "up";
+    let asked = 0;
+    await page.route(/\/api\/v1\/browser\/sessions\/[^/]+\/ticket$/, async (route) => {
+      if (service === "up") return route.fallback();
+      asked += 1;
+      await route.fulfill({
+        status: service === "restarting" ? 502 : 429,
+        contentType: "text/plain",
+        body: "",
+      });
+    });
+    await signedIn(page, baseURL, "browser-restart");
+    await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
+    const viewport = page.getByTestId("browser-viewport");
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 60_000 })
+      .not.toBe("0");
+    const address = page.getByRole("textbox", { name: "Address or search" });
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+
+    // The service restarts: the stream drops and nothing answers for a while.
+    // The window keeps asking; it never calls the session over.
+    service = "restarting";
+    await streams.at(-1)?.close({ code: 1012, reason: "service restart" });
+    await expect(page.getByText("Reconnecting to your browser…")).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => asked, { timeout: 30_000 }).toBeGreaterThanOrEqual(3);
+    await expect(page.getByText("Session over")).toBeHidden();
+    await expect(page.getByText("Connection lost")).toBeHidden();
+
+    // It comes back: the same session, with its tab, in the same window.
+    service = "up";
+    await expect.poll(() => streams.length, { timeout: 30_000 }).toBe(2);
+    await expect(page.getByText("Reconnecting to your browser…")).toBeHidden({ timeout: 30_000 });
+    await expect(tab(page, "Brawzer test site")).toBeVisible();
+    await address.fill("http://testsite.invalid/second");
+    await address.press("Enter");
+    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+
+    // An answer that isn't about the session (here: too many requests): the
+    // window says its connection was lost, not that the session ended or was
+    // saved, and can be asked to try again.
+    service = "refusing";
+    await streams.at(-1)?.close({ code: 1012, reason: "service restart" });
+    const lost = page.getByText("Connection lost");
+    await expect(lost).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("the session wasn’t ended")).toBeVisible();
+    await expect(page.getByText("Session over")).toBeHidden();
+    expect(await wcagViolations(page)).toEqual([]);
+    service = "up";
+    await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+    await expect.poll(() => streams.length, { timeout: 30_000 }).toBe(3);
+    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "End session" }).click();
+    await page
+      .getByRole("alertdialog", { name: "End this browser session?" })
+      .getByRole("button", { name: "End session" })
+      .click();
+    await expect(page.getByText("You ended this browser session.")).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
   test("keeps history and bookmarks, and continues a session on another device", async ({
     page,
     browser,

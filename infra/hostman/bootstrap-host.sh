@@ -90,7 +90,7 @@ if [ "$ROLE" = runtime ]; then
   # runc egress with no routes and a separate loopback, so the runtime could
   # not reach the egress proxy and nothing would browse. Host mode keeps
   # gVisor's syscall sandbox; the egress nftables firewall still confines the
-  # namespace. Written with jq so other daemon settings (TLS, hosts) are kept.
+  # namespace. Written so that other daemon settings (TLS, hosts) are kept.
   python3 - <<'PY'
 import json, os
 p = "/etc/docker/daemon.json"
