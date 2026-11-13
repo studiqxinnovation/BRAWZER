@@ -1,6 +1,7 @@
 import { type PublicStatus, publicStatusSchema } from "@brawzer/contracts";
 import type { Metadata } from "next";
 import { connection } from "next/server";
+import { Suspense } from "react";
 import { Container, PageHero } from "@/components/site/layout-primitives";
 
 export const metadata: Metadata = {
@@ -57,8 +58,23 @@ async function readStatus(): Promise<PublicStatus | null> {
   }
 }
 
-/** The public status page: what the health checks and the team's incidents say right now. */
-export default async function StatusPage() {
+/**
+ * The public status page: what the health checks and the team's incidents say
+ * right now. The shell is static; the figures stream in at request time.
+ */
+export default function StatusPage() {
+  return (
+    <Suspense
+      fallback={
+        <PageHero eyebrow="Status" title="Checking…" lede="Reading Brawzer’s health checks." />
+      }
+    >
+      <StatusBody />
+    </Suspense>
+  );
+}
+
+async function StatusBody() {
   await connection();
   const status = await readStatus();
   return (
