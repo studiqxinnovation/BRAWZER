@@ -64,6 +64,8 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: workspaceRoot,
   reactStrictMode: true,
   poweredByHeader: false,
+  // No "N" button in the corner while developing: it reads as part of the desktop.
+  devIndicators: false,
   typedRoutes: true,
   cacheComponents: true,
   partialPrefetching: true,
