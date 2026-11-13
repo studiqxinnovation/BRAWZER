@@ -23,6 +23,7 @@ const CATEGORIES: readonly Category[] = [
   "All",
   "Browsers",
   "Brawzer",
+  "Brawzer Suite",
   "Productivity",
   "Education",
   "Business",
@@ -47,6 +48,18 @@ const PACKS: {
     description: "Email, chat, documents and meetings.",
     colour: "#FF9F0A",
     apps: ["Mail and chat", "Work"],
+  },
+  {
+    name: "AI pack",
+    description: "ChatGPT, Claude, Gemini and Perplexity, each in its own tab.",
+    colour: "#10a37f",
+    apps: ["AI"],
+  },
+  {
+    name: "Social pack",
+    description: "Discord, X, Instagram, Facebook and Reddit.",
+    colour: "#FF375F",
+    apps: ["Social"],
   },
 ];
 

@@ -3,6 +3,7 @@
 import { cn } from "@brawzer/ui/lib/cn";
 import dynamic from "next/dynamic";
 import { type GlyphName, glyphs, type TileColour, tileColours } from "../glyphs";
+import { appIcons } from "./app-icons";
 import type { ComponentType } from "react";
 
 /**
@@ -20,6 +21,7 @@ export const appIds = [
   "notepad",
   "writer",
   "calc",
+  "slides",
   "code",
   "templates",
   "app-store",
@@ -42,7 +44,7 @@ export const appIds = [
 ] as const;
 export type AppId = (typeof appIds)[number];
 
-export type AppCategory = "Brawzer" | "Productivity" | "Education" | "Business";
+export type AppCategory = "Brawzer" | "Brawzer Suite" | "Productivity" | "Education" | "Business";
 
 export interface AppDefinition {
   id: AppId;
@@ -137,7 +139,7 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     id: "writer",
     name: "Writer",
     description: "Documents with headings, lists and emphasis, saved to Drive.",
-    category: "Productivity",
+    category: "Brawzer Suite",
     glyph: "doc",
     colour: "blue",
     width: 860,
@@ -148,12 +150,23 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     id: "calc",
     name: "Calc",
     description: "Sheets with formulas, saved to Drive as CSV.",
-    category: "Productivity",
+    category: "Brawzer Suite",
     glyph: "table",
     colour: "green",
     width: 920,
     height: 580,
     component: dynamic(() => import("./calc"), { loading }),
+  },
+  slides: {
+    id: "slides",
+    name: "Slides",
+    description: "Presentations with themes and pictures from Drive, shown full screen.",
+    category: "Brawzer Suite",
+    glyph: "play",
+    colour: "orange",
+    width: 980,
+    height: 640,
+    component: dynamic(() => import("./slides"), { loading }),
   },
   code: {
     id: "code",
@@ -415,6 +428,7 @@ export const launchpadOrder: readonly AppId[] = [
   "music",
   "writer",
   "calc",
+  "slides",
   "notepad",
   "calculator",
   "send-to-phone",
@@ -476,7 +490,7 @@ export function Tile({
   );
 }
 
-/** An app's icon: its symbol on its tile. */
+/** An app's icon: its own solid symbol on its tile, as Apple draws them. */
 export function AppIcon({
   app,
   size = 44,
@@ -486,7 +500,19 @@ export function AppIcon({
   size?: number;
   className?: string;
 }) {
+  const hex = tileColours[apps[app].colour];
   return (
-    <Tile glyph={apps[app].glyph} colour={apps[app].colour} size={size} className={className} />
+    <span
+      aria-hidden="true"
+      className={cn("ap-icon ap-app-icon", className)}
+      style={{
+        width: size,
+        height: size,
+        background: `linear-gradient(180deg, color-mix(in srgb, ${hex} 72%, #fff), ${hex} 55%, color-mix(in srgb, ${hex} 86%, #000))`,
+      }}
+    >
+      {/* Static markup from app-icons.ts, never from data. */}
+      <svg viewBox="0 0 24 24" dangerouslySetInnerHTML={{ __html: appIcons[app] }} />
+    </span>
   );
 }

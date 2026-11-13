@@ -32,7 +32,8 @@ export default function TemplatesApp() {
         </p>
         <ul className="ap-tp-grid" aria-label="Templates">
           {templates.map((entry, index) => {
-            const glyph: GlyphName = entry.app === "writer" ? "doc" : "table";
+            const glyph: GlyphName =
+              entry.app === "writer" ? "doc" : entry.app === "slides" ? "play" : "table";
             const colour = COLOURS[index % COLOURS.length] ?? "blue";
             return (
               <li key={entry.id}>
@@ -47,7 +48,13 @@ export default function TemplatesApp() {
                   <Tile glyph={glyph} colour={colour} size={38} />
                   <span>
                     <b>{entry.name}</b>
-                    <span>{entry.app === "writer" ? "Document" : "Spreadsheet"}</span>
+                    <span>
+                      {entry.app === "writer"
+                        ? "Document"
+                        : entry.app === "slides"
+                          ? "Presentation"
+                          : "Spreadsheet"}
+                    </span>
                   </span>
                 </button>
               </li>

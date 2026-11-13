@@ -29,6 +29,7 @@ export function fileTile(
   if (contentType.startsWith("image/")) return { glyph: "image", colour: "teal" };
   if (contentType.startsWith("audio/")) return { glyph: "music", colour: "pink" };
   if (extension === "csv") return { glyph: "table", colour: "green" };
+  if (extension === "slides") return { glyph: "play", colour: "orange" };
   if (extension === "html" || extension === "htm") return { glyph: "doc", colour: "blue" };
   if (contentType === "text/plain") return { glyph: "doc", colour: "gray" };
   return { glyph: "archive", colour: "brown" };

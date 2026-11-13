@@ -179,8 +179,8 @@ function DockItem({
 const Sep = () => <span className="dt-dk-sep" aria-hidden="true" />;
 
 /**
- * Mac style: the prototype's Dock along the bottom. Brawzer, the browsers,
- * the apps kept in it (and any other app that's open), Launchpad, the App
+ * Mac style: the prototype’s Dock along the bottom. Brawzer and Launchpad, the browsers,
+ * the apps kept in it (and any other app that’s open), the App
  * Store and Settings, Trash, then minimised windows. Each magnifies under
  * the pointer; right-click for its menu.
  */
@@ -210,6 +210,15 @@ export function Dock({
         onMenu={actions.onDashboardMenu}
       >
         <BrawzerTile size={46} />
+      </DockItem>
+      <DockItem
+        label="Launchpad"
+        dock="launchpad"
+        running={false}
+        onClick={onLaunchpad}
+        onMenu={actions.onLaunchpadMenu}
+      >
+        <Tile glyph="grid" colour="indigo" size={46} />
       </DockItem>
       <Sep />
       {engines.map((engine) => (
@@ -260,15 +269,6 @@ export function Dock({
         </DockItem>
       ))}
       <Sep />
-      <DockItem
-        label="Launchpad"
-        dock="launchpad"
-        running={false}
-        onClick={onLaunchpad}
-        onMenu={actions.onLaunchpadMenu}
-      >
-        <Tile glyph="grid" colour="indigo" size={46} />
-      </DockItem>
       {dockSystemApps.map((app) => (
         <DockItem
           key={app}

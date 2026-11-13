@@ -11,6 +11,7 @@ export function appFor(file: Pick<DriveFile, "name" | "contentType" | "status">)
   if (file.contentType.startsWith("audio/")) return "music";
   if (file.contentType !== "text/plain") return null;
   if (/\.csv$/i.test(file.name)) return "calc";
+  if (/\.slides$/i.test(file.name)) return "slides";
   if (/\.html?$/i.test(file.name)) return "writer";
   if (CODE.test(file.name)) return "code";
   return "notepad";

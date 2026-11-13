@@ -22,6 +22,7 @@ real; nothing an account owns is kept on the device.
 | 10.4 | Drag and drop across the boundary; faces on the login screen and switching; the stream read aloud                                 | **Done** 2026-11-12 |
 | 10.5 | The moving page as video (VP8 over the stream, decoded with WebCodecs)                                                            | **Done** 2026-11-12 |
 | 10.6 | Email that a computer's owner expects: welcome, billing, quarantines, team updates, administrators, preferences, delivery reports | **Done** 2026-11-12 |
+| 10.7 | The Brawzer Suite (Writer, Calc, Slides), more web apps with their sites' own icons, Apple-style app icons, Bee's own mark        | **Done** 2026-11-12 |
 
 ## 10.1 The cloud browser as a computer's own
 
@@ -171,3 +172,36 @@ transport with Resend behind it in production. Added:
 - Found on the way: webhooks carry no Origin, and the cross-site check
   would have refused Stripe's in production. Signed webhook paths are
   exempt now, and a test posts both without an origin.
+
+## 10.7 The Brawzer Suite, web apps with their own icons, the icons
+
+- **Slides**, the third of the Brawzer Suite beside Writer and Calc (the
+  App Store's new "Brawzer Suite" category): slides with three layouts
+  (title, title and points, picture from Drive), four themes, a thumbnail
+  rail to add, reorder and delete slides, full-screen presenting (arrow
+  keys, Space, Home and End, Escape), kept in Drive as a `.slides` text
+  file that reopens from Files or the app's Open… dialog. Two templates
+  (Pitch deck, Lesson). A deck read back is checked shape by shape: an
+  unknown file becomes an empty deck, never an error.
+- **Web apps**: Telegram, ChatGPT, Claude, Gemini, Perplexity, Slack,
+  Discord, Google Meet, Microsoft Teams, X, Instagram, Facebook, Reddit,
+  Spotify, GitHub, Figma, Trello, Google Drive, Duolingo and Coursera join
+  WhatsApp and the rest, in two new packs (AI, Social). The list now lives
+  in contracts, shared with the API.
+- **Their own icons.** A web app's tile shows the site's own icon, as a
+  phone's home screen does: `GET /api/v1/web-apps/:id/icon` fetches it once
+  from the site (its touch icon, else its favicon, else the usual places;
+  https only, public names only wherever a redirect points, 256 KB and
+  6 s caps, the type read from the bytes) and keeps it for a day. The
+  cache warms when the API starts. The device never asks the site for
+  anything. Until the icon arrives, or when a site offers none (Gemini
+  sends visitors to sign in first), the tile shows the name's initial.
+  Tiles load icons two at a time: thirty at once held every connection
+  the browser gives the API and kept the desktop's own saves waiting.
+- **Apple-style app icons**: every app of Brawzer's has its own solid
+  symbol on a glossy tile (`app-icons.ts`), drawn by hand on a 24-unit
+  grid, in place of the one-stroke glyphs the menus keep using.
+- **Bee Browser's own mark**: a bee, not Brawzer's stack. The stack is
+  Brawzer's; Bee is one of the browsers a Brawzer computer runs, beside
+  Chrome and Firefox, and has a mark of its own on its honey tile.
+- Launchpad sits beside the Brawzer button in the Dock.

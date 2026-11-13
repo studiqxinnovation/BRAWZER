@@ -8,11 +8,30 @@ export interface DocumentTemplate {
   name: string;
   description: string;
   category: "Business" | "Study" | "Personal";
-  app: "writer" | "calc";
+  app: "writer" | "calc" | "slides";
   /** Writer: the document's HTML. */
   html?: string;
   /** Calc: cells by address, values or formulas. */
   cells?: Record<string, string>;
+  /** Slides: the deck, as Slides keeps it. */
+  deck?: SlideDeck;
+}
+
+/** What Slides keeps in Drive (a `.slides` file): a theme and the slides in order. */
+export interface SlideDeck {
+  version: 1;
+  theme: "night" | "paper" | "ocean" | "sunrise";
+  slides: Slide[];
+}
+
+export interface Slide {
+  id: string;
+  layout: "title" | "bullets" | "picture";
+  title: string;
+  /** One line per bullet (or the subtitle of a title slide, or a caption). */
+  body: string;
+  /** A picture from Drive, by file id, on a picture slide. */
+  imageId?: string;
 }
 
 const list = (items: string[]) => `<ul>${items.map((item) => `<li>${item}</li>`).join("")}</ul>`;
@@ -158,6 +177,119 @@ export const templates: readonly DocumentTemplate[] = [
       C10: "=SUM(C4:C8)",
       A11: "Average so far",
       D11: "=SUM(D4:D8)/C10*100",
+    },
+  },
+  {
+    id: "pitch-deck",
+    name: "Pitch deck",
+    description: "Ten slides an investor expects, each saying what to put on it.",
+    category: "Business",
+    app: "slides",
+    deck: {
+      version: 1,
+      theme: "night",
+      slides: [
+        {
+          id: "s1",
+          layout: "title",
+          title: "Company name",
+          body: "One line on what you do, for whom",
+        },
+        {
+          id: "s2",
+          layout: "bullets",
+          title: "The problem",
+          body: "Who has it\nHow they cope today\nWhat it costs them",
+        },
+        {
+          id: "s3",
+          layout: "bullets",
+          title: "The solution",
+          body: "What you built\nWhy it works\nWhat changes for the customer",
+        },
+        { id: "s4", layout: "picture", title: "The product", body: "A picture of it in use" },
+        {
+          id: "s5",
+          layout: "bullets",
+          title: "The market",
+          body: "How many could use it\nHow many you can reach first\nWhy now",
+        },
+        {
+          id: "s6",
+          layout: "bullets",
+          title: "Business model",
+          body: "Who pays\nHow much, how often\nWhat it costs you",
+        },
+        {
+          id: "s7",
+          layout: "bullets",
+          title: "Traction",
+          body: "Customers, revenue or usage so far\nWhat grew, and by how much",
+        },
+        {
+          id: "s8",
+          layout: "bullets",
+          title: "Competition",
+          body: "Who else\nWhat you do differently\nWhy that lasts",
+        },
+        {
+          id: "s9",
+          layout: "bullets",
+          title: "The team",
+          body: "Who you are\nWhy you\nWho you still need",
+        },
+        {
+          id: "s10",
+          layout: "bullets",
+          title: "The ask",
+          body: "How much\nWhat it buys\nWhere that gets you",
+        },
+      ],
+    },
+  },
+  {
+    id: "lesson",
+    name: "Lesson",
+    description: "A lesson in five parts: aims, recap, new idea, practice, summary.",
+    category: "Study",
+    app: "slides",
+    deck: {
+      version: 1,
+      theme: "paper",
+      slides: [
+        { id: "l1", layout: "title", title: "Lesson title", body: "Subject · Class · Date" },
+        {
+          id: "l2",
+          layout: "bullets",
+          title: "By the end, you can…",
+          body: "Aim one\nAim two\nAim three",
+        },
+        {
+          id: "l3",
+          layout: "bullets",
+          title: "Last time",
+          body: "What we covered\nOne question to check",
+        },
+        {
+          id: "l4",
+          layout: "bullets",
+          title: "The idea",
+          body: "Explain it in one sentence\nAn example\nA second example",
+        },
+        {
+          id: "l5",
+          layout: "picture",
+          title: "Look at this",
+          body: "A diagram or photo to discuss",
+        },
+        { id: "l6", layout: "bullets", title: "Your turn", body: "Task one\nTask two\nExtension" },
+        {
+          id: "l7",
+          layout: "bullets",
+          title: "Summary",
+          body: "Three things to remember\nWhat’s next",
+        },
+      ],
     },
   },
 ];

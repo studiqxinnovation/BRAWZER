@@ -5,6 +5,7 @@ import { ProxiesModule } from "./proxies/proxies.module.js";
 import { SiteRulesModule } from "./site-rules/site-rules.module.js";
 import { AppRecordsModule } from "./app-records/app-records.module.js";
 import { AssistantModule } from "./assistant/assistant.module.js";
+import { WebAppsModule } from "./web-apps/web-apps.module.js";
 import { ReportsModule } from "./reports/reports.module.js";
 import { TeamsModule } from "./teams/teams.module.js";
 import { AuthModule } from "./auth/auth.module.js";
@@ -39,6 +40,7 @@ export class AppModule {
         SiteRulesModule,
         AppRecordsModule,
         AssistantModule,
+        WebAppsModule,
         ReportsModule,
         TeamsModule,
         DriveModule,

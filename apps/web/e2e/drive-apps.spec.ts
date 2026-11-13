@@ -122,6 +122,65 @@ test.describe("Drive's apps", () => {
     expect(await wcagViolations(page)).toEqual([]);
   });
 
+  test("Slides starts from a template, presents, saves to Drive and opens again", async ({
+    page,
+  }) => {
+    const templates = await openApp(page, "Templates");
+    await templates.getByRole("button", { name: /Pitch deck/ }).click();
+    const slides = page.getByRole("region", { name: "Slides window" });
+    await expect(slides).toBeVisible();
+    const rail = slides.getByRole("listbox", { name: "Slides" });
+    await expect(rail.getByRole("option")).toHaveCount(10);
+    await expect(slides.getByRole("heading", { name: "Company name" })).toBeVisible();
+
+    // A new slide goes in after the current one, and takes what's typed.
+    await slides.getByRole("button", { name: "New slide" }).click();
+    await expect(rail.getByRole("option")).toHaveCount(11);
+    await expect(rail.getByRole("option", { selected: true })).toHaveAccessibleName("Slide 2");
+    await slides.getByLabel("Title", { exact: true }).fill("Our bet");
+    await slides.getByLabel("Points, one per line").fill("Faster\nSafer\nOwned by you");
+    await expect(rail.getByRole("option", { selected: true })).toHaveAccessibleName(
+      "Slide 2: Our bet",
+    );
+    await expect(slides.getByRole("listitem").filter({ hasText: "Owned by you" })).toHaveCount(1);
+
+    // Presenting fills the screen; the keys step through; Escape leaves.
+    await slides.getByRole("button", { name: "Present" }).click();
+    const show = page.getByRole("dialog", { name: "Presentation" });
+    await expect(show).toContainText("Slide 2 of 11");
+    await page.keyboard.press("ArrowRight");
+    await expect(show).toContainText("Slide 3 of 11");
+    await page.keyboard.press("Home");
+    await expect(show).toContainText("Slide 1 of 11");
+    await expect(show.getByRole("heading", { name: "Company name" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(show).toHaveCount(0);
+    expect(await wcagViolations(page)).toEqual([]);
+
+    await slides.getByLabel("Presentation name").fill("Seed round.slides");
+    await slides.getByRole("button", { name: "Save to Drive" }).click();
+    await expect(page.getByText("Saved “Seed round.slides” in Drive")).toBeVisible();
+    await expect(slides).toContainText("Saved in Drive");
+    await slides.getByRole("button", { name: "Close Slides" }).click();
+
+    // Opened again from Drive, it's the same deck: eleven slides, the new one kept.
+    const again = await openApp(page, "Slides");
+    await expect(again.getByRole("listbox", { name: "Slides" }).getByRole("option")).toHaveCount(1);
+    await again.getByRole("button", { name: "Open…" }).click();
+    await page
+      .getByRole("dialog", { name: "Open a presentation" })
+      .getByText("Seed round.slides")
+      .click();
+    await expect(again.getByRole("listbox", { name: "Slides" }).getByRole("option")).toHaveCount(
+      11,
+    );
+    await again
+      .getByRole("listbox", { name: "Slides" })
+      .getByRole("option", { name: "Slide 2: Our bet" })
+      .click();
+    await expect(again.getByLabel("Title", { exact: true })).toHaveValue("Our bet");
+  });
+
   test("Trash keeps a deleted file to put back, and Photos and PDF Viewer show Drive's", async ({
     page,
     baseURL,
@@ -179,6 +238,18 @@ test.describe("the account's tools", () => {
     await store.getByRole("button", { name: "Keep in Dock: Terminal" }).click();
     await store.getByRole("button", { name: "Web apps", exact: true }).click();
     await store.getByRole("button", { name: "Install Wikipedia" }).click();
+    // The newer web apps and the Brawzer Suite are listed too.
+    for (const name of ["WhatsApp", "Telegram", "ChatGPT", "Claude", "Slack", "Spotify"]) {
+      await expect(store.getByRole("button", { name: `Install ${name}` })).toBeVisible();
+    }
+    await store.getByRole("button", { name: "Brawzer Suite", exact: true }).click();
+    const suite = store.getByRole("list", { name: "Brawzer Suite" });
+    await expect(suite.getByRole("listitem").filter({ hasText: "Writer" })).toBeVisible();
+    await expect(suite.getByRole("listitem").filter({ hasText: "Calc" })).toBeVisible();
+    await expect(suite.getByRole("listitem").filter({ hasText: "Slides" })).toBeVisible();
+    await store.getByRole("button", { name: "All", exact: true }).click();
+    await expect(store.getByText("AI pack")).toBeVisible();
+    await expect(store.getByText("Social pack")).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);
     const dock = page.getByRole("navigation", { name: "Dock" });
     await expect(dock.getByRole("button", { name: "Terminal", exact: true })).toBeVisible();

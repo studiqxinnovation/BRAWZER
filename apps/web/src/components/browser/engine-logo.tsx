@@ -13,7 +13,7 @@ import firefoxLogo from "./logos/firefox.svg";
  * Each browser's own logo, taken from the browser itself (see logos/README.md),
  * to say which browser a profile or session is. The marks belong to their
  * makers and are used here only to name their browsers. Bee Browser's icon is
- * Brawzer's own: a bee on honey.
+ * its own: a bee on honey, drawn here.
  */
 const LOGOS: Record<Exclude<BrowserEngine, "bee">, StaticImageData> = {
   chrome: chromeLogo,
@@ -23,15 +23,21 @@ const LOGOS: Record<Exclude<BrowserEngine, "bee">, StaticImageData> = {
 };
 
 const INK = "#1c1b19";
-const POLLEN = "#ffd84a";
+const HONEY_STRIPE = "#f6cf63";
 
-/** Bee Browser's bee, drawn in a 64-unit square, on whatever is behind it. */
+/**
+ * Bee Browser's own mark: a bee, drawn as a few plain shapes in ink on its
+ * honey, with paper wings. Its own, not Brawzer's stack: the browser is one
+ * of the browsers a Brawzer computer runs, beside Chrome and Firefox.
+ */
 export function BeeArt({ size, className }: { size: number | string; className?: string }) {
   const id = useId();
-  const body = `${id}-body`;
+  // The body: an egg, wider at the shoulders, with the stripes clipped to it.
+  const body =
+    "M16 12.4c4.6 0 6.8 3.9 6.8 7.7 0 4.5-3 8.1-6.8 8.1s-6.8-3.6-6.8-8.1c0-3.8 2.2-7.7 6.8-7.7z";
   return (
     <svg
-      viewBox="0 0 64 64"
+      viewBox="0 0 32 32"
       width={size}
       height={size}
       aria-hidden="true"
@@ -39,44 +45,46 @@ export function BeeArt({ size, className }: { size: number | string; className?:
       className={className}
     >
       <defs>
-        <clipPath id={body}>
-          <ellipse cx="32" cy="41.5" rx="11.5" ry="10.2" />
+        <clipPath id={`${id}-body`}>
+          <path d={body} />
         </clipPath>
       </defs>
-      {/* Wings, behind everything. */}
-      <g fill="#fff" fillOpacity="0.94" stroke={INK} strokeOpacity="0.14" strokeWidth="0.8">
-        <ellipse cx="19.6" cy="32.6" rx="10.4" ry="6.8" transform="rotate(-24 19.6 32.6)" />
-        <ellipse cx="44.4" cy="32.6" rx="10.4" ry="6.8" transform="rotate(24 44.4 32.6)" />
-      </g>
-      {/* Antennae. */}
-      <g stroke={INK} strokeWidth="2" strokeLinecap="round" fill="none">
-        <path d="M28.6 19.4 Q26.4 14.2 23.6 12.6" />
-        <path d="M35.4 19.4 Q37.6 14.2 40.4 12.6" />
-      </g>
-      <circle cx="23.3" cy="12.4" r="1.9" fill={INK} />
-      <circle cx="40.7" cy="12.4" r="1.9" fill={INK} />
-      {/* Striped body and sting. */}
-      <path d="M29.8 50.6 L32 55.2 L34.2 50.6 Z" fill={INK} />
-      <ellipse cx="32" cy="41.5" rx="11.5" ry="10.2" fill={POLLEN} />
-      <g clipPath={`url(#${body})`} fill={INK}>
-        <rect x="18" y="38.4" width="28" height="3.8" />
-        <rect x="18" y="45.6" width="28" height="3.8" />
-      </g>
-      {/* Head, eyes and a smile. */}
-      <circle cx="32" cy="26.2" r="9.2" fill={INK} />
-      <circle cx="28.3" cy="25.4" r="3.1" fill="#fff" />
-      <circle cx="35.7" cy="25.4" r="3.1" fill="#fff" />
-      <circle cx="28.9" cy="26" r="1.55" fill={INK} />
-      <circle cx="36.3" cy="26" r="1.55" fill={INK} />
-      <circle cx="29.4" cy="25.4" r="0.55" fill="#fff" />
-      <circle cx="36.8" cy="25.4" r="0.55" fill="#fff" />
-      <path
-        d="M29.6 30.4 Q32 32.2 34.4 30.4"
-        stroke={POLLEN}
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        fill="none"
+      {/* Wings, one each side, from the shoulders */}
+      <ellipse
+        cx="8.2"
+        cy="15.4"
+        rx="6.2"
+        ry="3.4"
+        transform="rotate(-40 8.2 15.4)"
+        fill="#fff"
+        fillOpacity="0.95"
       />
+      <ellipse
+        cx="23.8"
+        cy="15.4"
+        rx="6.2"
+        ry="3.4"
+        transform="rotate(40 23.8 15.4)"
+        fill="#fff"
+        fillOpacity="0.95"
+      />
+      {/* Antennae */}
+      <path
+        d="M14.3 6.6c-.4-1.9-1.5-3.2-3.3-3.8M17.7 6.6c.4-1.9 1.5-3.2 3.3-3.8"
+        fill="none"
+        stroke={INK}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      {/* Head */}
+      <circle cx="16" cy="9.6" r="3.9" fill={INK} />
+      {/* Body, two honey stripes, the sting */}
+      <path d={body} fill={INK} />
+      <g clipPath={`url(#${id}-body)`}>
+        <rect x="8" y="16.8" width="16" height="2.5" fill={HONEY_STRIPE} />
+        <rect x="8" y="21.4" width="16" height="2.5" fill={HONEY_STRIPE} />
+      </g>
+      <path d="M14.6 27.6 16 30l1.4-2.4z" fill={INK} />
     </svg>
   );
 }
@@ -93,7 +101,7 @@ export function BeeTile({ size, className }: { size: number; className?: string 
       className={cn("inline-grid shrink-0 place-items-center", HONEY, className)}
       style={{ width: size, height: size }}
     >
-      <BeeArt size={Math.round(size * 0.86)} />
+      <BeeArt size={Math.round(size * 0.8)} />
     </span>
   );
 }
@@ -133,7 +141,7 @@ export function AppIconArt({ engine, className }: { engine: BrowserEngine; class
   if (engine === "bee") {
     return (
       <span aria-hidden="true" className={cn("bl-tile", HONEY, className)}>
-        <BeeArt size="76%" />
+        <BeeArt size="72%" />
       </span>
     );
   }
