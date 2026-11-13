@@ -1,5 +1,6 @@
 import http from "node:http";
 import https from "node:https";
+import { checkServerIdentity, type PeerCertificate } from "node:tls";
 
 /**
  * The few Docker Engine API calls the orchestrator needs, over the engine's
@@ -114,10 +115,22 @@ export class DockerClient {
           ? { socketPath: this.endpoint.path }
           : { host: this.endpoint.host, port: this.endpoint.port };
       const transport = this.endpoint.kind === "tcp" && this.endpoint.tls ? https : http;
+      // Node takes the TLS server name from the Host header ("docker", the
+      // engine's convention), so the certificate must be checked against the
+      // engine's real host name or address instead.
+      const engineHost = this.endpoint.kind === "tcp" ? this.endpoint.host : "";
+      const identity =
+        transport === https
+          ? {
+              checkServerIdentity: (_host: string, cert: PeerCertificate) =>
+                checkServerIdentity(engineHost, cert),
+            }
+          : {};
       const request = transport.request(
         {
           ...where,
           ...(this.agent ? { agent: this.agent } : {}),
+          ...identity,
           method,
           path: `/${API_VERSION}${path}`,
           headers: {

@@ -34,7 +34,9 @@ services:
         "log_min_duration_statement=2000",
       ]
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18's image keeps the data in a version subdirectory under
+      # this mount, so a later pg_upgrade --link stays inside one volume.
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U brawzer -d brawzer"]
       interval: 10s

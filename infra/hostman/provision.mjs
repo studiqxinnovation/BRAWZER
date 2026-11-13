@@ -178,24 +178,23 @@ async function main() {
       call("GET", "storages/buckets").then((r) => r.buckets ?? []),
     ]);
     snapshot = {
-      servers: WANT.servers.map((w) => {
-        const srv = s.find((x) => x.name === w.name);
-        const nets = srv?.networks ?? [];
-        const ipOf = (type) =>
-          nets
-            .flatMap((n) => n.ips ?? [])
-            .find((ip) => ip.type === type && ip.ip && !ip.ip.includes(":"))?.ip ??
-          nets.find((n) => n.type === type)?.ips?.[0]?.ip;
-        return {
-          role: w.role,
-          name: w.name,
-          id: srv?.id,
-          status: srv?.status,
-          publicIp: ipOf("public") ?? srv?.main_ipv4 ?? null,
-          localIp: ipOf("local") ?? null,
-          location: srv?.location,
-        };
-      }),
+      servers: await Promise.all(
+        WANT.servers.map(async (w) => {
+          const srv = s.find((x) => x.name === w.name);
+          // The server record lists no addresses; they live on their own route.
+          const ips = srv
+            ? await call("GET", `servers/${srv.id}/ips`).then((r) => r.server_ips ?? [])
+            : [];
+          return {
+            role: w.role,
+            name: w.name,
+            id: srv?.id,
+            status: srv?.status,
+            publicIp: ips.find((ip) => ip.type === "ipv4")?.ip ?? null,
+            location: srv?.location,
+          };
+        }),
+      ),
       databases: WANT.databases.map((w) => {
         const db = d.find((x) => x.name === w.name);
         const nets = db?.networks ?? [];

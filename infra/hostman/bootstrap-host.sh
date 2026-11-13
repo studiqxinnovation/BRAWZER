@@ -46,8 +46,8 @@ X11Forwarding no
 EOF
 systemctl reload ssh || systemctl reload sshd || true
 
-# Firewall. Docker publishes ports around ufw's INPUT chain, so the stacks
-# bind published ports to specific addresses and ufw guards the host's own.
+# Firewall for the host's own ports. Ports that Docker publishes bypass ufw
+# (Docker's rules sit in the FORWARD chain), so those are handled below.
 ufw --force reset >/dev/null
 ufw default deny incoming
 ufw default allow outgoing
@@ -59,7 +59,6 @@ if [ "$ROLE" = app ]; then
 else
   [ -n "$APP_TIER_IP" ] || { echo "runtime role needs the app tier's address" >&2; exit 2; }
   ufw allow from "$APP_TIER_IP" to any port 2376 proto tcp comment 'docker engine, mutual tls, app tier only'
-  ufw allow from "$APP_TIER_IP" to any port 20000:29999 proto tcp comment 'session agents, app tier only'
 fi
 ufw --force enable >/dev/null
 ufw status numbered
@@ -73,15 +72,39 @@ vm.overcommit_memory = 1
 EOF
 sysctl --system >/dev/null
 
-# gVisor for session containers on the runtime host.
-if [ "$ROLE" = runtime ] && ! command -v runsc >/dev/null; then
-  ARCH=$(uname -m)
-  URL="https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}"
-  cd /tmp && curl -fsSLO "${URL}/runsc" && curl -fsSLO "${URL}/runsc.sha512" \
-    && curl -fsSLO "${URL}/containerd-shim-runsc-v1" && curl -fsSLO "${URL}/containerd-shim-runsc-v1.sha512"
-  sha512sum -c runsc.sha512 containerd-shim-runsc-v1.sha512
-  install -m 0755 runsc containerd-shim-runsc-v1 /usr/local/bin/
-  rm -f runsc* containerd-shim-runsc-v1*
+if [ "$ROLE" = runtime ]; then
+  # gVisor for session containers, from gVisor's own apt repository.
+  if ! command -v runsc >/dev/null; then
+    curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor --yes -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
+      > /etc/apt/sources.list.d/gvisor.list
+    apt-get update -q
+    apt-get install -y -q runsc
+  fi
+
+  # Session agent ports are published by Docker on random high ports. The
+  # DOCKER-USER chain is where Docker lets the host have a say: only the app
+  # tier may open connections to them. Re-applied after every engine start.
+  cat > /usr/local/sbin/brawzer-docker-user-rules <<EOF
+#!/bin/sh
+iptables -C DOCKER-USER -i eth0 ! -s $APP_TIER_IP -m conntrack --ctstate NEW -j DROP 2>/dev/null \\
+  || iptables -I DOCKER-USER -i eth0 ! -s $APP_TIER_IP -m conntrack --ctstate NEW -j DROP
+EOF
+  chmod 755 /usr/local/sbin/brawzer-docker-user-rules
+  cat > /etc/systemd/system/brawzer-docker-user-rules.service <<'EOF'
+[Unit]
+Description=Brawzer: restrict published container ports to the app tier
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/brawzer-docker-user-rules
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now brawzer-docker-user-rules
 fi
 
 mkdir -p /etc/brawzer /srv/brawzer
