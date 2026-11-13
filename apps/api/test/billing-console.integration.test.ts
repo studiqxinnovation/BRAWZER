@@ -69,6 +69,9 @@ async function userId(email: string): Promise<string> {
   return row.rows[0]?.id ?? "";
 }
 
+// The local database persists between runs; a per-run id keeps the audit query to this run.
+const BIG = `in_console_big_${Date.now().toString(36)}`;
+
 describe("the money pages", () => {
   it("lists subscriptions, invoices and finance from Brawzer's and Stripe's records", async () => {
     // A paying customer, as a webhook would have left them.
@@ -140,7 +143,7 @@ describe("the money pages", () => {
   it("refunds within the limit, and sends bigger refunds to a founder who isn't the asker", async () => {
     const stripeCustomer = `cus_console_${randomUUID().slice(0, 8)}`;
     stripe.invoices.unshift({
-      id: "in_console_big",
+      id: BIG,
       object: "invoice",
       number: "BRZ-0002",
       customer: stripeCustomer,
@@ -157,7 +160,7 @@ describe("the money pages", () => {
 
     // Care may refund up to £50; £20 goes straight through.
     const { client: care, email: careEmail } = await staff("care");
-    const small = await care.post("/console/billing/invoices/in_console_big/refund", {
+    const small = await care.post(`/console/billing/invoices/${BIG}/refund`, {
       amount: 2000,
       reason: "Charged twice in one day",
     });
@@ -167,7 +170,7 @@ describe("the money pages", () => {
     expect(stripe.refunds.at(-1)?.amount).toBe("2000");
 
     // £600 is over care's limit: it waits.
-    const big = await care.post("/console/billing/invoices/in_console_big/refund", {
+    const big = await care.post(`/console/billing/invoices/${BIG}/refund`, {
       amount: 60_000,
       reason: "Cancelled within the first week",
     });
@@ -176,7 +179,7 @@ describe("the money pages", () => {
     expect(waiting.outcome).toBe("awaiting_approval");
     expect(stripe.refunds.filter((entry) => entry.amount === "60000")).toHaveLength(0);
     // More than is left can't even be asked for.
-    const tooMuch = await care.post("/console/billing/invoices/in_console_big/refund", {
+    const tooMuch = await care.post(`/console/billing/invoices/${BIG}/refund`, {
       amount: 100_000,
       reason: "All of it",
     });
@@ -213,7 +216,7 @@ describe("the money pages", () => {
 
     const audit = await h.database.pool.query<{ action: string }>(
       "select action from staff_actions where target = $1 order by created_at",
-      ["in_console_big"],
+      [BIG],
     );
     expect(audit.rows.map((row) => row.action)).toEqual([
       "Refunded an invoice",
