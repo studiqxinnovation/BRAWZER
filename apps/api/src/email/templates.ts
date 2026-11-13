@@ -757,6 +757,20 @@ export function extensionBlockedMessage(name: string, reason: string, url: strin
   });
 }
 
+export function abuseWarningMessage(kind: string, note: string, url: string): EmailContent {
+  return compose("A warning about how your Brawzer account is being used", {
+    preheader: "Please read: this is about Brawzer’s acceptable use policy.",
+    heading: "A warning from Brawzer’s team",
+    paragraphs: [
+      `We received a report that your account is being used for ${kind}, which Brawzer’s acceptable use policy doesn’t allow. Cloud browsers that are misused get Brawzer’s addresses blocked for every customer, so we take these reports seriously.`,
+      `What we were told: ${note}`,
+      "If this wasn’t you, change your password and check your devices from Shield now. If it was, please stop: a further report leads to suspension.",
+    ],
+    action: { label: "Open Shield", url },
+    footnote: "You can reply through Help if you think this is a mistake.",
+  });
+}
+
 export function adminNoticeMessage(
   kind: "sign-up" | "subscription" | "report" | "quarantine" | "ticket" | "recovery",
   facts: readonly (readonly [string, string])[],

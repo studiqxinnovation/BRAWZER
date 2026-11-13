@@ -43,6 +43,7 @@ import {
   resetPasswordMessage,
   type SignedOutScope,
   verifyEmailMessage,
+  abuseWarningMessage,
   extensionBlockedMessage,
   recoveryCancelledMessage,
   recoveryConfirmMessage,
@@ -219,6 +220,12 @@ export class EmailService {
         ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${admin}` } : {}),
       });
     }
+  }
+
+  // ── Abuse ────────────────────────────────────────────────────────────
+
+  sendAbuseWarning(to: string, kind: string, note: string): void {
+    this.dispatch(to, abuseWarningMessage(kind, note, this.link("/app/shield")));
   }
 
   // ── Extensions ───────────────────────────────────────────────────────

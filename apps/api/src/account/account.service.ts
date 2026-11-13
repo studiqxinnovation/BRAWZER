@@ -258,6 +258,19 @@ export class AccountService {
   }
 
   private async deleteFor(user: { id: string; email: string }, how: string): Promise<void> {
+    // A legal hold (Phase 11.5) keeps everything until it is released.
+    const [hold] = await this.database.db
+      .select({ why: schema.legalHolds.why })
+      .from(schema.legalHolds)
+      .where(eq(schema.legalHolds.userId, user.id))
+      .limit(1);
+    if (hold) {
+      throw new ApiException(
+        "conflict",
+        409,
+        "This account’s data is kept under a legal hold and can’t be deleted yet.",
+      );
+    }
     // A team it owns with others must be handed over first; one it owns alone goes with it.
     await this.teams.beforeAccountDeletion(user.id);
     // Containers and Drive objects aren't rows: stop and list them first.

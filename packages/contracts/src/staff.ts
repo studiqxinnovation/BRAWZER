@@ -269,6 +269,27 @@ export const adminPages: readonly AdminPage[] = [
     path: "incidents",
   },
   {
+    key: "security",
+    title: "Threats & sign-ins",
+    group: "Security",
+    roles: ["admin", "security"],
+    path: "security",
+  },
+  {
+    key: "abuse",
+    title: "Abuse reports",
+    group: "Security",
+    roles: ["admin", "security"],
+    path: "abuse",
+  },
+  {
+    key: "legal",
+    title: "Legal requests & holds",
+    group: "Compliance",
+    roles: ["admin", "security"],
+    path: "legal",
+  },
+  {
     key: "audit",
     title: "Audit log",
     group: "Compliance",

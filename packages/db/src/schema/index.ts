@@ -17,3 +17,4 @@ export * from "./app-records.ts";
 export * from "./staff.ts";
 export * from "./support.ts";
 export * from "./care.ts";
+export * from "./security-console.ts";

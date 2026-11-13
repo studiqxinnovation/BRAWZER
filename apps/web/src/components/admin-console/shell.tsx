@@ -42,6 +42,9 @@ import {
   Layers,
   Puzzle,
   Server,
+  Ban,
+  Scale,
+  Shield,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -82,6 +85,9 @@ const ICONS: Record<string, typeof Gauge> = {
   coupons: Tag,
   finance: ChartColumn,
   trials: Target,
+  security: Shield,
+  abuse: Ban,
+  legal: Scale,
   fleet: Server,
   sessions: Activity,
   images: Layers,

@@ -57,6 +57,13 @@ import {
   networkSchema,
   type SetExtensionStatusRequest,
   techHealthSchema,
+  type AbuseDecision,
+  abuseReportListSchema,
+  type BlockAddressRequest,
+  legalSchema,
+  type LogAbuseRequest,
+  type LogLegalRequest,
+  threatsSchema,
 } from "@brawzer/contracts";
 import { z } from "zod";
 import { apiRequest } from "./client";
@@ -362,3 +369,44 @@ export const setExtensionStatus = (slug: string, body: SetExtensionStatusRequest
 export const fetchNetwork = () => apiRequest("/console/tech/network", { schema: networkSchema });
 export const fetchTechHealth = () =>
   apiRequest("/console/tech/health", { schema: techHealthSchema });
+
+/* ── Security (11.5) ── */
+
+export const fetchThreats = () =>
+  apiRequest("/console/security/threats", { schema: threatsSchema });
+export const blockAddress = (body: BlockAddressRequest) =>
+  apiRequest("/console/security/blocked", { method: "POST", body, schema: threatsSchema });
+export const unblockAddress = (id: string) =>
+  apiRequest(`/console/security/blocked/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    schema: threatsSchema,
+  });
+export const fetchAbuseReports = () =>
+  apiRequest("/console/security/abuse", { schema: abuseReportListSchema });
+export const logAbuseReport = (body: LogAbuseRequest) =>
+  apiRequest("/console/security/abuse", { method: "POST", body, schema: abuseReportListSchema });
+export const decideAbuse = (id: string, body: AbuseDecision) =>
+  apiRequest(`/console/security/abuse/${encodeURIComponent(id)}/decision`, {
+    method: "POST",
+    body,
+    schema: abuseReportListSchema,
+  });
+export const fetchLegal = () => apiRequest("/console/security/legal", { schema: legalSchema });
+export const logLegalRequest = (body: LogLegalRequest) =>
+  apiRequest("/console/security/legal/requests", { method: "POST", body, schema: legalSchema });
+export const decideLegalRequest = (
+  id: string,
+  body: { status: "answered" | "refused"; note: string },
+) =>
+  apiRequest(`/console/security/legal/requests/${encodeURIComponent(id)}/decision`, {
+    method: "POST",
+    body,
+    schema: legalSchema,
+  });
+export const placeLegalHold = (body: { customerId: string; why: string }) =>
+  apiRequest("/console/security/legal/holds", { method: "POST", body, schema: legalSchema });
+export const releaseLegalHold = (customerId: string) =>
+  apiRequest(`/console/security/legal/holds/${encodeURIComponent(customerId)}`, {
+    method: "DELETE",
+    schema: legalSchema,
+  });

@@ -19,13 +19,13 @@ buttons, nothing on the device.
 
 ## Milestones
 
-| #    | Milestone                                                                                                                              | Status  |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| 11.1 | The console: shell, staff roles and permissions, the audit log, company overview, customers and the customer 360, organisations, team  | Done    |
-| 11.2 | Customer care: support tickets (a Help app for customers, the inbox for staff), account recovery, announcements, incidents and status  | Done    |
-| 11.3 | Billing: subscriptions, invoices and refunds through Stripe, coupons, finance reports, approvals                                       | Done    |
-| 11.4 | Technical: fleet and runtime hosts, live sessions, browser images, the extension catalogue, network, queues and health                 | Done    |
-| 11.5 | Security and compliance: threats and sign-ins, blocked addresses, abuse reports and suspension, privacy and legal requests, compliance | Planned |
+| #    | Milestone                                                                                                                              | Status                                                                                                                                |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 11.1 | The console: shell, staff roles and permissions, the audit log, company overview, customers and the customer 360, organisations, team  | Done                                                                                                                                  |
+| 11.2 | Customer care: support tickets (a Help app for customers, the inbox for staff), account recovery, announcements, incidents and status  | Done                                                                                                                                  |
+| 11.3 | Billing: subscriptions, invoices and refunds through Stripe, coupons, finance reports, approvals                                       | Done                                                                                                                                  |
+| 11.4 | Technical: fleet and runtime hosts, live sessions, browser images, the extension catalogue, network, queues and health                 | Done                                                                                                                                  |
+| 11.5 | Security and compliance: threats and sign-ins, blocked addresses, abuse reports and suspension, privacy and legal requests, compliance | In progress: threats, blocked addresses, abuse and legal holds done; privacy requests, compliance, data map, goals, weekly email next |
 
 ## The prototype's pages, and what each one is here
 
@@ -119,3 +119,10 @@ buttons, nothing on the device.
 - **Queues & health**: the health probes, retention’s last run (`RetentionService.lastRunAt`), warm pool, starts, and open requests, reports and quarantined files.
 - **Honest omissions**: no host CPU or memory, no per-session frame rate or latency, no browser version read at run time, no rollout percentages, no job queue, no exit-address pool or block lists.
 - **Tests**: `apps/api/test/tech-console.integration.test.ts` and `apps/web/e2e/tech.spec.ts`.
+
+## 11.5 Security and compliance
+
+- **Threats & sign-ins** (`blocked_addresses`): failed sign-ins per hour and over 24 hours, accounts refused right now (eight failures in fifteen minutes), the share of accounts with a passkey or authenticator, staff with a second factor, recent events worth a look (failed sign-ins, new devices, two-factor and passkey changes, recovery, sign-outs) with the address and whether it is blocked, and staff sign-ins over 30 days. Blocks are addresses or networks (no wider than /16 or /32 for IPv6), optionally expiring; `AuthService` refuses sign-in and registration from them with a plain message, reading the list every 30 seconds.
+- **Abuse reports** (`abuse_reports`): logged against an account with who told us; warn emails the acceptable-use warning with the note; suspend uses the existing suspension and places a legal hold so the evidence stays; not abuse closes it. Each decision is audited against the account.
+- **Legal requests & holds** (`legal_requests`, `legal_holds`): requests from police and courts with a due date, answered or refused; a hold stops every deletion of the account (`AccountService.deleteFor` refuses with a 409, which covers the customer’s own request and staff deletion) until released.
+- **Tests**: `apps/api/test/security-console.integration.test.ts` (a block refuses a network at sign-in and sign-up and lifts; warn by email; suspend with a hold that blocks deletion; release then delete) and `apps/web/e2e/security.spec.ts`.

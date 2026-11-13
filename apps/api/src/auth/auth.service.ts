@@ -16,6 +16,7 @@ import { DATABASE } from "../database/database.module.js";
 import { createDefaultProfile } from "../profiles/default-profile.js";
 import { EmailService } from "../email/email.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
+import { BlockedAddressesService } from "../security-events/blocked-addresses.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { BreachedPasswordCheck } from "./breached-passwords.js";
 import { EmailTokenService } from "./email-token.service.js";
@@ -72,6 +73,7 @@ export class AuthService {
     @Inject(EmailService) private readonly email: EmailService,
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
+    @Inject(BlockedAddressesService) private readonly blocked: BlockedAddressesService,
     @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
     @Inject(MfaService) private readonly mfa: MfaService,
     @Inject(NewDeviceService) private readonly newDevices: NewDeviceService,
@@ -100,6 +102,7 @@ export class AuthService {
    */
   async register(input: RegisterInput, meta: RequestMeta): Promise<void> {
     await this.limiter.enforce(RATE_LIMITS.registerPerIp, ipOf(meta));
+    await this.refuseBlockedNetwork(meta);
     assertAcceptablePassword(input.password, input.email);
     await this.breached.assertNotBreached(input.password);
     const pendingPasswordHash = await hashPassword(input.password);
@@ -202,12 +205,24 @@ export class AuthService {
     return result;
   }
 
+  /** Addresses Brawzer's team blocked (Phase 11.5) can't sign in or register. */
+  private async refuseBlockedNetwork(meta: RequestMeta): Promise<void> {
+    if (await this.blocked.isBlocked(meta.ip)) {
+      throw new ApiException(
+        "forbidden",
+        403,
+        "Sign-in isn’t available from this network. If you think that’s a mistake, contact support from another connection.",
+      );
+    }
+  }
+
   async login(
     input: LoginInput,
     meta: RequestMeta,
     presentedToken?: string,
   ): Promise<SignedIn | SecondStepRequired> {
     await this.limiter.enforce(RATE_LIMITS.signInPerIp, ipOf(meta));
+    await this.refuseBlockedNetwork(meta);
     // Keyed by the submitted address whether or not it has an account, so lockouts reveal nothing.
     const lockout = await this.limiter.isBlocked(RATE_LIMITS.signInFailuresPerAccount, input.email);
     if (!lockout.allowed) throw rateLimited(lockout.retryAfterSeconds);

@@ -26,6 +26,10 @@ import { TechConsoleController } from "./tech-console.controller.js";
 import { TechConsoleService } from "./tech-console.service.js";
 import { HealthModule } from "../health/health.module.js";
 import { EmailModule } from "../email/email.js";
+import { RateLimitModule } from "../rate-limit/rate-limiter.js";
+import { SecurityEventsModule } from "../security-events/security-events.js";
+import { SecurityConsoleController } from "./security-console.controller.js";
+import { SecurityConsoleService } from "./security-console.service.js";
 import { EgressModule } from "../egress/egress.module.js";
 
 /** Administration (Phase 6) and the admin console (Phase 11). */
@@ -44,6 +48,8 @@ import { EgressModule } from "../egress/egress.module.js";
     HealthModule,
     EgressModule,
     EmailModule,
+    RateLimitModule,
+    SecurityEventsModule,
   ],
   controllers: [
     AdminController,
@@ -53,6 +59,7 @@ import { EgressModule } from "../egress/egress.module.js";
     RecoveryConsoleController,
     BillingConsoleController,
     TechConsoleController,
+    SecurityConsoleController,
   ],
   providers: [
     AdminService,
@@ -63,6 +70,7 @@ import { EgressModule } from "../egress/egress.module.js";
     CompanyService,
     BillingConsoleService,
     TechConsoleService,
+    SecurityConsoleService,
   ],
   exports: [AdminService, StaffAuditService],
 })

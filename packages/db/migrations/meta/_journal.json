@@ -281,6 +281,13 @@
       "when": 1794576459214,
       "tag": "0039_extensions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794577392294,
+      "tag": "0040_security_console",
+      "breakpoints": true
     }
   ]
 }
