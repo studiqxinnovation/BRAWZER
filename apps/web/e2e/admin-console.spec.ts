@@ -269,6 +269,7 @@ test.describe("admin console", () => {
     await expect(page.getByRole("heading", { name: "Admin console" })).toBeVisible();
     await expect(page.getByText("Staff only")).toBeVisible();
     await expect(page.getByRole("link", { name: "Create an account" })).toHaveCount(0);
+    await expect(page.getByText("Restricted area")).toBeVisible();
     await page.getByRole("textbox", { name: "Email" }).fill(founderEmail);
     await page.getByLabel("Password", { exact: true }).filter({ visible: true }).fill(PASSWORD);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
