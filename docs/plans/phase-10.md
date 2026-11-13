@@ -244,4 +244,5 @@ Store.
   YouTube and Spotify are on every desktop from the first sign-in, in
   Launchpad and the Dock, seeded once per account (a `webAppsSeeded`
   flag), so removing one sticks.
-- A notification's close button is a 24px target.
+- The desktop's New menu makes a presentation too. A notification's close
+  button is a 24px target.

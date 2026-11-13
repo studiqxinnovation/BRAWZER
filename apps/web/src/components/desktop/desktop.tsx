@@ -1909,6 +1909,20 @@ export function DesktopShell({
             icon: <Tile glyph="table" colour="green" size={18} />,
             onSelect: () => void newOnDesktop("Untitled sheet.csv", "\n", "text/csv"),
           },
+          {
+            label: "Presentation",
+            icon: <Tile glyph="play" colour="orange" size={18} />,
+            onSelect: () =>
+              void newOnDesktop(
+                "Untitled presentation.slides",
+                JSON.stringify({
+                  version: 1,
+                  theme: "night",
+                  slides: [{ id: "first", layout: "title", title: "", body: "" }],
+                }),
+                "text/plain",
+              ),
+          },
         ],
       },
       {
