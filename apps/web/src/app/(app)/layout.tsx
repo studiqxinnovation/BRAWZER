@@ -4,6 +4,7 @@ import { Logo } from "@brawzer/ui/brand";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AccountPanel, AccountPanelSkeleton } from "@/components/app-shell/account-panel";
+import { AnnouncementBanners } from "@/components/announcements/announcement-banners";
 import { CommandPalette } from "@/components/app-shell/command-palette";
 import { DesktopShell } from "@/components/desktop/desktop";
 import { LockedPage, LockScreen } from "@/components/desktop/lock-screen";
@@ -67,6 +68,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               <SessionKeeperLoader />
             </Suspense>
             <CommandPalette />
+            <AnnouncementBanners />
             {lock && <LockScreen {...lock} />}
           </>
         }

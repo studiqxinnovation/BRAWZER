@@ -45,7 +45,13 @@ export const footerNav: readonly { title: string; items: readonly NavItem[] }[] 
       { href: "/pricing", label: "Pricing" },
     ],
   },
-  { title: "Company", items: [{ href: "/about", label: "About" }] },
+  {
+    title: "Company",
+    items: [
+      { href: "/about", label: "About" },
+      { href: "/status", label: "Status" },
+    ],
+  },
   {
     title: "Legal",
     items: [
@@ -64,6 +70,7 @@ export const publicRoutes: readonly Route[] = [
   "/drive",
   "/pricing",
   "/about",
+  "/status",
   "/privacy",
   "/terms",
 ];

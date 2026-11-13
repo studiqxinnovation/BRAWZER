@@ -56,7 +56,10 @@ export class HealthService {
     @Inject(OrchestratorService) private readonly runtime: RuntimePingable,
   ) {}
 
-  async check(): Promise<HealthResponse> {
+  /** Every dependency probed at once; the status page reads these too. */
+  async probeAll(): Promise<
+    Record<"database" | "redis" | "storage" | "scanner" | "runtime", DependencyCheck>
+  > {
     const [database, redis, storage, scanner, runtime] = await Promise.all([
       probe(() => this.database.ping()),
       probe(() => this.redis.ping()),
@@ -64,7 +67,11 @@ export class HealthService {
       probe(() => this.scanner.ping()),
       probe(() => this.runtime.ping()),
     ]);
-    const checks = { database, redis, storage, scanner, runtime };
+    return { database, redis, storage, scanner, runtime };
+  }
+
+  async check(): Promise<HealthResponse> {
+    const checks = await this.probeAll();
 
     return {
       status: Object.values(checks).every((check) => check.status === "up") ? "ok" : "degraded",

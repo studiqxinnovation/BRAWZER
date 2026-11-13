@@ -21,3 +21,4 @@ export * from "./assistant.ts";
 export * from "./web-apps.ts";
 export * from "./staff.ts";
 export * from "./support.ts";
+export * from "./care.ts";

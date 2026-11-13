@@ -7,6 +7,7 @@ import { BrowserModule } from "../browser/browser.module.js";
 import { AccountModule } from "../account/account.module.js";
 import { DriveModule } from "../drive/drive.module.js";
 import { SupportModule } from "../support/support.module.js";
+import { CareModule } from "../care/care.module.js";
 import { AdminController } from "./admin.controller.js";
 import { AdminGuard } from "./admin.guard.js";
 import { AdminService } from "./admin.service.js";
@@ -16,6 +17,7 @@ import { ConsoleController } from "./console.controller.js";
 import { CustomersService } from "./customers.service.js";
 import { StaffGuard } from "./staff.guard.js";
 import { SupportConsoleController } from "./support-console.controller.js";
+import { CareConsoleController } from "./care-console.controller.js";
 
 /** Administration (Phase 6) and the admin console (Phase 11). */
 @Module({
@@ -28,8 +30,14 @@ import { SupportConsoleController } from "./support-console.controller.js";
     DriveModule,
     AccountModule,
     SupportModule,
+    CareModule,
   ],
-  controllers: [AdminController, ConsoleController, SupportConsoleController],
+  controllers: [
+    AdminController,
+    ConsoleController,
+    SupportConsoleController,
+    CareConsoleController,
+  ],
   providers: [
     AdminService,
     AdminGuard,

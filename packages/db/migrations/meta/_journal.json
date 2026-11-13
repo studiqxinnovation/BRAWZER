@@ -253,6 +253,13 @@
       "when": 1794569905135,
       "tag": "0035_support",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794572737850,
+      "tag": "0036_care",
+      "breakpoints": true
     }
   ]
 }

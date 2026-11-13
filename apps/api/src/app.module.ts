@@ -8,6 +8,7 @@ import { AssistantModule } from "./assistant/assistant.module.js";
 import { WebAppsModule } from "./web-apps/web-apps.module.js";
 import { ReportsModule } from "./reports/reports.module.js";
 import { SupportModule } from "./support/support.module.js";
+import { CareModule } from "./care/care.module.js";
 import { TeamsModule } from "./teams/teams.module.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { AdminModule } from "./admin/admin.module.js";
@@ -44,6 +45,7 @@ export class AppModule {
         WebAppsModule,
         ReportsModule,
         SupportModule,
+        CareModule,
         TeamsModule,
         DriveModule,
         BrowserModule,

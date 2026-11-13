@@ -30,6 +30,13 @@ import {
   supportStatsSchema,
   type TicketView,
   type UpdateTicketRequest,
+  type AnnouncementRequest,
+  type DeclareIncidentRequest,
+  incidentListSchema,
+  incidentSchema,
+  type IncidentUpdateRequest,
+  publicStatusSchema,
+  staffAnnouncementListSchema,
 } from "@brawzer/contracts";
 import { z } from "zod";
 import { apiRequest } from "./client";
@@ -197,3 +204,38 @@ export const deleteSavedReply = (id: string) =>
   apiRequest(path(["support", "replies", id]), { method: "DELETE", schema: savedReplyListSchema });
 export const fetchSupportStats = () =>
   apiRequest("/console/support/stats", { schema: supportStatsSchema });
+
+/* ── Announcements, incidents and status (11.2) ── */
+
+export const fetchAnnouncements = () =>
+  apiRequest("/console/announcements", { schema: staffAnnouncementListSchema });
+export const publishAnnouncement = (body: AnnouncementRequest) =>
+  apiRequest("/console/announcements", {
+    method: "POST",
+    body,
+    schema: staffAnnouncementListSchema,
+  });
+export const editAnnouncement = (id: string, body: AnnouncementRequest) =>
+  apiRequest(path(["announcements", id]), {
+    method: "PUT",
+    body,
+    schema: staffAnnouncementListSchema,
+  });
+export const toggleAnnouncement = (id: string, on: boolean) =>
+  apiRequest(path(["announcements", id]), {
+    method: "PATCH",
+    body: { on },
+    schema: staffAnnouncementListSchema,
+  });
+export const deleteAnnouncement = (id: string) =>
+  apiRequest(path(["announcements", id]), {
+    method: "DELETE",
+    schema: staffAnnouncementListSchema,
+  });
+export const fetchIncidents = () =>
+  apiRequest("/console/incidents", { schema: incidentListSchema });
+export const declareIncident = (body: DeclareIncidentRequest) =>
+  apiRequest("/console/incidents", { method: "POST", body, schema: incidentSchema });
+export const postIncidentUpdate = (id: string, body: IncidentUpdateRequest) =>
+  apiRequest(path(["incidents", id, "updates"]), { method: "POST", body, schema: incidentSchema });
+export const fetchPublicStatus = () => apiRequest("/status", { schema: publicStatusSchema });

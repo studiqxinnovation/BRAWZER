@@ -28,6 +28,8 @@ import {
   X,
   BookOpen,
   Inbox,
+  Megaphone,
+  TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -61,6 +63,8 @@ const ICONS: Record<string, typeof Gauge> = {
   inbox: Inbox,
   replies: BookOpen,
   carestats: ChartColumn,
+  announce: Megaphone,
+  incidents: TriangleAlert,
 };
 
 /** Which page a path is on, for the title and the sidebar. */

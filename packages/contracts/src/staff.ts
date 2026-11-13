@@ -156,6 +156,20 @@ export const adminPages: readonly AdminPage[] = [
     path: "carestats",
   },
   {
+    key: "announce",
+    title: "In-app announcements",
+    group: "Customer care",
+    roles: ["admin", "care", "technical"],
+    path: "announce",
+  },
+  {
+    key: "incidents",
+    title: "Incidents & status",
+    group: "Technical",
+    roles: ["admin", "technical", "care"],
+    path: "incidents",
+  },
+  {
     key: "audit",
     title: "Audit log",
     group: "Compliance",
