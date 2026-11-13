@@ -254,6 +254,32 @@ test.describe("admin console", () => {
     await expect(page.getByRole("row").filter({ hasText: "Suspended the account" })).toHaveCount(1);
   });
 
+  test("the console has its own door: staff sign in at /admin/sign-in", async ({
+    page,
+    baseURL,
+  }) => {
+    const base = baseURL ?? "";
+    const founderEmail = uniqueEmail("founder");
+    await createConfirmedAccount(page.request, base, founderEmail, PASSWORD);
+    await makeAdministrator(founderEmail);
+
+    // Signed out, /admin leads to the console's sign-in, not the customer one.
+    await page.goto("/admin");
+    await expect(page).toHaveURL(/\/admin\/sign-in\?/);
+    await expect(page.getByRole("heading", { name: "Admin console" })).toBeVisible();
+    await expect(page.getByText("Staff only")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Create an account" })).toHaveCount(0);
+    await page.getByRole("textbox", { name: "Email" }).fill(founderEmail);
+    await page.getByLabel("Password", { exact: true }).filter({ visible: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(/\/admin$/, { timeout: 15_000 });
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
+
+    // A signed-in founder who opens the door again is let straight through.
+    await page.goto("/admin/sign-in");
+    await expect(page).toHaveURL(/\/admin$/);
+  });
+
   test("a customer never sees the console", async ({ page, baseURL }) => {
     const email = uniqueEmail("plain");
     await createConfirmedAccount(page.request, baseURL ?? "", email, PASSWORD);
@@ -262,6 +288,8 @@ test.describe("admin console", () => {
     // before the page decides, so the body is what counts.)
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "This page doesn’t exist." })).toBeVisible();
+    await page.goto("/admin/sign-in");
+    await expect(page.getByText("This isn’t a staff account")).toBeVisible();
     const api = await page.request.get("/api/v1/console/overview");
     expect(api.status()).toBe(403);
   });

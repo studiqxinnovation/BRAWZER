@@ -2,7 +2,7 @@ import { adminPageByKey, canSee, isStaffRole } from "@brawzer/contracts";
 import { Lock } from "lucide-react";
 import { notFound } from "next/navigation";
 import { type ReactNode, Suspense } from "react";
-import { signInAgain } from "@/lib/server-api";
+import { staffSignInAgain } from "@/lib/server-api";
 import { getSession } from "@/lib/session";
 import { RefusedPageNotice } from "./refused";
 
@@ -21,7 +21,7 @@ export function AdminGate({ page, children }: { page: string; children: ReactNod
 
 async function Gate({ page, children }: { page: string; children: ReactNode }) {
   const session = await getSession();
-  if (session.kind === "signed-out") signInAgain("/admin");
+  if (session.kind === "signed-out") staffSignInAgain("/admin");
   if (session.kind !== "ok") notFound();
   const role = session.data.account.role;
   if (!isStaffRole(role)) notFound();

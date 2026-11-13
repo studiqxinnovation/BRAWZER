@@ -53,3 +53,10 @@ export async function serverGet<T>(
 export function signInAgain(path: Route): never {
   redirect(`/sign-in?${new URLSearchParams({ next: path, expired: "1" }).toString()}` as Route);
 }
+
+/** The console has its own door: staff sign in at /admin/sign-in. */
+export function staffSignInAgain(path: Route): never {
+  redirect(
+    `/admin/sign-in?${new URLSearchParams({ next: path, expired: "1" }).toString()}` as Route,
+  );
+}

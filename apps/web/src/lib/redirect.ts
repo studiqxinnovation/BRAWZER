@@ -12,7 +12,7 @@ export function safeNextPath(value: string | null | undefined, fallback = "/app"
     if (url.origin !== BASE) return fallback;
     // Never bounce back into the sign-in flow itself.
     if (
-      /^\/(?:sign-in|create-account|verify-email|forgot-password|reset-password|confirm-email-change|undo-email-change)\b/.test(
+      /^\/(?:sign-in|admin\/sign-in|create-account|verify-email|forgot-password|reset-password|confirm-email-change|undo-email-change)\b/.test(
         url.pathname,
       )
     ) {

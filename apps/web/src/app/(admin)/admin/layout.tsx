@@ -8,7 +8,7 @@ import { SessionKeeperLoader } from "@/components/app-shell/session-keeper-loade
 import { AdminShell } from "@/components/admin-console/shell";
 import "@/components/admin-console/admin.css";
 import { SkipLink } from "@/components/site/site-chrome";
-import { signInAgain } from "@/lib/server-api";
+import { staffSignInAgain } from "@/lib/server-api";
 import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -23,7 +23,7 @@ export const instant = false;
 export default async function AdminLayout({ children }: LayoutProps<"/">) {
   await connection();
   const session = await getSession();
-  if (session.kind === "signed-out") signInAgain("/admin");
+  if (session.kind === "signed-out") staffSignInAgain("/admin");
   if (session.kind !== "ok") notFound();
   const { account } = session.data;
   if (!isStaffRole(account.role)) notFound();

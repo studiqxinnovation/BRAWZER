@@ -23,7 +23,14 @@ interface Notice {
   message: string;
 }
 
-export function SignInForm({ screen = false }: { screen?: boolean }) {
+export function SignInForm({
+  screen = false,
+  staff = false,
+}: {
+  screen?: boolean;
+  /** The admin console's sign-in: lands on /admin and offers no account creation. */
+  staff?: boolean;
+}) {
   const formRef = useRef<HTMLFormElement>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -35,7 +42,10 @@ export function SignInForm({ screen = false }: { screen?: boolean }) {
   const passkeysSupported = usePasskeysSupported();
 
   function goToNext() {
-    const next = safeNextPath(new URLSearchParams(window.location.search).get("next"));
+    const next = safeNextPath(
+      new URLSearchParams(window.location.search).get("next"),
+      staff ? "/admin" : "/app",
+    );
     // A full page load: the signed-in area renders on the server with the new cookie.
     if (!screen) {
       window.location.replace(next);
@@ -239,18 +249,22 @@ export function SignInForm({ screen = false }: { screen?: boolean }) {
               Sign in with a passkey
             </button>
           )}
-          <Link href="/sign-in/phone" className="lg-link">
-            Sign in with your phone
-          </Link>
+          {!staff && (
+            <Link href="/sign-in/phone" className="lg-link">
+              Sign in with your phone
+            </Link>
+          )}
           <Link href="/forgot-password" className="lg-link">
             Forgot password?
           </Link>
           <Link href="/recover" className="lg-link">
             Lost your passkey or authenticator?
           </Link>
-          <Link href="/create-account" className="lg-link">
-            Create an account
-          </Link>
+          {!staff && (
+            <Link href="/create-account" className="lg-link">
+              Create an account
+            </Link>
+          )}
         </div>
       </form>
     );
