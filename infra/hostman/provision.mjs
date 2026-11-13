@@ -28,21 +28,20 @@ const secretsFile = path.join(here, "secrets.env");
 const plan = process.argv.includes("--plan");
 const status = process.argv.includes("--status");
 
-// Everything in Frankfurt (de-1): the only location with servers, managed
-// databases and local networking together. Object storage exists only in
-// us-2; Drive objects are ciphertext, so distance costs latency, not safety.
+// Everything in New York (us-2), where the object storage also lives. The
+// managed databases turned out to be reachable only from a local network the
+// API can't configure, so PostgreSQL and Valkey are self-hosted on the app
+// host (infra/production/services.yaml) and no database is created here.
 const WANT = {
-  location: "de-1",
+  location: "us-2",
+  // Plain Ubuntu: Hostman's "Docker" software image left both servers in
+  // status "error" (2026-11-13); deploy.mjs installs Docker itself.
   os: { id: 99, name: "Ubuntu 24.04" },
-  software: { id: 25, name: "Docker" },
   servers: [
-    { name: "brawzer-app-1", preset: 6273, role: "app" }, // 4 vCPU, 8 GB, 160 GB NVMe, $20/mo
-    { name: "brawzer-runtime-1", preset: 6273, role: "runtime" }, // the same, sessions only
+    { name: "brawzer-app-1", preset: 5145, role: "app" }, // 4 vCPU, 8 GB, 160 GB NVMe, $20/mo
+    { name: "brawzer-runtime-1", preset: 5145, role: "runtime" }, // the same, sessions only
   ],
-  databases: [
-    { name: "brawzer-db", type: "postgres", preset: 2017, login: "brawzer" }, // 1 vCPU, 1 GB, 20 GB, $4/mo
-    { name: "brawzer-valkey", type: "valkey", preset: 4217 }, // 1 vCPU, 1 GB, $4/mo
-  ],
+  databases: [],
   bucket: { prefix: "brawzer-drive", preset: 1475, type: "private" }, // 10 GB in us-2, $1/mo
 };
 
@@ -127,7 +126,7 @@ async function main() {
       `  create ${item.kind} ${item.name ?? item.prefix} (preset ${item.preset}${item.price ? `, $${item.price}/mo` : ""})`,
     );
   console.log(
-    "  monthly total for the whole footprint: about $49 (2 x $20 servers, $4 + $4 databases, $1 bucket), billed hourly",
+    "  monthly total for the whole footprint: about $41 (2 x $20 servers, $1 bucket), billed hourly",
   );
   if (plan) return;
 
@@ -138,15 +137,15 @@ async function main() {
         name: item.name,
         preset_id: item.preset,
         os_id: WANT.os.id,
-        software_id: WANT.software.id,
         ssh_keys_ids: [sshKey.id],
         is_ddos_guard: false,
         bandwidth: 200,
-        is_local_network: true,
+        // No local-network flag: the API answers 500 with it. Servers and
+        // databases meet on the account's local network regardless.
       });
       console.log(`created server ${item.name} id ${r.server.id}`);
     } else if (item.kind === "database") {
-      const key = `${item.type.toUpperCase()}_PASSWORD`;
+      const key = `${item.type.replace(/\d+$/, "").toUpperCase()}_PASSWORD`;
       secrets[key] ??= password();
       writeSecrets(secrets);
       const body = {

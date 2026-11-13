@@ -75,10 +75,11 @@ services:
         ipv4_address: 172.30.0.10
 
 networks:
+  # Shared with services.yaml; made once per host:
+  #   docker network create --subnet 172.30.0.0/24 brawzer_app
   app:
-    ipam:
-      config:
-        - subnet: 172.30.0.0/24
+    name: brawzer_app
+    external: true
 
 volumes:
   caddy-data:

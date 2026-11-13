@@ -4,15 +4,13 @@ The production footprint from [ADR 0016](../../docs/adr/0016-production-hosting.
 
 ## What gets created
 
-| Resource          | Where | Size                      | Price  | Used for                                               |
-| ----------------- | ----- | ------------------------- | ------ | ------------------------------------------------------ |
-| brawzer-app-1     | de-1  | 4 vCPU, 8 GB, 160 GB NVMe | $20/mo | Caddy, the web app, the API instances, OpenBao, ClamAV |
-| brawzer-runtime-1 | de-1  | 4 vCPU, 8 GB, 160 GB NVMe | $20/mo | Session containers only; its engine over mutual TLS    |
-| brawzer-db        | de-1  | PostgreSQL, 1 vCPU, 1 GB  | $4/mo  | The database                                           |
-| brawzer-valkey    | de-1  | Valkey, 1 vCPU, 1 GB      | $4/mo  | Rate limits, session events, locks                     |
-| brawzer-drive-…   | us-2  | 10 GB private S3 bucket   | $1/mo  | Drive and profile objects (ciphertext, ADR 0011)       |
+| Resource          | Where | Size                      | Price  | Used for                                                         |
+| ----------------- | ----- | ------------------------- | ------ | ---------------------------------------------------------------- |
+| brawzer-app-1     | us-2  | 4 vCPU, 8 GB, 160 GB NVMe | $20/mo | Caddy, the web app, the API, PostgreSQL, Valkey, OpenBao, ClamAV |
+| brawzer-runtime-1 | us-2  | 4 vCPU, 8 GB, 160 GB NVMe | $20/mo | Session containers only; its engine over mutual TLS              |
+| brawzer-drive-…   | us-2  | 10 GB private S3 bucket   | $1/mo  | Drive and profile objects (ciphertext, ADR 0011)                 |
 
-Both servers are Ubuntu 24.04 with Hostman's Docker image, on the account's local network so the app tier reaches the runtime host's engine and the databases without crossing the internet. Billing is hourly; the whole footprint is about $49 a month. Grow the runtime host first when sessions need it.
+Both servers are plain Ubuntu 24.04 in New York (Hostman's Docker image failed to install; `bootstrap-host.sh` installs Docker). Billing is hourly; the whole footprint is about $41 a month. Hostman's managed databases answer only on a local network that the API can't attach servers to, so PostgreSQL and Valkey run on the app host from `infra/production/services.yaml`. Grow the runtime host first when sessions need it.
 
 Deliberate deviations from the production plan, for a first installation:
 
