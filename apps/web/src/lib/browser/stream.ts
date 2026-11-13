@@ -2,18 +2,28 @@ import {
   type AgentMessage,
   agentMessageSchema,
   type ClientMessageInput,
+  type AudioChunkHeader,
+  binaryKind,
+  decodeAudioChunk,
   decodeFrame,
+  decodeVideoChunk,
   type FrameHeader,
   STREAM_CLOSE_CODES,
+  type VideoChunkHeader,
+  type VideoCodec,
   type Viewport,
 } from "@brawzer/contracts";
 
 export type StreamEvent =
   | { kind: "message"; message: AgentMessage }
   | { kind: "frame"; header: FrameHeader; image: Blob }
-  | { kind: "closed"; code: number; reason: string };
+  | { kind: "audio"; header: AudioChunkHeader; samples: Uint8Array }
+  | { kind: "video"; header: VideoChunkHeader; data: Uint8Array }
+  | { kind: "closed"; code: number; reason: string }
+  /** How long a ping took to come back from the container, end to end. */
+  | { kind: "latency"; ms: number };
 
-const PING_INTERVAL_MS = 20_000;
+const PING_INTERVAL_MS = 5_000;
 
 /**
  * The page's end of the cloud browser stream: opens the relay's WebSocket,
@@ -24,18 +34,21 @@ const PING_INTERVAL_MS = 20_000;
 export class BrowserStream {
   private socket: WebSocket | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  /** When the ping still unanswered was sent, if any. */
+  private pingSentAt: number | null = null;
 
   constructor(private readonly onEvent: (event: StreamEvent) => void) {}
 
-  open(url: string, ticket: string, viewport: Viewport): void {
+  open(url: string, ticket: string, viewport: Viewport, codecs: readonly VideoCodec[] = []): void {
     this.close();
     const socket = new WebSocket(url);
     socket.binaryType = "arraybuffer";
     this.socket = socket;
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify({ type: "ticket", ticket }));
-      this.send({ type: "hello", viewport });
-      this.pingTimer = setInterval(() => this.send({ type: "ping" }), PING_INTERVAL_MS);
+      this.send({ type: "hello", viewport, codecs: [...codecs] });
+      this.pingTimer = setInterval(() => this.ping(), PING_INTERVAL_MS);
+      this.ping();
     });
     socket.addEventListener("message", (event: MessageEvent<ArrayBuffer | string>) => {
       if (typeof event.data === "string") {
@@ -46,12 +59,29 @@ export class BrowserStream {
           return;
         }
         const message = agentMessageSchema.safeParse(parsed);
-        if (message.success && message.data.type !== "pong") {
-          this.onEvent({ kind: "message", message: message.data });
+        if (!message.success) return;
+        if (message.data.type === "pong") {
+          if (this.pingSentAt !== null) {
+            this.onEvent({ kind: "latency", ms: Math.round(performance.now() - this.pingSentAt) });
+            this.pingSentAt = null;
+          }
+          return;
         }
+        this.onEvent({ kind: "message", message: message.data });
         return;
       }
-      const frame = decodeFrame(new Uint8Array(event.data));
+      const bytes = new Uint8Array(event.data);
+      if (binaryKind(bytes) === "video") {
+        const chunk = decodeVideoChunk(bytes);
+        if (chunk) this.onEvent({ kind: "video", header: chunk.header, data: chunk.data.slice() });
+        return;
+      }
+      if (binaryKind(bytes) === "audio") {
+        const chunk = decodeAudioChunk(bytes);
+        if (chunk) this.onEvent({ kind: "audio", header: chunk.header, samples: chunk.samples });
+        return;
+      }
+      const frame = decodeFrame(bytes);
       if (!frame) return;
       this.onEvent({
         kind: "frame",
@@ -83,9 +113,17 @@ export class BrowserStream {
     if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, "left");
   }
 
+  private ping(): void {
+    if (!this.isOpen) return;
+    // An unanswered ping is left to its answer: the next one isn't timed over it.
+    this.pingSentAt ??= performance.now();
+    this.send({ type: "ping" });
+  }
+
   private stopPing(): void {
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = null;
+    this.pingSentAt = null;
   }
 }
 
@@ -100,6 +138,8 @@ export function describeClose(code: number): { message: string; retry: boolean }
       return { message: "The stream link expired before it was used.", retry: true };
     case STREAM_CLOSE_CODES.runtimeClosed:
       return { message: "The cloud browser stopped.", retry: false };
+    case STREAM_CLOSE_CODES.locked:
+      return { message: "Brawzer is locked.", retry: false };
     case STREAM_CLOSE_CODES.badMessage:
       return { message: "The connection was closed because of a bad message.", retry: true };
     case 1000:

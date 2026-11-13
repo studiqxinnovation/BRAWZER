@@ -79,6 +79,17 @@ test.describe("proxies", () => {
       await expect(profile).toBeHidden();
       await expect(page.getByText("Proxy: Local SOCKS")).toBeVisible();
 
+      // With a proxy, private addresses can be sent through it on purpose; off by default.
+      await page.getByRole("button", { name: "Edit Personal" }).click();
+      const intranet = profile.getByRole("switch", {
+        name: "Reach private addresses through the proxy",
+      });
+      await expect(intranet).not.toBeChecked();
+      await intranet.click();
+      await profile.getByRole("button", { name: "Save" }).click();
+      await expect(profile).toBeHidden();
+      await expect(page.getByText("Private addresses through the proxy")).toBeVisible();
+
       await page.goto("/app/proxy");
       await interactive(page);
       await expect(page.getByText("Used by Personal")).toBeVisible();

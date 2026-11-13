@@ -1,6 +1,10 @@
 import { EventEmitter } from "node:events";
 import { randomBytes } from "node:crypto";
 import {
+  type BrowserEngine,
+  engineDetails,
+  type AdminRuntime,
+  extensionsFor,
   BROWSER_LIMITS,
   type BrowserOverview,
   type BrowserSession,
@@ -12,10 +16,13 @@ import {
   and,
   type BrowserSessionRow,
   count,
+  type DatabaseExecutor,
   type DatabaseHandle,
   desc,
   eq,
+  gte,
   inArray,
+  isNotNull,
   ne,
   schema,
   sql,
@@ -26,6 +33,7 @@ import {
   Logger,
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
+  type OnModuleInit,
 } from "@nestjs/common";
 import type { Redis } from "ioredis";
 import { SessionService } from "../auth/session.service.js";
@@ -44,8 +52,16 @@ import { SecurityEventsService } from "../security-events/security-events.js";
 import { ProfileDataService, ProfileDataTooLargeError } from "../profiles/profile-data.service.js";
 import { ProfilesService } from "../profiles/profiles.service.js";
 import { ProxiesService } from "../proxies/proxies.service.js";
+import { SiteRulesService } from "../site-rules/site-rules.service.js";
+import { POOL_MAX_AGE_MS, WarmPoolService } from "./warm-pool.service.js";
+import { RuntimeHostsService } from "../egress/runtime-hosts.service.js";
+import { EnginesService } from "../egress/engines.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamTickets } from "./stream-tickets.js";
+import { MetricsService } from "../metrics/metrics.service.js";
+import { type AfterCommit, TeamsService } from "../teams/teams.service.js";
+import { AppRecordsService } from "../app-records/app-records.service.js";
+import { HistoryService } from "../history/history.service.js";
 
 const logger = new Logger("Browser");
 const LIVE = ["starting", "running"] as const;
@@ -77,12 +93,14 @@ export interface ViewerAccess {
  * fails. In-process events tell the relay when viewers must be cut off.
  */
 @Injectable()
-export class BrowserService implements OnApplicationBootstrap, OnApplicationShutdown {
+export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnApplicationShutdown {
   /** `ended` (session id): the relay closes its viewers. */
   readonly events = new EventEmitter();
   private timer: NodeJS.Timeout | undefined;
   private runtimeChecked = 0;
   private runtimeAvailable = false;
+  /** The check in progress (or the last one): requests meanwhile wait for it, not a stale answer. */
+  private runtimeCheck: Promise<void> | null = null;
 
   constructor(
     @Inject(DATABASE) private readonly database: DatabaseHandle,
@@ -96,18 +114,77 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     @Inject(ProfilesService) private readonly profiles: ProfilesService,
     @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
+    @Inject(SiteRulesService) private readonly siteRules: SiteRulesService,
+    @Inject(WarmPoolService) private readonly pool: WarmPoolService,
+    @Inject(RuntimeHostsService) private readonly hosts: RuntimeHostsService,
+    @Inject(MetricsService) private readonly metrics: MetricsService,
     @Inject(BillingService) private readonly billing: BillingService,
+    @Inject(EnginesService) private readonly engines: EnginesService,
     @Inject(REDIS) private readonly redis: Pick<Redis, "publish" | "set">,
+    @Inject(TeamsService) private readonly teams: TeamsService,
+    @Inject(AppRecordsService) private readonly records: AppRecordsService,
+    @Inject(HistoryService) private readonly history: HistoryService,
   ) {}
+
+  /**
+   * A session browsing through a team's proxy ends when its person leaves the
+   * team or the team goes: the proxy is no longer theirs to use (ADR 0019).
+   */
+  onModuleInit(): void {
+    const throughTeamProxy = async (
+      tx: DatabaseExecutor,
+      teamId: string,
+      userId: string | null,
+    ): Promise<AfterCommit | undefined> => {
+      const rows = await tx
+        .select()
+        .from(schema.browserSessions)
+        .where(
+          and(
+            inArray(schema.browserSessions.status, [...LIVE]),
+            sql`${schema.browserSessions.proxyId} in (select id from proxies where team_id = ${teamId})`,
+            ...(userId ? [eq(schema.browserSessions.userId, userId)] : []),
+          ),
+        );
+      if (rows.length === 0) return undefined;
+      return async () => {
+        for (const row of rows) await this.endSession(row, "team_left", null);
+      };
+    };
+    this.teams.register({
+      memberLeft: (tx, teamId, userId) => throughTeamProxy(tx, teamId, userId),
+      teamDeleting: (tx, teamId) => throughTeamProxy(tx, teamId, null),
+    });
+  }
 
   onApplicationBootstrap(): void {
     // A sign-in that ends takes its cloud browser with it.
     this.sessions.onRevoked((authSessionId) => {
       void this.endForAuthSession(authSessionId, "signed_out").catch(() => undefined);
     });
-    void this.reconcile().catch((error: unknown) => {
-      logger.warn(`Reconciling runtimes failed: ${error instanceof Error ? error.message : ""}`);
-    });
+    // An operator's CLI process leaves the containers to the servers.
+    if (this.config.role === "server") {
+      void this.reconcile().catch((error: unknown) => {
+        logger.warn(`Reconciling runtimes failed: ${error instanceof Error ? error.message : ""}`);
+      });
+    }
+    this.metrics.gauge(
+      "brawzer_sessions_live",
+      "Live sessions (starting or running), by runtime host.",
+      async () => {
+        const rows = await this.database.db
+          .select({ host: schema.browserSessions.runtimeHost, count: count() })
+          .from(schema.browserSessions)
+          .where(inArray(schema.browserSessions.status, [...LIVE]))
+          .groupBy(schema.browserSessions.runtimeHost);
+        return rows.map((row) => ({ labels: { host: row.host ?? "local" }, value: row.count }));
+      },
+    );
+    this.metrics.gauge(
+      "brawzer_runtime_available",
+      "1 when a runtime host answered the last check.",
+      () => Promise.resolve([{ value: this.runtimeAvailable ? 1 : 0 }]),
+    );
     this.timer = setInterval(() => {
       void this.reapAsLeader().catch((error: unknown) => {
         logger.warn(`Reaping sessions failed: ${error instanceof Error ? error.message : ""}`);
@@ -123,32 +200,137 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
   // ── Reads ─────────────────────────────────────────────────────────────
 
   async overview(userId: string): Promise<BrowserOverview> {
-    const [live, runtime] = await Promise.all([this.liveSession(userId), this.runtimeStatus()]);
+    const [live, runtime, savedTabs, limits, engines, activity] = await Promise.all([
+      this.liveSessions(userId),
+      this.runtimeStatus(),
+      this.history.savedTabsFor(userId),
+      this.billing.limitsFor(userId),
+      this.engines.offered(),
+      this.activity(userId),
+    ]);
+    const sessions = live.map(describe);
     return {
-      session: live ? describe(live) : null,
-      limits: { idleMinutes: BROWSER_LIMITS.idleMinutes, maxHours: BROWSER_LIMITS.maxHours },
+      session: sessions[0] ?? null,
+      sessions,
+      engines: [...engines],
+      limits: {
+        idleMinutes: BROWSER_LIMITS.idleMinutes,
+        maxHours: BROWSER_LIMITS.maxHours,
+        liveSessions: limits.liveSessions,
+      },
       runtime,
       region: this.config.browser.region,
+      savedTabs,
+      activity,
+    };
+  }
+
+  /**
+   * When the account browsed, never what: session starts in the last 48
+   * hours, the last end, and this month's minutes in each browser, counted
+   * as the plan counts them (BillingService.browsingMinutesThisMonth).
+   */
+  private async activity(userId: string, now = new Date()): Promise<BrowserOverview["activity"]> {
+    const since = new Date(now.getTime() - 48 * 60 * 60_000);
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const sessions = schema.browserSessions;
+    const [starts, ended, byEngine, past] = await Promise.all([
+      this.database.db
+        .select({ startedAt: sessions.startedAt })
+        .from(sessions)
+        .where(and(eq(sessions.userId, userId), gte(sessions.startedAt, since)))
+        .orderBy(desc(sessions.startedAt))
+        .limit(100),
+      this.database.db
+        .select({ endedAt: sessions.endedAt })
+        .from(sessions)
+        .where(and(eq(sessions.userId, userId), isNotNull(sessions.endedAt)))
+        .orderBy(desc(sessions.endedAt))
+        .limit(1),
+      this.database.db
+        .select({
+          engine: sessions.engine,
+          // Sums come back as strings from PostgreSQL.
+          seconds: sql<
+            string | number
+          >`coalesce(sum(extract(epoch from (coalesce(${sessions.endedAt}, now()) - greatest(${sessions.startedAt}, ${monthStart})))), 0)`,
+        })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.userId, userId),
+            gte(sql`coalesce(${sessions.endedAt}, now())`, monthStart),
+            isNotNull(sessions.startedAt),
+          ),
+        )
+        .groupBy(sessions.engine),
+      this.database.db
+        .select({
+          id: sessions.id,
+          engine: sessions.engine,
+          profileId: sessions.profileId,
+          startedAt: sessions.startedAt,
+          endedAt: sessions.endedAt,
+          endReason: sessions.endReason,
+        })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.userId, userId),
+            isNotNull(sessions.startedAt),
+            isNotNull(sessions.endedAt),
+          ),
+        )
+        .orderBy(desc(sessions.endedAt))
+        .limit(20),
+    ]);
+    return {
+      recentStarts: starts.flatMap((row) => (row.startedAt ? [row.startedAt.toISOString()] : [])),
+      lastEndedAt: ended[0]?.endedAt?.toISOString() ?? null,
+      ended: past.flatMap((row) =>
+        row.startedAt && row.endedAt
+          ? [
+              {
+                id: row.id,
+                engine: row.engine,
+                profileId: row.profileId,
+                startedAt: row.startedAt.toISOString(),
+                endedAt: row.endedAt.toISOString(),
+                reason: row.endReason,
+              },
+            ]
+          : [],
+      ),
+      minutesThisMonth: byEngine
+        .map((row) => ({
+          engine: row.engine,
+          minutes: Math.max(0, Math.round(Number(row.seconds) / 60)),
+        }))
+        .sort((a, b) => b.minutes - a.minutes),
     };
   }
 
   /** Cached for 10 seconds: the Browser page asks on every load. */
   private async runtimeStatus(): Promise<"available" | "unavailable"> {
-    if (Date.now() - this.runtimeChecked > 10_000) {
+    if (this.runtimeCheck === null || Date.now() - this.runtimeChecked > 10_000) {
       this.runtimeChecked = Date.now();
-      try {
-        await this.orchestrator.ping();
-        this.runtimeAvailable = true;
-      } catch (error) {
-        this.runtimeAvailable = false;
-        logger.warn(`Runtime unavailable: ${error instanceof Error ? error.message : "unknown"}`);
-      }
+      this.runtimeCheck = this.orchestrator.ping().then(
+        () => {
+          this.runtimeAvailable = true;
+        },
+        (error: unknown) => {
+          this.runtimeAvailable = false;
+          logger.warn(`Runtime unavailable: ${error instanceof Error ? error.message : "unknown"}`);
+        },
+      );
     }
+    await this.runtimeCheck;
     return this.runtimeAvailable ? "available" : "unavailable";
   }
 
-  private async liveSession(userId: string): Promise<BrowserSessionRow | undefined> {
-    const [row] = await this.database.db
+  /** Every live session of the account, newest first. */
+  private async liveSessions(userId: string): Promise<BrowserSessionRow[]> {
+    return this.database.db
       .select()
       .from(schema.browserSessions)
       .where(
@@ -157,9 +339,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
           inArray(schema.browserSessions.status, [...LIVE]),
         ),
       )
-      .orderBy(desc(schema.browserSessions.createdAt))
-      .limit(1);
-    return row;
+      .orderBy(desc(schema.browserSessions.createdAt));
   }
 
   async forExport(
@@ -186,6 +366,8 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     auth: { user: { id: string }; session: { id: string } },
     profileId: string | null,
     meta: RequestMeta,
+    resume = false,
+    requestedEngine?: BrowserEngine,
   ): Promise<BrowserSession> {
     const userId = auth.user.id;
     const profile = profileId ? await this.profiles.find(userId, profileId) : undefined;
@@ -207,65 +389,169 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       }
     }
 
-    const row = await this.database.db.transaction(async (tx) => {
-      await lockAccount(tx, userId);
-      // The installation's capacity, counted under one lock across every instance.
-      await tx.execute(sql`select pg_advisory_xact_lock(${CAPACITY_LOCK_KEY})`);
-      const [total] = await tx
-        .select({ count: count() })
-        .from(schema.browserSessions)
-        .where(inArray(schema.browserSessions.status, [...LIVE]));
-      if ((total?.count ?? 0) >= this.config.browser.maxLiveSessions) {
-        throw new ApiException(
-          "service_unavailable",
-          503,
-          "Brawzer’s cloud is at capacity right now. Try again in a few minutes.",
-          { headers: { "Retry-After": "60" } },
-        );
-      }
-      const live = await tx
-        .select({ id: schema.browserSessions.id })
-        .from(schema.browserSessions)
-        .where(
-          and(
-            eq(schema.browserSessions.userId, userId),
-            inArray(schema.browserSessions.status, [...LIVE]),
-          ),
-        );
-      if (live.length >= limits.liveSessions) {
-        throw new ApiException("conflict", 409, "A browser session is already running.");
-      }
-      const [created] = await tx
-        .insert(schema.browserSessions)
-        .values({
-          userId,
-          authSessionId: auth.session.id,
-          profileId,
-          proxyId: profile?.proxyId ?? null,
-          engine: profile?.engine ?? "bee",
-          status: "starting",
-          // Sealed once the row id exists; a placeholder keeps the column non-null meanwhile.
-          agentSecret: "",
-        })
-        .returning();
-      if (!created) throw new Error("Creating a browser session returned no row");
-      return created;
-    });
+    // What the session needs decides whether a waiting pair can serve it.
+    const upstream = await this.proxies.forEgress(userId, profile?.proxyId ?? null);
+    const siteRules = await this.siteRules.forEgress(userId);
+    // A profile brings its own browser; a temporary session names one (Bee by default).
+    const offered = await this.engines.offered();
+    const engine = profile?.engine ?? requestedEngine ?? offered[0] ?? "bee";
+    if (!offered.includes(engine)) {
+      throw new ApiException(
+        "conflict",
+        409,
+        `${engineDetails[engine].name} isn’t offered on this installation.`,
+      );
+    }
+    // Exam Mode (Phase 9) means it here too, not only on the desktop that set it.
+    const exam = await this.records.currentExam(userId);
+    if (exam && !exam.allowed.includes(`browser:${engine}`)) {
+      throw new ApiException(
+        "forbidden",
+        403,
+        `Not during Exam Mode: ${engineDetails[engine].name} isn’t one of the browsers you allowed until it ends.`,
+      );
+    }
+    const privateViaUpstream = upstream !== null && profile?.privateThroughProxy === true;
+    // Only the catalogue entries this engine runs (ADR 0018); a waiting pair has none,
+    // so it serves plain sessions only.
+    const extensions = (profile?.extensions ?? []).filter((slug) =>
+      extensionsFor(engine).some((entry) => entry.slug === slug),
+    );
+    // The browser's own account and passwords (ADR 0021): only where the profile keeps its data.
+    const browserAccount = profile?.browserAccount === true && profile.keepData;
+    const pair =
+      upstream === null && siteRules === null && extensions.length === 0 && !browserAccount
+        ? await this.pool.claim(engine)
+        : null;
+    const secretForAgent = pair?.secret ?? secret;
 
-    let started: { containerId: string; agentAddress: string };
+    let row: BrowserSessionRow;
+    try {
+      row = await this.database.db.transaction(async (tx) => {
+        await lockAccount(tx, userId);
+        // The installation's capacity, counted under one lock across every instance.
+        await tx.execute(sql`select pg_advisory_xact_lock(${CAPACITY_LOCK_KEY})`);
+        const [total] = await tx
+          .select({ count: count() })
+          .from(schema.browserSessions)
+          .where(inArray(schema.browserSessions.status, [...LIVE]));
+        if ((total?.count ?? 0) >= this.config.browser.maxLiveSessions) {
+          throw new ApiException(
+            "service_unavailable",
+            503,
+            "Brawzer’s cloud is at capacity right now. Try again in a few minutes.",
+            { headers: { "Retry-After": "60" } },
+          );
+        }
+        const live = await tx
+          .select({ id: schema.browserSessions.id, profileId: schema.browserSessions.profileId })
+          .from(schema.browserSessions)
+          .where(
+            and(
+              eq(schema.browserSessions.userId, userId),
+              inArray(schema.browserSessions.status, [...LIVE]),
+            ),
+          );
+        // A profile's saved data can be in one session at a time.
+        if (profileId && live.some((entry) => entry.profileId === profileId)) {
+          throw new ApiException(
+            "conflict",
+            409,
+            `“${profile?.name ?? "That profile"}” is already open in another browser. Switch to it, or end it first.`,
+          );
+        }
+        if (live.length >= limits.liveSessions) {
+          throw new ApiException(
+            "conflict",
+            409,
+            limits.liveSessions === 1
+              ? "A browser is already running. End it to open another."
+              : `Your plan runs ${String(limits.liveSessions)} browsers at once. End one to open another.`,
+          );
+        }
+        // Where it runs: a waiting pair's own host, else the host with the most room.
+        const perHost = await tx
+          .select({ host: schema.browserSessions.runtimeHost, count: count() })
+          .from(schema.browserSessions)
+          .where(inArray(schema.browserSessions.status, [...LIVE]))
+          .groupBy(schema.browserSessions.runtimeHost);
+        const liveByHost = new Map(perHost.map((entry) => [entry.host ?? "local", entry.count]));
+        const host = pair ? this.hosts.byName(pair.host) : await this.hosts.pick(liveByHost);
+        if (!host) {
+          throw new ApiException(
+            "service_unavailable",
+            503,
+            "Brawzer’s cloud is at capacity right now. Try again in a few minutes.",
+            { headers: { "Retry-After": "60" } },
+          );
+        }
+        const [created] = await tx
+          .insert(schema.browserSessions)
+          .values({
+            // A pooled pair's containers already carry the id reserved for it.
+            ...(pair ? { id: pair.sessionId } : {}),
+            runtimeHost: host.name,
+            userId,
+            authSessionId: auth.session.id,
+            profileId,
+            proxyId: profile?.proxyId ?? null,
+            engine,
+            status: "starting",
+            // Sealed once the row id exists; a placeholder keeps the column non-null meanwhile.
+            agentSecret: "",
+          })
+          .returning();
+        if (!created) throw new Error("Creating a browser session returned no row");
+        // The profile's saved tabs, when asked to continue from them (ADR 0020).
+        if (profileId) await this.history.prepareSession(created.id, profileId, resume, tx);
+        return created;
+      });
+    } catch (error) {
+      if (pair) this.pool.release(pair);
+      throw error;
+    }
+
+    this.metrics.count(
+      "brawzer_sessions_started_total",
+      "Sessions asked for, by engine and start.",
+      {
+        engine,
+        start: pair ? "warm" : "cold",
+      },
+    );
+    let started: { host: string; containerId: string; agentAddress: string };
     try {
       await this.database.db
         .update(schema.browserSessions)
-        .set({ agentSecret: await this.box.seal(secret, secretContext(row.id)) })
+        .set({ agentSecret: await this.box.seal(secretForAgent, secretContext(row.id)) })
         .where(eq(schema.browserSessions.id, row.id));
       // A profile that keeps its data starts from what was saved last time,
       // and browses through its proxy (ADR 0014).
       const restore = profile?.keepData ? await this.profileData.open(profile) : null;
-      const upstream = await this.proxies.forEgress(userId, profile?.proxyId ?? null);
-      started = await this.orchestrator.start(row.id, secret, restore, upstream, row.engine);
+      started = pair
+        ? await this.orchestrator.launch(pair, pair.secret, restore)
+        : await this.orchestrator.start(
+            this.hosts.byName(row.runtimeHost),
+            row.id,
+            secret,
+            restore,
+            upstream,
+            row.engine,
+            {
+              // Only with a proxy: the proxy reaches the private addresses, never Brawzer.
+              privateViaUpstream,
+              siteRules,
+              extensions,
+              browserAccount,
+            },
+          );
     } catch (error) {
       logger.warn(
         `Runtime for session ${row.id} failed to start: ${error instanceof Error ? error.message : ""}`,
+      );
+      this.metrics.count(
+        "brawzer_session_starts_failed_total",
+        "Sessions whose runtime failed to start.",
       );
       await this.markEnded(row.id, "runtime_failed");
       throw new ApiException(
@@ -291,7 +577,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       .returning();
     if (!running) {
       // Ended (sign-out, account deleted) while the container was starting.
-      await this.orchestrator.stopSession(row.id, started.containerId);
+      await this.orchestrator.stopSession(started.host, row.id, started.containerId);
       throw notFound();
     }
     await this.securityEvents.record({
@@ -313,6 +599,26 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     if (!row) throw notFound();
     if (row.status === "ended") return;
     await this.endSession(row, "user", meta);
+  }
+
+  /** Ends the session so its open tabs wait for the profile's next one, on any device. */
+  async handOff(userId: string, id: string, meta: RequestMeta): Promise<void> {
+    const [row] = await this.database.db
+      .select()
+      .from(schema.browserSessions)
+      .where(and(eq(schema.browserSessions.id, id), eq(schema.browserSessions.userId, userId)))
+      .limit(1);
+    if (!row || row.status === "ended") throw notFound();
+    const profile = row.profileId ? await this.profiles.find(userId, row.profileId) : undefined;
+    if (!profile?.keepData) {
+      throw new ApiException(
+        "conflict",
+        409,
+        "This session keeps nothing to continue from. Use a profile that keeps its data.",
+      );
+    }
+    await this.history.markHandedOff(profile.id);
+    await this.endSession(row, "handed_off", meta);
   }
 
   async issueTicket(
@@ -352,15 +658,24 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     return { agentAddress: row.agentAddress, secret };
   }
 
-  /** The relay's periodic check: may this viewer keep watching? */
-  async viewerAllowed(id: string, authSessionId: string): Promise<boolean> {
+  /**
+   * The relay's periodic check: may this viewer keep watching? "locked"
+   * while the viewer's sign-in is locked (the browser keeps running), and
+   * "ended" when the browser or the sign-in has ended.
+   */
+  async viewerState(id: string, authSessionId: string): Promise<"active" | "locked" | "ended"> {
     const [row] = await this.database.db
       .select({ status: schema.browserSessions.status })
       .from(schema.browserSessions)
       .where(eq(schema.browserSessions.id, id))
       .limit(1);
-    if (row?.status !== "running") return false;
-    return this.sessions.isActive(authSessionId);
+    if (row?.status !== "running") return "ended";
+    return this.sessions.viewerState(authSessionId);
+  }
+
+  /** Called with each sign-in this instance locks, so its streams close at once. */
+  onSignInLocked(listener: (authSessionId: string) => void): void {
+    this.sessions.onLocked(listener);
   }
 
   /** Someone is watching: postpones the idle timeout. */
@@ -369,6 +684,67 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       .update(schema.browserSessions)
       .set({ lastViewedAt: new Date() })
       .where(eq(schema.browserSessions.id, id));
+  }
+
+  /** The Admin page's view: hosts, the warm pool and every live session (Phase 8, idea 22). */
+  async adminRuntime(): Promise<AdminRuntime> {
+    const rows = await this.database.db
+      .select({
+        id: schema.browserSessions.id,
+        email: schema.users.email,
+        engine: schema.browserSessions.engine,
+        status: schema.browserSessions.status,
+        host: schema.browserSessions.runtimeHost,
+        createdAt: schema.browserSessions.createdAt,
+        lastViewedAt: schema.browserSessions.lastViewedAt,
+        proxyId: schema.browserSessions.proxyId,
+        extensions: schema.profiles.extensions,
+      })
+      .from(schema.browserSessions)
+      .innerJoin(schema.users, eq(schema.users.id, schema.browserSessions.userId))
+      .leftJoin(schema.profiles, eq(schema.profiles.id, schema.browserSessions.profileId))
+      .where(inArray(schema.browserSessions.status, [...LIVE]))
+      .orderBy(desc(schema.browserSessions.createdAt));
+    const sessions = rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      engine: row.engine,
+      status: row.status,
+      host: this.hosts.byName(row.host).name,
+      createdAt: row.createdAt.toISOString(),
+      lastViewedAt: row.lastViewedAt?.toISOString() ?? null,
+      expiresAt: new Date(
+        row.createdAt.getTime() + BROWSER_LIMITS.maxHours * 3_600_000,
+      ).toISOString(),
+      throughProxy: row.proxyId !== null,
+      extensions: row.extensions?.length ?? 0,
+    }));
+    const hosts = await Promise.all(
+      this.hosts.all().map(async (host) => ({
+        name: host.name,
+        healthy: await this.hosts.healthy(host),
+        live: sessions.filter((session) => session.host === host.name).length,
+        capacity: host.capacity,
+      })),
+    );
+    return {
+      hosts,
+      warmPool: { size: this.pool.size, waiting: this.pool.waiting },
+      sessions,
+    };
+  }
+
+  /** Ends any live session, for an administrator; recorded in that account's history. */
+  async endByAdmin(id: string): Promise<void> {
+    const [row] = await this.database.db
+      .select()
+      .from(schema.browserSessions)
+      .where(eq(schema.browserSessions.id, id))
+      .limit(1);
+    if (!row) throw notFound();
+    if (row.status === "ended") return;
+    logger.log(`Session ${row.id} ended by an administrator`);
+    await this.endSession(row, "admin", null);
   }
 
   async endForAuthSession(authSessionId: string, reason: BrowserSessionEndReason): Promise<void> {
@@ -405,6 +781,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
   ): Promise<void> {
     const ended = await this.markEnded(row.id, reason);
     if (!ended) return;
+    this.metrics.count("brawzer_sessions_ended_total", "Sessions ended, by reason.", { reason });
     this.events.emit("ended", row.id);
     // Other instances may hold the viewer's relay.
     this.redis.publish(SESSION_ENDED_CHANNEL, row.id).catch(() => undefined);
@@ -412,7 +789,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       if (reason !== "account_deleted" && reason !== "runtime_failed") {
         await this.saveProfileData(row);
       }
-      await this.orchestrator.stopSession(row.id, row.containerId);
+      await this.orchestrator.stopSession(row.runtimeHost, row.id, row.containerId);
     }
     if (reason !== "account_deleted") {
       await this.securityEvents.record({
@@ -494,7 +871,10 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
         await this.endSession(row, "idle", null);
       } else if (row.status === "starting" && age > BROWSER_LIMITS.startTimeoutSeconds * 2_000) {
         await this.endSession(row, "runtime_failed", null);
-      } else if (row.containerId && !(await this.orchestrator.isRunning(row.containerId))) {
+      } else if (
+        row.containerId &&
+        !(await this.orchestrator.isRunning(row.runtimeHost, row.containerId))
+      ) {
         await this.endSession(row, "runtime_failed", null);
       }
     }
@@ -509,10 +889,11 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       .where(inArray(schema.browserSessions.status, [...LIVE]));
     const liveIds = new Set(live.map((row) => row.id));
     for (const runtime of runtimes) {
-      if (!liveIds.has(runtime.sessionId)) {
-        logger.log(`Removing orphaned runtime for session ${runtime.sessionId}`);
-        await this.orchestrator.stopSession(runtime.sessionId, runtime.containerId);
-      }
+      if (liveIds.has(runtime.sessionId)) continue;
+      // A warm pool's pair waits for a session that doesn't exist yet; only a stale one goes.
+      if (runtime.pooledAt && Date.now() - runtime.pooledAt.getTime() < POOL_MAX_AGE_MS) continue;
+      logger.log(`Removing orphaned runtime for session ${runtime.sessionId} on ${runtime.host}`);
+      await this.orchestrator.stopSession(runtime.host, runtime.sessionId, runtime.containerId);
     }
     await this.reap();
   }

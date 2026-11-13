@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { expireIdentityConfirmation } from "./database";
-import { createConfirmedAccount, signOut, uniqueEmail } from "./mailbox";
+import { createConfirmedAccount, expectSignedInAs, signOut, uniqueEmail } from "./mailbox";
 
 // Passkeys need a domain name: they never work on an IP address such as the
 // 127.0.0.1 the other tests use, so these tests browse localhost.
@@ -55,7 +55,7 @@ test.describe("passkeys", () => {
 
     await page.getByRole("button", { name: "Sign in with a passkey" }).click();
     await expect(page).toHaveURL(/\/app$/);
-    await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+    await expectSignedInAs(page, email);
 
     await page.goto(`${SITE}/app/sessions`);
     await expect(page.getByText("Signed in with a passkey")).toBeVisible();
@@ -71,7 +71,10 @@ test.describe("passkeys", () => {
     await signInWithPassword(page, email, false);
 
     await page.goto(`${SITE}/app/account`);
-    await expect(page.getByText(/only be saved on your phone or a security key/)).toBeVisible();
+    // Scoped to the page: while it streams in, a copy waits in a hidden template.
+    await expect(
+      page.locator("#main-content").getByText(/only be saved on your phone or a security key/),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Add a passkey" }).click();
     await expect(page.getByText("Passkey added")).toBeVisible();
   });
@@ -85,6 +88,8 @@ test.describe("passkeys", () => {
     await expireIdentityConfirmation(email);
 
     await page.reload();
+    // The page works once its scripts run; the session keeper marks that.
+    await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
     await page.getByRole("button", { name: /^Remove Passkey on / }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Remove passkey" }).click();
     const confirm = page.getByRole("dialog", { name: "Confirm it’s you" });

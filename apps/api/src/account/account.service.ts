@@ -1,4 +1,9 @@
-import type { AccountExport } from "@brawzer/contracts";
+import type {
+  AccountEmail,
+  AccountExport,
+  UnsubscribeResponse,
+  UpdateEmailPreferencesRequest,
+} from "@brawzer/contracts";
 import { and, type DatabaseHandle, eq, ne, schema } from "@brawzer/db";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { BreachedPasswordCheck } from "../auth/breached-passwords.js";
@@ -14,11 +19,17 @@ import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
 import { DriveService } from "../drive/drive.service.js";
 import { ProfileDataService } from "../profiles/profile-data.service.js";
+import { EmailDeliveryService } from "../email/delivery.js";
 import { EmailService } from "../email/email.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { ProfilesService } from "../profiles/profiles.service.js";
 import { ProxiesService } from "../proxies/proxies.service.js";
+import { SiteRulesService } from "../site-rules/site-rules.service.js";
+import { AppRecordsService } from "../app-records/app-records.service.js";
+import { ReportsService } from "../reports/reports.service.js";
+import { TeamsService } from "../teams/teams.service.js";
+import { HistoryService } from "../history/history.service.js";
 import { SecurityHistoryService } from "../security/security.service.js";
 
 const logger = new Logger("Account");
@@ -37,6 +48,7 @@ export class AccountService {
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(EmailTokenService) private readonly emailTokens: EmailTokenService,
     @Inject(EmailService) private readonly email: EmailService,
+    @Inject(EmailDeliveryService) private readonly delivery: EmailDeliveryService,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
     @Inject(SessionService) private readonly sessions: SessionService,
@@ -45,11 +57,49 @@ export class AccountService {
     @Inject(SecurityHistoryService) private readonly history: SecurityHistoryService,
     @Inject(ProfilesService) private readonly profiles: ProfilesService,
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
+    @Inject(SiteRulesService) private readonly siteRules: SiteRulesService,
+    @Inject(AppRecordsService) private readonly appRecords: AppRecordsService,
+    @Inject(ReportsService) private readonly reports: ReportsService,
+    @Inject(TeamsService) private readonly teams: TeamsService,
+    @Inject(HistoryService) private readonly browsing: HistoryService,
     @Inject(DriveService) private readonly drive: DriveService,
     @Inject(BrowserService) private readonly browser: BrowserService,
     @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
     @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
   ) {}
+
+  /** What the account's address receives, and whether anything can reach it. */
+  async emailSettings(auth: AuthContext): Promise<AccountEmail> {
+    const [preferences, deliveryProblem] = await Promise.all([
+      this.email.preferences(auth.user.id),
+      this.delivery.problemFor(auth.user.email),
+    ]);
+    return { preferences, deliveryProblem };
+  }
+
+  async updateEmailPreferences(
+    auth: AuthContext,
+    patch: UpdateEmailPreferencesRequest,
+  ): Promise<AccountEmail> {
+    const preferences = await this.email.setPreferences(auth.user.id, patch);
+    return { preferences, deliveryProblem: await this.delivery.problemFor(auth.user.email) };
+  }
+
+  async updateName(auth: AuthContext, name: string): Promise<{ name: string }> {
+    await this.database.db
+      .update(schema.users)
+      .set({ name, updatedAt: new Date() })
+      .where(eq(schema.users.id, auth.user.id));
+    return { name };
+  }
+
+  /** One click from an email's footer, signed in or not. */
+  async unsubscribe(token: string, meta: RequestMeta): Promise<UnsubscribeResponse> {
+    await this.limiter.enforce(RATE_LIMITS.linkAttemptsPerIp, ipOf(meta));
+    const result = await this.email.unsubscribe(token);
+    if (!result) throw linkInvalid();
+    return result;
+  }
 
   /**
    * Sends a confirmation link to the new address and a notice to the current
@@ -126,6 +176,8 @@ export class AccountService {
       if (isUniqueViolation(error)) throw addressTaken();
       throw error;
     }
+    // A new address starts clean: a block on it from an earlier owner no longer applies.
+    await this.delivery.clear(newEmail);
     this.email.sendEmailChanged(oldEmail, newEmail, undoToken);
     await this.events.record({ type: "email.changed", userId: found.user.id, meta });
     return newEmail;
@@ -205,6 +257,30 @@ export class AccountService {
         details: ["email: Type your email address exactly as it is shown."],
       });
     }
+    await this.deleteFor(user, "by its owner");
+  }
+
+  /** Staff delete an account from the console (Phase 11), with a reason in the audit log. */
+  async deleteByStaff(user: { id: string; email: string }): Promise<void> {
+    await this.deleteFor(user, "by staff");
+  }
+
+  private async deleteFor(user: { id: string; email: string }, how: string): Promise<void> {
+    // A legal hold (Phase 11.5) keeps everything until it is released.
+    const [hold] = await this.database.db
+      .select({ why: schema.legalHolds.why })
+      .from(schema.legalHolds)
+      .where(eq(schema.legalHolds.userId, user.id))
+      .limit(1);
+    if (hold) {
+      throw new ApiException(
+        "conflict",
+        409,
+        "This account’s data is kept under a legal hold and can’t be deleted yet.",
+      );
+    }
+    // A team it owns with others must be handed over first; one it owns alone goes with it.
+    await this.teams.beforeAccountDeletion(user.id);
     // Containers and Drive objects aren't rows: stop and list them first.
     await this.browser.endAllForUser(user.id, "account_deleted");
     const [objectKeys, profileObjectKeys] = await Promise.all([
@@ -215,23 +291,41 @@ export class AccountService {
     await this.drive.removeAllObjects(objectKeys);
     await this.profileData.removeObjects(profileObjectKeys);
     this.email.sendAccountDeleted(user.email);
-    logger.log(`Account ${user.id} deleted by its owner`);
+    logger.log(`Account ${user.id} deleted ${how}`);
   }
 
   /** Everything Brawzer holds about the account, except secrets. */
   async export(auth: AuthContext, meta: RequestMeta): Promise<AccountExport> {
     const { user, session } = auth;
-    const [passkeys, mfa, devices, history, profiles, proxies, drive, browserSessions] =
-      await Promise.all([
-        this.passkeys.list(user.id),
-        this.mfa.status(user.id),
-        this.sessions.listActive(auth),
-        this.history.all(user.id),
-        this.profiles.list(user.id),
-        this.proxies.forExport(user.id),
-        this.drive.forExport(user.id),
-        this.browser.forExport(user.id),
-      ]);
+    const [
+      passkeys,
+      mfa,
+      devices,
+      history,
+      profiles,
+      proxies,
+      drive,
+      browserSessions,
+      siteRules,
+      pageReports,
+      team,
+      kept,
+      appRecords,
+    ] = await Promise.all([
+      this.passkeys.list(user.id),
+      this.mfa.status(user.id),
+      this.sessions.listActive(auth),
+      this.history.all(user.id),
+      this.profiles.list(user.id),
+      this.proxies.forExport(user.id),
+      this.drive.forExport(user.id),
+      this.browser.forExport(user.id),
+      this.siteRules.forExport(user.id),
+      this.reports.forExport(user.id),
+      this.teams.forExport(user.id),
+      this.browsing.forExport(user.id),
+      this.appRecords.forExport(user.id),
+    ]);
     await this.events.record({
       type: "data.exported",
       userId: user.id,
@@ -260,16 +354,23 @@ export class AccountService {
         lastActiveAt,
       })),
       securityHistory: history,
-      profiles: profiles.map(({ name, color, engine, createdAt, updatedAt }) => ({
+      profiles: profiles.map(({ name, color, engine, extensions, createdAt, updatedAt }) => ({
         name,
         color,
         engine,
+        extensions,
         createdAt,
         updatedAt,
       })),
       proxies,
+      siteRules,
+      pageReports,
+      team,
+      history: kept.history,
+      bookmarks: kept.bookmarks,
       drive,
       browserSessions,
+      appRecords,
     };
   }
 }

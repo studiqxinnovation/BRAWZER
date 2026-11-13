@@ -1,5 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { generateNonce, needsStrictCsp, strictContentSecurityPolicy } from "@/lib/csp";
+import {
+  EMBEDDABLE_PATH,
+  generateNonce,
+  needsStrictCsp,
+  strictContentSecurityPolicy,
+} from "@/lib/csp";
 import { SESSION_COOKIE_NAMES } from "@/lib/session-cookie";
 
 const development = process.env.NODE_ENV !== "production";
@@ -30,11 +35,19 @@ export function proxy(request: NextRequest) {
 
   if (!needsStrictCsp(pathname)) return NextResponse.next();
 
-  const policy = strictContentSecurityPolicy(generateNonce(), { development, https, streamOrigin });
+  const embeddable = pathname === EMBEDDABLE_PATH;
+  const policy = strictContentSecurityPolicy(generateNonce(), {
+    development,
+    https,
+    streamOrigin,
+    embeddable,
+  });
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("content-security-policy", policy);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("content-security-policy", policy);
+  // The desktop frames this page; still only Brawzer's own pages may.
+  if (embeddable) response.headers.set("x-frame-options", "SAMEORIGIN");
   return response;
 }
 
@@ -42,6 +55,8 @@ export const config = {
   matcher: [
     "/app",
     "/app/:path*",
+    "/admin",
+    "/admin/:path*",
     "/sign-in",
     "/create-account",
     "/verify-email",

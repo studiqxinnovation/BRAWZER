@@ -1,7 +1,14 @@
 import { expect, type Page, test } from "@playwright/test";
 import { horizontalOverflow, wcagViolations } from "./accessibility";
 import { expireIdentityConfirmation } from "./database";
-import { createConfirmedAccount, otherDevice, signIn, uniqueEmail } from "./mailbox";
+import {
+  clickSignOut,
+  createConfirmedAccount,
+  GREETING,
+  otherDevice,
+  signIn,
+  uniqueEmail,
+} from "./mailbox";
 
 // The signed-in app against the real API, Postgres, Valkey and Mailpit.
 
@@ -21,14 +28,16 @@ async function keeperReady(page: Page, mode: "shared" | "persistent" = "shared")
 }
 
 const appPages = [
-  { path: "/app", heading: "Home" },
-  { path: "/app/browser", heading: "Browser" },
+  { path: "/app", heading: GREETING },
+  { path: "/app/browser", heading: "Browsers" },
   { path: "/app/profiles", heading: "Profiles" },
   { path: "/app/drive", heading: "Drive" },
   { path: "/app/proxy", heading: "Proxy" },
   { path: "/app/extensions", heading: "Extensions" },
   { path: "/app/shield", heading: "Shield" },
+  { path: "/app/site-rules", heading: "Site rules" },
   { path: "/app/sessions", heading: "Sessions" },
+  { path: "/app/team", heading: "Team" },
   { path: "/app/account", heading: "Account" },
 ] as const;
 
@@ -39,10 +48,21 @@ test.describe("navigation", () => {
     isMobile,
   }) => {
     test.skip(isMobile, "phones use the drawer");
+    // The classic layout keeps the sidebar; the desktop has the title bar's menus instead.
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:desktop", "off");
+    });
     await signedIn(page, baseURL, "nav");
     await page.goto("/app");
     const nav = page.getByRole("navigation", { name: "Main" });
     await expect(nav.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+    // Home opens the cloud browser; no development notes are left on it.
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Start browsing" })).toHaveAttribute(
+      "href",
+      "/app/browser",
+    );
+    await expect(page.getByRole("note", { name: /Development state/ })).toHaveCount(0);
 
     await nav.getByRole("link", { name: "Sessions" }).click();
     await expect(page).toHaveURL(/\/app\/sessions$/);
@@ -54,9 +74,7 @@ test.describe("navigation", () => {
 
     await nav.getByRole("link", { name: /^Extensions/ }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Extensions");
-    await expect(page.getByRole("note", { name: /Development state/ })).toBeVisible();
-    // A planned module has no controls that could pretend to work.
-    await expect(page.getByRole("main").locator("button, input, select, textarea")).toHaveCount(0);
+    await expect(page.getByRole("list", { name: "Extension catalogue" })).toBeVisible();
   });
 
   test("phones open the navigation in a drawer", async ({ page, baseURL, isMobile }) => {
@@ -208,8 +226,13 @@ test.describe("account", () => {
     const phone = await otherDevice(browser, baseURL ?? "", email, PASSWORD);
 
     await page.goto("/app/account");
+    // The password form is behind the Security card's "Change…", as on the prototype.
     const current = page.getByLabel("Current password", { exact: true });
     const next = page.getByLabel("New password", { exact: true });
+    await expect(async () => {
+      await page.locator("#password-heading").getByRole("button", { name: "Change…" }).click();
+      await expect(current).toBeVisible({ timeout: 1000 });
+    }).toPass();
     await current.fill("not-my-password");
     await next.fill("amber-river-compass");
     await page.getByRole("button", { name: "Change password" }).click();
@@ -292,7 +315,7 @@ test.describe("shared-computer safety", () => {
     await page.goto("/app");
     await keeperReady(page);
 
-    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await clickSignOut(page);
     await expect(page).toHaveURL(/\/sign-in\?signed_out=1$/);
     await expect(second).toHaveURL(/\/sign-in\?signed_out=1$/);
   });

@@ -50,9 +50,30 @@ async function uploadFile(
 const list = (page: Page) => page.getByRole("list", { name: "Files and folders" });
 
 test.describe("drive", () => {
+  test("a deleted file waits in Trash, and comes back from it", async ({ page, baseURL }) => {
+    await signedIn(page, baseURL, "drive-trash");
+    // The page has finished arriving before anything is uploaded to it.
+    await expect(page.locator("#main-content").getByText("Nothing in Drive yet")).toBeVisible();
+    await uploadFile(page, "packing.txt", Buffer.from("Socks\nCharger\n"), "text/plain");
+    await list(page).getByRole("button", { name: "Actions for packing.txt" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
+    const confirm = page.getByRole("alertdialog", { name: "Move “packing.txt” to Trash?" });
+    await expect(confirm).toContainText("stays in Trash for 30 days");
+    await confirm.getByRole("button", { name: "Move to Trash" }).click();
+    await expect(page.locator("#main-content").getByText("Nothing in Drive yet")).toBeVisible();
+
+    await page.getByText("Kept 30 days, then removed").click();
+    const trash = page.getByRole("list", { name: "In Trash" });
+    await expect(trash).toContainText("packing.txt");
+    expect(await wcagViolations(page)).toEqual([]);
+    await trash.getByRole("button", { name: "Put back" }).click();
+    await expect(page.getByText("“packing.txt” is back")).toBeVisible();
+    await expect(list(page).getByText("packing.txt")).toBeVisible();
+  });
+
   test("upload, organise, preview, save and delete files", async ({ page, baseURL }) => {
     const email = await signedIn(page, baseURL, "drive");
-    await expect(page.getByText("Nothing in Drive yet")).toBeVisible();
+    await expect(page.locator("#main-content").getByText("Nothing in Drive yet")).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);
 
     // A folder.
@@ -156,7 +177,7 @@ test.describe("drive", () => {
     await page.getByRole("menuitem", { name: "Delete" }).click();
     const remove = page.getByRole("alertdialog", { name: "Delete “Trip” and everything in it?" });
     await remove.getByRole("button", { name: "Delete folder" }).click();
-    await expect(page.getByText("Nothing in Drive yet")).toBeVisible();
+    await expect(page.locator("#main-content").getByText("Nothing in Drive yet")).toBeVisible();
     await expect(page.getByText("0 of 2000 files")).toBeVisible();
 
     // Nothing secret reaches the page.
@@ -186,7 +207,7 @@ test.describe("drive", () => {
       .getByRole("alertdialog", { name: "Delete “invoice.pdf.exe”?" })
       .getByRole("button", { name: "Delete file" })
       .click();
-    await expect(page.getByText("Nothing in Drive yet")).toBeVisible();
+    await expect(page.locator("#main-content").getByText("Nothing in Drive yet")).toBeVisible();
   });
 
   test("a file over the limit is refused before it is sent", async ({ page, baseURL }) => {
@@ -200,7 +221,7 @@ test.describe("drive", () => {
       const uploads = page.getByRole("region", { name: "Uploads" });
       await expect(uploads.getByText("Not uploaded", { exact: false })).toBeVisible();
       await expect(uploads.getByText("Files can be up to 100 MB", { exact: false })).toBeVisible();
-      await expect(page.getByText("Nothing in Drive yet")).toBeVisible();
+      await expect(page.locator("#main-content").getByText("Nothing in Drive yet")).toBeVisible();
     } finally {
       await rm(folder, { recursive: true, force: true });
     }
@@ -209,8 +230,10 @@ test.describe("drive", () => {
   test("an unknown folder is explained, not an error", async ({ page, baseURL }) => {
     await signedIn(page, baseURL, "drive-missing");
     await page.goto("/app/drive?folder=00000000-0000-7000-8000-000000000000");
-    await expect(page.getByText("That folder doesn’t exist")).toBeVisible();
+    await expect(
+      page.locator("#main-content").getByText("That folder doesn’t exist"),
+    ).toBeVisible();
     await page.getByRole("link", { name: "Back to Drive" }).click();
-    await expect(page.getByText("Nothing in Drive yet")).toBeVisible();
+    await expect(page.locator("#main-content").getByText("Nothing in Drive yet")).toBeVisible();
   });
 });

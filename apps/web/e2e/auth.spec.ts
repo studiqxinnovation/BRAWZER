@@ -1,6 +1,15 @@
 import { expect, type Page, test } from "@playwright/test";
 import { horizontalOverflow, wcagViolations } from "./accessibility";
-import { createConfirmedAccount, linkFromEmail, otherDevice, uniqueEmail } from "./mailbox";
+import {
+  clickSignOut,
+  createConfirmedAccount,
+  expectSignedInAs,
+  GREETING,
+  linkFromEmail,
+  openDashboard,
+  otherDevice,
+  uniqueEmail,
+} from "./mailbox";
 
 // Requires the local services (`pnpm infra:up`): real API, Postgres, Valkey and Mailpit.
 
@@ -10,6 +19,7 @@ const SESSION_COOKIE = "brawzer_session";
 // Next keeps the previous page mounted (hidden) after client navigation, so
 // field locators must ignore hidden copies. Password inputs have no ARIA
 // role, hence getByLabel plus a visibility filter.
+const nameField = (page: Page) => page.getByRole("textbox", { name: "Your name" });
 const emailField = (page: Page) => page.getByRole("textbox", { name: "Email" });
 const passwordField = (page: Page, label = "Password") =>
   page.getByLabel(label, { exact: true }).filter({ visible: true });
@@ -23,9 +33,11 @@ test.describe("account journey", () => {
     page,
     request,
     baseURL,
+    isMobile,
   }) => {
     const email = uniqueEmail("journey");
     await page.goto("/create-account");
+    await nameField(page).fill("Ana Silva");
     await emailField(page).fill(email);
     await passwordField(page).fill(PASSWORD);
     await page.getByRole("button", { name: "Create account" }).click();
@@ -47,9 +59,20 @@ test.describe("account journey", () => {
     await passwordField(page).fill(PASSWORD);
     await page.getByRole("button", { name: "Confirm and sign in" }).click();
     await expect(page).toHaveURL(/\/app$/);
-    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
-    await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
-    await expect(page.getByRole("main").getByText(/Shared-computer mode/)).toBeVisible();
+    // A new account on a wide screen is asked, once, which desktop it wants.
+    if (!isMobile) {
+      const picker = page.getByRole("dialog", { name: "Choose your desktop" });
+      await picker.getByRole("button", { name: /^Mac style/ }).click();
+      await expect(picker).toBeHidden();
+      await openDashboard(page);
+    }
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
+    await expectSignedInAs(page, email);
+    await expect(
+      page
+        .getByRole("note", { name: "Shared-computer mode" })
+        .getByText("Shared-computer mode is on"),
+    ).toBeVisible();
 
     // Shared-computer default: HttpOnly, SameSite=Lax, gone when the browser closes.
     expect(await sessionCookie(page)).toMatchObject({
@@ -60,7 +83,7 @@ test.describe("account journey", () => {
 
     // The session keeper marks <html> after hydration; clicking earlier does nothing.
     await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
-    await page.getByRole("button", { name: "Sign out" }).click();
+    await clickSignOut(page);
     await expect(page).toHaveURL(/\/sign-in\?signed_out=1$/);
     await expect(page.getByText("You’ve signed out")).toBeVisible();
     expect(await sessionCookie(page)).toBeUndefined();
@@ -96,7 +119,11 @@ test.describe("account journey", () => {
     await keepSignedIn.check();
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page).toHaveURL(/\/app$/);
-    await expect(page.getByText(/Kept signed in on this device/)).toBeVisible();
+    await openDashboard(page);
+    await expect(page.getByRole("region", { name: "Network" })).toContainText(
+      "Kept on this device",
+    );
+    await expect(page.getByRole("note", { name: "Shared-computer mode" })).toHaveCount(0);
 
     const cookie = await sessionCookie(page);
     const twentyNineDays = Date.now() / 1000 + 29 * 24 * 60 * 60;
@@ -110,6 +137,7 @@ test.describe("account journey", () => {
     await expect(emailField(page)).toBeFocused();
 
     await page.goto("/create-account");
+    await nameField(page).fill("Ana Silva");
     await emailField(page).fill("someone@example.com");
     await passwordField(page).fill("short");
     await page.getByRole("button", { name: "Create account" }).click();
@@ -208,16 +236,22 @@ test.describe("accessibility of account pages", () => {
   }) => {
     await page.goto("/create-account");
     await page.getByRole("button", { name: "Create account" }).click();
-    await expect(page.getByText("Enter your email address.")).toBeVisible();
+    await expect(page.getByText("Enter your name.")).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);
 
     const email = uniqueEmail("a11y");
     await createConfirmedAccount(request, baseURL ?? "", email, PASSWORD);
+    // A returning visitor: Home's notices don't slide in while the audit runs.
+    await page.addInitScript(() => {
+      sessionStorage.setItem("brawzer:notices-seen", String(Date.now() + 60_000));
+    });
     await page.goto("/sign-in");
     await emailField(page).fill(email);
     await passwordField(page).fill(PASSWORD);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+    await expect(page).toHaveURL(/\/app$/);
+    await openDashboard(page);
+    await expect(page.getByRole("heading", { level: 1, name: GREETING })).toBeVisible();
     for (const colorScheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme });
       expect(await wcagViolations(page), `/app ${colorScheme}`).toEqual([]);
@@ -290,7 +324,8 @@ test.describe("sign in with your phone", () => {
 
     // The computer is in, with a shared-computer session.
     await expect(page).toHaveURL(/\/app$/, { timeout: 15_000 });
-    await expect(page.getByText("Shared-computer mode").first()).toBeVisible();
+    await openDashboard(page);
+    await expect(page.getByText("Shared-computer mode is on")).toBeVisible();
     await phone.close();
   });
 });

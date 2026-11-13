@@ -49,9 +49,10 @@ describe("a new account's profiles", () => {
   it("include Personal when a reset link is what confirmed the account", async () => {
     const email = h.uniqueEmail("profiles-reset");
     const client = h.browser();
-    expect((await client.post("/auth/register", { email, password: PASSWORD })).statusCode).toBe(
-      202,
-    );
+    expect(
+      (await client.post("/auth/register", { name: "Ana Silva", email, password: PASSWORD }))
+        .statusCode,
+    ).toBe(202);
     await client.post("/auth/password/forgot", { email });
     const token = h.tokenIn(await h.waitForEmail(email, "Reset your Brawzer password"));
     const reset = await client.post("/auth/password/reset", {
@@ -92,6 +93,30 @@ describe("creating profiles", () => {
     });
   });
 
+  it("installs catalogue extensions into a profile, each once, from the catalogue only", async () => {
+    const client = h.browser();
+    await h.signUp(client, h.uniqueEmail("profiles-extensions"));
+    const profile = profileListSchema.parse((await client.get("/profiles")).json()).profiles[0]!;
+    expect(profile.extensions).toEqual([]);
+    const set = await client.patch(`/profiles/${profile.id}`, {
+      extensions: ["dark-reader", "ubo-lite"],
+    });
+    expect(set.statusCode, set.body).toBe(200);
+    expect(profileSchema.parse(set.json()).extensions).toEqual(["dark-reader", "ubo-lite"]);
+    expect(
+      (await client.patch(`/profiles/${profile.id}`, { extensions: ["nope"] })).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await client.patch(`/profiles/${profile.id}`, {
+          extensions: ["dark-reader", "dark-reader"],
+        })
+      ).statusCode,
+    ).toBe(400);
+    const cleared = await client.patch(`/profiles/${profile.id}`, { extensions: [] });
+    expect(profileSchema.parse(cleared.json()).extensions).toEqual([]);
+  });
+
   it("validates the name, colour and engine", async () => {
     const { client } = await account("profiles-validate");
     const cases: [object, string][] = [
@@ -102,7 +127,10 @@ describe("creating profiles", () => {
         "name: Use letters, numbers, spaces and punctuation.",
       ],
       [{ name: "Work", color: "chartreuse" }, "color: Choose a colour."],
-      [{ name: "Work", color: "teal", engine: "safari" }, "engine: Choose Bee or Firefox."],
+      [
+        { name: "Work", color: "teal", engine: "safari" },
+        "engine: Choose Bee Browser, Chrome, Firefox, Edge or Chromium.",
+      ],
     ];
     for (const [body, detail] of cases) {
       const response = await client.post("/profiles", body);

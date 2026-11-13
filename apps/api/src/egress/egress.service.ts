@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
 import type { ProxyTarget, ProxyTestOutcome } from "@brawzer/proxy-client";
 import { Inject, Injectable, Logger, type OnApplicationShutdown } from "@nestjs/common";
-import { DockerClient, DockerError } from "../browser/docker.js";
+import type { DockerClient } from "../browser/docker.js";
+import { DockerError } from "../browser/docker.js";
+import { type RuntimeHost, RuntimeHostsService } from "./runtime-hosts.service.js";
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 
@@ -29,9 +31,14 @@ export class EgressService implements OnApplicationShutdown {
   private readonly instance = randomBytes(4).toString("hex");
 
   constructor(
-    @Inject(DOCKER) private readonly docker: DockerClient,
+    @Inject(RuntimeHostsService) private readonly hosts: RuntimeHostsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
+
+  /** The primary host's engine: where this instance's proxy tester runs. */
+  private get docker(): DockerClient {
+    return this.hosts.primary().docker;
+  }
 
   /** The egress settings every egress container gets. */
   commonEnv(): string[] {
@@ -90,7 +97,7 @@ export class EgressService implements OnApplicationShutdown {
       env: ["EGRESS_MODE=tester", `EGRESS_SECRET=${secret}`, ...this.commonEnv()],
       labels: { "brawzer.managed": "true", [TESTER_LABEL]: this.instance },
       publishPorts: [TESTER_PORT],
-      publishHostIp: this.config.browser.agentBind,
+      publishHostIp: this.hosts.primary().agentBind,
       network: this.config.browser.network,
       capAdd: [...EGRESS_CAPABILITIES],
       extraHosts: this.extraHosts(),
@@ -110,10 +117,14 @@ export class EgressService implements OnApplicationShutdown {
   }
 
   /** Polls a container's health route on its published port until it answers. */
-  async waitUntilReady(containerId: string, port: number): Promise<string> {
+  async waitUntilReady(
+    containerId: string,
+    port: number,
+    host: RuntimeHost = this.hosts.primary(),
+  ): Promise<string> {
     const deadline = Date.now() + READY_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      const state = await this.docker.inspect(containerId);
+      const state = await host.docker.inspect(containerId);
       if (!state) throw new Error("The egress container disappeared while starting");
       if (!state.running) {
         throw new Error(
@@ -122,7 +133,7 @@ export class EgressService implements OnApplicationShutdown {
       }
       const hostPort = state.hostPorts[port];
       if (hostPort) {
-        const address = `${this.config.browser.agentHost}:${String(hostPort)}`;
+        const address = `${host.agentHost}:${String(hostPort)}`;
         try {
           const response = await fetch(`http://${address}/healthz`, {
             signal: AbortSignal.timeout(1_000),

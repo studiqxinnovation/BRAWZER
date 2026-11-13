@@ -5,6 +5,8 @@ import {
   downloadTicketSchema,
   type DriveFile,
   type DriveFileList,
+  type DrivePhoneLink,
+  drivePhoneLinkSchema,
   driveFileListSchema,
   driveFileQuerySchema,
   driveFileSchema,
@@ -12,6 +14,9 @@ import {
   driveFolderSchema,
   type DriveOverview,
   driveOverviewSchema,
+  driveSpaceQuerySchema,
+  driveSpaceSchema,
+  copyFileRequestSchema,
   updateFileRequestSchema,
   updateFolderRequestSchema,
 } from "@brawzer/contracts";
@@ -26,6 +31,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -64,6 +70,8 @@ import { DriveService, type OpenedFile } from "./drive.service.js";
 const idSchema = z.uuid({ error: "That isn’t a valid ID." });
 const uploadQuerySchema = z.object({
   folderId: z.uuid({ error: "That isn’t a folder ID." }).optional(),
+  /** Where a file without a folder goes: the person's own Drive or their team's. */
+  space: driveSpaceSchema.default("personal"),
 });
 
 /**
@@ -101,13 +109,20 @@ export class DriveController {
   @ApiCookieAuth(SESSION_AUTH)
   @ApiUnauthorizedResponse({ description: "No valid session." })
   @SerializeOptions({ schema: driveOverviewSchema })
-  @ApiOperation({ summary: "Folders and storage usage" })
+  @ApiOperation({
+    summary: "Folders and storage usage",
+    description:
+      "`space=team` gives the team's shared Drive, with the team's usage against its owner's plan.",
+  })
   @ApiOkResponse({
-    description: "Every folder and the account's usage.",
+    description: "Every folder of the space and its usage.",
     standardSchema: driveOverviewSchema,
   })
-  overview(@CurrentAuth() auth: AuthContext): Promise<DriveOverview> {
-    return this.drive.overview(auth.user.id);
+  overview(
+    @Query({ schema: driveSpaceQuerySchema }) query: z.output<typeof driveSpaceQuerySchema>,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<DriveOverview> {
+    return this.drive.overview(auth.user.id, query.space);
   }
 
   @Get("files")
@@ -127,6 +142,8 @@ export class DriveController {
       files: await this.drive.listFiles(auth.user.id, {
         folderId: query.folderId ?? null,
         q: query.q === "" ? undefined : query.q,
+        kind: query.kind,
+        space: query.space,
       }),
     };
   }
@@ -169,6 +186,7 @@ export class DriveController {
       query.folderId ?? null,
       { filename: part.filename, stream: part.file },
       requestMeta(request),
+      query.space,
     );
   }
 
@@ -197,7 +215,8 @@ export class DriveController {
   @ApiCookieAuth(SESSION_AUTH)
   @ApiOperation({
     summary: "Delete a file",
-    description: "Immediate; the stored object is removed.",
+    description:
+      "Moves it to Trash, where it's kept 30 days (and still counts towards storage). A quarantined file is removed at once.",
   })
   @ApiNoContentResponse({ description: "Deleted." })
   @ApiNotFoundResponse({ description: "No such file on this account." })
@@ -207,6 +226,147 @@ export class DriveController {
     @Req() request: FastifyRequest,
   ): Promise<void> {
     await this.drive.deleteFile(auth, id, requestMeta(request));
+  }
+
+  @Post("files/:id/copy")
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: driveFileSchema })
+  @ApiOperation({
+    summary: "Copy a file",
+    description:
+      "A new file with the same content, scanned and encrypted on its own. `folderId: null` puts it at the top level; left out, it goes beside the original.",
+  })
+  @ApiCreatedResponse({ description: "The copy.", standardSchema: driveFileSchema })
+  @ApiNotFoundResponse({ description: "No such file or folder on this account." })
+  @ApiForbiddenResponse({ description: "The file is quarantined." })
+  copyFile(
+    @Param("id", { schema: idSchema }) id: string,
+    @Body({ schema: copyFileRequestSchema }) body: z.output<typeof copyFileRequestSchema>,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<DriveFile> {
+    return this.drive.copyFile(auth, id, body.folderId, requestMeta(request));
+  }
+
+  @Put("files/:id/content")
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @ApiConsumes("multipart/form-data")
+  @SerializeOptions({ schema: driveFileSchema })
+  @ApiOperation({
+    summary: "Save a new version of a file",
+    description:
+      "Replaces the file's content, keeping its name, folder and id. Scanned and encrypted like an upload.",
+  })
+  @ApiOkResponse({ description: "Saved.", standardSchema: driveFileSchema })
+  @ApiNotFoundResponse({ description: "No such file on this account." })
+  @ApiPayloadTooLargeResponse({ description: "Over the per-file limit." })
+  @ApiServiceUnavailableResponse({ description: "The scanner is unavailable; nothing changed." })
+  async replaceContent(
+    @Param("id", { schema: idSchema }) id: string,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<DriveFile> {
+    if (!request.isMultipart()) {
+      throw new ApiException(
+        "unsupported_media_type",
+        415,
+        "Send the file as multipart form data.",
+      );
+    }
+    const part = await request.file();
+    if (!part) {
+      throw new ApiException("validation_failed", 400, "Choose a file to upload.", {
+        details: ["file: Choose a file to upload."],
+      });
+    }
+    return this.drive.replaceContent(
+      auth,
+      id,
+      { filename: part.filename, stream: part.file },
+      requestMeta(request),
+    );
+  }
+
+  @Get("trash")
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: driveFileListSchema })
+  @ApiOperation({
+    summary: "What's in Trash",
+    description:
+      "Deleted files, newest first. Each is removed for good 30 days after it was deleted.",
+  })
+  @ApiOkResponse({ description: "The files.", standardSchema: driveFileListSchema })
+  async trash(
+    @Query({ schema: driveSpaceQuerySchema }) query: z.output<typeof driveSpaceQuerySchema>,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<DriveFileList> {
+    return { files: await this.drive.listTrash(auth.user.id, query.space) };
+  }
+
+  @Post("files/:id/restore")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: driveFileSchema })
+  @ApiOperation({ summary: "Put a file back from Trash" })
+  @ApiOkResponse({ description: "Back in its folder.", standardSchema: driveFileSchema })
+  @ApiNotFoundResponse({ description: "No such file in Trash." })
+  restore(
+    @Param("id", { schema: idSchema }) id: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<DriveFile> {
+    return this.drive.restoreFile(auth, id);
+  }
+
+  @Delete("trash/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @ApiOperation({ summary: "Delete a file in Trash for good" })
+  @ApiNoContentResponse({ description: "Deleted." })
+  @ApiNotFoundResponse({ description: "No such file in Trash." })
+  async deleteForever(
+    @Param("id", { schema: idSchema }) id: string,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<void> {
+    await this.drive.deleteForever(auth, id, requestMeta(request));
+  }
+
+  @Delete("trash")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @ApiOperation({ summary: "Empty Trash" })
+  @ApiNoContentResponse({ description: "Emptied." })
+  async emptyTrash(
+    @Query({ schema: driveSpaceQuerySchema }) query: z.output<typeof driveSpaceQuerySchema>,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<void> {
+    await this.drive.emptyTrash(auth, query.space, requestMeta(request));
+  }
+
+  @Get("files/:id/phone-link")
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: drivePhoneLinkSchema })
+  @ApiOperation({
+    summary: "A link to the file for a phone",
+    description:
+      "Drive's page for the file and its QR code. Opening it needs a sign-in; the link grants nothing by itself.",
+  })
+  @ApiOkResponse({ description: "The link.", standardSchema: drivePhoneLinkSchema })
+  @ApiNotFoundResponse({ description: "No such file on this account." })
+  phoneLink(
+    @Param("id", { schema: idSchema }) id: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<DrivePhoneLink> {
+    return this.drive.phoneLink(auth.user.id, id);
   }
 
   @Get("files/:id/preview")
@@ -281,7 +441,11 @@ export class DriveController {
     @Body({ schema: createFolderRequestSchema }) body: z.output<typeof createFolderRequestSchema>,
     @CurrentAuth() auth: AuthContext,
   ): Promise<DriveFolder> {
-    return this.drive.createFolder(auth, { name: body.name, parentId: body.parentId ?? null });
+    return this.drive.createFolder(auth, {
+      name: body.name,
+      parentId: body.parentId ?? null,
+      space: body.space,
+    });
   }
 
   @Patch("folders/:id")

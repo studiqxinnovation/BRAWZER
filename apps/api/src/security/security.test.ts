@@ -6,6 +6,8 @@ import {
   driveFileStatuses,
   proxyKinds,
   proxyProtocols,
+  pageReportKinds,
+  teamRoles,
   proxyRotations,
   securityEventTypes,
 } from "@brawzer/contracts";
@@ -29,5 +31,10 @@ describe("enums shared by the database and the contracts", () => {
     expect([...schema.proxyRotation.enumValues]).toEqual([...proxyRotations]);
     expect([...schema.driveFileStatus.enumValues]).toEqual([...driveFileStatuses]);
     expect([...schema.driveFileSource.enumValues]).toEqual([...driveFileSources]);
+  });
+
+  it("list the same page report kinds", () => {
+    expect([...schema.pageReportKind.enumValues]).toEqual([...pageReportKinds]);
+    expect([...schema.teamRole.enumValues]).toEqual([...teamRoles]);
   });
 });

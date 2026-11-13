@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "browser_account" boolean DEFAULT false NOT NULL;

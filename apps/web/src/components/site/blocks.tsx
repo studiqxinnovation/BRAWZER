@@ -5,49 +5,7 @@ import type { Route } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { accountLinks } from "@/content/site";
-import { ArrowLink, Container, Eyebrow } from "./layout-primitives";
-
-export interface FeatureSplitProps {
-  eyebrow: string;
-  title: string;
-  children: ReactNode;
-  link?: { href: Route; label: string };
-  visual: ReactNode;
-  /** Put the visual on the left on large screens. */
-  reverse?: boolean;
-  id?: string;
-}
-
-/** Text on one side, an illustration on the other. Stacks on small screens. */
-export function FeatureSplit({
-  eyebrow,
-  title,
-  children,
-  link,
-  visual,
-  reverse = false,
-  id,
-}: FeatureSplitProps) {
-  return (
-    <section aria-labelledby={id} className="py-16 sm:py-24">
-      <Container className="grid items-center gap-10 lg:grid-cols-2 lg:gap-20">
-        <div className={cn(reverse && "lg:order-2")}>
-          <Eyebrow>{eyebrow}</Eyebrow>
-          <h2 id={id} className="mt-3 text-title-1 text-balance text-ink">
-            {title}
-          </h2>
-          <div className="mt-4 text-body-lg text-pretty text-ink-secondary">{children}</div>
-          {link && (
-            <div className="mt-6">
-              <ArrowLink href={link.href}>{link.label}</ArrowLink>
-            </div>
-          )}
-        </div>
-        <div className={cn("min-w-0", reverse && "lg:order-1")}>{visual}</div>
-      </Container>
-    </section>
-  );
-}
+import { Container } from "./layout-primitives";
 
 export interface CtaBandProps {
   title: string;

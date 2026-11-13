@@ -1,4 +1,4 @@
-import type { Plan, PlanLimits, PlanPrice, Usage } from "@brawzer/contracts";
+import type { PlanLimits, PlanPrice, Usage } from "@brawzer/contracts";
 import { formatBytes } from "./drive";
 
 /** A price as Stripe states it, in the person's locale. */
@@ -59,14 +59,16 @@ export function describeLimits(
       ratio: ratio(usage?.browsingMinutesThisMonth, limits.browsingMinutesPerMonth),
     },
     {
+      label: "Team size",
+      used: null,
+      allowed: limits.teamMembers < 2 ? "No team" : `${String(limits.teamMembers)} people`,
+      ratio: null,
+    },
+    {
       label: "Browser sessions at once",
       used: null,
       allowed: String(limits.liveSessions),
       ratio: null,
     },
   ];
-}
-
-export function planLabel(plan: Plan): string {
-  return plan.price ? `${plan.name} · ${formatPrice(plan.price)}` : plan.name;
 }

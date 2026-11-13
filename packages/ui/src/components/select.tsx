@@ -60,6 +60,8 @@ export function Select<Value extends string>({
           {label}
         </BaseSelect.Label>
         <BaseSelect.Trigger
+          // Named in the server's markup too; the label's link only arrives with the script.
+          aria-label={label}
           className={cn(
             inputClassName,
             "flex cursor-pointer items-center justify-between gap-2 text-left focus-visible:border-accent focus-visible:shadow-[0_0_0_3px_var(--bw-accent-soft)] data-popup-open:border-accent",

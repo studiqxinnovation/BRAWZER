@@ -13,11 +13,13 @@ minimumReleaseAge: 10080
 # One exact version per dependency for the whole workspace.
 # Packages reference these with "catalog:" so upgrades happen in one place.
 catalog:
+  "@anthropic-ai/sdk": 1.4.0
   "@aws-sdk/client-s3": 3.1161.0
   "@aws-sdk/lib-storage": 3.1161.0
   "@axe-core/playwright": 4.14.0
   "@base-ui/react": 1.9.0
   "@eslint/js": 9.39.5
+  "@mozilla/readability": 0.6.0
   "@fastify/cookie": 11.1.5
   "@fastify/helmet": 13.2.0
   "@fastify/multipart": 10.1.6
@@ -54,6 +56,7 @@ catalog:
   eslint-plugin-jsx-a11y: 6.10.2
   eslint-plugin-react-hooks: 7.1.1
   fastify: 5.12.7
+  fflate: 0.8.2
   file-type: 22.3.0
   globals: 17.13.0
   ioredis: 6.0.0

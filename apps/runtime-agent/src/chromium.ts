@@ -12,11 +12,15 @@ export interface LaunchOptions {
   viewport: { width: number; height: number };
   /** The first tab's page: Brawzer's own start page, through the proxy override. */
   startUrl: string;
+  /** Sound: where the engine finds the session's audio server. */
+  extraEnv?: Record<string, string> | undefined;
   /**
    * Public keys whose certificate errors are ignored: only the test site's,
    * in development and tests. Every other certificate is checked as usual.
    */
   trustedSpkiHashes?: string[];
+  /** The profile's browser account is on: sync and the account's sign-in aren't switched off here. */
+  browserAccount?: boolean;
 }
 
 export interface LaunchedChromium {
@@ -49,11 +53,12 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
     "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
     "--no-first-run",
     "--no-default-browser-check",
-    "--disable-sync",
+    ...(options.browserAccount ? [] : ["--disable-sync"]),
     "--disable-background-networking",
     "--disable-component-update",
     "--disable-default-apps",
-    "--disable-extensions",
+    // Extensions come from Brawzer's catalogue only, loaded by the agent over the pipe.
+    "--enable-unsafe-extension-debugging",
     "--disable-breakpad",
     "--disable-domain-reliability",
     "--no-service-autorun",
@@ -66,7 +71,9 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
     "--disk-cache-size=52428800",
     "--password-store=basic",
     "--lang=en-US",
-    "--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication,InterestFeedContentSuggestions,CertificateTransparencyComponentUpdater,AccountConsistency,DialMediaRouteProvider",
+    // Text as a Mac draws it: shapes true to the font, not snapped to the pixel grid.
+    "--font-render-hinting=none",
+    `--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication,InterestFeedContentSuggestions,CertificateTransparencyComponentUpdater,${options.browserAccount ? "" : "AccountConsistency,"}DialMediaRouteProvider`,
     ...(options.trustedSpkiHashes?.length
       ? [`--ignore-certificate-errors-spki-list=${options.trustedSpkiHashes.join(",")}`]
       : []),
@@ -85,6 +92,7 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
       TZ: "UTC",
       // No desktop bus in the container; this stops the engine looking for one.
       DBUS_SESSION_BUS_ADDRESS: "disabled:",
+      ...options.extraEnv,
     },
   });
 

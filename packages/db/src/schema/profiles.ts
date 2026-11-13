@@ -4,6 +4,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -26,8 +27,14 @@ export const profileColor = pgEnum("profile_color", [
   "slate",
 ]);
 
-/** Must match `browserEngines` in @brawzer/contracts: Bee (Brawzer's own, on Chromium) and Firefox. */
-export const browserEngine = pgEnum("browser_engine", ["bee", "firefox"]);
+/** Must match `browserEngines` in @brawzer/contracts: Bee (Brawzer's own, on Chromium), Firefox and Chrome. */
+export const browserEngine = pgEnum("browser_engine", [
+  "bee",
+  "firefox",
+  "chrome",
+  "edge",
+  "chromium",
+]);
 
 /**
  * A browser profile: a name, a colour, a place in the list, and (since the
@@ -53,11 +60,33 @@ export const profiles = pgTable(
     proxyId: uuid().references(() => proxies.id, { onDelete: "set null" }),
     /** Whether browsing data (cookies, history, site data) is saved when a session ends. */
     keepData: boolean().notNull().default(true),
+    /**
+     * With a proxy: private and internal addresses are handed to the proxy
+     * instead of refused, for intranets reached through one's own proxy. Off
+     * by default; loopback stays refused either way (Phase 8, idea 9).
+     */
+    privateThroughProxy: boolean().notNull().default(false),
+    /** Catalogue extensions (slugs) installed into the profile's sessions (ADR 0018). */
+    extensions: jsonb().$type<string[]>().notNull().default([]),
     dataObjectKey: text().unique("profiles_data_object_key_unique"),
     dataWrappedKey: text(),
     /** Size of the saved data as stored (compressed, before encryption). */
     dataBytes: bigint({ mode: "number" }),
     dataSavedAt: timestamptz(),
+    /** Brawzer keeps a searchable history while the profile keeps its data (ADR 0020). */
+    keepHistory: boolean().notNull().default(true),
+    /** The browser's password manager and own account sign-in, for this profile's sessions. */
+    browserAccount: boolean().notNull().default(false),
+    /**
+     * The profile's own key for its history, bookmarks and open tabs: 32
+     * random bytes sealed by the key service, bound to the account and profile.
+     */
+    historyKey: text(),
+    /** The tabs its last session left open, encrypted with the history key (idea 3). */
+    openTabs: text(),
+    openTabsAt: timestamptz(),
+    /** Those tabs were left on purpose, to continue on another device. */
+    openTabsHandedOff: boolean().notNull().default(false),
     createdAt: timestamptz().notNull().defaultNow(),
     updatedAt: timestamptz().notNull().defaultNow(),
   },
@@ -69,3 +98,19 @@ export const profiles = pgTable(
 );
 
 export type ProfileRow = typeof profiles.$inferSelect;
+
+/* Must match `extensionStatuses` in @brawzer/contracts (tech.ts). */
+export const extensionStatus = pgEnum("extension_status", ["allowed", "review", "blocked"]);
+
+/**
+ * Moderation of the extension catalogue (Phase 11.4). A blocked extension
+ * can't be installed and is removed from every profile; a reason is kept and
+ * emailed to the people who had it.
+ */
+export const extensionPolicies = pgTable("extension_policies", {
+  slug: text().primaryKey(),
+  status: extensionStatus().notNull().default("allowed"),
+  reason: text(),
+  changedById: uuid().references(() => users.id, { onDelete: "set null" }),
+  changedAt: timestamptz().notNull().defaultNow(),
+});

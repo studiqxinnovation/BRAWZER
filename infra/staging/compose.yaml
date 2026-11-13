@@ -191,6 +191,7 @@ services:
       VAULT_ADDR: http://openbao:8200
       VAULT_TOKEN: ${VAULT_TOKEN}
       PROXY_TEST_URL: ${PROXY_TEST_URL:?set PROXY_TEST_URL in staging.env}
+      METRICS_TOKEN: ${METRICS_TOKEN:?set METRICS_TOKEN in staging.env}
       # The store sits on the internal network, so http is acceptable here only
       # because it never crosses a host boundary; production must use https.
       STORAGE_ENDPOINT: http://rustfs:9000

@@ -1,11 +1,16 @@
-import { securityEventPageSchema, securityOverviewSchema } from "@brawzer/contracts";
+import {
+  profileListSchema,
+  securityEventPageSchema,
+  securityOverviewSchema,
+} from "@brawzer/contracts";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import {
+  InfoHead,
   PageContainer,
   PageHeader,
-  SectionHeading,
+  Panel,
   Unavailable,
 } from "@/components/app-shell/page";
 import { ActivityList } from "@/components/shield/activity-list";
@@ -22,31 +27,41 @@ async function Activity() {
 }
 
 async function Overview() {
-  const result = await serverGet("/security/overview", securityOverviewSchema);
+  const [result, profiles] = await Promise.all([
+    serverGet("/security/overview", securityOverviewSchema),
+    serverGet("/profiles", profileListSchema),
+  ]);
   if (result.kind === "signed-out") signInAgain("/app/shield");
   if (result.kind === "unavailable") return <Unavailable />;
-  return <SecurityOverviewSections overview={result.data} renderedAt={result.receivedAt} />;
+  return (
+    <SecurityOverviewSections
+      overview={result.data}
+      profile={profiles.kind === "ok" ? (profiles.data.profiles[0] ?? null) : null}
+      renderedAt={result.receivedAt}
+    />
+  );
 }
 
 export default function ShieldPage() {
   return (
     <PageContainer>
       <PageHeader title="Shield">
-        <p>
-          Your security centre: how your account is protected, sign-ins from new places, and
-          everything that happened on your account. It never records the sites you visit.
-        </p>
+        <p>Protection applies to every cloud browser and every profile.</p>
       </PageHeader>
-      <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-[14px]">
         <Suspense fallback={<Skeleton className="h-48 w-full rounded-xl" />}>
           <Overview />
         </Suspense>
-        <section aria-labelledby="activity-heading" className="flex flex-col gap-4">
-          <SectionHeading id="activity-heading">Activity</SectionHeading>
-          <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
-            <Activity />
-          </Suspense>
-        </section>
+        <Panel>
+          <InfoHead id="activity-heading" title="Activity">
+            <span className="ad-info-count">Everything that happened on your account</span>
+          </InfoHead>
+          <div className="p-4">
+            <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+              <Activity />
+            </Suspense>
+          </div>
+        </Panel>
       </div>
     </PageContainer>
   );

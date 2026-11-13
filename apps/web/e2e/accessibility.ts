@@ -1,14 +1,17 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 
-/** Waits until no CSS transition is mid-way, so colours are measured at rest. */
+/**
+ * Waits until no CSS transition or entrance animation is mid-way, so colours
+ * are measured at rest. Endless animations (spinners) are left alone.
+ */
 export async function settleTransitions(page: Page): Promise<void> {
   await page.waitForFunction(() =>
-    document
-      .getAnimations()
-      .every(
-        (animation) => !(animation instanceof CSSTransition) || animation.playState !== "running",
-      ),
+    document.getAnimations().every((animation) => {
+      if (animation.playState !== "running") return true;
+      if (animation instanceof CSSTransition) return false;
+      return animation.effect?.getTiming().iterations === Infinity;
+    }),
   );
 }
 

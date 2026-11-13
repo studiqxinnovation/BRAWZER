@@ -40,3 +40,14 @@ Two policies, chosen by what a page does:
 - An injected `<img onerror=…>` or `<script>` in markup doesn't run on account pages or in the app. `e2e/csp.spec.ts` checks this, along with a fresh nonce on every response, no violations from Brawzer's own code, and full page loads into the strict area.
 - Account pages lose their static shells and render per request. The signed-in pages already depended on per-request data, so the extra cost is small.
 - Public pages still allow inline scripts. If they ever render user-provided content, or Next.js supports nonces with prerendering, this decision must be revisited.
+
+## Addendum (2026-11-10): framing a browser window
+
+The desktop (Phase 9) shows each cloud browser in a window that frames the
+pop-out page, `/app/browser/window`. That one path's strict policy carries
+`frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN`; every other
+response keeps `frame-ancestors 'none'` and `DENY`. Only Brawzer's own pages
+can frame it, so another site still can't place the app under a click. The
+framed page talks to the desktop with `postMessage` to Brawzer's own origin,
+and the desktop ignores messages from any other. `e2e/csp.spec.ts` checks the
+headers of both kinds of page.

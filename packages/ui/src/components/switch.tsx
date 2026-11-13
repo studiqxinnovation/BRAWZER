@@ -5,7 +5,10 @@ import type { ComponentProps } from "react";
 import { cn } from "../lib/cn";
 import type { WithClassName } from "../lib/types";
 
-/** On/off setting that applies immediately. Wrap in a <label> or give it an aria-label. */
+/**
+ * On/off setting that applies immediately. Give it an aria-label: a wrapping
+ * <label> names it only once the page's script has run.
+ */
 export function Switch({
   className,
   ...props

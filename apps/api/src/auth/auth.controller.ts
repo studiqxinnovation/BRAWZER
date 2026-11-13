@@ -37,6 +37,7 @@ import {
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiResponse,
   ApiTags,
   ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
@@ -49,7 +50,7 @@ import type { AppConfig } from "../config/env.js";
 import { AuthService } from "./auth.service.js";
 import { RECENT_AUTH_SECONDS } from "./recent-auth.guard.js";
 import { type AuthContext, SessionService } from "./session.service.js";
-import { CurrentAuth, PassiveSession, SessionGuard } from "./session.guard.js";
+import { AllowLocked, CurrentAuth, PassiveSession, SessionGuard } from "./session.guard.js";
 
 /** Name of the cookie security scheme in the OpenAPI document. */
 export const SESSION_AUTH = "session";
@@ -58,6 +59,7 @@ function accountOf(user: User): CurrentSessionResponse["account"] {
   return {
     id: user.id,
     email: user.email,
+    name: user.name,
     emailVerified: user.emailVerifiedAt !== null,
     role: user.role,
     planCode: user.planCode,
@@ -206,6 +208,7 @@ export class AuthController {
 
   @Get("session")
   @UseGuards(SessionGuard)
+  @AllowLocked()
   @ApiCookieAuth(SESSION_AUTH)
   @SerializeOptions({ schema: currentSessionResponseSchema })
   @ApiOperation({ summary: "Current account and session" })
@@ -226,6 +229,7 @@ export class AuthController {
       "For background checks by open pages. Unlike other requests it doesn't count as activity, so it never keeps an idle session alive.",
   })
   @ApiNoContentResponse({ description: "The session is valid." })
+  @ApiResponse({ status: 423, description: "The session is locked (session_locked)." })
   @ApiUnauthorizedResponse({ description: "The session has ended." })
   sessionStatus(): void {
     // The guard did the work.
@@ -251,15 +255,31 @@ export class AuthController {
     };
   }
 
+  @Post("session/lock")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(SessionGuard)
+  @AllowLocked()
+  @ApiCookieAuth(SESSION_AUTH)
+  @ApiOperation({
+    summary: "Lock this session",
+    description:
+      "Until the owner confirms it's them (POST /auth/reauthenticate or a passkey), every other route answers 423 session_locked, nothing counts as activity and the session's browser streams close; its cloud browsers keep running.",
+  })
+  @ApiNoContentResponse({ description: "Locked (also when it already was)." })
+  async lock(@CurrentAuth() auth: AuthContext, @Req() request: FastifyRequest): Promise<void> {
+    await this.auth.lock(auth, requestMeta(request));
+  }
+
   @Post("reauthenticate")
   @HttpCode(HttpStatus.OK)
   @UseGuards(SessionGuard)
+  @AllowLocked()
   @ApiCookieAuth(SESSION_AUTH)
   @SerializeOptions({ schema: reauthenticateResponseSchema })
   @ApiOperation({
     summary: "Confirm it's you",
     description:
-      "Proves who you are again before a sensitive change. Valid for 10 minutes on this session.",
+      "Proves who you are again before a sensitive change. Valid for 10 minutes on this session. On a locked session, this unlocks it.",
   })
   @ApiOkResponse({ description: "Confirmed.", standardSchema: reauthenticateResponseSchema })
   @ApiBadRequestResponse({ description: "Wrong password." })

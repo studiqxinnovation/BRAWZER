@@ -7,10 +7,13 @@ import {
   House,
   Layers,
   type LucideIcon,
+  ListFilter,
   MonitorSmartphone,
   Puzzle,
   ShieldCheck,
   ShieldEllipsis,
+  Users,
+  LifeBuoy,
 } from "lucide-react";
 import type { Route } from "next";
 
@@ -29,33 +32,42 @@ export interface AppNavGroup {
 
 /** The signed-in navigation. Module names match the Product page. */
 export const appNav: readonly AppNavGroup[] = [
-  { items: [{ href: "/app", label: "Home", icon: House, status: "available" }] },
   {
     label: "Browse",
     items: [
+      { href: "/app", label: "Home", icon: House, status: "available" },
       { href: "/app/browser", label: "Browser", icon: AppWindow, status: "available" },
       { href: "/app/profiles", label: "Profiles", icon: Layers, status: "available" },
       { href: "/app/drive", label: "Drive", icon: HardDriveDownload, status: "available" },
       { href: "/app/proxy", label: "Proxy", icon: Globe, status: "available" },
-      { href: "/app/extensions", label: "Extensions", icon: Puzzle, status: "planned" },
+      { href: "/app/extensions", label: "Extensions", icon: Puzzle, status: "available" },
     ],
   },
   {
     label: "Protect",
     items: [
       { href: "/app/shield", label: "Shield", icon: ShieldCheck, status: "available" },
+      { href: "/app/site-rules", label: "Site rules", icon: ListFilter, status: "available" },
       { href: "/app/sessions", label: "Sessions", icon: MonitorSmartphone, status: "available" },
     ],
   },
   {
-    items: [{ href: "/app/account", label: "Account", icon: CircleUserRound, status: "available" }],
+    label: "Account",
+    items: [
+      { href: "/app/team", label: "Team", icon: Users, status: "available" },
+      { href: "/app/account", label: "Account", icon: CircleUserRound, status: "available" },
+      { href: "/app/help", label: "Help", icon: LifeBuoy, status: "available" },
+    ],
   },
 ];
 
 /** Shown to administrators only (the API decides who those are). */
 export const adminNav: AppNavGroup = {
   label: "Administration",
-  items: [{ href: "/app/admin", label: "Admin", icon: ShieldEllipsis, status: "available" }],
+  items: [
+    { href: "/admin", label: "Admin console", icon: ShieldEllipsis, status: "available" },
+    { href: "/app/admin", label: "Reported pages", icon: ShieldEllipsis, status: "available" },
+  ],
 };
 
 export interface PlannedModule {
@@ -68,18 +80,8 @@ export interface PlannedModule {
   requires: readonly string[];
 }
 
-export const plannedModules = {
-  extensions: {
-    title: "Extensions",
-    lede: "Supported browser extensions, installed separately for each profile.",
-    milestone: "Phase 4",
-    plans: [
-      "Install extensions from a reviewed list into a single profile.",
-      "Extensions run in the cloud browser, never on the computer you’re using.",
-    ],
-    requires: ["A reviewed extension catalogue", "Extension installs into a profile's kept data"],
-  },
-} as const satisfies Record<string, PlannedModule>;
+/** Every module is built; the shape stays for the next one that isn't. */
+export const plannedModules: Readonly<Record<string, PlannedModule>> = {};
 
 export type EventTone = "neutral" | "success" | "warning";
 
@@ -122,6 +124,14 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
         default:
           return { title: `Signed out ${devices}`, tone: "neutral" };
       }
+    case "recovery.requested":
+      return { title: "Account recovery requested and confirmed by email", tone: "warning" };
+    case "recovery.cancelled":
+      return { title: "Account recovery cancelled", tone: "warning" };
+    case "recovery.released":
+      return { title: "Account released by Brawzer’s team after recovery", tone: "warning" };
+    case "recovery.denied":
+      return { title: "Account recovery denied", tone: "neutral" };
     case "password.reset_requested":
       return { title: "Password reset requested", tone: "neutral" };
     case "password.reset":
@@ -130,6 +140,10 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
       return { title: "Password changed", tone: "success" };
     case "reauthenticated":
       return { title: "Confirmed it’s you", tone: "neutral" };
+    case "session.locked":
+      return { title: "Locked Brawzer", tone: "neutral" };
+    case "session.unlocked":
+      return { title: "Unlocked Brawzer", tone: "neutral" };
     case "passkey.added":
       return { title: "Passkey added", tone: "success" };
     case "passkey.removed":
@@ -156,6 +170,8 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
       return { title: "Profile created", tone: "neutral" };
     case "profile.deleted":
       return { title: "Profile deleted", tone: "neutral" };
+    case "profile.history_cleared":
+      return { title: "A profile’s history was cleared", tone: "neutral" };
     case "profile.data_cleared":
       return { title: "A profile’s browsing data was cleared", tone: "neutral" };
     case "billing.subscription_started":
@@ -188,6 +204,54 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
             : `${String(details.count ?? 0)} Drive files were given to a website in the cloud browser`,
         tone: "neutral",
       };
+    case "browser.clipboard_copied":
+      return {
+        title: `${String(details.chars ?? 0)} characters copied from the cloud browser to a computer’s clipboard`,
+        tone: "neutral",
+      };
+    case "team.created":
+      return { title: `Team started: ${details.team ?? "a team"}`, tone: "neutral" };
+    case "team.joined":
+      return { title: `Joined ${details.team ?? "a team"}`, tone: "neutral" };
+    case "team.left":
+      return { title: `Left ${details.team ?? "the team"}`, tone: "neutral" };
+    case "team.member_removed":
+      return {
+        title: `Removed from ${details.team ?? "the team"} by its owner or an admin`,
+        tone: "warning",
+      };
+    case "team.role_changed":
+      return {
+        title: `Made ${details.role === "admin" ? "an admin" : "a member"} of ${details.team ?? "the team"}`,
+        tone: "neutral",
+      };
+    case "team.ownership_transferred":
+      return {
+        title:
+          details.role === "owner"
+            ? `Became the owner of ${details.team ?? "the team"}`
+            : `Handed ${details.team ?? "the team"} to another member`,
+        tone: "neutral",
+      };
+    case "team.deleted":
+      return { title: `${details.team ?? "The team"} was deleted`, tone: "neutral" };
+    case "team.invitation_sent":
+      return {
+        title: `Invited someone to ${details.team ?? "the team"} as ${details.role === "admin" ? "an admin" : "a member"}`,
+        tone: "neutral",
+      };
+    case "browser.page_reported":
+      return {
+        title: details.picture
+          ? "A page was reported to Brawzer, with a picture of it"
+          : "A page was reported to Brawzer",
+        tone: "neutral",
+      };
+    case "browser.clipboard_pasted":
+      return {
+        title: `${String(details.chars ?? 0)} characters pasted from a computer’s clipboard into the cloud browser`,
+        tone: "neutral",
+      };
     case "proxy.created":
       return { title: "Proxy added", tone: "neutral" };
     case "proxy.updated":
@@ -209,6 +273,21 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
           return { title: "Cloud browser session ended with the sign-out", tone: "neutral" };
         case "runtime_failed":
           return { title: "Cloud browser session stopped unexpectedly", tone: "warning" };
+        case "admin":
+          return {
+            title: "Cloud browser session ended by Brawzer’s administrators",
+            tone: "warning",
+          };
+        case "handed_off":
+          return {
+            title: "Cloud browser session ended to continue on another device",
+            tone: "neutral",
+          };
+        case "team_left":
+          return {
+            title: "Cloud browser session ended: it used a team proxy you no longer have",
+            tone: "neutral",
+          };
         default:
           return { title: "Cloud browser session ended", tone: "neutral" };
       }

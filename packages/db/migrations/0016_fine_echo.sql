@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "private_through_proxy" boolean DEFAULT false NOT NULL;

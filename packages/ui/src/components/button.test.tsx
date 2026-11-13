@@ -1,9 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Plus } from "lucide-react";
+import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { axeViolations } from "../test/axe";
 import { Button } from "./button";
+
+/** A link component, as an app's router provides; its text comes from the Button. */
+function Anchor({ children, ...props }: ComponentProps<"a">) {
+  return <a {...props}>{children}</a>;
+}
 
 describe("Button", () => {
   it("activates with the mouse and the keyboard", async () => {
@@ -47,6 +53,19 @@ describe("Button", () => {
     );
     await user.tab();
     expect(screen.getByRole("button", { name: "Next" })).toHaveFocus();
+  });
+
+  it("stays a link when it renders one, styled as a button", () => {
+    render(
+      <Button variant="primary" render={<Anchor href="/app/browser" />}>
+        Start browsing
+      </Button>,
+    );
+    const link = screen.getByRole("link", { name: "Start browsing" });
+    expect(link).toHaveAttribute("href", "/app/browser");
+    expect(link).not.toHaveAttribute("type");
+    expect(link.className).toContain("bg-accent");
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("has no accessibility violations across variants", async () => {

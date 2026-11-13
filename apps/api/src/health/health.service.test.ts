@@ -14,6 +14,7 @@ const prodConfig = parseConfig(
     ...env,
     NODE_ENV: "production",
     WEB_ORIGIN: "https://brawzer.example",
+    METRICS_TOKEN: "a-scraper-token-for-tests",
     EMAIL_TRANSPORT: "resend",
     RESEND_API_KEY: "re_not_a_real_key",
     KEY_PROVIDER: "vault",

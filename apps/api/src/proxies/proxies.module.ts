@@ -7,6 +7,7 @@ import { BillingModule } from "../billing/billing.module.js";
 import { EgressModule } from "../egress/egress.module.js";
 import { RateLimitModule } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsModule } from "../security-events/security-events.js";
+import { TeamsModule } from "../teams/teams.module.js";
 import { NetworkController } from "./network.controller.js";
 import { PROXY_TESTER, ProxiesService } from "./proxies.service.js";
 import { ProxiesController } from "./proxies.controller.js";
@@ -20,6 +21,7 @@ import { ProxyTester } from "@brawzer/proxy-client";
     SecurityEventsModule,
     EgressModule,
     BillingModule,
+    TeamsModule,
   ],
   controllers: [ProxiesController, NetworkController],
   providers: [

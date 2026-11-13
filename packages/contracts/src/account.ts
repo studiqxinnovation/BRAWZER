@@ -59,6 +59,7 @@ export const accountExportSchema = z.object({
       name: z.string(),
       color: profileColorSchema,
       engine: browserEngineSchema,
+      extensions: z.array(z.string()),
       createdAt: z.iso.datetime(),
       updatedAt: z.iso.datetime(),
     }),
@@ -75,6 +76,47 @@ export const accountExportSchema = z.object({
       hasCredentials: z.boolean(),
       createdAt: z.iso.datetime(),
       updatedAt: z.iso.datetime(),
+    }),
+  ),
+  /** The account's site rules: blocked hosts, and the allowed hosts that restrict browsing when any exist. */
+  siteRules: z.array(
+    z.object({ kind: z.enum(["allow", "block"]), host: z.string(), createdAt: z.iso.datetime() }),
+  ),
+  /** History and bookmarks Brawzer keeps for the profiles (ADR 0020), by profile name. */
+  history: z.array(
+    z.object({
+      profile: z.string(),
+      url: z.string(),
+      title: z.string(),
+      lastVisitedAt: z.iso.datetime(),
+      visits: z.number().int().positive(),
+    }),
+  ),
+  bookmarks: z.array(
+    z.object({
+      profile: z.string(),
+      url: z.string(),
+      title: z.string(),
+      createdAt: z.iso.datetime(),
+    }),
+  ),
+  /** The team the account is in, if any (Phase 8, idea 19). */
+  team: z
+    .object({
+      name: z.string(),
+      role: z.enum(["owner", "admin", "member"]),
+      joinedAt: z.iso.datetime(),
+    })
+    .nullable(),
+  /** Pages reported to Brawzer's team; a picture is listed, not repeated here. */
+  pageReports: z.array(
+    z.object({
+      kind: z.enum(["broken", "blocked", "other"]),
+      message: z.string(),
+      url: z.string().nullable(),
+      createdAt: z.iso.datetime(),
+      closedAt: z.iso.datetime().nullable(),
+      hasPicture: z.boolean(),
     }),
   ),
   /** Drive's records only; the files themselves are saved from Drive. */
@@ -97,6 +139,15 @@ export const accountExportSchema = z.object({
       startedAt: z.iso.datetime(),
       endedAt: z.iso.datetime().nullable(),
       endReason: z.string().nullable(),
+    }),
+  ),
+  /** What the desktop's apps keep: assignments, money, invoices and the rest. */
+  appRecords: z.array(
+    z.object({
+      app: z.string(),
+      key: z.string(),
+      data: z.json(),
+      updatedAt: z.iso.datetime(),
     }),
   ),
 });

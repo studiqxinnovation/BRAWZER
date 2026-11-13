@@ -7,14 +7,19 @@ import { DriveModule } from "../drive/drive.module.js";
 import { EgressModule } from "../egress/egress.module.js";
 import { ProfilesModule } from "../profiles/profiles.module.js";
 import { ProxiesModule } from "../proxies/proxies.module.js";
+import { SiteRulesModule } from "../site-rules/site-rules.module.js";
 import { RateLimitModule } from "../rate-limit/rate-limiter.js";
 import { RedisModule } from "../redis/redis.module.js";
 import { SecurityEventsModule } from "../security-events/security-events.js";
+import { TeamsModule } from "../teams/teams.module.js";
+import { AppRecordsModule } from "../app-records/app-records.module.js";
+import { HistoryModule } from "../history/history.module.js";
 import { BrowserController } from "./browser.controller.js";
 import { BrowserService } from "./browser.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamGateway } from "./stream-gateway.js";
 import { StreamTickets } from "./stream-tickets.js";
+import { WarmPoolService } from "./warm-pool.service.js";
 
 /**
  * The cloud browser: sessions, the orchestrator and the stream relay (Phase
@@ -33,10 +38,14 @@ import { StreamTickets } from "./stream-tickets.js";
     DriveModule,
     EgressModule,
     ProxiesModule,
+    SiteRulesModule,
     BillingModule,
+    TeamsModule,
+    AppRecordsModule,
+    HistoryModule,
   ],
   controllers: [BrowserController],
-  providers: [OrchestratorService, StreamTickets, BrowserService, StreamGateway],
-  exports: [BrowserService, StreamGateway, OrchestratorService],
+  providers: [OrchestratorService, WarmPoolService, StreamTickets, BrowserService, StreamGateway],
+  exports: [BrowserService, StreamGateway, OrchestratorService, WarmPoolService],
 })
 export class BrowserModule {}

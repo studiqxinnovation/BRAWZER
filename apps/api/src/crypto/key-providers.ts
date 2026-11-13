@@ -15,6 +15,10 @@ export interface DataKey {
 export interface KeyProvider {
   generateDataKey(): Promise<DataKey>;
   unwrap(keyId: string, wrapped: Buffer): Promise<Buffer>;
+  /** Whether a wrapped data key still uses the current key-encryption key (and version). */
+  isCurrent(keyId: string, wrapped: Buffer): Promise<boolean>;
+  /** The same data key, wrapped by the current key-encryption key (and version). */
+  rewrap(keyId: string, wrapped: Buffer): Promise<{ keyId: string; wrapped: Buffer }>;
 }
 
 const KEY_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -55,6 +59,25 @@ export class LocalKeyProvider implements KeyProvider {
       Buffer.concat([decipher.update(wrapped.subarray(28)), decipher.final()]),
     );
   }
+
+  isCurrent(keyId: string): Promise<boolean> {
+    return Promise.resolve(keyId === this.currentId);
+  }
+
+  async rewrap(keyId: string, wrapped: Buffer): Promise<{ keyId: string; wrapped: Buffer }> {
+    const plaintext = await this.unwrap(keyId, wrapped);
+    try {
+      const iv = randomBytes(12);
+      const cipher = createCipheriv("aes-256-gcm", this.currentKey, iv);
+      const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+      return {
+        keyId: this.currentId,
+        wrapped: Buffer.concat([iv, cipher.getAuthTag(), ciphertext]),
+      };
+    } finally {
+      plaintext.fill(0);
+    }
+  }
 }
 
 export interface VaultTransitOptions {
@@ -66,8 +89,14 @@ export interface VaultTransitOptions {
 }
 
 interface TransitResponse {
-  data?: { plaintext?: string; ciphertext?: string };
+  data?: { plaintext?: string; ciphertext?: string; latest_version?: number };
   errors?: string[];
+}
+
+/** Transit ciphertexts carry the key version they were made with: `vault:v<N>:…`. */
+function transitVersionOf(wrapped: Buffer): number | null {
+  const match = /^vault:v(\d+):/.exec(wrapped.toString("utf8"));
+  return match ? Number(match[1]) : null;
 }
 
 /**
@@ -77,6 +106,8 @@ interface TransitResponse {
  */
 export class VaultTransitKeyProvider implements KeyProvider {
   private readonly keyId: string;
+  /** The key's latest version, asked for at most once a minute. */
+  private latest: { version: number; at: number } | null = null;
 
   constructor(private readonly options: VaultTransitOptions) {
     this.keyId = `transit-${options.keyName}`;
@@ -84,13 +115,16 @@ export class VaultTransitKeyProvider implements KeyProvider {
       throw new Error("Transit key names may only contain letters, digits, _ and -");
   }
 
-  private async call(path: string, body: object): Promise<NonNullable<TransitResponse["data"]>> {
+  private async call(
+    path: string,
+    body: object | null,
+  ): Promise<NonNullable<TransitResponse["data"]>> {
     const response = await fetch(
       new URL(`/v1/${this.options.mount}/${path}`, this.options.address),
       {
-        method: "POST",
+        method: body ? "POST" : "GET",
         headers: { "X-Vault-Token": this.options.token, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        ...(body ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(5_000),
       },
     );
@@ -121,5 +155,29 @@ export class VaultTransitKeyProvider implements KeyProvider {
     });
     if (!data.plaintext) throw new Error("Key service returned no plaintext");
     return Buffer.from(data.plaintext, "base64");
+  }
+
+  private async latestVersion(): Promise<number> {
+    if (this.latest && Date.now() - this.latest.at < 60_000) return this.latest.version;
+    const data = await this.call(`keys/${this.options.keyName}`, null);
+    if (typeof data.latest_version !== "number") throw new Error("Key service named no version");
+    this.latest = { version: data.latest_version, at: Date.now() };
+    return data.latest_version;
+  }
+
+  async isCurrent(keyId: string, wrapped: Buffer): Promise<boolean> {
+    if (keyId !== this.keyId) return false;
+    const version = transitVersionOf(wrapped);
+    return version !== null && version >= (await this.latestVersion());
+  }
+
+  /** The key service re-wraps under its latest version; the data key never leaves it. */
+  async rewrap(keyId: string, wrapped: Buffer): Promise<{ keyId: string; wrapped: Buffer }> {
+    if (keyId !== this.keyId) throw new Error(`Unknown key ID "${keyId}"`);
+    const data = await this.call(`rewrap/${this.options.keyName}`, {
+      ciphertext: wrapped.toString("utf8"),
+    });
+    if (!data.ciphertext) throw new Error("Key service returned no ciphertext");
+    return { keyId: this.keyId, wrapped: Buffer.from(data.ciphertext, "utf8") };
   }
 }

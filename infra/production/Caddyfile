@@ -17,3 +17,8 @@
 		reverse_proxy web:3100
 	}
 }
+
+# The www name only redirects to the site.
+www.{$SITE_HOST} {
+	redir https://{$SITE_HOST}{uri} permanent
+}

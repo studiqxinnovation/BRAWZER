@@ -2,7 +2,7 @@ import { type DeviceSession, deviceSessionListSchema } from "@brawzer/contracts"
 import { Badge } from "@brawzer/ui/components/badge";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
 import { Laptop, Monitor, MonitorSmartphone, Smartphone } from "lucide-react";
-import { Panel, Unavailable } from "@/components/app-shell/page";
+import { InfoHead, Panel, Unavailable } from "@/components/app-shell/page";
 import { LocalDate } from "@/components/local-date";
 import { authMethodLabels } from "@/content/app";
 import { serverGet, signInAgain } from "@/lib/server-api";
@@ -70,8 +70,13 @@ export async function DeviceSessions() {
   const others = sessions.filter((session) => !session.current).length;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-[10px]">
       <Panel>
+        <InfoHead title="Signed-in devices">
+          <span className="ad-info-count">
+            {String(sessions.length)} device{sessions.length === 1 ? "" : "s"}
+          </span>
+        </InfoHead>
         <ul className="divide-y divide-line">
           {sessions.map((session) => (
             <DeviceRow key={session.id} session={session} now={now} />

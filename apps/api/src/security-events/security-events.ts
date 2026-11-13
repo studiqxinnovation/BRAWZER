@@ -1,3 +1,4 @@
+import { BlockedAddressesService } from "./blocked-addresses.js";
 import { type DatabaseHandle, schema, type SecurityEventType } from "@brawzer/db";
 import { Inject, Injectable, Logger, Module } from "@nestjs/common";
 import type { RequestMeta } from "../common/request-meta.js";
@@ -39,7 +40,7 @@ export class SecurityEventsService {
 
 @Module({
   imports: [DatabaseModule],
-  providers: [SecurityEventsService],
-  exports: [SecurityEventsService],
+  providers: [SecurityEventsService, BlockedAddressesService],
+  exports: [SecurityEventsService, BlockedAddressesService],
 })
 export class SecurityEventsModule {}

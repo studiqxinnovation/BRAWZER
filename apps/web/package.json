@@ -16,10 +16,12 @@
   "dependencies": {
     "@brawzer/contracts": "workspace:*",
     "@brawzer/ui": "workspace:*",
+    "fflate": "catalog:",
     "@simplewebauthn/browser": "catalog:",
     "lucide-react": "catalog:",
     "motion": "catalog:",
     "next": "catalog:",
+    "qrcode": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "zod": "catalog:"
@@ -32,6 +34,7 @@
     "@testing-library/react": "catalog:",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
+    "@types/qrcode": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",

@@ -90,8 +90,11 @@ describe("transports", () => {
         {
           transport: "resend",
           from: "x@y.z",
+          replyTo: undefined,
           mailpitApiUrl: "http://127.0.0.1:8125",
           resendApiKey: undefined,
+          resendWebhookSecret: undefined,
+          adminNotifications: "all",
         },
         () => undefined,
       ),

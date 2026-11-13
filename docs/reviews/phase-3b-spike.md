@@ -20,3 +20,13 @@ is built**; this records what was found and what it means.
 1. Make Chromium's audio reach PulseAudio in the container (likely a `--audio-output`/`--alsa` fallback or the runtime directory the audio service brokers), measured with the probe scripts from this spike.
 2. Xvfb or a PipeWire headless session, GStreamer with `webrtcbin`, coturn in `infra`, the firewall rule for the media path, a `media` transport in the stream protocol with the JPEG path as fallback.
 3. Firefox through WebDriver BiDi on the same capture path.
+
+## Addendum (2026-11-08)
+
+Finding 2 was the probe's mistake, not the engine's: the audio probes ran
+containers without the session seccomp profile, so Chromium had no usable
+sandbox and exited before any page played. Under the real profile, headless
+Chromium connects to a PulseAudio server reached through `PULSE_SERVER`
+(anonymous auth on a socket in the scratch space) with its default flags and
+plays into a null sink, whose monitor the agent captures. Sound shipped on
+that path (ADR 0006, addendum); WebRTC video remains as step 3b describes.

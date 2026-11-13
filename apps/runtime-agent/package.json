@@ -14,6 +14,7 @@
   "dependencies": {
     "@brawzer/contracts": "workspace:*",
     "@brawzer/net-policy": "workspace:*",
+    "@mozilla/readability": "catalog:",
     "ws": "catalog:",
     "zod": "catalog:"
   },

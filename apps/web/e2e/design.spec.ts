@@ -54,10 +54,12 @@ test.describe("design system page", () => {
   test("dialog closes with Escape and returns focus to its trigger", async ({ page }) => {
     await page.goto("/design");
     const trigger = page.getByRole("button", { name: "End all sessions…" });
-    await trigger.click();
-
     const dialog = page.getByRole("dialog", { name: "End all sessions?" });
-    await expect(dialog).toBeVisible();
+    // A click before the page is interactive does nothing: try until it opens.
+    await expect(async () => {
+      await trigger.click();
+      await expect(dialog).toBeVisible({ timeout: 1_000 });
+    }).toPass();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(trigger).toBeFocused();

@@ -36,6 +36,16 @@ export const RATE_LIMITS = {
   phoneStartsPerIp: { name: "phone-start-ip", limit: 20, windowSeconds: 15 * 60 },
   phonePollsPerIp: { name: "phone-poll-ip", limit: 600, windowSeconds: 15 * 60 },
   phoneApprovalsPerAccount: { name: "phone-approve", limit: 20, windowSeconds: 15 * 60 },
+  pageReportsPerAccount: { name: "page-report", limit: 10, windowSeconds: 60 * 60 },
+  supportTicketsPerAccount: { name: "support-ticket", limit: 10, windowSeconds: 60 * 60 },
+  supportMessagesPerAccount: { name: "support-message", limit: 60, windowSeconds: 15 * 60 },
+  /** The Assistant and Study Notes: each request costs the operator. */
+  assistantPerAccount: { name: "assistant", limit: 60, windowSeconds: 60 * 60 },
+  /** Desktop apps' records: sliders and auto-save are debounced in the page; a loop is not. */
+  appRecordWritesPerAccount: { name: "app-record-write", limit: 600, windowSeconds: 15 * 60 },
+  teamInvitationsPerAccount: { name: "team-invite", limit: 30, windowSeconds: 60 * 60 },
+  /** One address gets at most three invitation emails a day, whoever sends them. */
+  teamInvitationsPerAddress: { name: "team-invite-to", limit: 3, windowSeconds: 24 * 60 * 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {

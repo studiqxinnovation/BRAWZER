@@ -1,10 +1,13 @@
 import {
   type CreateProxyRequest,
+  proxyListSchema,
   proxySchema,
   proxyTestResultSchema,
   type UpdateProxyRequest,
 } from "@brawzer/contracts";
 import { apiRequest } from "./client";
+
+export const fetchProxies = () => apiRequest("/proxies", { schema: proxyListSchema });
 
 export const createProxy = (body: CreateProxyRequest) =>
   apiRequest("/proxies", { method: "POST", body, schema: proxySchema });

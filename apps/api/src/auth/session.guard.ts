@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { signInRequired } from "../common/api-exception.js";
+import { ApiException, signInRequired } from "../common/api-exception.js";
 import { type AuthContext, SessionService } from "./session.service.js";
 
 declare module "fastify" {
@@ -26,6 +26,19 @@ const PASSIVE_SESSION = "brawzer:passive-session";
  * that check would keep an abandoned session alive forever.
  */
 export const PassiveSession = () => SetMetadata(PASSIVE_SESSION, true);
+
+const ALLOW_LOCKED = "brawzer:allow-locked";
+
+/**
+ * Marks a route that still answers while the session is locked: reading
+ * who is signed in, unlocking (confirming it's you) and locking again.
+ * Every other route answers 423 `session_locked`.
+ */
+export const AllowLocked = () => SetMetadata(ALLOW_LOCKED, true);
+
+/** What a locked session gets from every other route. */
+export const sessionLocked = () =>
+  new ApiException("session_locked", 423, "Brawzer is locked. Unlock it to continue.");
 
 /** Requires a valid session cookie; otherwise responds 401 and clears a stale cookie. */
 @Injectable()
@@ -49,6 +62,11 @@ export class SessionGuard implements CanActivate {
       if (hadSession) this.sessions.clearCookie(http.getResponse<FastifyReply>());
       throw signInRequired(hadSession);
     }
+    const allowLocked = this.reflector.getAllAndOverride<boolean | undefined>(ALLOW_LOCKED, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (auth.session.lockedAt && allowLocked !== true) throw sessionLocked();
     request.auth = auth;
     return true;
   }

@@ -16,8 +16,10 @@ database.
 ## Watch
 
 - `GET /api/v1/health` on each API instance: `degraded` names the dependency (database, Valkey, store, scanner, runtime).
+- `GET /api/metrics` on each API instance (Prometheus text format; `Authorization: Bearer $METRICS_TOKEN`), to scrape and alert on: `brawzer_sessions_live{host}` against `brawzer_runtime_host_capacity{host}`, `brawzer_runtime_host_healthy{host}` and `brawzer_runtime_available`, `brawzer_session_starts_failed_total` and `brawzer_sessions_ended_total{reason="runtime_failed"}`, `brawzer_stream_viewers`, `brawzer_frames_dropped_total` against `brawzer_frames_relayed_total`, `brawzer_transfers_total{kind,state}` and `brawzer_transfer_pauses_total`, `brawzer_scan_seconds` (sum and count: the mean scan time) and `brawzer_scanner_unavailable_total`, `brawzer_stripe_webhooks_total{result}`, `brawzer_warm_pool_waiting`, `brawzer_maintenance_last_run_timestamp_seconds`, `brawzer_build_info{version}`. Counters are per instance and reset with it.
 - The API's logs: `Runtime unavailable`, `Egress tester unavailable`, `Reaping sessions failed`, `Saving profile data … failed`, `Removed orphaned` and `Retention run` lines are the ones to alert on or graph.
 - `docker ps --filter label=brawzer.managed` on a runtime host: the live sessions, two containers each.
+- `node infra/hostman/smoke.mjs` after any change to the hosts: one line per step, exit 1 on the first failure, and it deletes its own account.
 - Stripe's dashboard: webhook deliveries failing means plans stop following subscriptions; the route answers 401 to a bad signature and 204 otherwise.
 
 ## Incidents
@@ -39,6 +41,13 @@ Sign-ins keep working; anything that opens an encrypted value (a proxy
 test, a session start under a proxy or a profile with data, Drive previews
 and downloads) fails with 503 until it returns. Nothing is lost.
 
+A `Key service responded 403` line in the API's log is not an outage: the
+API's token lacks a path or has expired. With the self-hosted OpenBao
+(`infra/production/services.yaml`), the keeper writes the `brawzer-api`
+policy and renews the API's periodic token on every start and every hour;
+start it afresh (`docker compose -f services.yaml --env-file services.env up -d --force-recreate openbao-unseal`),
+then deploy again so a replaced token reaches `production.env`.
+
 ### The object store or scanner is unavailable
 
 Uploads, downloads from the cloud browser and profile saves fail and say so;
@@ -56,6 +65,61 @@ it returns), and session ends are only cut on the instance that ended them
 
 ## Routine operations
 
+### The operator CLI
+
+Each runbook step that touches the application has one command, run with the
+API's own configuration: in production
+`docker compose exec api node dist/cli/main.js <command>`, locally
+`pnpm brawzer <command>`.
+
+| Command                           | Does                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------- |
+| `sessions`                        | Runtime hosts (reachable, load), the warm pool, every live session     |
+| `end-session <id>`                | Ends a session as the Admin page would; the owner's history says so    |
+| `find-account <text>`             | Accounts whose email contains the text, with plan and role             |
+| `grant-plan <email> <plan> <why>` | Sets a plan by hand with a reason; `free` hands control back to Stripe |
+| `rewrap`                          | Re-wraps every secret under the current encryption key                 |
+| `usage-notices`                   | Sends due usage emails now                                             |
+| `retention`                       | Deletes expired data now                                               |
+
+Exit codes: 0 done, 1 failed (or another instance holds the job's lock), 2
+not understood. Certificates for a runtime host stay a script:
+`infra/production/runtime-host/make-certs.sh`.
+
+### Backups
+
+On the app host, `brawzer-backup` (from `infra/production/backup/backup.sh`,
+installed by `deploy.mjs` with a cron entry at 03:30 UTC) writes three
+parts to `backups/<stamp>/` in the installation's bucket: the database
+(`pg_dump`, custom format), the key service's unseal material and file
+storage (`openbao.tar.gz`), and the stack's settings files. Each part is
+encrypted with AES-256 (`gpg --symmetric`) under a passphrase kept in
+`/etc/brawzer/backup/passphrase` on the host **and** as `BACKUP_PASSPHRASE`
+in the operator's `infra/hostman/secrets.env`, because a backup must be
+readable when the host is gone. Thirty days are kept; the log is
+`/var/log/brawzer-backup.log`. Drive and profile objects are not copied:
+they are already in the bucket, as ciphertext whose keys the backup holds.
+Valkey (rate limits, stream tickets) and Caddy's certificates are not
+backed up; both rebuild themselves.
+
+Monthly drill: `brawzer-restore latest --check` restores the newest backup
+into a scratch database beside the live one, counts its tables and accounts,
+lists the two archives and drops the scratch database. A good run ends with
+`restore drill passed for <stamp>` and the table and migration counts the
+live database has. `brawzer-restore list` shows what is in the bucket.
+
+### Restoring from a backup
+
+On a prepared host (`bootstrap-host.sh`, Docker, the stack files from the
+repository), with `/etc/brawzer/backup/env` and `passphrase` copied from the
+operator's files:
+
+1. `brawzer-restore <stamp> --to /root/restore` decrypts the three parts.
+2. Put `settings.tar.gz` back in `/srv/brawzer/production` and `openbao.tar.gz` back at `/` (it holds `etc/brawzer/openbao` and the `openbao-data` volume), **before** the key service starts: a fresh OpenBao would make a new key that opens nothing.
+3. Start the services stack; then `docker exec -i brawzer-services-postgres-1 pg_restore -U brawzer -d brawzer --clean --if-exists --no-owner < /root/restore/database.dump`.
+4. Start the application stack and run `node infra/hostman/deploy.mjs --check`; sign in and open a Drive file to prove the keys line up.
+5. Remove `/root/restore`: it holds the database password and the unseal keys.
+
 ### Rolling a release
 
 1. Tag `vX.Y.Z`; the release workflow pushes the four images. Note the digests it prints.
@@ -70,6 +134,13 @@ security updates (Node, Debian's Chromium, nftables) reach the images. Roll
 them like a release when the changes matter (the Chromium version is in the
 image's `docker image inspect` labels and in each session's status bar).
 
+Between Mondays, the "Engine watch" workflow checks each day whether Debian
+ships a newer `chromium` or `firefox-esr`, or Google or Microsoft a newer
+`google-chrome-stable` or `microsoft-edge-stable`, than `nightly` holds and,
+if so, starts the release workflow at once. To check by hand:
+`node infra/scripts/engine-versions.mjs ghcr.io/<owner>/brawzer-runtime:nightly`
+(exit 3 means a rebuild is due).
+
 ### Rotating the engine certificates
 
 1. `make-certs.sh <host>` on a safe machine; install the server files on the runtime host and restart its engine (sessions survive an engine restart; the API reconnects).
@@ -77,20 +148,56 @@ image's `docker image inspect` labels and in each session's status bar).
 
 ### Rotating the encryption key
 
-The key service's key-encryption key wraps every data key (ADR 0008);
-rotate it in the key service and keep the previous version readable until
-every row has been re-wrapped (a re-wrap job is not built; rows are
-re-wrapped when they are next written).
+The key service's key-encryption key wraps every data key (ADR 0008).
+Rotate it in the key service (Transit: `POST transit/keys/brawzer/rotate`;
+local development: put a new `id:key` first in `ENCRYPTION_KEYS` and keep
+the old one after it), then re-wrap every row: `POST /api/v1/admin/maintenance/rewrap`
+from the Admin page's account (confirm it's you first), or wait for the
+maintenance cadence (every six hours, five minutes after a start). The
+response counts rows per table and rows it had to leave; when every run
+reports nothing left, retire the previous key version (Transit:
+`min_decryption_version`; local: drop the old key from `ENCRYPTION_KEYS`).
+Only the wrapping of each data key changes; ciphertexts stay as they are.
+
+### Adding a runtime host
+
+1. Prepare the host as `infra/production/runtime-host/README.md` describes (engine over mutual TLS with the same CA; images pulled).
+2. Add it to `RUNTIME_HOSTS` on every API instance: `{"name":"rt-2","docker":"tcp://rt2.internal:2376","capacity":3}` (the name is written on each session's row, so keep it stable), and restart the instances one by one.
+3. Watch the health log line for the new host; sessions go to the healthy host with the most room. Removing a host: drain it (set its capacity to 0 is not supported; remove it from the list once its sessions have ended, or end them from the Admin page).
 
 ### Capacity
 
+Measure a candidate runtime host before sizing it:
+`node infra/bench/stream-load.mjs --sessions 8 --seconds 30` (and
+`--engine firefox`) on the host, with the runtime image pulled. It reports
+frame rate, bandwidth, CPU and memory per session while every session
+scrolls at once; on a developer machine Bee held 32 frames a second at eight
+sessions with about half a core each, and needed about 17 Mbit/s each, so
+check the host's uplink as well as its CPUs (Phase 8 page, idea 24).
+
 `BROWSER_MAX_LIVE_SESSIONS` bounds the installation; a runtime host with
 8 GB and 4 cores runs about 3 sessions comfortably (2 GB and 2 CPUs each at
-most, less in practice). When the limit is reached, starting a session
+most, less in practice). `BROWSER_WARM_POOL=n` keeps `n` container pairs
+waiting per API instance so a plain Bee session starts at once; each waiting
+pair counts against the host like a session, so size the pool from the
+capacity left after the expected live sessions. When the limit is reached, starting a session
 answers 503 with `Retry-After: 60`, and the Browser page says so.
+
+### Which browsers are offered
+
+`BROWSER_ENGINES` lists them, in the launcher's order (default
+`bee,chrome,firefox,edge,chromium`). Take `chrome` or `edge` out where
+Google's or Microsoft's terms for hosting their browsers aren't met; their
+profiles then can't start until it's back, and say so. Edge is offered only
+when every runtime host's image is x86-64 (the API asks the hosts' engines
+every 5 minutes), since Microsoft ships Edge for x86-64 Linux only; on ARM
+hosts its icon simply isn't shown. A profile's "Browser account and saved
+passwords" switch is the person's to make (ADR 0021); nothing here turns it
+on for them.
 
 ## Before launch
 
 - An independent penetration test of the app tier and a runtime host, with the threat model in [SECURITY.md](SECURITY.md); the isolation tests to repeat are the by-hand checks in the Phase 3 and 5 reviews (a runtime's engine user has no route out and no DNS; a session can't reach private addresses or the engine's services).
 - A verified Resend sending domain, a real `SITE_HOST`, live Stripe keys if plans are offered.
-- Backups of PostgreSQL and the object store, and a restore rehearsal: objects are useless without their rows and the key service.
+- A restore drill that passed (above), and the backup passphrase kept somewhere other than the host.
+- The end-to-end check, `node infra/hostman/smoke.mjs`: sign-up, confirmation email, a session under gVisor, frames on the stream, a clean runtime host, the account deleted.

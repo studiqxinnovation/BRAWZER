@@ -9,6 +9,7 @@ import {
 } from "@brawzer/contracts";
 import { WebSocket, WebSocketServer } from "ws";
 import type { Engine, Viewer } from "./engine-types.ts";
+import { type AudioSink, type SessionAudio } from "./audio.ts";
 import { log } from "./log.ts";
 
 /** How much may queue on the viewer's socket before frames are dropped instead. */
@@ -65,7 +66,11 @@ function json(res: http.ServerResponse, status: number, body: object): void {
  * before the engine starts, POST /start, POST /pack at the end). One viewer
  * at a time; a new connection replaces the old one.
  */
-export function createAgentServer(lifecycle: AgentLifecycle, secret: string): AgentServer {
+export function createAgentServer(
+  lifecycle: AgentLifecycle,
+  secret: string,
+  audio?: SessionAudio,
+): AgentServer {
   const server = http.createServer((req, res) => {
     if (req.method === "GET" && req.url === "/healthz") {
       const engine = lifecycle.engine();
@@ -161,6 +166,13 @@ export function createAgentServer(lifecycle: AgentLifecycle, secret: string): Ag
           ws.send(frame, { binary: true });
           return true;
         },
+        sendVideo: (chunk) => {
+          if (ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > MAX_BUFFERED_BYTES) {
+            return false;
+          }
+          ws.send(chunk, { binary: true });
+          return true;
+        },
         sendBinary: (bytes) =>
           new Promise<void>((resolve, reject) => {
             if (ws.readyState !== WebSocket.OPEN) {
@@ -174,6 +186,15 @@ export function createAgentServer(lifecycle: AgentLifecycle, secret: string): Ag
           }),
       };
       let attached = false;
+      const audioSink: AudioSink = {
+        sendAudio: (bytes) => {
+          if (ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > MAX_BUFFERED_BYTES) {
+            return false;
+          }
+          ws.send(bytes, { binary: true });
+          return true;
+        },
+      };
 
       ws.on("message", (data, isBinary) => {
         if (isBinary) {
@@ -209,11 +230,16 @@ export function createAgentServer(lifecycle: AgentLifecycle, secret: string): Ag
         if (message.data.type === "hello") {
           if (!attached) {
             attached = true;
-            engine.attachViewer(viewer, message.data.viewport);
+            engine.attachViewer(viewer, message.data.viewport, message.data.codecs);
+            audio?.attach(audioSink);
           }
           return;
         }
         if (!attached) return;
+        if (message.data.type === "sound") {
+          audio?.setOn(message.data.on);
+          return;
+        }
         engine.handle(message.data).catch((error: unknown) => {
           log("warn", "command failed", {
             type: message.data.type,
@@ -223,7 +249,10 @@ export function createAgentServer(lifecycle: AgentLifecycle, secret: string): Ag
       });
       ws.on("close", () => {
         if (current === ws) current = null;
-        if (attached) engine.detachViewer(viewer);
+        if (attached) {
+          engine.detachViewer(viewer);
+          audio?.detach(audioSink);
+        }
       });
       ws.on("error", () => undefined);
     });

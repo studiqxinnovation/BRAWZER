@@ -25,6 +25,7 @@ const PLUS = {
     browsingMinutesPerMonth: 1,
     liveSessions: 1,
   },
+  trialDays: 14,
 };
 
 beforeAll(async () => {
@@ -122,7 +123,11 @@ describe("checkout and webhooks", () => {
       mode: "subscription",
       customer: customer?.id,
       "line_items[0][price]": "price_plus_month",
+      // A first subscription starts with the plan's trial; promotion codes are accepted.
+      "subscription_data[trial_period_days]": "14",
+      allow_promotion_codes: "true",
     });
+    expect((await overview(client)).trialEligible).toBe(true);
 
     // Stripe reports the subscription; the plan and its limits follow.
     const subscriptionId = `sub_${Date.now().toString(36)}`;
@@ -196,6 +201,15 @@ describe("checkout and webhooks", () => {
     expect(await h.eventTypes(email)).toEqual(
       expect.arrayContaining(["billing.subscription_ended"]),
     );
+
+    // The trial was the first subscription's: coming back pays from day one.
+    expect(final.trialEligible).toBe(false);
+    expect(
+      (await client.post("/auth/reauthenticate", { password: "violet-harbor-lantern" })).statusCode,
+    ).toBe(200);
+    const comeback = await client.post("/billing/checkout", { planCode: "plus" });
+    expect(comeback.statusCode, comeback.body).toBe(200);
+    expect(stripe.checkouts.at(-1)).not.toHaveProperty("subscription_data[trial_period_days]");
   });
 
   it("caps browsing minutes per month where the plan has a cap", async () => {

@@ -11,13 +11,25 @@ import { BROWSER_LIMITS } from "./browser.ts";
 export const BROWSER_PROTOCOL_VERSION = 1;
 
 const { viewport } = BROWSER_LIMITS;
+/** The most text one deliberate copy or paste carries between the page and the local computer. */
+export const CLIPBOARD_MAX_CHARS = 65_536;
+
+/** How many device pixels one CSS pixel gets in a sharp frame; 1 means none asked for. */
+const scaleSchema = z.number().min(1).max(viewport.maxScale).default(1);
 
 export const viewportSchema = z.object({
   width: z.number().int().min(viewport.minWidth).max(viewport.maxWidth),
   height: z.number().int().min(viewport.minHeight).max(viewport.maxHeight),
+  /** The viewer's pixel ratio, capped: what a still page is rendered at. */
+  scale: scaleSchema,
 });
 
 const tabIdSchema = z.string().min(1).max(64);
+
+/** The video codecs a stream may use for a moving page (ADR 0006, addendum). */
+export const videoCodecs = ["vp8"] as const;
+export const videoCodecSchema = z.enum(videoCodecs);
+export type VideoCodec = z.infer<typeof videoCodecSchema>;
 
 /** Chrome DevTools Protocol modifier bits: Alt 1, Ctrl 2, Meta 4, Shift 8. */
 const modifiersSchema = z.number().int().min(0).max(15).default(0);
@@ -49,7 +61,14 @@ export const streamAuthMessageSchema = z.object({
 
 /** Messages the page may send, apart from the file chooser's answer (which differs per hop). */
 const baseClientMessages = [
-  z.object({ type: z.literal("hello"), viewport: viewportSchema }),
+  z.object({
+    type: z.literal("hello"),
+    viewport: viewportSchema,
+    /** Video codecs the viewer can decode; none means frames as pictures only. */
+    codecs: z.array(videoCodecSchema).max(4).default([]),
+  }),
+  /** The viewer's decoder lost its place (a chunk missed): it needs a key frame. */
+  z.object({ type: z.literal("video-lost") }),
   z.object({ type: z.literal("resize"), viewport: viewportSchema }),
   z.object({ type: z.literal("navigate"), tabId: tabIdSchema, url: browserUrlSchema }),
   z.object({ type: z.literal("back"), tabId: tabIdSchema }),
@@ -57,6 +76,11 @@ const baseClientMessages = [
   z.object({ type: z.literal("reload"), tabId: tabIdSchema }),
   z.object({ type: z.literal("stop"), tabId: tabIdSchema }),
   z.object({ type: z.literal("new-tab"), url: browserUrlSchema.optional() }),
+  /**
+   * The browser's own pages, in a new tab, for a profile with its browser
+   * account on (ADR 0021): its saved passwords, or signing in to its account.
+   */
+  z.object({ type: z.literal("open-browser-page"), page: z.enum(["passwords", "account"]) }),
   z.object({ type: z.literal("close-tab"), tabId: tabIdSchema }),
   z.object({ type: z.literal("activate-tab"), tabId: tabIdSchema }),
   z.object({
@@ -97,7 +121,31 @@ const baseClientMessages = [
   }),
   /** Save the tab as a PDF in Drive. */
   z.object({ type: z.literal("print"), tabId: tabIdSchema }),
+  /** Find in page: the next (or previous) match of `text`; answered with `find-result`. */
+  z.object({
+    type: z.literal("find"),
+    tabId: tabIdSchema,
+    text: z.string().min(1).max(256),
+    forward: z.boolean().default(true),
+    caseSensitive: z.boolean().default(false),
+  }),
+  z.object({ type: z.literal("find-stop"), tabId: tabIdSchema }),
+  z.object({ type: z.literal("zoom"), tabId: tabIdSchema, factor: z.number().min(0.25).max(5) }),
+  /** Reader view on or off; `reader` on the tab says what happened. */
+  z.object({ type: z.literal("reader"), tabId: tabIdSchema, on: z.boolean() }),
+  /** Sound from the session's pages, streamed to this viewer or not (Phase 3b). */
+  z.object({ type: z.literal("sound"), on: z.boolean() }),
+  /** Clipboard with intent: the page's selected text, asked for on purpose; answered with `clipboard`. */
+  z.object({ type: z.literal("copy"), tabId: tabIdSchema }),
+  /** Text from the local computer's clipboard, typed into the page's focused field on purpose. */
+  z.object({
+    type: z.literal("paste"),
+    tabId: tabIdSchema,
+    text: z.string().min(1).max(CLIPBOARD_MAX_CHARS),
+  }),
   z.object({ type: z.literal("ping") }),
+  /** A page's image, saved to Drive by the container (never fetched by the viewer). */
+  z.object({ type: z.literal("save-image"), tabId: tabIdSchema, url: browserUrlSchema }),
 ] as const;
 
 /** From the Browser page to the relay. */
@@ -109,6 +157,15 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
     tabId: tabIdSchema,
     chooserId: z.string().min(1).max(64),
     fileIds: z.array(z.uuid()).max(MAX_CHOSEN_FILES),
+  }),
+  /** Drive files dropped onto the page at a point, as a drag from the computer would be. */
+  z.object({
+    type: z.literal("drop"),
+    tabId: tabIdSchema,
+    dropId: z.string().min(1).max(64),
+    x: z.number().min(0).max(viewport.maxWidth),
+    y: z.number().min(0).max(viewport.maxHeight),
+    fileIds: z.array(z.uuid()).min(1).max(MAX_CHOSEN_FILES),
   }),
 ]);
 
@@ -131,9 +188,64 @@ export const relayMessageSchema = z.discriminatedUnion("type", [
     chooserId: z.string().min(1).max(64),
     files: z.array(chosenFileSchema).max(MAX_CHOSEN_FILES),
   }),
+  z.object({
+    type: z.literal("drop"),
+    tabId: tabIdSchema,
+    dropId: z.string().min(1).max(64),
+    x: z.number().min(0).max(viewport.maxWidth),
+    y: z.number().min(0).max(viewport.maxHeight),
+    files: z.array(chosenFileSchema).max(MAX_CHOSEN_FILES),
+  }),
 ]);
 
 export const tabSecuritySchema = z.enum(["secure", "insecure", "neutral"]);
+
+/** The cursors a page may ask for that the viewer shows; anything else is the arrow. */
+export const cursorKinds = [
+  "default",
+  "pointer",
+  "text",
+  "move",
+  "grab",
+  "grabbing",
+  "crosshair",
+  "not-allowed",
+  "wait",
+  "progress",
+  "help",
+  "zoom-in",
+  "zoom-out",
+  "col-resize",
+  "row-resize",
+  "ns-resize",
+  "ew-resize",
+  "nesw-resize",
+  "nwse-resize",
+  "none",
+] as const;
+export const cursorSchema = z.enum(cursorKinds);
+export type CursorKind = z.infer<typeof cursorSchema>;
+
+/** The largest site icon the container passes on. */
+export const FAVICON_MAX_BYTES = 64 * 1024;
+/** A site icon as a data URL: one image, PNG, ICO, GIF, JPEG, WebP or SVG. */
+export const faviconSchema = z
+  .string()
+  .max(Math.ceil((FAVICON_MAX_BYTES * 4) / 3) + 64)
+  .regex(
+    /^data:image\/(png|x-icon|vnd\.microsoft\.icon|gif|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/]+=*$/,
+  );
+
+/**
+ * A navigation the engine couldn't complete: the address it tried and the
+ * engine's own code for why (Chromium's `ERR_…`, Firefox's `dnsNotFound`
+ * and friends). Brawzer draws the explanation; the engine's page is never
+ * what the person reads.
+ */
+export const navigationErrorSchema = z.object({
+  url: z.string().max(4096),
+  code: z.string().max(64),
+});
 
 export const tabStateSchema = z.object({
   id: tabIdSchema,
@@ -143,12 +255,26 @@ export const tabStateSchema = z.object({
   canGoBack: z.boolean(),
   canGoForward: z.boolean(),
   security: tabSecuritySchema,
+  error: navigationErrorSchema.nullable(),
+  /** Layout zoom, 1 being none; kept per tab and re-applied as the tab loads pages. */
+  zoom: z.number().min(0.25).max(5),
+  /** Brawzer's reader view is showing in place of the page. */
+  reader: z.boolean(),
 });
+
+export const ZOOM_LIMITS = { min: 0.25, max: 5 } as const;
 
 export const dialogKinds = ["alert", "confirm", "prompt", "beforeunload"] as const;
 
 /** What the cloud browser refused on the page's behalf, for Brawzer to explain. */
-export const refusedActions = ["download", "upload", "print", "blocked-url"] as const;
+export const refusedActions = [
+  "download",
+  "upload",
+  "print",
+  "blocked-url",
+  "drop",
+  "save-image",
+] as const;
 
 /**
  * A file on its way from the cloud browser to Drive (a download or a printed
@@ -179,12 +305,14 @@ export const agentMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("welcome"),
     protocol: z.literal(BROWSER_PROTOCOL_VERSION),
     engine: z.object({
-      name: z.enum(["bee", "firefox"]),
+      name: z.enum(["bee", "chrome", "firefox", "edge", "chromium"]),
       /** What the engine says it is, such as "Chrome/156.0.8078.79" or "153.6.0esr". */
       version: z.string().max(64),
     }),
     tabs: z.array(tabStateSchema),
     activeTabId: tabIdSchema,
+    /** Catalogue extensions the engine loaded for this session (slugs). */
+    extensions: z.array(z.string().max(64)).max(32).default([]),
   }),
   z.object({
     type: z.literal("tabs"),
@@ -230,7 +358,51 @@ export const agentMessageSchema = z.discriminatedUnion("type", [
     code: z.enum(["unauthorized", "replaced", "ended", "engine_failed", "bad_message"]),
     message: z.string().max(512),
   }),
+  z.object({
+    type: z.literal("find-result"),
+    tabId: tabIdSchema,
+    text: z.string().max(256),
+    matches: z.number().int().min(0),
+    /** 1-based; 0 when nothing matched. */
+    active: z.number().int().min(0),
+  }),
+  /** Reader view was asked for and the page has no article to read. */
+  z.object({ type: z.literal("reader-unavailable"), tabId: tabIdSchema }),
+  /** The page's selected text, after a `copy`; empty when nothing is selected. */
+  z.object({
+    type: z.literal("clipboard"),
+    tabId: tabIdSchema,
+    text: z.string().max(CLIPBOARD_MAX_CHARS),
+  }),
   z.object({ type: z.literal("pong") }),
+  /**
+   * What the pointer is over in the page: the cursor the engine would show,
+   * and whether anything there scrolls sideways (a swipe then scrolls rather
+   * than going back).
+   */
+  z.object({
+    type: z.literal("pointer"),
+    tabId: tabIdSchema,
+    cursor: cursorSchema,
+    hscroll: z.boolean(),
+    /** The link under the pointer, the image under it, and whether the page has text selected. */
+    link: z.string().max(2048).nullable().default(null),
+    image: z.string().max(2048).nullable().default(null),
+    selected: z.boolean().default(false),
+  }),
+  /**
+   * What has focus in the page, as the page labels it, for a screen reader
+   * here: a canvas says nothing on its own.
+   */
+  z.object({
+    type: z.literal("focus"),
+    tabId: tabIdSchema,
+    role: z.string().max(64),
+    name: z.string().max(512),
+    value: z.string().max(512).nullable().default(null),
+  }),
+  /** The tab's site icon, fetched by the container (never by the viewer), or none. */
+  z.object({ type: z.literal("favicon"), tabId: tabIdSchema, icon: faviconSchema.nullable() }),
 ]);
 
 export type Viewport = z.infer<typeof viewportSchema>;
@@ -241,6 +413,7 @@ export type RelayMessage = z.infer<typeof relayMessageSchema>;
 export type ChosenFile = z.infer<typeof chosenFileSchema>;
 export type AgentMessage = z.infer<typeof agentMessageSchema>;
 export type TabState = z.infer<typeof tabStateSchema>;
+export type NavigationError = z.infer<typeof navigationErrorSchema>;
 export type TabSecurity = z.infer<typeof tabSecuritySchema>;
 export type DialogKind = (typeof dialogKinds)[number];
 export type RefusedAction = (typeof refusedActions)[number];
@@ -255,6 +428,8 @@ export const STREAM_CLOSE_CODES = {
   ended: 4003,
   runtimeClosed: 4004,
   badMessage: 4005,
+  /** The viewer's sign-in was locked; the browser keeps running for when it's unlocked. */
+  locked: 4006,
 } as const;
 
 // ── Binary messages ────────────────────────────────────────────────────────
@@ -268,8 +443,19 @@ export const STREAM_CLOSE_CODES = {
 export const frameHeaderSchema = z.object({
   tabId: tabIdSchema,
   frameId: z.number().int().min(0),
-  width: z.number().int().min(1).max(viewport.maxWidth),
-  height: z.number().int().min(1).max(viewport.maxHeight),
+  /** The frame's size in pixels; its size on screen is this divided by `scale`. */
+  width: z
+    .number()
+    .int()
+    .min(1)
+    .max(viewport.maxWidth * viewport.maxScale),
+  height: z
+    .number()
+    .int()
+    .min(1)
+    .max(viewport.maxHeight * viewport.maxScale),
+  /** Device pixels per CSS pixel: 1 for a frame of a moving page, more for a sharp one. */
+  scale: scaleSchema,
 });
 
 export type FrameHeader = z.infer<typeof frameHeaderSchema>;
@@ -288,6 +474,8 @@ export const TRANSFER_CHUNK_BYTES = 256 * 1024;
 
 const FRAME_MAGIC = 0x42; // "B"
 const TRANSFER_MAGIC = 0x54; // "T"
+const AUDIO_MAGIC = 0x41; // "A"
+const VIDEO_MAGIC = 0x56; // "V"
 const PREFIX_BYTES = 6; // magic, version, header length (uint32)
 
 function encodeBinary(magic: number, header: object, payload: Uint8Array): Uint8Array {
@@ -323,11 +511,75 @@ function decodeBinary(
 }
 
 /** Which kind of binary message this is, without decoding it. */
-export function binaryKind(bytes: Uint8Array): "frame" | "transfer" | null {
+export function binaryKind(bytes: Uint8Array): "frame" | "transfer" | "audio" | "video" | null {
   if (bytes.length < PREFIX_BYTES || bytes[1] !== BROWSER_PROTOCOL_VERSION) return null;
   if (bytes[0] === FRAME_MAGIC) return "frame";
   if (bytes[0] === TRANSFER_MAGIC) return "transfer";
+  if (bytes[0] === AUDIO_MAGIC) return "audio";
+  if (bytes[0] === VIDEO_MAGIC) return "video";
   return null;
+}
+
+/**
+ * Sound from the session (Phase 3b): what the pages play, captured from the
+ * container's own audio sink, as signed 16-bit little-endian samples. Chunks
+ * are short (tens of milliseconds) and never acknowledged; a page that falls
+ * behind just loses some.
+ */
+/**
+ * One encoded video frame of the moving page (`V` messages): a key frame
+ * stands alone, the others follow from it. Chunks are never acknowledged;
+ * one missed means the viewer asks for a key frame.
+ */
+export const videoChunkHeaderSchema = z.object({
+  seq: z.number().int().min(0),
+  codec: videoCodecSchema,
+  key: z.boolean(),
+  width: z.number().int().min(1).max(viewport.maxWidth),
+  height: z.number().int().min(1).max(viewport.maxHeight),
+});
+
+export type VideoChunkHeader = z.infer<typeof videoChunkHeaderSchema>;
+
+export function encodeVideoChunk(header: VideoChunkHeader, data: Uint8Array): Uint8Array {
+  return encodeBinary(VIDEO_MAGIC, header, data);
+}
+
+export function decodeVideoChunk(
+  bytes: Uint8Array,
+): { header: VideoChunkHeader; data: Uint8Array } | null {
+  const decoded = decodeBinary(VIDEO_MAGIC, bytes);
+  if (!decoded) return null;
+  const header = videoChunkHeaderSchema.safeParse(decoded.header);
+  return header.success ? { header: header.data, data: decoded.payload } : null;
+}
+
+export const audioChunkHeaderSchema = z.object({
+  seq: z.number().int().min(0),
+  sampleRate: z.number().int().min(8000).max(48_000),
+  channels: z.number().int().min(1).max(2),
+});
+
+export type AudioChunkHeader = z.infer<typeof audioChunkHeaderSchema>;
+
+/** The largest audio payload in one chunk (about a quarter of a second of stereo 48 kHz). */
+export const AUDIO_CHUNK_BYTES = 48_000;
+
+/** `A`, version, big-endian header length, the JSON header, then the samples. */
+export function encodeAudioChunk(header: AudioChunkHeader, samples: Uint8Array): Uint8Array {
+  return encodeBinary(AUDIO_MAGIC, header, samples);
+}
+
+/** Null for anything that isn't a well-formed audio chunk. The samples are a view, not a copy. */
+export function decodeAudioChunk(
+  bytes: Uint8Array,
+): { header: AudioChunkHeader; samples: Uint8Array } | null {
+  const decoded = decodeBinary(AUDIO_MAGIC, bytes);
+  if (!decoded) return null;
+  const header = audioChunkHeaderSchema.safeParse(decoded.header);
+  if (!header.success || decoded.payload.length > AUDIO_CHUNK_BYTES) return null;
+  if (decoded.payload.length % (2 * header.data.channels) !== 0) return null;
+  return { header: header.data, samples: decoded.payload };
 }
 
 /** `B`, version, big-endian header length, the JSON header, then the JPEG bytes. */

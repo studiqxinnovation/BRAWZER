@@ -13,18 +13,31 @@ import {
 import { id, timestamptz } from "./columns.ts";
 
 /** Must match `accountRoles` in @brawzer/contracts (a test in the API enforces this). */
-export const accountRole = pgEnum("account_role", ["user", "admin"]);
+export const accountRole = pgEnum("account_role", [
+  "user",
+  "admin",
+  "care",
+  "billing",
+  "sales",
+  "technical",
+  "security",
+]);
 
 export const users = pgTable("users", {
   id: id(),
   /** Stored trimmed and lower-cased; unique. */
   email: text().notNull().unique("users_email_unique"),
+  /** What the person asked to be called, given at sign-up; null on older accounts. */
+  name: text(),
   role: accountRole().notNull().default("user"),
   /** The plan in force (Phase 6): the free plan, or one from the subscription or an administrator. */
   planCode: text().notNull().default("free"),
   planSource: text().notNull().default("free"),
   /** An administrator's reason for setting the plan. */
   planNote: text(),
+  /** Suspended by staff (Phase 11): sign-in refused, sessions ended, data kept. */
+  suspendedAt: timestamptz(),
+  suspendedReason: text(),
   emailVerifiedAt: timestamptz(),
   /** argon2id hash. Nullable for future passkey-only accounts. */
   passwordHash: text(),
@@ -33,8 +46,26 @@ export const users = pgTable("users", {
    * Passkeys store this instead of the email address or database ID.
    */
   webauthnUserId: text().unique("users_webauthn_user_id_unique"),
+  /**
+   * Which optional emails the person wants (`usageNotices`, `teamUpdates`);
+   * a key left out means yes. Security and billing emails are always sent.
+   */
+  emailPrefs: jsonb().$type<Record<string, boolean>>().notNull().default({}),
   createdAt: timestamptz().notNull().defaultNow(),
   updatedAt: timestamptz().notNull().defaultNow(),
+});
+
+/**
+ * Addresses email can't be delivered to, as the email provider's webhooks
+ * reported (a hard bounce, or the person marked Brawzer as spam). Nothing
+ * is sent there again until the address is changed or the entry is cleared.
+ */
+export const emailSuppressions = pgTable("email_suppressions", {
+  /** Lower-cased. */
+  email: text().primaryKey(),
+  reason: text().notNull(),
+  detail: text(),
+  createdAt: timestamptz().notNull().defaultNow(),
 });
 
 /**
@@ -61,6 +92,12 @@ export const authSessions = pgTable(
     authMethod: text().notNull().default("password"),
     /** When the owner last proved who they are; sensitive actions need this to be recent. */
     reauthenticatedAt: timestamptz().notNull().defaultNow(),
+    /**
+     * How: the sign-in's own method at first (password, password_totp,
+     * passkey, phone, sign_up_link), then "password" or "passkey" as they
+     * confirm. Approving a phone sign-in needs "passkey" (Phase 8, idea 11).
+     */
+    reauthMethod: text().notNull().default("password"),
     userAgent: text(),
     ipAddress: text(),
     createdAt: timestamptz().notNull().defaultNow(),
@@ -69,6 +106,12 @@ export const authSessions = pgTable(
     expiresAt: timestamptz().notNull(),
     revokedAt: timestamptz(),
     revokedReason: text(),
+    /**
+     * Set while the owner has locked this sign-in (the desktop's lock
+     * screen); cleared when they confirm it's them. Nothing counts as
+     * activity meanwhile, so a locked shared computer still times out.
+     */
+    lockedAt: timestamptz(),
   },
   (table) => [
     index("auth_sessions_user_id_idx").on(table.userId),
@@ -81,6 +124,11 @@ export const emailTokenPurpose = pgEnum("email_token_purpose", [
   "reset_password",
   "change_email",
   "undo_email_change",
+  /** One-click "stop these emails" from an optional notice's footer. */
+  "unsubscribe",
+  /** Account recovery: confirm the request, or cancel it as the real owner. */
+  "recovery_confirm",
+  "recovery_cancel",
 ]);
 
 /** Single-use links sent by email. Only the token's hash is stored. */
@@ -147,6 +195,9 @@ export const securityEventType = pgEnum("security_event_type", [
   "browser.session_ended",
   "browser.file_saved",
   "browser.file_sent",
+  "browser.clipboard_copied",
+  "browser.clipboard_pasted",
+  "browser.page_reported",
   "profile.data_cleared",
   "billing.subscription_started",
   "billing.subscription_changed",
@@ -154,6 +205,21 @@ export const securityEventType = pgEnum("security_event_type", [
   "admin.plan_changed",
   "phone_sign_in.approved",
   "sign_in.new_device",
+  "team.created",
+  "team.joined",
+  "team.left",
+  "team.member_removed",
+  "team.role_changed",
+  "team.ownership_transferred",
+  "team.deleted",
+  "team.invitation_sent",
+  "profile.history_cleared",
+  "session.locked",
+  "session.unlocked",
+  "recovery.requested",
+  "recovery.cancelled",
+  "recovery.released",
+  "recovery.denied",
 ]);
 
 /**

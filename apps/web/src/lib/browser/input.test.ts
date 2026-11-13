@@ -53,9 +53,19 @@ describe("input helpers", () => {
   });
 
   it("clamps the viewport to what the engine streams", () => {
-    expect(fitViewport(3000, 2000)).toEqual({ width: 1920, height: 1080 });
-    expect(fitViewport(100.7, 100)).toEqual({ width: 320, height: 240 });
-    expect(fitViewport(1280.9, 800.2)).toEqual({ width: 1280, height: 800 });
+    expect(fitViewport(3000, 2000)).toEqual({ width: 1920, height: 1080, scale: 1 });
+    expect(fitViewport(100.7, 100)).toEqual({ width: 320, height: 240, scale: 1 });
+    expect(fitViewport(1280.9, 800.2)).toEqual({ width: 1280, height: 800, scale: 1 });
+  });
+
+  it("asks for a still page as sharp as the screen, within the limit and the pixel budget", () => {
+    expect(fitViewport(1280, 800, 2)).toEqual({ width: 1280, height: 800, scale: 2 });
+    expect(fitViewport(1280, 800, 3)).toEqual({ width: 1280, height: 800, scale: 2 });
+    expect(fitViewport(1280, 800, 1.5)).toEqual({ width: 1280, height: 800, scale: 1.5 });
+    expect(fitViewport(1280, 800, 0.8)).toEqual({ width: 1280, height: 800, scale: 1 });
+    expect(fitViewport(1280, 800, Number.NaN)).toEqual({ width: 1280, height: 800, scale: 1 });
+    // 1920 × 1080 at 2 would be 8.3 million pixels: the budget allows 1.7.
+    expect(fitViewport(1920, 1080, 2)).toEqual({ width: 1920, height: 1080, scale: 1.7 });
   });
 
   it("shortens addresses for display", () => {

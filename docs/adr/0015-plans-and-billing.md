@@ -59,6 +59,8 @@ see it.
 
 ## Consequences
 
+- **Trials and promotion codes** (Phase 8, idea 21): a plan may name `trialDays`; checkout then passes Stripe's own `trial_period_days`, for an account's first subscription only (one that has had a subscription pays from day one). Promotion codes are Stripe's: checkout accepts them, and they are created in Stripe's dashboard, never in Brawzer's code or site. The Account page offers "Try Plus free for 14 days" while the account is eligible and says nothing is charged before the trial ends.
+
 - Nothing in the code names a price, and no price appears on the public site; the honest "no prices yet" stays until a decision exists.
 - A missing plan in `BILLING_PLANS` (removed from the configuration) reads as free at every limit check; Stripe keeps billing until the subscription is cancelled there.
 - The monthly browsing cap counts live sessions to "now", so the Account page is right mid-session; the check happens when a session starts, not during one.

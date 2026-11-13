@@ -7,7 +7,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { z } from "zod";
-import { PageContainer, PageHeader, Panel, Unavailable } from "@/components/app-shell/page";
+import {
+  PageContainer,
+  PageHeader,
+  Panel,
+  StatCard,
+  StatCards,
+  Unavailable,
+} from "@/components/app-shell/page";
+import { formatBytes } from "@/lib/drive";
+import { DriveActions } from "@/components/drive/drive-actions";
+import { TrashPanel } from "@/components/drive/trash-panel";
 import { DriveManager } from "@/components/drive/drive-manager";
 import { serverGet, signInAgain } from "@/lib/server-api";
 import { getSession } from "@/lib/session";
@@ -21,15 +31,14 @@ async function Contents({ searchParams }: Pick<PageProps<"/app/drive">, "searchP
   const rawFolder = typeof params.folder === "string" ? params.folder : null;
   const folderId = rawFolder && folderIdSchema.safeParse(rawFolder).success ? rawFolder : null;
   const query = typeof params.q === "string" ? params.q.trim().slice(0, 100) : "";
-  const search = query
-    ? `?${new URLSearchParams({ q: query }).toString()}`
-    : folderId
-      ? `?${new URLSearchParams({ folderId }).toString()}`
-      : "";
+  const space = params.space === "team" ? "team" : "personal";
+  const fileParams = new URLSearchParams(query ? { q: query } : folderId ? { folderId } : {});
+  if (space === "team") fileParams.set("space", "team");
+  const search = fileParams.size > 0 ? `?${fileParams.toString()}` : "";
 
   const [state, overview, files] = await Promise.all([
     getSession(),
-    serverGet("/drive", driveOverviewSchema),
+    serverGet(space === "team" ? "/drive?space=team" : "/drive", driveOverviewSchema),
     serverGet(`/drive/files${search}`, driveFileListSchema),
   ]);
   if (
@@ -66,26 +75,60 @@ async function Contents({ searchParams }: Pick<PageProps<"/app/drive">, "searchP
     );
   }
 
+  const usage = overview.data.usage;
   return (
-    <DriveManager
-      folders={overview.data.folders}
-      files={files.data.files}
-      usage={overview.data.usage}
-      currentFolderId={query ? null : folderId}
-      query={query}
-      sharedComputer={!state.data.session.persistent}
-      renderedAt={files.receivedAt}
-    />
+    <>
+      <StatCards>
+        <StatCard label="Storage used" value={formatBytes(usage.usedBytes)}>
+          <span
+            className="ad-stat-bar"
+            role="meter"
+            aria-label="Drive storage used"
+            aria-valuemin={0}
+            aria-valuemax={usage.limitBytes}
+            aria-valuenow={usage.usedBytes}
+          >
+            <span
+              style={{
+                width: `${String(Math.min(100, (usage.usedBytes / usage.limitBytes) * 100))}%`,
+              }}
+            />
+          </span>
+          {formatBytes(Math.max(0, usage.limitBytes - usage.usedBytes))} free of{" "}
+          {formatBytes(usage.limitBytes)}
+        </StatCard>
+        <StatCard label="Files" value={String(usage.fileCount)}>
+          Downloads, saved pages, screenshots and uploads, in {String(usage.folderCount)} folder
+          {usage.folderCount === 1 ? "" : "s"}
+        </StatCard>
+        <StatCard label="Safety" value="Scanned">
+          Every file is checked for malware and stored encrypted, each with its own key.
+        </StatCard>
+      </StatCards>
+      <DriveManager
+        folders={overview.data.folders}
+        files={files.data.files}
+        usage={overview.data.usage}
+        currentFolderId={query ? null : folderId}
+        query={query}
+        sharedComputer={!state.data.session.persistent}
+        renderedAt={files.receivedAt}
+        space={overview.data.space}
+        team={overview.data.team}
+      />
+      <TrashPanel space={overview.data.space} />
+    </>
   );
 }
 
 export default function DrivePage({ searchParams }: PageProps<"/app/drive">) {
   return (
     <PageContainer>
-      <PageHeader title="Drive">
+      <PageHeader title="Drive" action={<DriveActions />}>
         <p>
           Files that stay with your account, not the computer. Everything is scanned for malware and
-          stored encrypted; saving a file to a computer is a deliberate step.
+          stored encrypted; saving a file to a computer is a deliberate step. In a team, its shared
+          Drive is here too.
         </p>
       </PageHeader>
       <div className="flex flex-col gap-10">

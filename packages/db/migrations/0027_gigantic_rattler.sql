@@ -1,0 +1,1 @@
+ALTER TYPE "public"."browser_engine" ADD VALUE 'chrome';

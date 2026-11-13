@@ -1,3 +1,9 @@
+import {
+  CLOSED_REPORT_DAYS,
+  DRIVE_TRASH_DAYS,
+  HISTORY_LIMITS,
+  REPORT_PICTURE_DAYS,
+} from "@brawzer/contracts";
 import type { DatabaseHandle } from "@brawzer/db";
 import {
   Inject,
@@ -12,6 +18,8 @@ import type { AppConfig } from "../config/env.js";
 import { DATABASE, DatabaseModule } from "../database/database.module.js";
 import { StorageModule } from "../storage/storage.module.js";
 import { OrphanService } from "./orphans.js";
+import { RewrapService } from "./rewrap.js";
+import { MetricsService } from "../metrics/metrics.service.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -21,6 +29,11 @@ export const RETENTION = {
   usedLinkDays: 7,
   unconfirmedAccountDays: 30,
   knownDeviceDays: 90,
+  /** A reported page's picture (Phase 8, idea 12), when nobody closed the report sooner. */
+  reportPictureDays: REPORT_PICTURE_DAYS,
+  closedReportDays: CLOSED_REPORT_DAYS,
+  /** Drive files in Trash; their objects go with the orphan sweep. */
+  trashedFileDays: DRIVE_TRASH_DAYS,
 } as const;
 
 /** Session-level advisory lock, so only one API instance runs the job at a time. */
@@ -33,14 +46,22 @@ export interface RetentionResult {
   challenges: number;
   knownDevices: number;
   unconfirmedAccounts: number;
+  reportPictures: number;
+  reports: number;
+  teamInvitations: number;
+  historyEntries: number;
+  savedTabs: number;
+  trashedFiles: number;
 }
 
 const logger = new Logger("Retention");
 
 /**
  * Deletes data Brawzer no longer needs: security history past its retention
- * period, sessions and email links that ended long ago, and sign-ups that
- * were never confirmed (possibly someone else's address).
+ * period, sessions and email links that ended long ago, sign-ups that were
+ * never confirmed (possibly someone else's address), and reported pages'
+ * pictures and old closed reports, team invitations nobody took up, and
+ * history entries and saved tabs past their time (ADR 0020).
  */
 @Injectable()
 export class RetentionService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -50,9 +71,27 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(OrphanService) private readonly orphans: OrphanService,
+    @Inject(RewrapService) private readonly rewrap: RewrapService,
+    @Inject(MetricsService) private readonly metrics: MetricsService,
   ) {}
 
+  private lastRun: Date | null = null;
+
+  /** When retention last ran in this process, for the console. */
+  get lastRunAt(): Date | null {
+    return this.lastRun;
+  }
+
   onApplicationBootstrap(): void {
+    this.metrics.gauge(
+      "brawzer_maintenance_last_run_timestamp_seconds",
+      "When retention last ran here, as a Unix time; 0 before the first run.",
+      () =>
+        Promise.resolve([{ value: this.lastRun ? Math.floor(this.lastRun.getTime() / 1000) : 0 }]),
+    );
+    this.metrics.gauge("brawzer_build_info", "The running version, as a label.", () =>
+      Promise.resolve([{ labels: { version: this.config.version }, value: 1 }]),
+    );
     // A few minutes after start, then every 6 hours. Timers never keep the process alive.
     const first = setTimeout(() => void this.runSafely(), 5 * 60_000);
     const repeat = setInterval(() => void this.runSafely(), 6 * 60 * 60_000);
@@ -69,10 +108,16 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
     try {
       const result = await this.run();
       if (result) {
+        this.lastRun = new Date();
         logger.log(`Removed expired data: ${JSON.stringify(result)}`);
         // Same lock holder, same cadence: objects nothing refers to any more.
         const orphans = await this.orphans.run();
         if (orphans.removed > 0) logger.log(`Orphaned objects: ${JSON.stringify(orphans)}`);
+        // And any secret still wrapped by a previous key-encryption key.
+        const rewrapped = await this.rewrap.run();
+        if (rewrapped && (Object.keys(rewrapped.rewrapped).length > 0 || rewrapped.failed > 0)) {
+          logger.log(`Re-wrapped secrets: ${JSON.stringify(rewrapped)}`);
+        }
       }
     } catch (error) {
       logger.error(`Retention run failed: ${error instanceof Error ? error.message : "unknown"}`);
@@ -118,6 +163,39 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
              )`,
           [before(RETENTION.unconfirmedAccountDays), now],
         );
+        const pictures = await client.query(
+          `update page_reports set picture = null
+           where picture is not null and (closed_at is not null or created_at < $1)`,
+          [before(RETENTION.reportPictureDays)],
+        );
+        const reports = await client.query("delete from page_reports where closed_at < $1", [
+          before(RETENTION.closedReportDays),
+        ]);
+        const trashed = await client.query("delete from drive_files where trashed_at < $1", [
+          before(RETENTION.trashedFileDays),
+        ]);
+        const invitations = await client.query(
+          "delete from team_invitations where expires_at < $1",
+          [now],
+        );
+        // Pages not visited in 90 days, and each profile's oldest beyond its 5000.
+        const stale = await client.query("delete from profile_history where last_visited_at < $1", [
+          before(HISTORY_LIMITS.retentionDays),
+        ]);
+        const overflow = await client.query(
+          `delete from profile_history h using (
+             select id from (
+               select id, row_number() over (partition by profile_id order by last_visited_at desc) as n
+               from profile_history
+             ) ranked where ranked.n > $1
+           ) old where h.id = old.id`,
+          [HISTORY_LIMITS.maxEntries],
+        );
+        const tabs = await client.query(
+          `update profiles set open_tabs = null, open_tabs_at = null, open_tabs_handed_off = false
+           where open_tabs_at < $1`,
+          [before(HISTORY_LIMITS.openTabsDays)],
+        );
         return {
           securityEvents: events.rowCount ?? 0,
           sessions: sessions.rowCount ?? 0,
@@ -125,6 +203,12 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
           challenges: challenges.rowCount ?? 0,
           knownDevices: devices.rowCount ?? 0,
           unconfirmedAccounts: accounts.rowCount ?? 0,
+          reportPictures: pictures.rowCount ?? 0,
+          reports: reports.rowCount ?? 0,
+          teamInvitations: invitations.rowCount ?? 0,
+          historyEntries: (stale.rowCount ?? 0) + (overflow.rowCount ?? 0),
+          savedTabs: tabs.rowCount ?? 0,
+          trashedFiles: trashed.rowCount ?? 0,
         };
       } finally {
         await client.query("select pg_advisory_unlock($1)", [LOCK_KEY]);
@@ -137,7 +221,7 @@ export class RetentionService implements OnApplicationBootstrap, OnApplicationSh
 
 @Module({
   imports: [DatabaseModule, StorageModule],
-  providers: [RetentionService, OrphanService],
-  exports: [RetentionService],
+  providers: [RetentionService, OrphanService, RewrapService],
+  exports: [RetentionService, RewrapService],
 })
 export class MaintenanceModule {}

@@ -11,6 +11,9 @@ describe("strict content security policy", () => {
     for (const path of [
       "/app",
       "/app/sessions",
+      "/admin",
+      "/admin/sign-in",
+      "/admin/customers/1",
       "/sign-in",
       "/verify-email",
       "/reset-password",
@@ -19,7 +22,14 @@ describe("strict content security policy", () => {
     ]) {
       expect(needsStrictCsp(path), path).toBe(true);
     }
-    for (const path of ["/", "/apple-icon", "/application", "/security", "/sign-input"]) {
+    for (const path of [
+      "/",
+      "/apple-icon",
+      "/application",
+      "/security",
+      "/sign-input",
+      "/administration",
+    ]) {
       expect(needsStrictCsp(path), path).toBe(false);
     }
   });

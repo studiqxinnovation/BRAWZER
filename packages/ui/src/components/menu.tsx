@@ -1,6 +1,8 @@
 "use client";
 
+import { ContextMenu as BaseContextMenu } from "@base-ui/react/context-menu";
 import { Menu as BaseMenu } from "@base-ui/react/menu";
+import { Menubar as BaseMenubar } from "@base-ui/react/menubar";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../lib/cn";
 import { popupSurface } from "../lib/popup";
@@ -38,6 +40,31 @@ export function MenuContent({
         </BaseMenu.Popup>
       </BaseMenu.Positioner>
     </BaseMenu.Portal>
+  );
+}
+
+/** A row of menus, as a desktop app's menu bar: arrow keys move between them. */
+export const Menubar = BaseMenubar;
+
+/** A menu opened by right-clicking (or long-pressing) an area; its items are MenuItems. */
+export const ContextMenu = BaseContextMenu.Root;
+export const ContextMenuTrigger = BaseContextMenu.Trigger;
+
+export function ContextMenuContent({
+  className,
+  children,
+}: {
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <BaseContextMenu.Portal>
+      <BaseContextMenu.Positioner className="z-50 outline-none">
+        <BaseContextMenu.Popup className={cn(popupSurface, "min-w-48 p-1", className)}>
+          {children}
+        </BaseContextMenu.Popup>
+      </BaseContextMenu.Positioner>
+    </BaseContextMenu.Portal>
   );
 }
 

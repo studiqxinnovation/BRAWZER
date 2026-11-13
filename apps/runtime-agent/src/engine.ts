@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { open, rm } from "node:fs/promises";
 import path from "node:path";
 import {
+  CLIPBOARD_MAX_CHARS,
   BROWSER_PROTOCOL_VERSION,
   type ChosenFile,
   encodeFrame,
@@ -12,12 +13,25 @@ import {
   type TransferChunkHeader,
   type TransferKind,
   type TransferMessage,
+  type VideoCodec,
   type Viewport,
+  type NavigationError,
+  encodeVideoChunk,
 } from "@brawzer/contracts";
 import { BEE_VERSION } from "./bee.ts";
+import type { ChromiumBrand } from "./config.ts";
 import type { CdpConnection } from "./cdp.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
+import { FocusReporter, IconReporter, PointerReporter } from "./page-reporters.ts";
+import { FrameEncoder } from "./video.ts";
+import {
+  fetchImageScript,
+  FIND_STOP_SCRIPT,
+  findScript,
+  selectionScript,
+  zoomScript,
+} from "./page-tools.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
 
 export type { EngineOptions, Viewer } from "./engine-types.ts";
@@ -42,7 +56,60 @@ interface Chooser {
   dir: string;
   /** By transfer id, once the relay has said which files come. */
   writers: Map<string, ChunkWriter>;
+  /** A drop onto the page at a point, rather than a file chooser's answer. */
+  drop?: { x: number; y: number };
 }
+
+/** Keys after which what has focus may have changed. */
+const FOCUS_KEYS = new Set([
+  "Tab",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Enter",
+  " ",
+  "Escape",
+  "Home",
+  "End",
+]);
+
+/** A name for a saved image: the address's last part, with an extension its type suggests. */
+export function imageFilename(url: string, type?: string): string {
+  let base = "image";
+  try {
+    const last = decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop() ?? "");
+    if (last)
+      base =
+        last
+          .replace(/[\p{Cc}/\\]/gu, " ")
+          .trim()
+          .slice(0, 120) || "image";
+  } catch {
+    // Not an address worth naming after.
+  }
+  const extension = type
+    ? {
+        "image/png": "png",
+        "image/jpeg": "jpg",
+        "image/gif": "gif",
+        "image/webp": "webp",
+        "image/svg+xml": "svg",
+        "image/avif": "avif",
+        "image/x-icon": "ico",
+      }[type]
+    : undefined;
+  if (extension && !/\.[a-z0-9]{2,5}$/i.test(base)) base = `${base}.${extension}`;
+  return base;
+}
+
+/** Chromium's `net::ERR_NAME_NOT_RESOLVED` → `ERR_NAME_NOT_RESOLVED`, within the protocol's size. */
+function errorCode(text: string): string {
+  return text.replace(/^net::/, "").slice(0, 64);
+}
+
+/** A failed tunnel is the proxy refusing; the proxy's own reason says why. */
+const TUNNEL_FAILURES = new Set(["ERR_TUNNEL_CONNECTION_FAILED", "ERR_PROXY_CONNECTION_FAILED"]);
 
 interface Tab {
   id: string;
@@ -54,9 +121,20 @@ interface Tab {
   canGoBack: boolean;
   canGoForward: boolean;
   security: TabSecurity;
+  /** The engine is showing its own error page for this address. */
+  error: NavigationError | null;
+  /** What the last navigate command answered, for an error page that names no code yet. */
+  lastNavigateError: string;
+  /** Brawzer's layout zoom for this tab, re-applied as pages load. */
+  zoom: number;
+  /** Brawzer's reader view is showing in place of the page. */
+  reader: boolean;
   screencasting: boolean;
   /** Frames sent to the viewer but not yet drawn, by frame id → engine's screencast session id. */
   inFlight: Map<number, string>;
+  /** The site icon last sent for this tab, and where it came from. */
+  icon: string | null;
+  iconUrl: string | null;
 }
 
 interface TargetInfo {
@@ -69,7 +147,30 @@ interface TargetInfo {
 }
 
 const MAX_TABS = 16;
+/** Frames of a moving page: at scale 1, small enough to keep up. */
 const JPEG_QUALITY = 60;
+/** The one frame of a page that has stopped: at the viewer's pixel ratio, for reading. */
+const SHARP_QUALITY = 85;
+/** No frame for this long means the page has stopped moving. */
+const STILL_MS = 300;
+/**
+ * What counts as the page moving once it has its sharp picture: this many
+ * frames within the window. A lone frame now and then (a blinking cursor, a
+ * clock) refreshes the sharp picture instead of trading it for a soft one.
+ */
+const MOTION_FRAMES = 3;
+const MOTION_WINDOW_MS = 700;
+/** Sharp pictures refreshed for lone frames come no closer together than this. */
+const SHARP_MIN_INTERVAL_MS = 1_000;
+/** A sharp frame that takes longer than this to be drawn says the connection can't afford them. */
+const SHARP_SLOW_MS = 2_500;
+/** How long sharp frames pause after a slow one: a little, then longer the more slow ones in a row. */
+const SHARP_BACKOFF_MS = 3_000;
+const SHARP_BACKOFF_MAX_MS = 30_000;
+/** In a tab's in-flight map: a sharp frame, which the engine has nothing to acknowledge for. */
+const SHARP_FRAME = "";
+/** A sharp frame unacknowledged for this long is given up on, so the next one isn't waited for. */
+const SHARP_LOST_MS = 8_000;
 /**
  * How often the active tab's title is re-read while someone is watching. The
  * engine reports titles on navigation but not when a page's script changes
@@ -112,9 +213,77 @@ function hostOf(url: string): string {
   }
 }
 
+/** What `Sec-CH-UA-*` and `navigator.userAgentData` say (CDP's UserAgentMetadata). */
+export interface UserAgentMetadata {
+  brands: { brand: string; version: string }[];
+  fullVersionList: { brand: string; version: string }[];
+  fullVersion: string;
+  platform: string;
+  platformVersion: string;
+  architecture: string;
+  model: string;
+  mobile: boolean;
+  bitness: string;
+}
+
+/** The name each Chromium browser gives itself in its brand hints, beside "Chromium". */
+const BRAND_NAMES: Partial<Record<ChromiumBrand, string>> = {
+  chrome: "Google Chrome",
+  edge: "Microsoft Edge",
+};
+
+/**
+ * What websites are told the browser is. Running without a window is how
+ * Brawzer runs it, not what it is: the "Headless" marker goes, so Chrome and
+ * Edge read as the browsers they are, Chromium as Chromium, and Bee as
+ * Chromium with its own name after. Brand hints match, as the browser would
+ * send them with a window.
+ */
+export function browserIdentity(
+  version: { product: string; userAgent: string },
+  brand: ChromiumBrand,
+  arch: string = process.arch,
+): { userAgent: string; metadata: UserAgentMetadata | null } {
+  const base = version.userAgent
+    .replace("HeadlessChrome/", "Chrome/")
+    .replace("HeadlessEdg/", "Edg/");
+  const full = /\/([\d.]+)$/.exec(version.product)?.[1];
+  const userAgent =
+    brand === "bee"
+      ? `${base} Bee/${BEE_VERSION}`
+      : brand === "edge" && !base.includes(" Edg/") && full
+        ? `${base} Edg/${full}`
+        : base;
+  const major = full?.split(".")[0];
+  if (!full || !major) return { userAgent, metadata: null };
+  const own = BRAND_NAMES[brand];
+  const named = (versionOf: (v: string) => string) => [
+    ...(own ? [{ brand: own, version: versionOf(full) }] : []),
+    { brand: "Chromium", version: versionOf(full) },
+    { brand: "Not_A Brand", version: versionOf("24.0.0.0") },
+  ];
+  return {
+    userAgent,
+    metadata: {
+      brands: named((v) => v.split(".")[0] ?? v),
+      fullVersionList: named((v) => v),
+      fullVersion: full,
+      platform: "Linux",
+      platformVersion: "",
+      architecture: arch === "arm64" || arch === "arm" ? "arm" : "x86",
+      model: "",
+      mobile: false,
+      bitness: arch === "arm" || arch === "ia32" ? "32" : "64",
+    },
+  };
+}
+
 /** The engine's own UI surfaces (omnibox popups and the like) are never tabs. */
 const isInternal = (url: string) =>
-  /^(chrome|devtools|chrome-untrusted|chrome-extension|chrome-search):/.test(url);
+  /^(chrome|edge|devtools|chrome-untrusted|chrome-extension|chrome-search|extension):/.test(url);
+
+/** The browser's own pages a profile with its account on may see as tabs (ADR 0021). */
+const ACCOUNT_PAGES = /^(chrome:\/\/(password-manager|settings)|edge:\/\/(wallet|settings))(\/|$)/;
 
 const securityOf = (state: string): TabSecurity => {
   if (state === "secure") return "secure";
@@ -146,7 +315,44 @@ export class BrowserEngine implements Engine {
   private handingOver = false;
   private readonly choosers = new Map<string, Chooser>();
   private titleTimer: NodeJS.Timeout | null = null;
+  private readonly pointer = new PointerReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (message) => this.viewer?.send(message),
+    (tab) => this.viewer !== null && tab.id === this.activeId && this.tabs.has(tab.id),
+  );
+  private readonly icons = new IconReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (url) => this.options.fetchIcon(url),
+    (message) => this.viewer?.send(message),
+  );
+  private readonly focus = new FocusReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (message) => this.viewer?.send(message),
+    (tab) => this.viewer !== null && tab.id === this.activeId && this.tabs.has(tab.id),
+  );
+  /** The moving page as video, when the viewer decodes it and the container can encode it. */
+  private encoder: FrameEncoder | null = null;
+  private videoSeq = 0;
+  /** After a dropped chunk, nothing goes until the next key frame: the viewer couldn't use it. */
+  private videoNeedsKey = false;
+  private viewerCodecs: readonly string[] = [];
+  /** Counts down from the last frame of a moving page to its sharp frame. */
+  private stillTimer: NodeJS.Timeout | null = null;
+  /** The sharp frame on its way to the viewer, until it reports it drawn. */
+  private sharpInFlight: { tabId: string; frameId: number; sentAt: number } | null = null;
+  /** Whether the page showing now has had its sharp frame. */
+  private sharpDone = false;
+  /** The sharp picture is what the viewer shows: lone frames refresh it rather than replace it. */
+  private sharpHold = false;
+  private sharpSentAt = 0;
+  /** When the last few screencast frames arrived, to tell sustained movement from a lone frame. */
+  private frameTimes: number[] = [];
+  /** Until when sharp frames are skipped because the last one was slow to arrive, and how many were. */
+  private sharpBackoffUntil = 0;
+  private sharpSlowCount = 0;
   private userAgent = "";
+  private userAgentMetadata: UserAgentMetadata | null = null;
+  private readonly loadedExtensions: string[] = [];
 
   constructor(
     private readonly cdp: CdpConnection,
@@ -219,10 +425,24 @@ export class BrowserEngine implements Engine {
 
     this.cdp.on("Page.frameNavigated", (params, sessionId) => {
       const tab = this.tabBySession(sessionId);
-      const { frame } = params as { frame: { id: string; parentId?: string; url: string } };
+      const { frame } = params as {
+        frame: { id: string; parentId?: string; url: string; unreachableUrl?: string };
+      };
       if (!tab || frame.parentId) return;
       tab.mainFrameId = frame.id;
-      tab.url = frame.url;
+      // An error page keeps the address that failed; Brawzer draws the explanation.
+      if (frame.unreachableUrl) {
+        tab.url = frame.unreachableUrl;
+        tab.error = this.explained({
+          url: frame.unreachableUrl,
+          code: errorCode(tab.lastNavigateError),
+        });
+        tab.lastNavigateError = "";
+        void this.readErrorCode(tab);
+      } else {
+        tab.url = frame.url;
+        tab.error = null;
+      }
       void this.refreshHistory(tab);
     });
     this.cdp.on("Page.navigatedWithinDocument", (params, sessionId) => {
@@ -236,6 +456,7 @@ export class BrowserEngine implements Engine {
       if (!tab) return;
       if ((params as { frameId: string }).frameId !== tab.mainFrameId) return;
       tab.loading = true;
+      tab.reader = false;
       this.queueSnapshot();
     });
     this.cdp.on("Page.frameStoppedLoading", (params, sessionId) => {
@@ -244,10 +465,13 @@ export class BrowserEngine implements Engine {
       if ((params as { frameId: string }).frameId !== tab.mainFrameId) return;
       tab.loading = false;
       void this.refreshTitle(tab);
+      void this.icons.refresh(tab);
     });
     this.cdp.on("Page.loadEventFired", (_params, sessionId) => {
       const tab = this.tabBySession(sessionId);
-      if (tab) void this.refreshTitle(tab);
+      if (!tab) return;
+      void this.refreshTitle(tab);
+      if (tab.zoom !== 1) void this.evaluate(tab, zoomScript(tab.zoom)).catch(() => undefined);
     });
     this.cdp.on("Security.visibleSecurityStateChanged", (params, sessionId) => {
       const tab = this.tabBySession(sessionId);
@@ -315,8 +539,10 @@ export class BrowserEngine implements Engine {
       "Browser.getVersion",
     );
     this.version = version.product;
-    // Bee is Brawzer's own browser: it says so, after what it is built on.
-    this.userAgent = `${version.userAgent} Bee/${BEE_VERSION}`;
+    // Bee is Brawzer's own browser: it says so, after what it is built on. Chrome is as Google ships it.
+    const identity = browserIdentity(version, this.options.brand ?? "bee");
+    this.userAgent = identity.userAgent;
+    this.userAgentMetadata = identity.metadata;
     // Downloads land in the scratch directory under their id and are handed to Drive.
     await this.cdp.send("Browser.setDownloadBehavior", {
       behavior: "allowAndName",
@@ -334,22 +560,54 @@ export class BrowserEngine implements Engine {
     while (this.activeId === null && Date.now() < deadline + 5_000) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
+    await this.installAndTidy();
     this.ready = true;
   }
 
-  attachViewer(viewer: Viewer, viewport: Viewport): void {
+  /**
+   * Installs the profile's extensions once the first tab exists, then closes
+   * the tabs they open while being installed (welcome and help pages): every
+   * session installs afresh, so those would otherwise open every time.
+   */
+  private async installAndTidy(): Promise<void> {
+    if (this.options.extensions.length === 0) return;
+    const before = new Set(this.order);
+    await this.installExtensions();
+    if (this.loadedExtensions.length === 0) return;
+    const closed = new Set<string>();
+    const until = Date.now() + 2_000;
+    while (Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      for (const id of [...this.order]) {
+        if (before.has(id) || closed.has(id)) continue;
+        closed.add(id);
+        log("info", "closed a tab an extension opened on install");
+        await this.cdp.send("Target.closeTarget", { targetId: id }).catch(() => undefined);
+      }
+    }
+    const first = [...before].find((id) => this.tabs.has(id));
+    if (first && this.activeId !== first) await this.activate(first);
+  }
+
+  attachViewer(viewer: Viewer, viewport: Viewport, codecs: readonly VideoCodec[]): void {
     this.viewer = viewer;
+    this.viewerCodecs = codecs;
+    this.stopVideo();
     void this.setViewport(viewport).then(() => {
       if (this.viewer !== viewer) return;
       viewer.send({
         type: "welcome",
         protocol: BROWSER_PROTOCOL_VERSION,
-        engine: { name: "bee", version: this.version.slice(0, 64) },
+        engine: { name: this.options.brand ?? "bee", version: this.version.slice(0, 64) },
         tabs: this.snapshot(),
         activeTabId: this.activeId ?? this.order[0] ?? "",
+        extensions: this.loadedExtensions,
       });
       void this.syncScreencasts();
       void this.handOver();
+      this.pointer.reset();
+      this.focus.reset();
+      this.icons.resend(this.tabs.values());
     });
     this.titleTimer ??= setInterval(() => {
       const active = this.activeTab();
@@ -362,7 +620,54 @@ export class BrowserEngine implements Engine {
     this.viewer = null;
     if (this.titleTimer) clearInterval(this.titleTimer);
     this.titleTimer = null;
+    this.clearStill();
+    this.pointer.reset();
+    this.stopVideo();
     void this.syncScreencasts();
+  }
+
+  // ── Video: the moving page encoded, the still page a picture ──────────
+
+  private get videoWanted(): boolean {
+    return this.options.video && this.viewerCodecs.includes("vp8");
+  }
+
+  /** The encoder for the page's current size, started as needed; a new size gets a new one. */
+  private videoEncoder(): FrameEncoder | null {
+    if (!this.videoWanted) return null;
+    const { width, height } = this.viewport;
+    if (this.encoder && (this.encoder.width !== width || this.encoder.height !== height)) {
+      this.stopVideo();
+    }
+    if (!this.encoder) {
+      const encoder = new FrameEncoder(width, height, (frame) => {
+        if (this.encoder !== encoder) return;
+        this.sendVideo(frame.key, frame.data);
+      });
+      encoder.start();
+      this.encoder = encoder;
+      this.videoNeedsKey = true;
+    }
+    return this.encoder;
+  }
+
+  private sendVideo(key: boolean, data: Buffer): void {
+    const viewer = this.viewer;
+    if (!viewer) return;
+    if (this.videoNeedsKey && !key) return;
+    const { width, height } = this.viewport;
+    const sent = viewer.sendVideo(
+      encodeVideoChunk({ seq: this.videoSeq, codec: "vp8", key, width, height }, data),
+    );
+    this.videoSeq = (this.videoSeq + 1) % 1_000_000_000;
+    // The viewer couldn't take it: the frames that follow build on it, so they wait for a key.
+    this.videoNeedsKey = !sent;
+  }
+
+  private stopVideo(): void {
+    this.encoder?.stop();
+    this.encoder = null;
+    this.videoNeedsKey = true;
   }
 
   /** Everything the viewer may ask for. Invalid tab ids are ignored, never fatal. */
@@ -370,6 +675,11 @@ export class BrowserEngine implements Engine {
     switch (message.type) {
       case "hello":
       case "ping":
+      case "sound":
+        return;
+      case "video-lost":
+        // A fresh encoder begins with a key frame.
+        this.stopVideo();
         return;
       case "resize":
         await this.setViewport(message.viewport);
@@ -377,6 +687,12 @@ export class BrowserEngine implements Engine {
       case "new-tab":
         await this.createTab(message.url);
         return;
+      case "open-browser-page": {
+        const pages = this.options.browserPages;
+        const url = pages ? (message.page === "passwords" ? pages.passwords : pages.account) : null;
+        if (url) await this.createTab(url);
+        return;
+      }
       case "close-tab":
         if (this.tabs.has(message.tabId)) {
           await this.cdp.send("Target.closeTarget", { targetId: message.tabId });
@@ -397,7 +713,16 @@ export class BrowserEngine implements Engine {
           { url: message.url },
           tab.sessionId,
         );
-        if (result.errorText) log("info", "navigation failed", { errorText: result.errorText });
+        if (result.errorText && result.errorText !== "net::ERR_ABORTED") {
+          log("info", "navigation failed", { errorText: result.errorText });
+          // The frame may already show the error page, or be about to.
+          if (tab.error?.code === "") {
+            tab.error = this.explained({ url: tab.error.url, code: errorCode(result.errorText) });
+            this.queueSnapshot();
+          } else if (!tab.error) {
+            tab.lastNavigateError = result.errorText;
+          }
+        }
         return;
       }
       case "back":
@@ -411,6 +736,10 @@ export class BrowserEngine implements Engine {
         await this.cdp.send("Page.stopLoading", {}, tab.sessionId);
         return;
       case "mouse": {
+        if (message.kind === "move" || message.kind === "up") {
+          this.pointer.report(tab, message.x, message.y);
+        }
+        if (message.kind === "up") this.focus.report(tab);
         const type = {
           move: "mouseMoved",
           down: "mousePressed",
@@ -434,6 +763,7 @@ export class BrowserEngine implements Engine {
         return;
       }
       case "key": {
+        if (message.kind === "up" && FOCUS_KEYS.has(message.key)) this.focus.report(tab);
         const text = message.text ?? (message.key === "Enter" ? "\r" : undefined);
         await this.cdp.send(
           "Input.dispatchKeyEvent",
@@ -457,7 +787,10 @@ export class BrowserEngine implements Engine {
         const screencastSession = tab.inFlight.get(message.frameId);
         if (screencastSession === undefined) return;
         tab.inFlight.delete(message.frameId);
-        await this.ack(tab, screencastSession);
+        if (screencastSession === SHARP_FRAME) this.sharpDrawn(message.frameId);
+        else await this.ack(tab, screencastSession);
+        // The page may have stopped while the viewer was catching up.
+        if (tab.inFlight.size === 0) this.armStill();
         return;
       }
       case "dialog":
@@ -475,6 +808,43 @@ export class BrowserEngine implements Engine {
         return;
       case "file-chooser":
         this.expectChosenFiles(message.chooserId, message.files);
+        return;
+      case "drop": {
+        // The relay has resolved the dropped Drive files; their bytes follow as chunks.
+        const chooser: Chooser = {
+          id: message.dropId,
+          tabId: tab.id,
+          backendNodeId: 0,
+          dir: path.join(this.options.uploadDir, message.dropId),
+          writers: new Map(),
+          drop: { x: message.x, y: message.y },
+        };
+        this.choosers.set(chooser.id, chooser);
+        this.expectChosenFiles(chooser.id, message.files);
+        return;
+      }
+      case "save-image":
+        await this.saveImage(tab, message.url);
+        return;
+      case "find":
+      case "find-stop":
+      case "zoom":
+      case "reader":
+        await this.pageTool(tab, message);
+        return;
+      case "copy": {
+        const value = await this.evaluate(tab, selectionScript(CLIPBOARD_MAX_CHARS)).catch(
+          () => "",
+        );
+        this.viewer?.send({
+          type: "clipboard",
+          tabId: tab.id,
+          text: typeof value === "string" ? value : "",
+        });
+        return;
+      }
+      case "paste":
+        await this.cdp.send("Input.insertText", { text: message.text }, tab.sessionId);
         return;
     }
   }
@@ -495,6 +865,9 @@ export class BrowserEngine implements Engine {
     this.closing = true;
     if (this.titleTimer) clearInterval(this.titleTimer);
     this.titleTimer = null;
+    this.clearStill();
+    this.pointer.reset();
+    this.stopVideo();
     try {
       await this.cdp.send("Browser.close");
     } catch {
@@ -615,6 +988,56 @@ export class BrowserEngine implements Engine {
     }
   }
 
+  /**
+   * Saves a page's image to Drive: fetched by the page itself where it may
+   * (its cookies apply), else through the session's proxy, written to the
+   * scratch directory and handed over like a download.
+   */
+  private async saveImage(tab: Tab, url: string): Promise<void> {
+    const id = `image-${randomUUID()}`;
+    const transfer: Transfer = {
+      id,
+      tabId: tab.id,
+      kind: "download",
+      filename: imageFilename(url),
+      path: path.join(this.options.downloadDir, id),
+      bytes: 0,
+      finished: false,
+    };
+    this.transfers.set(id, transfer);
+    this.report(transfer, "started");
+    try {
+      let image: { type: string; bytes: Buffer } | null = null;
+      const inPage = await this.evaluate(
+        tab,
+        fetchImageScript(url, this.options.maxFileBytes),
+      ).catch(() => null);
+      if (typeof inPage === "string") {
+        const parsed = JSON.parse(inPage) as { type?: unknown; data?: unknown };
+        if (typeof parsed.type === "string" && typeof parsed.data === "string") {
+          image = { type: parsed.type, bytes: Buffer.from(parsed.data, "base64") };
+        }
+      }
+      image ??= await this.options.fetchImage(url, this.options.maxFileBytes);
+      if (!image) throw new Error("not an image");
+      transfer.filename = imageFilename(url, image.type);
+      transfer.bytes = image.bytes.length;
+      const file = await open(transfer.path, "w", 0o600);
+      try {
+        await file.write(image.bytes);
+      } finally {
+        await file.close();
+      }
+      this.queueHandover(transfer);
+    } catch (error) {
+      transfer.finished = true;
+      this.transfers.delete(id);
+      await rm(transfer.path, { force: true }).catch(() => undefined);
+      log("warn", "save image failed", { message: error instanceof Error ? error.message : "" });
+      this.report(transfer, "failed", "The image couldn’t be read.");
+    }
+  }
+
   /** Renders the tab to a PDF in the scratch directory and hands it over like a download. */
   private async printToDrive(tab: Tab): Promise<void> {
     const id = `print-${randomUUID()}`;
@@ -681,21 +1104,33 @@ export class BrowserEngine implements Engine {
     this.choosers.set(chooserId, chooser);
     void Promise.all([...chooser.writers.values()].map((writer) => writer.done))
       .then(async () => {
+        const paths = [...chooser.writers.values()].map((writer) => writer.path);
+        if (chooser.drop) {
+          // As a drag from the computer's own desktop would arrive: enter, over, drop.
+          const data = { items: [], files: paths, dragOperationsMask: 1 };
+          const { x, y } = chooser.drop;
+          for (const type of ["dragEnter", "dragOver", "drop"] as const) {
+            await this.cdp.send("Input.dispatchDragEvent", { type, x, y, data }, tab.sessionId);
+          }
+          log("info", "files dropped on the page", { files: paths.length });
+          return;
+        }
         await this.cdp.send(
           "DOM.setFileInputFiles",
-          {
-            files: [...chooser.writers.values()].map((writer) => writer.path),
-            backendNodeId: chooser.backendNodeId,
-          },
+          { files: paths, backendNodeId: chooser.backendNodeId },
           tab.sessionId,
         );
         log("info", "file chooser answered", { files: chooser.writers.size });
       })
       .catch((error: unknown) => {
-        log("warn", "file chooser failed", {
+        log("warn", chooser.drop ? "drop failed" : "file chooser failed", {
           message: error instanceof Error ? error.message : "",
         });
-        this.viewer?.send({ type: "refused", tabId: tab.id, action: "upload" });
+        this.viewer?.send({
+          type: "refused",
+          tabId: tab.id,
+          action: chooser.drop ? "drop" : "upload",
+        });
       })
       .finally(() => {
         this.choosers.delete(chooserId);
@@ -726,7 +1161,8 @@ export class BrowserEngine implements Engine {
 
   /** Attaches to a page target the engine reported, unless it is internal or already ours. */
   private async considerTarget(info: TargetInfo): Promise<void> {
-    if (info.type !== "page" || isInternal(info.url)) return;
+    const accountPage = Boolean(this.options.browserPages) && ACCOUNT_PAGES.test(info.url);
+    if (info.type !== "page" || (isInternal(info.url) && !accountPage)) return;
     if (this.tabs.has(info.targetId) || this.attaching.has(info.targetId)) return;
     if (this.tabs.size >= MAX_TABS) {
       // Popup storms: close anything past the limit.
@@ -760,8 +1196,14 @@ export class BrowserEngine implements Engine {
       canGoBack: false,
       canGoForward: false,
       security: "neutral",
+      error: null,
+      lastNavigateError: "",
+      zoom: 1,
+      reader: false,
       screencasting: false,
       inFlight: new Map(),
+      icon: null,
+      iconUrl: null,
     };
     this.tabs.set(tab.id, tab);
     if (!this.order.includes(tab.id)) this.order.push(tab.id);
@@ -771,10 +1213,22 @@ export class BrowserEngine implements Engine {
         this.cdp.send("Security.enable", {}, sessionId),
         this.cdp.send("Page.setInterceptFileChooserDialog", { enabled: true }, sessionId),
         this.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId),
-        this.cdp.send("Emulation.setUserAgentOverride", { userAgent: this.userAgent }, sessionId),
+        this.cdp.send(
+          "Emulation.setUserAgentOverride",
+          {
+            userAgent: this.userAgent,
+            ...(this.userAgentMetadata ? { userAgentMetadata: this.userAgentMetadata } : {}),
+          },
+          sessionId,
+        ),
         this.cdp.send(
           "Emulation.setDeviceMetricsOverride",
-          { ...this.viewport, deviceScaleFactor: 1, mobile: false },
+          {
+            width: this.viewport.width,
+            height: this.viewport.height,
+            deviceScaleFactor: this.viewport.scale,
+            mobile: false,
+          },
           sessionId,
         ),
       ]);
@@ -885,7 +1339,124 @@ export class BrowserEngine implements Engine {
         canGoBack: tab.canGoBack,
         canGoForward: tab.canGoForward,
         security: tab.security,
+        error: tab.error,
+        zoom: tab.zoom,
+        reader: tab.reader,
       }));
+  }
+
+  /** The catalogue builds chosen for this session, loaded unpacked over the pipe (ADR 0018). */
+  private async installExtensions(): Promise<void> {
+    for (const extension of this.options.extensions) {
+      try {
+        await this.cdp.send("Extensions.loadUnpacked", { path: extension.path });
+        this.loadedExtensions.push(extension.slug);
+        log("info", "extension loaded", { slug: extension.slug });
+      } catch (error) {
+        log("warn", "extension not loaded", {
+          slug: extension.slug,
+          message: error instanceof Error ? error.message : "",
+        });
+      }
+    }
+  }
+
+  private async evaluate(tab: Tab, expression: string): Promise<unknown> {
+    const { result } = await this.cdp.send<{ result: { value?: unknown } }>(
+      "Runtime.evaluate",
+      { expression, returnByValue: true },
+      tab.sessionId,
+    );
+    return result.value;
+  }
+
+  /** Find in page, zoom and reader view: Brawzer's tools, run inside the page. */
+  private async pageTool(
+    tab: Tab,
+    message: Extract<RelayMessage, { type: "find" | "find-stop" | "zoom" | "reader" }>,
+  ): Promise<void> {
+    switch (message.type) {
+      case "find": {
+        // A page still settling (a navigation committing, no body yet) can fail the
+        // search; it is tried again briefly before "no matches" is said.
+        let value: unknown = null;
+        for (let attempt = 0; attempt < 5 && typeof value !== "string"; attempt++) {
+          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 200));
+          value = await this.evaluate(
+            tab,
+            findScript(message.text, message.forward, message.caseSensitive),
+          ).catch(() => null);
+        }
+        const found =
+          typeof value === "string"
+            ? (JSON.parse(value) as { matches: number; active: number })
+            : { matches: 0, active: 0 };
+        this.viewer?.send({ type: "find-result", tabId: tab.id, text: message.text, ...found });
+        return;
+      }
+      case "find-stop":
+        await this.evaluate(tab, FIND_STOP_SCRIPT).catch(() => undefined);
+        return;
+      case "zoom":
+        tab.zoom = message.factor;
+        await this.evaluate(tab, zoomScript(message.factor)).catch(() => undefined);
+        this.queueSnapshot();
+        return;
+      case "reader": {
+        if (!message.on) {
+          // The page itself is gone (replaced by the reading layout): open it afresh.
+          if (tab.reader) await this.cdp.send("Page.navigate", { url: tab.url }, tab.sessionId);
+          return;
+        }
+        const value = await this.evaluate(tab, this.options.readerScript).catch(() => null);
+        const ok = typeof value === "string" && (JSON.parse(value) as { ok: boolean }).ok;
+        if (ok) {
+          tab.reader = true;
+          this.queueSnapshot();
+        } else {
+          this.viewer?.send({ type: "reader-unavailable", tabId: tab.id });
+        }
+        return;
+      }
+    }
+  }
+
+  /** Brawzer's own reason for a refused tunnel, when the proxy noted one for that address. */
+  private explained(error: NavigationError): NavigationError {
+    if (!TUNNEL_FAILURES.has(error.code)) return error;
+    return { url: error.url, code: this.options.refusalFor(error.url) ?? error.code };
+  }
+
+  /** The engine's error page names its code in the document; the person never sees that page. */
+  private async readErrorCode(tab: Tab): Promise<void> {
+    const failed = tab.error;
+    if (!failed) return;
+    // The error page renders shortly after the frame commits; look a few times.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      if (tab.error !== failed) return;
+      try {
+        const { result } = await this.cdp.send<{ result: { value?: unknown } }>(
+          "Runtime.evaluate",
+          {
+            expression:
+              "(document.querySelector('.error-code') || document.querySelector('#error-code'))?.textContent?.trim() || ''",
+            returnByValue: true,
+          },
+          tab.sessionId,
+        );
+        if (tab.error !== failed) return;
+        if (typeof result.value === "string" && result.value !== "") {
+          tab.error = this.explained({ url: failed.url, code: errorCode(result.value) });
+          this.queueSnapshot();
+          return;
+        }
+      } catch {
+        return; // The page moved on.
+      }
+      if (failed.code !== "") return;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    this.queueSnapshot();
   }
 
   /** Coalesces bursts of changes into one snapshot per tick. */
@@ -902,16 +1473,27 @@ export class BrowserEngine implements Engine {
   // ── Viewport and frames ───────────────────────────────────────────────
 
   private async setViewport(viewport: Viewport): Promise<void> {
-    const changed =
+    const resized =
       viewport.width !== this.viewport.width || viewport.height !== this.viewport.height;
+    const changed = resized || viewport.scale !== this.viewport.scale;
     this.viewport = viewport;
     if (!changed) return;
+    this.sharpDone = false;
+    this.sharpHold = false;
     await Promise.all(
       [...this.tabs.values()].map((tab) =>
         this.cdp
           .send(
             "Emulation.setDeviceMetricsOverride",
-            { ...viewport, deviceScaleFactor: 1, mobile: false },
+            {
+              width: viewport.width,
+              height: viewport.height,
+              // The page is laid out and painted at the viewer's own pixel
+              // ratio: its moving frames are scaled down to size on the way
+              // out, its sharp frame is captured as painted.
+              deviceScaleFactor: viewport.scale,
+              mobile: false,
+            },
             tab.sessionId,
           )
           .catch(() => undefined),
@@ -919,7 +1501,7 @@ export class BrowserEngine implements Engine {
     );
     // The screencast's maximum size is fixed when it starts.
     const active = this.activeTab();
-    if (active?.screencasting) {
+    if (resized && active?.screencasting) {
       await this.stopScreencast(active);
       await this.syncScreencasts();
     }
@@ -955,7 +1537,110 @@ export class BrowserEngine implements Engine {
   private async stopScreencast(tab: Tab): Promise<void> {
     tab.screencasting = false;
     tab.inFlight.clear();
+    if (this.sharpInFlight?.tabId === tab.id) this.sharpInFlight = null;
+    this.sharpHold = false;
+    this.frameTimes = [];
+    this.clearStill();
     await this.cdp.send("Page.stopScreencast", {}, tab.sessionId).catch(() => undefined);
+  }
+
+  // ── Sharp frames: one at the viewer's pixel ratio once the page stops ──
+
+  private clearStill(): void {
+    if (this.stillTimer) clearTimeout(this.stillTimer);
+    this.stillTimer = null;
+  }
+
+  /** (Re)starts the count to the page's sharp frame; a new frame of a moving page starts it over. */
+  private armStill(delayMs = STILL_MS): void {
+    this.clearStill();
+    if (this.viewport.scale <= 1 || this.sharpDone || !this.viewer) return;
+    if (this.sharpInFlight && Date.now() - this.sharpInFlight.sentAt > SHARP_LOST_MS) {
+      this.sharpInFlight = null;
+    }
+    this.stillTimer = setTimeout(() => {
+      this.stillTimer = null;
+      void this.sendSharp();
+    }, delayMs);
+  }
+
+  /**
+   * Whether the still page in front wants its sharp frame now. The viewer
+   * drawing moving frames comes first; their acknowledgement arms the count
+   * again.
+   */
+  private sharpWanted(viewer: Viewer, tab: Tab): boolean {
+    return (
+      this.viewer === viewer &&
+      tab.id === this.activeId &&
+      tab.screencasting &&
+      tab.inFlight.size === 0 &&
+      !this.sharpDone &&
+      this.sharpInFlight === null &&
+      this.stillTimer === null &&
+      this.viewport.scale > 1 &&
+      Date.now() >= this.sharpBackoffUntil
+    );
+  }
+
+  private async sendSharp(): Promise<void> {
+    const viewer = this.viewer;
+    const tab = this.activeTab();
+    if (!viewer || !tab || !this.sharpWanted(viewer, tab)) return;
+    const { width, height, scale } = this.viewport;
+    let shot: { data: string };
+    try {
+      shot = await this.cdp.send<{ data: string }>(
+        "Page.captureScreenshot",
+        { format: "jpeg", quality: SHARP_QUALITY, optimizeForSpeed: true },
+        tab.sessionId,
+      );
+    } catch {
+      // The engine was busy: try again once the page has been still a while longer.
+      this.armStill();
+      return;
+    }
+    // Anything that moved meanwhile has sent a frame of its own and will count down again.
+    if (!this.sharpWanted(viewer, tab)) return;
+    const frameId = ++this.frameCounter;
+    const bytes = encodeFrame(
+      {
+        tabId: tab.id,
+        frameId,
+        width: Math.round(width * scale),
+        height: Math.round(height * scale),
+        scale,
+      },
+      Buffer.from(shot.data, "base64"),
+    );
+    if (!viewer.sendFrame(bytes)) {
+      // The connection can't take it now; the page is still, so it is tried again.
+      this.armStill();
+      return;
+    }
+    tab.inFlight.set(frameId, SHARP_FRAME);
+    this.sharpInFlight = { tabId: tab.id, frameId, sentAt: Date.now() };
+    this.sharpDone = true;
+    this.sharpHold = true;
+    this.sharpSentAt = Date.now();
+  }
+
+  private sharpDrawn(frameId: number): void {
+    const sharp = this.sharpInFlight;
+    if (sharp?.frameId !== frameId) return;
+    this.sharpInFlight = null;
+    const took = Date.now() - sharp.sentAt;
+    if (took > SHARP_SLOW_MS) {
+      this.sharpSlowCount += 1;
+      const pause = Math.min(
+        SHARP_BACKOFF_MAX_MS,
+        SHARP_BACKOFF_MS * 2 ** (this.sharpSlowCount - 1),
+      );
+      this.sharpBackoffUntil = Date.now() + pause;
+      log("info", "sharp frame was slow to arrive; pausing them", { ms: took, pause });
+    } else {
+      this.sharpSlowCount = 0;
+    }
   }
 
   private frameArrived(tab: Tab, frame: { data: string; sessionId: string }): void {
@@ -964,10 +1649,40 @@ export class BrowserEngine implements Engine {
       void this.ack(tab, frame.sessionId);
       return;
     }
+    // The page moved: its sharp frame, if it had one, is out of date.
+    this.sharpDone = false;
+    const now = Date.now();
+    this.frameTimes = this.frameTimes.filter((at) => now - at < MOTION_WINDOW_MS);
+    this.frameTimes.push(now);
+    if (this.sharpHold && this.frameTimes.length < MOTION_FRAMES && this.viewport.scale > 1) {
+      // A lone frame while the sharp picture is up (a blinking cursor, a clock
+      // tick): the viewer keeps the sharp picture and gets a fresh one shortly,
+      // rather than a soft frame and then a sharp one, over and over.
+      void this.ack(tab, frame.sessionId);
+      this.armStill(Math.max(STILL_MS, this.sharpSentAt + SHARP_MIN_INTERVAL_MS - now));
+      return;
+    }
+    this.sharpHold = false;
+    const image = Buffer.from(frame.data, "base64");
+    const encoder = this.videoEncoder();
+    if (encoder) {
+      // As video: the encoder takes the picture (or skips it when behind) and the
+      // engine is freed at once; the viewer never acknowledges video.
+      encoder.push(image);
+      void this.ack(tab, frame.sessionId);
+      this.armStill();
+      return;
+    }
     const frameId = ++this.frameCounter;
     const bytes = encodeFrame(
-      { tabId: tab.id, frameId, width: this.viewport.width, height: this.viewport.height },
-      Buffer.from(frame.data, "base64"),
+      {
+        tabId: tab.id,
+        frameId,
+        width: this.viewport.width,
+        height: this.viewport.height,
+        scale: 1,
+      },
+      image,
     );
     if (viewer.sendFrame(bytes)) {
       tab.inFlight.set(frameId, frame.sessionId);
@@ -975,6 +1690,7 @@ export class BrowserEngine implements Engine {
       // Dropped (the viewer's connection is behind): free the engine to draw the next one.
       void this.ack(tab, frame.sessionId);
     }
+    this.armStill();
   }
 
   private async ack(tab: Tab, screencastSession: string): Promise<void> {

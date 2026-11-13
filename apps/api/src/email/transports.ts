@@ -5,6 +5,12 @@ export interface OutgoingEmail {
   subject: string;
   text: string;
   html: string;
+  /** Extra headers, such as List-Unsubscribe on an optional notice. */
+  headers?: Readonly<Record<string, string>>;
+  /** What kind of email, for the provider's own reporting ("category": "welcome"). */
+  tags?: Readonly<Record<string, string>>;
+  /** The same key twice sends once (a webhook delivered again mustn't email again). */
+  idempotencyKey?: string;
 }
 
 export interface EmailTransport {
@@ -54,18 +60,28 @@ export class ResendTransport implements EmailTransport {
   constructor(
     private readonly apiKey: string,
     private readonly from: string,
+    private readonly replyTo?: string,
   ) {}
 
   async send(email: OutgoingEmail): Promise<void> {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+        ...(email.idempotencyKey ? { "Idempotency-Key": email.idempotencyKey } : {}),
+      },
       body: JSON.stringify({
         from: this.from,
         to: [email.to],
+        ...(this.replyTo ? { reply_to: this.replyTo } : {}),
         subject: email.subject,
         text: email.text,
         html: email.html,
+        ...(email.headers ? { headers: email.headers } : {}),
+        ...(email.tags
+          ? { tags: Object.entries(email.tags).map(([name, value]) => ({ name, value })) }
+          : {}),
       }),
       signal: AbortSignal.timeout(10_000),
     });
@@ -93,7 +109,7 @@ export function createTransport(
     case "resend":
       if (!config.resendApiKey)
         throw new Error("RESEND_API_KEY is required for the resend transport");
-      return new ResendTransport(config.resendApiKey, config.from);
+      return new ResendTransport(config.resendApiKey, config.from, config.replyTo);
     case "log":
       return new LogTransport(log);
   }

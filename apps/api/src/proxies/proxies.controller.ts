@@ -57,15 +57,16 @@ export class ProxiesController {
   @Get()
   @SerializeOptions({ schema: proxyListSchema })
   @ApiOperation({
-    summary: "This account's proxies",
-    description: "Credentials are never returned, only whether some are saved.",
+    summary: "This account's proxies, and its team's",
+    description:
+      "Credentials are never returned, only whether some are saved. A team's proxies are listed to every member; its owner and admins change them.",
   })
   @ApiOkResponse({
     description: "Proxies and the account's limit.",
     standardSchema: proxyListSchema,
   })
   async list(@CurrentAuth() auth: AuthContext): Promise<ProxyList> {
-    return { proxies: await this.proxies.list(auth.user.id), limit: MAX_PROXIES };
+    return this.proxies.listFor(auth.user.id, MAX_PROXIES);
   }
 
   @Post()

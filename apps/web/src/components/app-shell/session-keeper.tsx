@@ -11,6 +11,7 @@ import { Button } from "@brawzer/ui/components/button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { checkSession, reportActivity, rotateSession } from "@/lib/api/account";
 import { formatCountdown, idleSettings, idleState, nextServerCall } from "@/lib/idle";
+import { isLocked } from "@/lib/lock";
 import {
   broadcast,
   leaveSignedInArea,
@@ -65,8 +66,8 @@ export function SessionKeeper({ persistent, idleTimeoutMinutes }: SessionKeeperP
 
     let lastBroadcast = 0;
     const onActivity = () => {
-      // While the warning shows, only "Stay signed in" counts.
-      if (state.warning) return;
+      // While the warning shows, only "Stay signed in" counts; while locked, nothing does.
+      if (state.warning || isLocked()) return;
       const now = Date.now();
       state.lastActivity = now;
       if (now - lastBroadcast > 5_000) {
@@ -98,13 +99,15 @@ export function SessionKeeper({ persistent, idleTimeoutMinutes }: SessionKeeperP
           await signOut("idle");
           return;
         }
-        state.warning = idle.phase === "warning";
-        setRemainingMs(idle.phase === "warning" ? idle.remainingMs : null);
+        // Locked, there's no one to warn: it signs out when the time is up.
+        state.warning = idle.phase === "warning" && !isLocked();
+        setRemainingMs(state.warning && idle.phase === "warning" ? idle.remainingMs : null);
       }
 
       // Background tabs only watch the clock; the visible tab talks to the server.
       if (state.busy || document.visibilityState !== "visible") return;
-      const call = nextServerCall({ now, ...state });
+      // Locked, the server answers only the passive check: nothing to report.
+      const call = nextServerCall({ now, ...state, ...(isLocked() ? { lastActivity: 0 } : {}) });
       if (call === "none") return;
 
       state.busy = true;

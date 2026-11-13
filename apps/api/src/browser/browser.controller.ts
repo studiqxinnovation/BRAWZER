@@ -76,7 +76,31 @@ export class BrowserController {
     @CurrentAuth() auth: AuthContext,
     @Req() request: FastifyRequest,
   ): Promise<BrowserSession> {
-    return this.browser.start(auth, body.profileId ?? null, requestMeta(request));
+    return this.browser.start(
+      auth,
+      body.profileId ?? null,
+      requestMeta(request),
+      body.resume,
+      body.engine,
+    );
+  }
+
+  @Post("sessions/:id/hand-off")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: "End a session to continue it on another device",
+    description:
+      "Like ending it, with its open tabs kept for the profile's next session, which can reopen them on any device (ADR 0020). Not for a temporary session or a profile that keeps nothing.",
+  })
+  @ApiNoContentResponse({ description: "Ended; the tabs wait for the next session." })
+  @ApiNotFoundResponse({ description: "No such live session on this account." })
+  @ApiConflictResponse({ description: "The session keeps nothing to continue from." })
+  async handOff(
+    @Param("id", { schema: idSchema }) id: string,
+    @CurrentAuth() auth: AuthContext,
+    @Req() request: FastifyRequest,
+  ): Promise<void> {
+    await this.browser.handOff(auth.user.id, id, requestMeta(request));
   }
 
   @Delete("sessions/:id")

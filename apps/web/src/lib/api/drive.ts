@@ -1,28 +1,48 @@
 import {
   apiErrorSchema,
+  type CopyFileRequest,
   type CreateFolderRequest,
   downloadTicketSchema,
   type DriveFile,
+  type DriveFileKind,
   driveFileListSchema,
   driveOverviewSchema,
   driveFileSchema,
   driveFolderSchema,
+  type DriveSpace,
   type UpdateFileRequest,
   type UpdateFolderRequest,
 } from "@brawzer/contracts";
 import { type ApiFailure, type ApiResult, apiRequest } from "./client";
 
 /** Every folder and the usage. */
-export const fetchDriveOverview = () => apiRequest("/drive", { schema: driveOverviewSchema });
+export const fetchDriveOverview = (space: DriveSpace = "personal") =>
+  apiRequest(space === "team" ? "/drive?space=team" : "/drive", { schema: driveOverviewSchema });
 
 /** One folder's files (the top level without `folderId`), or a search everywhere with `q`. */
-export const listDriveFiles = (query: { folderId?: string | null; q?: string } = {}) => {
+export const listDriveFiles = (
+  query: { folderId?: string | null; q?: string; kind?: DriveFileKind; space?: DriveSpace } = {},
+) => {
   const params = new URLSearchParams();
-  if (query.q) params.set("q", query.q);
+  if (query.kind) params.set("kind", query.kind);
+  else if (query.q) params.set("q", query.q);
   else if (query.folderId) params.set("folderId", query.folderId);
+  if (query.space === "team") params.set("space", "team");
   const search = params.toString();
   return apiRequest(`/drive/files${search ? `?${search}` : ""}`, { schema: driveFileListSchema });
 };
+
+/** The files in a top-level folder found by its name; none if there's no such folder (or Drive can't be read). */
+export async function listFilesInFolder(name: string): Promise<DriveFile[]> {
+  const overview = await fetchDriveOverview();
+  if (!overview.ok) return [];
+  const folder = overview.data.folders.find(
+    (candidate) => candidate.parentId === null && candidate.name === name,
+  );
+  if (!folder) return [];
+  const files = await listDriveFiles({ folderId: folder.id });
+  return files.ok ? files.data.files : [];
+}
 
 export const createFolder = (body: CreateFolderRequest) =>
   apiRequest("/drive/folders", { method: "POST", body, schema: driveFolderSchema });
@@ -46,6 +66,103 @@ export const updateFile = (id: string, body: UpdateFileRequest) =>
 
 export const deleteFile = (id: string) =>
   apiRequest<undefined>(`/drive/files/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+/** Saves a new version of a file: same name, folder and id. */
+export async function replaceDriveFile(id: string, file: File): Promise<ApiResult<DriveFile>> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1/drive/files/${encodeURIComponent(id)}/content`, {
+      method: "PUT",
+      body: form,
+      headers: { accept: "application/json" },
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, status: 0, error: unreachable };
+  }
+  const payload: unknown = await response.json().catch(() => undefined);
+  if (!response.ok) {
+    const parsed = apiErrorSchema.safeParse(payload);
+    return {
+      ok: false,
+      status: response.status,
+      error: parsed.success ? parsed.data.error : unexpected,
+    };
+  }
+  const parsed = driveFileSchema.safeParse(payload);
+  return parsed.success
+    ? { ok: true, status: response.status, data: parsed.data }
+    : { ok: false, status: response.status, error: unexpected };
+}
+
+/** What's in Trash, newest first. */
+export const fetchTrash = (space: DriveSpace = "personal") =>
+  apiRequest(space === "team" ? "/drive/trash?space=team" : "/drive/trash", {
+    schema: driveFileListSchema,
+  });
+
+export const restoreFile = (id: string) =>
+  apiRequest(`/drive/files/${encodeURIComponent(id)}/restore`, {
+    method: "POST",
+    schema: driveFileSchema,
+  });
+
+export const deleteForever = (id: string) =>
+  apiRequest<undefined>(`/drive/trash/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+export const emptyTrash = (space: DriveSpace = "personal") =>
+  apiRequest<undefined>(space === "team" ? "/drive/trash?space=team" : "/drive/trash", {
+    method: "DELETE",
+  });
+
+/** A clean file's text, read through the preview route (same origin, session cookie). */
+export async function readDriveText(id: string): Promise<ApiResult<string>> {
+  try {
+    const response = await fetch(previewUrl(id), { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        error: { code: "not_found", message: "That file can’t be opened here." },
+      };
+    }
+    return { ok: true, status: response.status, data: await response.text() };
+  } catch {
+    return { ok: false, status: 0, error: unreachable };
+  }
+}
+
+/** A clean file's bytes, for an app that reads Office files, through the same route. */
+export async function readDriveBytes(id: string): Promise<ApiResult<Uint8Array>> {
+  try {
+    const response = await fetch(previewUrl(id), { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        error: { code: "not_found", message: "That file can’t be opened here." },
+      };
+    }
+    return {
+      ok: true,
+      status: response.status,
+      data: new Uint8Array(await response.arrayBuffer()),
+    };
+  } catch {
+    return { ok: false, status: 0, error: unreachable };
+  }
+}
+
+/** A copy of the file: beside it, in a folder, or at the top level with null. */
+export const copyDriveFile = (id: string, body: CopyFileRequest = {}) =>
+  apiRequest(`/drive/files/${encodeURIComponent(id)}/copy`, {
+    method: "POST",
+    body,
+    schema: driveFileSchema,
+  });
 
 /** A single-use link to save the file to this computer. Needs a recent sign-in. */
 export const requestDownloadTicket = (id: string) =>
@@ -81,10 +198,14 @@ export function uploadDriveFile(
   file: File,
   folderId: string | null,
   onProgress: (fraction: number) => void,
+  space: DriveSpace = "personal",
 ): UploadHandle {
   const request = new XMLHttpRequest();
   const result = new Promise<ApiResult<DriveFile>>((resolve) => {
-    const query = folderId ? `?${new URLSearchParams({ folderId }).toString()}` : "";
+    const params = new URLSearchParams();
+    if (folderId) params.set("folderId", folderId);
+    else if (space === "team") params.set("space", "team");
+    const query = params.size > 0 ? `?${params.toString()}` : "";
     request.open("POST", `/api/v1/drive/files${query}`);
     request.setRequestHeader("accept", "application/json");
     request.responseType = "text";

@@ -9,6 +9,12 @@ import {
   messageResponseSchema,
   undoEmailChangeRequestSchema,
   undoEmailChangeResponseSchema,
+  accountEmailSchema,
+  unsubscribeRequestSchema,
+  unsubscribeResponseSchema,
+  updateEmailPreferencesRequestSchema,
+  accountNameSchema,
+  updateNameRequestSchema,
 } from "@brawzer/contracts";
 import {
   Body,
@@ -17,6 +23,7 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Patch,
   Post,
   Req,
   Res,
@@ -109,6 +116,71 @@ export class AccountController {
     return {
       email: await this.account.undoEmailChange(body.token, body.password, requestMeta(request)),
     };
+  }
+
+  @Get("email")
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: accountEmailSchema })
+  @ApiOperation({
+    summary: "What the account's address receives",
+    description:
+      "Which optional emails are on (security and billing emails are always sent), and whether the provider has reported the address as unreachable.",
+  })
+  @ApiOkResponse({ standardSchema: accountEmailSchema })
+  emailSettings(@CurrentAuth() auth: AuthContext) {
+    return this.account.emailSettings(auth);
+  }
+
+  @Patch("email-preferences")
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: accountEmailSchema })
+  @ApiOperation({
+    summary: "Turn optional emails on or off",
+    description: "Usage notices and team updates. Kept with the account.",
+  })
+  @ApiOkResponse({ standardSchema: accountEmailSchema })
+  updateEmailPreferences(
+    @CurrentAuth() auth: AuthContext,
+    @Body({ schema: updateEmailPreferencesRequestSchema })
+    body: z.infer<typeof updateEmailPreferencesRequestSchema>,
+  ) {
+    return this.account.updateEmailPreferences(auth, body);
+  }
+
+  @Patch("name")
+  @UseGuards(SessionGuard)
+  @ApiCookieAuth(SESSION_AUTH)
+  @SerializeOptions({ schema: accountNameSchema })
+  @ApiOperation({
+    summary: "Change the name on the account",
+    description:
+      "What Brawzer calls the person, in the app and in email. One line, up to 80 characters.",
+  })
+  @ApiOkResponse({ standardSchema: accountNameSchema })
+  updateName(
+    @CurrentAuth() auth: AuthContext,
+    @Body({ schema: updateNameRequestSchema }) body: z.infer<typeof updateNameRequestSchema>,
+  ) {
+    return this.account.updateName(auth, body.name);
+  }
+
+  @Post("unsubscribe")
+  @HttpCode(HttpStatus.OK)
+  @SerializeOptions({ schema: unsubscribeResponseSchema })
+  @ApiOperation({
+    summary: "Stop one kind of optional email",
+    description:
+      "Opened from an email's footer, signed in or not: the token says which account and which kind. The link works once and lasts 90 days.",
+  })
+  @ApiOkResponse({ standardSchema: unsubscribeResponseSchema })
+  @ApiBadRequestResponse({ description: "The link is invalid, expired or used." })
+  unsubscribe(
+    @Body({ schema: unsubscribeRequestSchema }) body: z.infer<typeof unsubscribeRequestSchema>,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.account.unsubscribe(body.token, requestMeta(request));
   }
 
   @Post("delete")

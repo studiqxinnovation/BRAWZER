@@ -1,6 +1,5 @@
 import {
   currentSessionResponseSchema,
-  mfaStatusSchema,
   recoveryCodesResponseSchema,
   totpSetupResponseSchema,
 } from "@brawzer/contracts";
@@ -12,8 +11,6 @@ export const verifySecondStep = (ticket: string, code: string) =>
     body: { ticket, code },
     schema: currentSessionResponseSchema,
   });
-
-export const mfaStatus = () => apiRequest("/auth/mfa", { schema: mfaStatusSchema });
 
 export const startTotpSetup = () =>
   apiRequest("/auth/mfa/totp/setup", { method: "POST", schema: totpSetupResponseSchema });

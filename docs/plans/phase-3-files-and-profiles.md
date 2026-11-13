@@ -52,13 +52,13 @@ Security review of the new paths (what crosses the container boundary and in whi
 
 ## Decisions
 
-| #   | Decision                               | Taken as                                                                                                                                                                    |
-| --- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Where downloads land                   | A `Downloads` folder at the top level of the account's Drive, created on first use; the person can move files afterwards                                                    |
-| 2   | Scanning of cloud browser downloads    | The same path as uploads: scanned and encrypted as they stream in; an infected download is quarantined, not dropped, so the person sees what the page tried to give them    |
-| 3   | How files cross the container boundary | Over the existing agent connection as ordered chunks, in both directions; no credentials or network reach are added to the container                                        |
-| 4   | What a profile keeps                   | Chromium's user data directory minus caches, locks and crash data; the HTTP cache is kept outside it. Bookmarks and history as Brawzer-owned records are a later phase      |
-| 5   | Encryption of profile data             | ADR 0011's chunk format with the profile's object as the authenticated id, one random key per saved archive, wrapped by the key service and bound to the account and object |
-| 6   | Default for new and existing profiles  | Keep data (the product's promise); a switch per profile starts sessions clean, and a temporary session belongs to no profile                                                |
-| 7   | Oversized profile data                 | 256 MiB compressed at most; over it the previous archive is kept, the new one dropped and the failure logged, so a runaway site can't fill the store or lose what was there |
-| 8   | When data is saved                     | On every end except account deletion and runtime failure; the engine is closed cleanly first so its databases are consistent                                                |
+| #   | Decision                               | Taken as                                                                                                                                                                        |
+| --- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Where downloads land                   | A `Downloads` folder at the top level of the account's Drive, created on first use; the person can move files afterwards                                                        |
+| 2   | Scanning of cloud browser downloads    | The same path as uploads: scanned and encrypted as they stream in; an infected download is quarantined, not dropped, so the person sees what the page tried to give them        |
+| 3   | How files cross the container boundary | Over the existing agent connection as ordered chunks, in both directions; no credentials or network reach are added to the container                                            |
+| 4   | What a profile keeps                   | Chromium's user data directory minus caches, locks and crash data; the HTTP cache is kept outside it. Bookmarks and history as Brawzer-owned records came in Phase 8 (ADR 0020) |
+| 5   | Encryption of profile data             | ADR 0011's chunk format with the profile's object as the authenticated id, one random key per saved archive, wrapped by the key service and bound to the account and object     |
+| 6   | Default for new and existing profiles  | Keep data (the product's promise); a switch per profile starts sessions clean, and a temporary session belongs to no profile                                                    |
+| 7   | Oversized profile data                 | 256 MiB compressed at most; over it the previous archive is kept, the new one dropped and the failure logged, so a runaway site can't fill the store or lose what was there     |
+| 8   | When data is saved                     | On every end except account deletion and runtime failure; the engine is closed cleanly first so its databases are consistent                                                    |

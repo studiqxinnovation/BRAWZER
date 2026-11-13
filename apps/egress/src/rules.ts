@@ -10,18 +10,53 @@ import type { Lookup } from "@brawzer/proxy-client";
 export type EgressDecision =
   | { kind: "direct"; address: string; port: number }
   | { kind: "upstream"; host: string; port: number }
-  | { kind: "refused"; reason: "address" | "unresolved" | "port" | "engine" };
+  | { kind: "refused"; reason: "address" | "unresolved" | "port" | "engine" | "policy" };
 
 export interface RuleOptions {
   hasUpstream: boolean;
   allowPrivate: boolean;
+  /**
+   * The profile asked for private and internal addresses to go to its proxy
+   * (which reaches them on its own network; nothing here connects to them).
+   * Loopback is refused regardless: that is this container.
+   */
+  privateViaUpstream?: boolean;
+  /** The account's own rules: blocked hosts never open; with any allowed hosts, only those open. */
+  siteRules?: { allow: readonly string[]; block: readonly string[] } | null;
+  /** The profile's browser account is on: the engine may reach its account's sync service (ADR 0021). */
+  accountSync?: boolean;
   lookup: Lookup;
+}
+
+function hostMatchesRule(host: string, rule: string): boolean {
+  return host === rule || host.endsWith(`.${rule}`);
+}
+
+/** The account's rules, on the host as typed (an IP address counts as a host). */
+export function siteRulesRefuse(
+  host: string,
+  rules: { allow: readonly string[]; block: readonly string[] } | null | undefined,
+): boolean {
+  if (!rules) return false;
+  const lower = host.toLowerCase().replace(/\.$/, "");
+  if (rules.block.some((rule) => hostMatchesRule(lower, rule))) return true;
+  return rules.allow.length > 0 && !rules.allow.some((rule) => hostMatchesRule(lower, rule));
+}
+
+/** Loopback is never anyone's intranet: it is the sidecar and the runtime themselves. */
+function isLoopback(address: string): boolean {
+  return address.startsWith("127.") || address === "::1" || /^::ffff:127\./i.test(address);
 }
 
 /**
  * The engine's own background services: component and variation updates,
- * account services and the like. The managed policy already turns most of
- * them off; this closes what is left. Matched by suffix.
+ * Safe Browsing lookups, optimisation hints and the like. The managed policy
+ * already turns most of them off; this closes what is left. Matched by
+ * suffix. Only hosts a web page has no use for belong here: Google's
+ * sign-in (`accounts.google.com`), its static files (`www.gstatic.com`),
+ * its web apps' APIs (`clients6.google.com`) and its downloads
+ * (`dl.google.com`) serve websites, so blocking them broke signing in to
+ * Gmail, YouTube or Google's password manager inside Brawzer.
  */
 export const ENGINE_HOSTS = [
   "clients1.google.com",
@@ -29,18 +64,14 @@ export const ENGINE_HOSTS = [
   "clients3.google.com",
   "clients4.google.com",
   "clients5.google.com",
-  "clients6.google.com",
   "clientservices.googleapis.com",
   "update.googleapis.com",
   "edgedl.me.gvt1.com",
   "redirector.gvt1.com",
-  "dl.google.com",
   "optimizationguide-pa.googleapis.com",
   "safebrowsing.googleapis.com",
   "safebrowsingohttpgateway.googleapis.com",
   "content-autofill.googleapis.com",
-  "accounts.google.com",
-  "www.gstatic.com/chrome",
 ] as const;
 
 /** Ports a page may connect to: the web's, and the unprivileged range. Mail, shell and the like are not for a browser. */
@@ -50,12 +81,16 @@ export function isAllowedPort(port: number): boolean {
   return port >= 1024;
 }
 
+/**
+ * The engine services a profile with its browser account on needs: Chrome's
+ * sync server (signing in and the account's pages are on hosts that aren't
+ * blocked at all). Everything else on the list stays refused.
+ */
+export const ACCOUNT_SYNC_HOSTS = ["clients4.google.com"] as const;
+
 export function isEngineHost(host: string): boolean {
   const name = host.toLowerCase();
-  return ENGINE_HOSTS.some((blocked) => {
-    const [blockedHost] = blocked.split("/");
-    return name === blockedHost || name.endsWith(`.${blockedHost ?? ""}`);
-  });
+  return ENGINE_HOSTS.some((blocked) => name === blocked || name.endsWith(`.${blocked}`));
 }
 
 export async function decideEgress(
@@ -66,18 +101,31 @@ export async function decideEgress(
   if (!isAllowedPort(port)) return { kind: "refused", reason: "port" };
   const parsed = parseHost(host);
   if (!parsed) return { kind: "refused", reason: "address" };
+  if (siteRulesRefuse(parsed.kind === "ip" ? parsed.address : parsed.name, options.siteRules)) {
+    return { kind: "refused", reason: "policy" };
+  }
   if (parsed.kind === "ip") {
     if (!options.allowPrivate && !isPublicAddress(parsed.address)) {
-      return { kind: "refused", reason: "address" };
+      if (!(options.privateViaUpstream && options.hasUpstream) || isLoopback(parsed.address)) {
+        return { kind: "refused", reason: "address" };
+      }
     }
     return options.hasUpstream
       ? { kind: "upstream", host: parsed.address, port }
       : { kind: "direct", address: parsed.address, port };
   }
   if (!options.allowPrivate && isObviouslyLocal(parsed)) {
-    return { kind: "refused", reason: "address" };
+    const intranet = options.privateViaUpstream && options.hasUpstream;
+    if (!intranet || parsed.name === "localhost" || parsed.name.endsWith(".localhost")) {
+      return { kind: "refused", reason: "address" };
+    }
   }
-  if (isEngineHost(parsed.name)) return { kind: "refused", reason: "engine" };
+  const syncing =
+    options.accountSync === true &&
+    ACCOUNT_SYNC_HOSTS.some(
+      (allowed) => parsed.name === allowed || parsed.name.endsWith(`.${allowed}`),
+    );
+  if (isEngineHost(parsed.name) && !syncing) return { kind: "refused", reason: "engine" };
   if (options.hasUpstream) return { kind: "upstream", host: parsed.name, port };
   let answers: readonly { address: string }[];
   try {

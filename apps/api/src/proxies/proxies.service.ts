@@ -4,6 +4,7 @@ import {
   type ProxyRotation,
   type ProxyTestReason,
   proxyTestReasonSchema,
+  type ProxyList,
   type ProxyTestResult,
   type SavedProxy,
 } from "@brawzer/contracts";
@@ -13,12 +14,14 @@ import {
   type DatabaseHandle,
   eq,
   isNotNull,
+  isNull,
+  or,
   type ProxyRow,
   schema,
   type StoredProxyTest,
   sql,
 } from "@brawzer/db";
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { AuthContext } from "../auth/session.service.js";
 import { lockAccount } from "../common/account-lock.js";
 import { ApiException } from "../common/api-exception.js";
@@ -35,6 +38,7 @@ import { isObviouslyLocal, parseHost } from "@brawzer/net-policy";
 import type { ProxyTarget, ProxyTester } from "@brawzer/proxy-client";
 import { BillingService } from "../billing/billing.service.js";
 import { EgressService } from "../egress/egress.service.js";
+import { type Membership, TeamsService } from "../teams/teams.service.js";
 
 const logger = new Logger("Proxies");
 
@@ -60,9 +64,18 @@ const messages: Record<ProxyTestReason | "ok", string> = {
   invalid_response: "The test through the proxy returned an unexpected answer.",
 };
 
-/** Ciphertexts are bound to their account and row, so they can't be moved to another. */
-const credentialsContext = (userId: string, proxyId: string) =>
-  `proxy-credentials:${userId}:${proxyId}`;
+/**
+ * Ciphertexts are bound to their owner and row, so they can't be moved to
+ * another: an account's own proxy to the account, a team's to the team (so
+ * they stay readable when whoever added them leaves).
+ */
+const credentialsContext = (row: { userId: string; teamId: string | null; id: string }) =>
+  row.teamId === null
+    ? `proxy-credentials:${row.userId}:${row.id}`
+    : `proxy-credentials:team:${row.teamId}:${row.id}`;
+
+const cannotManage = () =>
+  new ApiException("forbidden", 403, "Only the team’s owner and admins can change its proxies.");
 
 const notFound = () => new ApiException("not_found", 404, "That proxy doesn’t exist.");
 
@@ -93,6 +106,7 @@ function toResult(stored: StoredProxyTest): ProxyTestResult {
 
 function toProxy(row: ProxyRow, usedBy: SavedProxy["usedBy"]): SavedProxy {
   return {
+    team: row.teamId !== null,
     id: row.id,
     name: row.name,
     protocol: row.protocol,
@@ -133,7 +147,7 @@ function checkCredentials(protocol: ProxyProtocol, credentials: Credentials): vo
  * them. Tests follow ADR 0010.
  */
 @Injectable()
-export class ProxiesService {
+export class ProxiesService implements OnModuleInit {
   private readonly runningByAccount = new Map<string, number>();
   private runningTotal = 0;
 
@@ -146,15 +160,45 @@ export class ProxiesService {
     @Inject(PROXY_TESTER) private readonly tester: ProxyTester,
     @Inject(EgressService) private readonly egress: EgressService,
     @Inject(BillingService) private readonly billing: BillingService,
+    @Inject(TeamsService) private readonly teams: TeamsService,
   ) {}
+
+  /** Someone leaving a team: their profiles stop using its proxies, which stay with the team. */
+  onModuleInit(): void {
+    this.teams.register({
+      memberLeft: async (tx, teamId, userId, ownerId) => {
+        await tx
+          .update(schema.profiles)
+          .set({ proxyId: null })
+          .where(
+            and(
+              eq(schema.profiles.userId, userId),
+              sql`${schema.profiles.proxyId} in (select id from proxies where team_id = ${teamId})`,
+            ),
+          );
+        await tx
+          .update(schema.proxies)
+          .set({ userId: ownerId })
+          .where(and(eq(schema.proxies.teamId, teamId), eq(schema.proxies.userId, userId)));
+        return undefined;
+      },
+    });
+  }
+
+  /** The person's own proxies, or one of their team's. */
+  private ownedBy(userId: string, membership: Membership | null) {
+    const own = and(eq(schema.proxies.userId, userId), isNull(schema.proxies.teamId));
+    return membership ? or(own, eq(schema.proxies.teamId, membership.teamId)) : own;
+  }
 
   /** A profile's proxy as the egress needs it, credentials included; null without one. */
   async forEgress(userId: string, proxyId: string | null): Promise<ProxyTarget | null> {
     if (!proxyId) return null;
+    const membership = await this.teams.membership(userId);
     const [row] = await this.database.db
       .select()
       .from(schema.proxies)
-      .where(and(eq(schema.proxies.id, proxyId), eq(schema.proxies.userId, userId)))
+      .where(and(eq(schema.proxies.id, proxyId), this.ownedBy(userId, membership)))
       .limit(1);
     if (!row) return null;
     return {
@@ -182,27 +226,55 @@ export class ProxiesService {
 
   private async openCredentials(row: ProxyRow): Promise<Credentials | null> {
     if (!row.credentials) return null;
-    const plain = await this.box.open(row.credentials, credentialsContext(row.userId, row.id));
+    const plain = await this.box.open(row.credentials, credentialsContext(row));
     return JSON.parse(plain) as Credentials;
   }
 
+  /**
+   * A proxy the person may change: their own, or their team's when they are
+   * its owner or an admin. Anyone else's is "not found".
+   */
   private async find(userId: string, id: string): Promise<ProxyRow> {
+    const membership = await this.teams.membership(userId);
     const [row] = await this.database.db
       .select()
       .from(schema.proxies)
-      .where(and(eq(schema.proxies.id, id), eq(schema.proxies.userId, userId)))
+      .where(and(eq(schema.proxies.id, id), this.ownedBy(userId, membership)))
       .limit(1);
     if (!row) throw notFound();
+    if (row.teamId !== null && membership?.role === "member") throw cannotManage();
     return row;
   }
 
-  async list(userId: string): Promise<SavedProxy[]> {
+  /** The Proxy page: the person's own, then their team's, and what they may do with them. */
+  async listFor(userId: string, limit: number): Promise<ProxyList> {
+    const membership = await this.teams.membership(userId);
+    const team = membership
+      ? await this.database.db
+          .select({ name: schema.teams.name })
+          .from(schema.teams)
+          .where(eq(schema.teams.id, membership.teamId))
+      : [];
+    return {
+      proxies: await this.list(userId, membership),
+      limit,
+      team:
+        membership && team[0] ? { name: team[0].name, manage: membership.role !== "member" } : null,
+    };
+  }
+
+  async list(
+    userId: string,
+    /** Already read; undefined: read it here. */
+    membership?: Membership | null,
+  ): Promise<SavedProxy[]> {
+    const team = membership === undefined ? await this.teams.membership(userId) : membership;
     const [rows, uses] = await Promise.all([
       this.database.db
         .select()
         .from(schema.proxies)
-        .where(eq(schema.proxies.userId, userId))
-        .orderBy(asc(schema.proxies.createdAt)),
+        .where(this.ownedBy(userId, team))
+        .orderBy(sql`${schema.proxies.teamId} is not null`, asc(schema.proxies.createdAt)),
       this.database.db
         .select({
           proxyId: schema.profiles.proxyId,
@@ -231,33 +303,57 @@ export class ProxiesService {
       kind: ProxyKind;
       rotation: ProxyRotation;
       credentials?: Credentials | undefined;
+      team?: boolean | undefined;
     },
     meta: RequestMeta,
   ): Promise<SavedProxy> {
     const userId = auth.user.id;
     const host = this.normalizeHost(input.host);
     if (input.credentials) checkCredentials(input.protocol, input.credentials);
+    let teamId: string | null = null;
+    if (input.team) {
+      const membership = await this.teams.membership(userId);
+      if (!membership) throw new ApiException("not_found", 404, "You aren’t in a team.");
+      if (membership.role === "member") throw cannotManage();
+      teamId = membership.teamId;
+    }
 
     let row: ProxyRow;
     try {
       row = await this.database.db.transaction(async (tx) => {
-        await lockAccount(tx, userId);
+        if (teamId) {
+          // A team's list is counted under the team's lock, against the owner's plan.
+          await tx
+            .select({ id: schema.teams.id })
+            .from(schema.teams)
+            .where(eq(schema.teams.id, teamId))
+            .for("update");
+        } else {
+          await lockAccount(tx, userId);
+        }
         const [stats] = await tx
           .select({ count: sql<number>`count(*)::int` })
           .from(schema.proxies)
-          .where(eq(schema.proxies.userId, userId));
+          .where(
+            teamId
+              ? eq(schema.proxies.teamId, teamId)
+              : and(eq(schema.proxies.userId, userId), isNull(schema.proxies.teamId)),
+          );
         const limit = (await this.billing.limitsFor(userId)).proxies;
         if ((stats?.count ?? 0) >= limit) {
           throw new ApiException(
             "limit_reached",
             409,
-            `Your plan allows ${String(limit)} proxies. Delete one, or move to a plan with more.`,
+            teamId
+              ? `The team’s plan allows ${String(limit)} team proxies. Delete one first.`
+              : `Your plan allows ${String(limit)} proxies. Delete one, or move to a plan with more.`,
           );
         }
         const [inserted] = await tx
           .insert(schema.proxies)
           .values({
             userId,
+            teamId,
             name: input.name,
             protocol: input.protocol,
             host,
@@ -271,7 +367,7 @@ export class ProxiesService {
         // Sealed with the row's own ID, so it can only ever be opened for this row.
         const sealed = await this.box.seal(
           JSON.stringify(input.credentials),
-          credentialsContext(userId, inserted.id),
+          credentialsContext(inserted),
         );
         const [withCredentials] = await tx
           .update(schema.proxies)
@@ -315,7 +411,7 @@ export class ProxiesService {
       checkCredentials(protocol, input.credentials);
       credentials = await this.box.seal(
         JSON.stringify(input.credentials),
-        credentialsContext(userId, id),
+        credentialsContext(current),
       );
     } else if (protocol !== current.protocol) {
       // The saved credentials must still suit the new protocol.
@@ -345,7 +441,7 @@ export class ProxiesService {
           ...(changesConnection ? { lastTest: null } : {}),
           updatedAt: new Date(),
         })
-        .where(and(eq(schema.proxies.id, id), eq(schema.proxies.userId, userId)))
+        .where(eq(schema.proxies.id, current.id))
         .returning();
     } catch (error) {
       if (isUniqueViolation(error)) throw nameTaken();
@@ -360,9 +456,10 @@ export class ProxiesService {
   /** Deletes a proxy; profiles that used it go back to no proxy. */
   async remove(auth: AuthContext, id: string, meta: RequestMeta): Promise<void> {
     const userId = auth.user.id;
+    const current = await this.find(userId, id);
     const deleted = await this.database.db
       .delete(schema.proxies)
-      .where(and(eq(schema.proxies.id, id), eq(schema.proxies.userId, userId)))
+      .where(eq(schema.proxies.id, current.id))
       .returning({ id: schema.proxies.id });
     if (deleted.length === 0) throw notFound();
     await this.events.record({ type: "proxy.deleted", userId, sessionId: auth.session.id, meta });
@@ -412,7 +509,7 @@ export class ProxiesService {
       await this.database.db
         .update(schema.proxies)
         .set({ lastTest: stored })
-        .where(and(eq(schema.proxies.id, id), eq(schema.proxies.userId, userId)));
+        .where(eq(schema.proxies.id, row.id));
       return toResult(stored);
     } finally {
       const left = (this.runningByAccount.get(userId) ?? 1) - 1;
@@ -422,9 +519,9 @@ export class ProxiesService {
     }
   }
 
-  /** For "download your data": settings only, never credentials. */
+  /** For "download your data": the person's own, settings only, never credentials. */
   async forExport(userId: string) {
-    return (await this.list(userId)).map(
+    return (await this.list(userId, null)).map(
       ({ name, protocol, host, port, kind, rotation, hasCredentials, createdAt, updatedAt }) => ({
         name,
         protocol,

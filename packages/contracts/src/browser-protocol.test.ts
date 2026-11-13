@@ -50,10 +50,66 @@ describe("client messages", () => {
     expect(
       clientMessageSchema.safeParse({ type: "hello", viewport: { width: 10, height: 10 } }).success,
     ).toBe(false);
+    expect(
+      clientMessageSchema.safeParse({
+        type: "hello",
+        viewport: { width: 1280, height: 800, scale: 3 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("a viewport without a scale asks for none", () => {
+    const parsed = clientMessageSchema.parse({
+      type: "resize",
+      viewport: { width: 1280, height: 800 },
+    });
+    expect(parsed).toMatchObject({ viewport: { width: 1280, height: 800, scale: 1 } });
+    expect(
+      clientMessageSchema.parse({
+        type: "resize",
+        viewport: { width: 1280, height: 800, scale: 2 },
+      }),
+    ).toMatchObject({ viewport: { scale: 2 } });
   });
 });
 
 describe("agent messages", () => {
+  it("carries the pointer's cursor and a site icon", () => {
+    expect(
+      agentMessageSchema.safeParse({
+        type: "pointer",
+        tabId: "a",
+        cursor: "pointer",
+        hscroll: false,
+      }).success,
+    ).toBe(true);
+    expect(
+      agentMessageSchema.safeParse({
+        type: "pointer",
+        tabId: "a",
+        cursor: "url(x)",
+        hscroll: false,
+      }).success,
+    ).toBe(false);
+    expect(
+      agentMessageSchema.safeParse({
+        type: "favicon",
+        tabId: "a",
+        icon: "data:image/png;base64,iVBORw0KGgo=",
+      }).success,
+    ).toBe(true);
+    expect(agentMessageSchema.safeParse({ type: "favicon", tabId: "a", icon: null }).success).toBe(
+      true,
+    );
+    expect(
+      agentMessageSchema.safeParse({
+        type: "favicon",
+        tabId: "a",
+        icon: "data:text/html;base64,PGI+",
+      }).success,
+    ).toBe(false);
+  });
+
   it("validates a tabs snapshot", () => {
     const parsed = agentMessageSchema.safeParse({
       type: "tabs",
@@ -67,6 +123,9 @@ describe("agent messages", () => {
           canGoBack: false,
           canGoForward: false,
           security: "secure",
+          error: null,
+          zoom: 1,
+          reader: false,
         },
       ],
     });
@@ -77,10 +136,32 @@ describe("agent messages", () => {
 describe("frames", () => {
   it("round-trips a header and image", () => {
     const image = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
-    const bytes = encodeFrame({ tabId: "tab-1", frameId: 7, width: 1280, height: 800 }, image);
+    const bytes = encodeFrame(
+      { tabId: "tab-1", frameId: 7, width: 1280, height: 800, scale: 1 },
+      image,
+    );
     const decoded = decodeFrame(bytes);
-    expect(decoded?.header).toEqual({ tabId: "tab-1", frameId: 7, width: 1280, height: 800 });
+    expect(decoded?.header).toEqual({
+      tabId: "tab-1",
+      frameId: 7,
+      width: 1280,
+      height: 800,
+      scale: 1,
+    });
     expect(Array.from(decoded?.image ?? [])).toEqual([0xff, 0xd8, 0xff, 0xd9]);
+  });
+
+  it("carries a sharp frame of a still page, twice the size on screen", () => {
+    const image = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    const sharp = decodeFrame(
+      encodeFrame({ tabId: "tab-1", frameId: 8, width: 3840, height: 2160, scale: 2 }, image),
+    );
+    expect(sharp?.header).toMatchObject({ width: 3840, height: 2160, scale: 2 });
+    expect(
+      decodeFrame(
+        encodeFrame({ tabId: "tab-1", frameId: 9, width: 3841, height: 2160, scale: 2 }, image),
+      ),
+    ).toBeNull();
   });
 
   it("refuses malformed frames", () => {
@@ -102,7 +183,7 @@ describe("transfer chunks", () => {
     expect(decoded?.header).toEqual({ transferId: "dl-1", seq: 3, last: true });
     expect(Array.from(decoded?.data ?? [])).toEqual([1, 2, 3, 4]);
 
-    const frame = encodeFrame({ tabId: "t", frameId: 1, width: 10, height: 10 }, data);
+    const frame = encodeFrame({ tabId: "t", frameId: 1, width: 10, height: 10, scale: 1 }, data);
     expect(binaryKind(frame)).toBe("frame");
     expect(decodeTransferChunk(frame)).toBeNull();
     expect(binaryKind(new Uint8Array([0x58, 1, 0, 0, 0, 0]))).toBeNull();
@@ -163,5 +244,24 @@ describe("transfer and file chooser messages", () => {
       }).success,
     ).toBe(false);
     expect(clientMessageSchema.safeParse({ type: "print", tabId: "t" }).success).toBe(true);
+  });
+});
+
+describe("audio chunks", () => {
+  it("round-trip, keep a whole number of samples and tell their kind", async () => {
+    const { encodeAudioChunk, decodeAudioChunk, binaryKind } =
+      await import("./browser-protocol.ts");
+    const samples = new Uint8Array([0, 1, 2, 3]);
+    const bytes = encodeAudioChunk({ seq: 7, sampleRate: 24_000, channels: 1 }, samples);
+    expect(binaryKind(bytes)).toBe("audio");
+    expect(decodeAudioChunk(bytes)).toEqual({
+      header: { seq: 7, sampleRate: 24_000, channels: 1 },
+      samples,
+    });
+    expect(
+      decodeAudioChunk(
+        encodeAudioChunk({ seq: 0, sampleRate: 24_000, channels: 2 }, samples.subarray(0, 2)),
+      ),
+    ).toBeNull();
   });
 });

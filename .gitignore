@@ -39,3 +39,9 @@ playwright/.cache/
 
 # Staging secrets (see infra/staging/staging.env.example)
 infra/staging/staging.env
+
+# Production and Hostman state (see infra/production/production.env.example, infra/hostman/README.md)
+infra/production/production.env
+infra/production/docker-tls/
+infra/hostman/state.json
+infra/hostman/secrets.env

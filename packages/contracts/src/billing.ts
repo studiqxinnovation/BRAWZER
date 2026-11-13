@@ -3,6 +3,7 @@ import { BROWSER_LIMITS } from "./browser.ts";
 import { DRIVE_LIMITS } from "./drive.ts";
 import { MAX_PROFILES } from "./profiles.ts";
 import { MAX_PROXIES } from "./proxies.ts";
+import { TEAM_LIMITS } from "./teams.ts";
 
 /**
  * Plans (Phase 6, ADR 0015). What a plan allows is a set of limits; the
@@ -19,6 +20,8 @@ export const planLimitsSchema = z.object({
   /** Null: no monthly cap. */
   browsingMinutesPerMonth: z.number().int().positive().nullable(),
   liveSessions: z.number().int().positive(),
+  /** People a team on this plan can have, its owner included; 1 means no team (Phase 8, idea 19). */
+  teamMembers: z.number().int().positive().max(500).default(TEAM_LIMITS.defaultMembers),
 });
 
 export const planCodeSchema = z
@@ -36,6 +39,7 @@ export const FREE_PLAN_LIMITS = {
   driveFolders: DRIVE_LIMITS.maxFolders,
   browsingMinutesPerMonth: null,
   liveSessions: BROWSER_LIMITS.liveSessions,
+  teamMembers: TEAM_LIMITS.defaultMembers,
 } as const satisfies z.infer<typeof planLimitsSchema>;
 
 /** A price as Stripe states it; shown only when it comes from there. */
@@ -52,6 +56,8 @@ export const planSchema = z.object({
   limits: planLimitsSchema,
   /** Null for the free plan, and for paid plans until Stripe is configured. */
   price: planPriceSchema.nullable(),
+  /** Days of free trial a first subscription to this plan starts with, or null (Phase 8, idea 21). */
+  trialDays: z.number().int().min(1).max(90).nullable(),
 });
 
 /** Where the account's plan comes from. */
@@ -96,6 +102,10 @@ export const billingOverviewSchema = z.object({
   plans: z.array(planSchema),
   /** Whether checkout and the billing portal work on this installation. */
   billing: z.enum(["available", "unavailable"]),
+  /** True until the account has had a subscription: a plan's trial is offered once. */
+  trialEligible: z.boolean(),
+  /** Set when the plan comes from a team the person belongs to but doesn't own. */
+  team: z.object({ name: z.string(), owner: z.string() }).nullable(),
 });
 
 export const publicPlansSchema = z.object({ plans: z.array(planSchema) });
@@ -111,8 +121,7 @@ export const checkoutResponseSchema = z.object({
 
 // ── Administration ───────────────────────────────────────────────────────
 
-export const accountRoles = ["user", "admin"] as const;
-export const accountRoleSchema = z.enum(accountRoles);
+import { accountRoleSchema } from "./staff.ts";
 
 export const adminAccountSummarySchema = z.object({
   id: z.uuid(),
@@ -133,6 +142,15 @@ export const adminAccountSchema = adminAccountSummarySchema.extend({
   /** Why an administrator set the plan, if one did. */
   planNote: z.string().nullable(),
 });
+
+/** What the re-wrap job did (Phase 8, idea 13): rows per table, and rows it had to leave. */
+export const rewrapResultSchema = z.object({
+  rewrapped: z.record(z.string(), z.number().int().nonnegative()),
+  failed: z.number().int().nonnegative(),
+  /** False when another instance was already running it; nothing was done here. */
+  ran: z.boolean(),
+});
+export type RewrapResult = z.infer<typeof rewrapResultSchema>;
 
 export const adminAccountListSchema = z.object({
   accounts: z.array(adminAccountSummarySchema),
@@ -161,8 +179,41 @@ export type SubscriptionStatus = z.infer<typeof subscriptionStatusSchema>;
 export type Usage = z.infer<typeof usageSchema>;
 export type BillingOverview = z.infer<typeof billingOverviewSchema>;
 export type CheckoutRequest = z.infer<typeof checkoutRequestSchema>;
-export type AccountRole = z.infer<typeof accountRoleSchema>;
 export type AdminAccountSummary = z.infer<typeof adminAccountSummarySchema>;
 export type AdminAccount = z.infer<typeof adminAccountSchema>;
 export type AdminAccountList = z.infer<typeof adminAccountListSchema>;
 export type AdminSetPlanRequest = z.infer<typeof adminSetPlanRequestSchema>;
+
+/** At this share of a limit, Brawzer says so (Phase 8, idea 20). */
+export const USAGE_WARNING_PERCENT = 80;
+
+export type UsageWarningKind = "browsing" | "storage" | "files";
+
+export interface UsageWarning {
+  kind: UsageWarningKind;
+  used: number;
+  limit: number;
+  /** Whole percent, 100 or more when the limit is reached. */
+  percent: number;
+}
+
+/**
+ * The limits a person is close to or at: browsing hours this month (only on
+ * plans with a monthly cap), Drive storage and the number of Drive files.
+ * Counts of profiles and proxies aren't here: their limits only stop the
+ * next one being added, and say so then.
+ */
+export function usageWarnings(limits: PlanLimits, usage: Usage): UsageWarning[] {
+  const candidates: [UsageWarningKind, number, number | null][] = [
+    ["browsing", usage.browsingMinutesThisMonth, limits.browsingMinutesPerMonth],
+    ["storage", usage.driveBytes, limits.driveBytes],
+    ["files", usage.driveFiles, limits.driveFiles],
+  ];
+  const warnings: UsageWarning[] = [];
+  for (const [kind, used, limit] of candidates) {
+    if (limit === null || limit <= 0) continue;
+    const percent = Math.floor((used / limit) * 100);
+    if (percent >= USAGE_WARNING_PERCENT) warnings.push({ kind, used, limit, percent });
+  }
+  return warnings;
+}

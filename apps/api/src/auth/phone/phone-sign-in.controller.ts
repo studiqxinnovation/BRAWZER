@@ -35,7 +35,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requestMeta } from "../../common/request-meta.js";
 import { SESSION_AUTH } from "../auth.controller.js";
-import { RecentAuthGuard } from "../recent-auth.guard.js";
+import { RecentPasskeyAuthGuard } from "../recent-auth.guard.js";
 import { CurrentAuth, SessionGuard } from "../session.guard.js";
 import { type AuthContext, SessionService } from "../session.service.js";
 import { PhoneSignInService } from "./phone-sign-in.service.js";
@@ -94,6 +94,7 @@ export class PhoneSignInController {
       account: {
         id: user.id,
         email: user.email,
+        name: user.name,
         emailVerified: user.emailVerifiedAt !== null,
         role: user.role,
         planCode: user.planCode,
@@ -121,7 +122,7 @@ export class PhoneSignInController {
 
   @Post(":id/approve")
   @HttpCode(HttpStatus.OK)
-  @UseGuards(SessionGuard, RecentAuthGuard)
+  @UseGuards(SessionGuard, RecentPasskeyAuthGuard)
   @ApiCookieAuth(SESSION_AUTH)
   @SerializeOptions({ schema: phoneApprovalSchema })
   @ApiOperation({

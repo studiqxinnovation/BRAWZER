@@ -14,6 +14,13 @@ export const startBrowserSession = (body: StartBrowserSessionRequest) =>
 export const endBrowserSession = (id: string) =>
   apiRequest<undefined>(`/browser/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
 
+/** Ends the session so its tabs wait for the profile's next one (ADR 0020). */
+export const handOffBrowserSession = (id: string) =>
+  apiRequest<undefined>(`/browser/sessions/${encodeURIComponent(id)}/hand-off`, {
+    method: "POST",
+    body: {},
+  });
+
 /** A single-use ticket and the WebSocket URL to present it on. */
 export const requestStreamTicket = (id: string) =>
   apiRequest(`/browser/sessions/${encodeURIComponent(id)}/ticket`, {

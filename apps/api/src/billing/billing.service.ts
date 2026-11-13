@@ -17,12 +17,14 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
   schema,
   sql,
   type SubscriptionRow,
 } from "@brawzer/db";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ApiException } from "../common/api-exception.js";
+import { EmailService } from "../email/email.js";
 import type { RequestMeta } from "../common/request-meta.js";
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
@@ -30,6 +32,7 @@ import { DATABASE } from "../database/database.module.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { PlanCatalogue } from "./plans.js";
 import { STRIPE, type Stripe } from "./stripe.js";
+import { MetricsService } from "../metrics/metrics.service.js";
 
 const logger = new Logger("Billing");
 const PRICE_CACHE_MS = 10 * 60_000;
@@ -59,16 +62,45 @@ function toSubscription(row: SubscriptionRow): Subscription {
  * webhooks and administrators write it. Prices are never stored or written
  * here: they are read from Stripe when shown.
  */
+/** "12 December 2026", from Stripe's seconds. */
+function day(seconds: number): string {
+  return new Intl.DateTimeFormat("en-GB", { dateStyle: "long", timeZone: "UTC" }).format(
+    new Date(seconds * 1000),
+  );
+}
+
+/** "€9.00", from the minor units Stripe counts in. */
+function money(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: currency.toUpperCase(),
+    }).format(amount / 100);
+  } catch {
+    return `${String(amount / 100)} ${currency.toUpperCase()}`;
+  }
+}
+
+/** "€9.00 a month", when the subscription carries its price. */
+function priceOf(subscription: Stripe.Subscription): string | null {
+  const price = subscription.items.data[0]?.price;
+  if (!price || typeof price.unit_amount !== "number" || !price.currency) return null;
+  const interval = price.recurring?.interval;
+  return `${money(price.unit_amount, price.currency)}${interval ? ` a ${interval}` : ""}`;
+}
+
 @Injectable()
 export class BillingService {
   private readonly catalogue: PlanCatalogue;
   private priceCache: { at: number; prices: Map<string, PlanPrice> } | null = null;
 
   constructor(
+    @Inject(EmailService) private readonly email: EmailService,
     @Inject(DATABASE) private readonly database: DatabaseHandle,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(STRIPE) private readonly stripe: Stripe | null,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
+    @Inject(MetricsService) private readonly metrics: MetricsService,
   ) {
     this.catalogue = new PlanCatalogue(config.billing.plans);
   }
@@ -77,16 +109,66 @@ export class BillingService {
     return this.stripe !== null;
   }
 
+  /** A plan's limits by code; the free plan's for a code that isn't configured. */
+  limitsOfPlan(code: string): PlanLimits {
+    return this.catalogue.limits(code);
+  }
+
   // ── Limits, for every other module ──────────────────────────────────
 
-  /** The limits the account's plan allows. */
+  /**
+   * The plan in force for an account: its own, or its team owner's when it
+   * is in a team (Phase 8, idea 19), and that owner, when it isn't the account.
+   */
+  private async planCodeFor(
+    userId: string,
+  ): Promise<{ code: string; team: { name: string; owner: string } | null }> {
+    const result = await this.database.pool.query<{
+      own: string;
+      owner_plan: string | null;
+      owner_id: string | null;
+      owner_email: string | null;
+      team_name: string | null;
+    }>(
+      `select u.plan_code as own, o.plan_code as owner_plan, o.id as owner_id,
+              o.email as owner_email, t.name as team_name
+       from users u
+       left join team_members m on m.user_id = u.id
+       left join teams t on t.id = m.team_id
+       left join team_members om on om.team_id = m.team_id and om.role = 'owner'
+       left join users o on o.id = om.user_id
+       where u.id = $1`,
+      [userId],
+    );
+    const row = result.rows[0];
+    if (!row) return { code: FREE_PLAN_CODE, team: null };
+    if (row.owner_id && row.owner_id !== userId && row.owner_plan !== null) {
+      return {
+        code: row.owner_plan,
+        team: { name: row.team_name ?? "", owner: row.owner_email ?? "" },
+      };
+    }
+    return { code: row.own, team: null };
+  }
+
+  /** The limits the account's plan allows (its team owner's plan, in a team). */
   async limitsFor(userId: string): Promise<PlanLimits> {
+    return this.catalogue.limits((await this.planCodeFor(userId)).code);
+  }
+
+  /** The plan in force, described, without asking Stripe for prices. */
+  async planOf(userId: string): Promise<Plan> {
+    return this.catalogue.describe((await this.planCodeFor(userId)).code);
+  }
+
+  /** Whether the account pays for a subscription of its own (a team member must not). */
+  async hasOwnSubscription(userId: string): Promise<boolean> {
     const [row] = await this.database.db
-      .select({ planCode: schema.users.planCode })
-      .from(schema.users)
-      .where(eq(schema.users.id, userId))
+      .select({ status: schema.subscriptions.status })
+      .from(schema.subscriptions)
+      .where(eq(schema.subscriptions.userId, userId))
       .limit(1);
-    return this.catalogue.limits(row?.planCode ?? FREE_PLAN_CODE);
+    return row !== undefined && PAID_STATUSES.has(row.status);
   }
 
   /** Cloud browser minutes in the current calendar month (UTC), live sessions counted to now. */
@@ -119,14 +201,14 @@ export class BillingService {
       this.database.db
         .select({ count: count() })
         .from(schema.proxies)
-        .where(eq(schema.proxies.userId, userId)),
+        .where(and(eq(schema.proxies.userId, userId), isNull(schema.proxies.teamId))),
       this.database.db
         .select({
           bytes: sql<string | number>`coalesce(sum(${schema.driveFiles.size}), 0)`,
           files: count(),
         })
         .from(schema.driveFiles)
-        .where(eq(schema.driveFiles.userId, userId)),
+        .where(and(eq(schema.driveFiles.userId, userId), isNull(schema.driveFiles.teamId))),
       this.browsingMinutesThisMonth(userId),
     ]);
     return {
@@ -154,14 +236,17 @@ export class BillingService {
       .limit(1);
     const prices = await this.prices();
     const plans = await this.publicPlans(prices);
-    const code = user?.planCode ?? FREE_PLAN_CODE;
+    const inForce = await this.planCodeFor(userId);
+    const code = inForce.team ? inForce.code : (user?.planCode ?? FREE_PLAN_CODE);
     return {
       plan: this.describe(code, prices),
+      team: inForce.team,
       source: source.success ? source.data : "free",
       usage: await this.usage(userId),
       subscription: subscription ? toSubscription(subscription) : null,
       plans,
       billing: this.available ? "available" : "unavailable",
+      trialEligible: !subscription?.stripeSubscriptionId,
     };
   }
 
@@ -216,10 +301,24 @@ export class BillingService {
     auth: { user: { id: string; email: string }; session: { id: string } },
     planCode: string,
   ): Promise<string> {
+    if ((await this.planCodeFor(auth.user.id)).team) {
+      throw new ApiException(
+        "conflict",
+        409,
+        "Your plan comes from your team. Leave the team to choose a plan of your own.",
+      );
+    }
     if (!this.stripe) throw notAvailable();
     const plan = this.catalogue.definition(planCode);
     if (!plan) throw new ApiException("not_found", 404, "That plan doesn’t exist.");
     const customerId = await this.customerFor(auth.user);
+    // A trial is for a first subscription only: an account that has had one pays from day one.
+    const [previous] = await this.database.db
+      .select({ subscriptionId: schema.subscriptions.stripeSubscriptionId })
+      .from(schema.subscriptions)
+      .where(eq(schema.subscriptions.userId, auth.user.id))
+      .limit(1);
+    const trialDays = plan.trialDays && !previous?.subscriptionId ? plan.trialDays : null;
     const session = await this.stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
@@ -228,7 +327,10 @@ export class BillingService {
       cancel_url: `${this.config.webOrigin}/app/account?billing=cancelled`,
       client_reference_id: auth.user.id,
       metadata: { userId: auth.user.id, planCode: plan.code },
-      subscription_data: { metadata: { userId: auth.user.id, planCode: plan.code } },
+      subscription_data: {
+        metadata: { userId: auth.user.id, planCode: plan.code },
+        ...(trialDays ? { trial_period_days: trialDays } : {}),
+      },
       allow_promotion_codes: true,
     });
     if (!session.url) throw new Error("Stripe returned a checkout session without a URL");
@@ -283,8 +385,14 @@ export class BillingService {
         this.config.billing.webhookSecret,
       );
     } catch {
+      this.metrics.count("brawzer_stripe_webhooks_total", "Stripe webhooks, by result.", {
+        result: "bad_signature",
+      });
       throw new ApiException("unauthorized", 401, "The webhook signature is invalid.");
     }
+    this.metrics.count("brawzer_stripe_webhooks_total", "Stripe webhooks, by result.", {
+      result: "received",
+    });
     const seen = await this.database.db
       .insert(schema.billingEvents)
       .values({ stripeEventId: event.id, type: event.type })
@@ -296,14 +404,50 @@ export class BillingService {
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted":
-        await this.applySubscription(event.data.object);
+        await this.applySubscription(event.data.object, event.id);
         return;
       case "checkout.session.completed": {
         const session = event.data.object;
         if (typeof session.subscription === "string") {
           const subscription = await this.stripe.subscriptions.retrieve(session.subscription);
-          await this.applySubscription(subscription);
+          await this.applySubscription(subscription, event.id);
         }
+        return;
+      }
+      case "invoice.payment_failed": {
+        const invoice = event.data.object;
+        const owner = await this.ownerOfCustomer(
+          typeof invoice.customer === "string" ? invoice.customer : (invoice.customer?.id ?? ""),
+        );
+        if (!owner) return;
+        const plan = this.catalogue.definition(owner.planCode)?.name ?? owner.planCode;
+        const amount =
+          typeof invoice.amount_due === "number" && invoice.currency
+            ? money(invoice.amount_due, invoice.currency)
+            : null;
+        const retryOn =
+          typeof invoice.next_payment_attempt === "number"
+            ? day(invoice.next_payment_attempt)
+            : null;
+        this.email.sendPaymentFailed(owner.email, plan, amount, retryOn, event.id);
+        return;
+      }
+      case "customer.subscription.trial_will_end": {
+        const subscription = event.data.object;
+        const owner = await this.ownerOfCustomer(
+          typeof subscription.customer === "string"
+            ? subscription.customer
+            : subscription.customer.id,
+        );
+        if (!owner || typeof subscription.trial_end !== "number") return;
+        const plan = this.catalogue.byPrice(subscription.items.data[0]?.price.id ?? "");
+        this.email.sendTrialEnding(
+          owner.email,
+          plan?.name ?? owner.planCode,
+          day(subscription.trial_end),
+          priceOf(subscription),
+          event.id,
+        );
         return;
       }
       default:
@@ -311,8 +455,25 @@ export class BillingService {
     }
   }
 
-  /** Mirrors a Stripe subscription onto the account and sets its plan. */
-  private async applySubscription(subscription: Stripe.Subscription): Promise<void> {
+  /** The account behind a Stripe customer, for the emails billing sends. */
+  private async ownerOfCustomer(
+    customerId: string,
+  ): Promise<{ email: string; planCode: string } | null> {
+    if (customerId === "") return null;
+    const [row] = await this.database.db
+      .select({ email: schema.users.email, planCode: schema.users.planCode })
+      .from(schema.subscriptions)
+      .innerJoin(schema.users, eq(schema.users.id, schema.subscriptions.userId))
+      .where(eq(schema.subscriptions.stripeCustomerId, customerId))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Mirrors a Stripe subscription onto the account and sets its plan, and says so by email. */
+  private async applySubscription(
+    subscription: Stripe.Subscription,
+    eventId: string,
+  ): Promise<void> {
     const customerId =
       typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
     const [row] = await this.database.db
@@ -342,7 +503,11 @@ export class BillingService {
       .where(eq(schema.subscriptions.id, row.id));
 
     const [user] = await this.database.db
-      .select({ planCode: schema.users.planCode, planSource: schema.users.planSource })
+      .select({
+        email: schema.users.email,
+        planCode: schema.users.planCode,
+        planSource: schema.users.planSource,
+      })
       .from(schema.users)
       .where(eq(schema.users.id, row.userId))
       .limit(1);
@@ -350,7 +515,14 @@ export class BillingService {
     // An administrator's grant outranks Stripe until the administrator ends it.
     if (user.planSource === "admin") return;
     const nextSource: PlanSource = paid ? "stripe" : "free";
-    if (user.planCode === planCode && user.planSource === nextSource) return;
+    const renewsOn = periodEnd ? day(periodEnd) : null;
+    if (user.planCode === planCode && user.planSource === nextSource) {
+      // The same plan, cancelled for the end of the period (or resumed): say so.
+      if (paid && subscription.cancel_at_period_end && !row.cancelAtPeriodEnd && renewsOn) {
+        this.email.sendSubscriptionEnding(user.email, plan.name, renewsOn, eventId);
+      }
+      return;
+    }
     await this.setPlan(row.userId, planCode, nextSource, null);
     const type =
       user.planCode === FREE_PLAN_CODE && paid
@@ -362,15 +534,45 @@ export class BillingService {
       type,
       userId: row.userId,
       meta: { ip: null, userAgent: null },
-      metadata: { plan: planCode },
+      metadata: { plan: planCode, from: user.planCode },
     });
+    const planName = plan?.name ?? planCode;
+    if (type === "billing.subscription_started") {
+      const trialEndsOn =
+        subscription.status === "trialing" && typeof subscription.trial_end === "number"
+          ? day(subscription.trial_end)
+          : null;
+      this.email.sendSubscriptionStarted(
+        user.email,
+        planName,
+        priceOf(subscription),
+        renewsOn,
+        trialEndsOn,
+        eventId,
+      );
+    } else if (type === "billing.subscription_changed") {
+      this.email.sendSubscriptionChanged(user.email, planName, renewsOn, eventId);
+    } else {
+      const ended = this.catalogue.definition(user.planCode)?.name ?? user.planCode;
+      this.email.sendSubscriptionEnded(user.email, ended, eventId);
+    }
+    this.email.notifyAdmins(
+      "subscription",
+      [
+        ["Account", user.email],
+        ["Change", type.replace("billing.subscription_", "")],
+        ["Plan", planName],
+      ],
+      `subscription:${eventId}`,
+    );
   }
 
   // ── Administration ──────────────────────────────────────────────────
 
   /** Sets the plan by hand; `free` with source `free` hands control back to Stripe. */
   async setPlanByAdmin(
-    actor: { user: { id: string }; session: { id: string } },
+    /** Null for an operator at the command line, who has no sign-in. */
+    actor: { user: { id: string }; session: { id: string } } | null,
     userId: string,
     planCode: string,
     reason: string,
@@ -394,7 +596,7 @@ export class BillingService {
     await this.events.record({
       type: "admin.plan_changed",
       userId,
-      sessionId: actor.session.id,
+      sessionId: actor?.session.id ?? null,
       meta,
       metadata: { plan: effective, reason },
     });

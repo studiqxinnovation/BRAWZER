@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { open, rm } from "node:fs/promises";
 import path from "node:path";
 import {
+  CLIPBOARD_MAX_CHARS,
   BROWSER_PROTOCOL_VERSION,
   type ChosenFile,
   encodeFrame,
@@ -12,12 +13,35 @@ import {
   type TransferChunkHeader,
   type TransferKind,
   type TransferMessage,
+  type VideoCodec,
   type Viewport,
+  encodeVideoChunk,
+  type NavigationError,
 } from "@brawzer/contracts";
 import type { BidiConnection } from "./bidi.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
+import { FocusReporter, IconReporter, PointerReporter } from "./page-reporters.ts";
+import { FrameEncoder } from "./video.ts";
 import { ChunkWriter, sendFile } from "./transfers.ts";
+import {
+  fetchImageScript,
+  FIND_STOP_SCRIPT,
+  findScript,
+  selectionScript,
+  zoomScript,
+} from "./page-tools.ts";
+import { imageFilename } from "./engine.ts";
+
+/** Firefox's own error page, `about:neterror?e=<code>&u=<address>`, as the failure it stands for. */
+function errorPageOf(url: string): NavigationError | null {
+  if (!url.startsWith("about:neterror?") && !url.startsWith("about:certerror?")) return null;
+  const params = new URLSearchParams(url.slice(url.indexOf("?") + 1));
+  return {
+    url: (params.get("u") ?? "").slice(0, 4096),
+    code: (params.get("e") ?? "").slice(0, 64),
+  };
+}
 
 interface Tab {
   id: string;
@@ -27,6 +51,15 @@ interface Tab {
   canGoBack: boolean;
   canGoForward: boolean;
   security: TabSecurity;
+  /** Firefox is showing its own error page for this address. */
+  error: NavigationError | null;
+  /** Brawzer's layout zoom for this tab, re-applied as pages load. */
+  zoom: number;
+  /** Brawzer's reader view is showing in place of the page. */
+  reader: boolean;
+  /** The site icon last sent for this tab, and where it came from. */
+  icon: string | null;
+  iconUrl: string | null;
 }
 
 interface Transfer {
@@ -48,7 +81,34 @@ interface Chooser {
 }
 
 const MAX_TABS = 16;
+/** Keys after which what has focus may have changed. */
+const FOCUS_KEYS = new Set([
+  "Tab",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Enter",
+  " ",
+  "Escape",
+  "Home",
+  "End",
+]);
+/** Frames of a moving page: at scale 1, small enough to keep up. */
 const JPEG_QUALITY = 0.6;
+/** The one frame of a page that has stopped: at the viewer's pixel ratio, for reading. */
+const SHARP_QUALITY = 0.85;
+/** No change for this long means the page has stopped moving. */
+const STILL_MS = 300;
+/** What counts as the page moving once it has its sharp picture: this many changed captures within the window. */
+const MOTION_FRAMES = 3;
+const MOTION_WINDOW_MS = 700;
+/** Sharp pictures refreshed for lone changes come no closer together than this. */
+const SHARP_MIN_INTERVAL_MS = 1_000;
+/** A sharp frame that takes longer than this to be drawn says the connection can't afford them. */
+const SHARP_SLOW_MS = 1_500;
+/** How long sharp frames pause after a slow one. */
+const SHARP_BACKOFF_MS = 30_000;
 /** Between screenshots when the page hasn't changed; grows while it stays still. */
 const IDLE_MIN_MS = 80;
 const IDLE_MAX_MS = 400;
@@ -136,8 +196,39 @@ export class FirefoxEngine implements Engine {
   private pendingAck: { frameId: number; resolve: () => void } | null = null;
   private streaming = false;
   private lastFrameHash = "";
+  /** The moving page as video, when the viewer decodes it and the container can encode it. */
+  private encoder: FrameEncoder | null = null;
+  private videoSeq = 0;
+  private videoNeedsKey = false;
+  private viewerCodecs: readonly string[] = [];
+  /** Whether the page showing now has had its sharp frame. */
+  private sharpDone = false;
+  /** When the page was last seen unchanged after a change; 0 while it moves. */
+  private stillSince = 0;
+  /** The sharp picture is what the viewer shows: lone changes refresh it rather than replace it. */
+  private sharpHold = false;
+  private sharpSentAt = 0;
+  private changeTimes: number[] = [];
+  /** Until when sharp frames are skipped because the last one was slow to arrive. */
+  private sharpBackoffUntil = 0;
   private snapshotQueued = false;
   private titleTimer: NodeJS.Timeout | null = null;
+  private readonly pointer = new PointerReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (message) => this.viewer?.send(message),
+    (tab) => this.viewer !== null && tab.id === this.activeId && this.tabs.has(tab.id),
+  );
+  private readonly icons = new IconReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (url) => this.options.fetchIcon(url),
+    (message) => this.viewer?.send(message),
+  );
+  private readonly focus = new FocusReporter<Tab>(
+    (tab, expression) => this.evaluate(tab, expression),
+    (message) => this.viewer?.send(message),
+    (tab) => this.viewer !== null && tab.id === this.activeId && this.tabs.has(tab.id),
+  );
+  private readonly loadedExtensions: string[] = [];
   private readonly transfers = new Map<string, Transfer>();
   private readonly handoverQueue: string[] = [];
   private handingOver = false;
@@ -203,23 +294,36 @@ export class FirefoxEngine implements Engine {
       const tab = this.tabs.get(info.context);
       if (!tab) return;
       tab.loading = true;
-      tab.url = info.url;
-      tab.security = securityOf(info.url);
+      tab.reader = false;
+      // Firefox shows a failure as a navigation of its own to about:neterror;
+      // the address bar keeps the address that failed.
+      const failure = this.explained(errorPageOf(info.url));
+      if (failure) {
+        tab.url = failure.url || tab.url;
+        tab.error = failure;
+      } else {
+        tab.url = info.url;
+        tab.security = securityOf(info.url);
+        tab.error = null;
+      }
       this.queueSnapshot();
     });
     // Firefox ESR 153 has no navigationAborted event; a stopped navigation
     // reaches "complete" through the title poll instead.
     this.bidi.on("browsingContext.navigationFailed", (params) => {
-      const tab = this.tabs.get((params as { context: string }).context);
+      const info = params as { context: string; url: string };
+      const tab = this.tabs.get(info.context);
       if (!tab) return;
       tab.loading = false;
+      tab.error = { url: info.url || tab.url, code: "" };
+      void this.readErrorCode(tab);
       this.queueSnapshot();
     });
     // A page restored from the back-forward cache commits without a load event.
     this.bidi.on("browsingContext.navigationCommitted", (params) => {
       const info = params as { context: string; url: string };
       const tab = this.tabs.get(info.context);
-      if (!tab) return;
+      if (!tab || errorPageOf(info.url)) return;
       tab.url = info.url;
       tab.security = securityOf(info.url);
       void this.refreshTitle(tab);
@@ -228,7 +332,7 @@ export class FirefoxEngine implements Engine {
       this.bidi.on(event, (params) => {
         const info = params as { context: string; url: string };
         const tab = this.tabs.get(info.context);
-        if (!tab) return;
+        if (!tab || errorPageOf(info.url)) return;
         tab.url = info.url;
         tab.security = securityOf(info.url);
         void this.refreshTitle(tab);
@@ -239,9 +343,22 @@ export class FirefoxEngine implements Engine {
       const tab = this.tabs.get(info.context);
       if (!tab) return;
       tab.loading = false;
-      tab.url = info.url;
-      tab.security = securityOf(info.url);
+      void this.icons.refresh(tab);
+      const failure = this.explained(errorPageOf(info.url));
+      if (failure) {
+        tab.url = failure.url || tab.url;
+        tab.error = failure;
+      } else {
+        tab.url = info.url;
+        tab.security = securityOf(info.url);
+        if (tab.error && tab.error.url !== info.url) tab.error = null;
+      }
+      // Always said: the title may already have been read during the load, so
+      // the refresh below can find nothing new, and the viewer must still hear
+      // that loading is over.
+      this.queueSnapshot();
       void this.refreshTitle(tab);
+      if (tab.zoom !== 1) void this.evaluate(tab, zoomScript(tab.zoom)).catch(() => undefined);
       this.lastFrameHash = "";
     });
     this.bidi.on("browsingContext.userPromptOpened", (params) => {
@@ -332,14 +449,42 @@ export class FirefoxEngine implements Engine {
     if (this.tabs.size === 0) await this.createTab();
     const first = this.order[0];
     if (first) await this.activate(first);
+    await this.installAndTidy();
     this.bidi.onClose(() => {
       this.ready = false;
     });
     this.ready = true;
   }
 
-  attachViewer(viewer: Viewer, viewport: Viewport): void {
+  /**
+   * Installs the profile's extensions once the first tab exists, then closes
+   * the tabs they open while being installed (welcome and help pages): every
+   * session installs afresh, so those would otherwise open every time.
+   */
+  private async installAndTidy(): Promise<void> {
+    if (this.options.extensions.length === 0) return;
+    const before = new Set(this.order);
+    await this.installExtensions();
+    if (this.loadedExtensions.length === 0) return;
+    const closed = new Set<string>();
+    const until = Date.now() + 2_000;
+    while (Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      for (const id of [...this.order]) {
+        if (before.has(id) || closed.has(id)) continue;
+        closed.add(id);
+        log("info", "closed a tab an extension opened on install");
+        await this.bidi.send("browsingContext.close", { context: id }).catch(() => undefined);
+      }
+    }
+    const first = [...before].find((id) => this.tabs.has(id));
+    if (first && this.activeId !== first) await this.activate(first);
+  }
+
+  attachViewer(viewer: Viewer, viewport: Viewport, codecs: readonly VideoCodec[]): void {
     this.viewer = viewer;
+    this.viewerCodecs = codecs;
+    this.stopVideo();
     void this.setViewport(viewport).then(() => {
       if (this.viewer !== viewer) return;
       viewer.send({
@@ -348,10 +493,14 @@ export class FirefoxEngine implements Engine {
         engine: { name: "firefox", version: this.version.slice(0, 64) },
         tabs: this.snapshot(),
         activeTabId: this.activeId ?? this.order[0] ?? "",
+        extensions: this.loadedExtensions,
       });
       this.lastFrameHash = "";
       void this.streamFrames();
       void this.handOver();
+      this.pointer.reset();
+      this.focus.reset();
+      this.icons.resend(this.tabs.values());
     });
     this.titleTimer ??= setInterval(() => {
       const active = this.activeTab();
@@ -366,12 +515,56 @@ export class FirefoxEngine implements Engine {
     this.titleTimer = null;
     this.pendingAck?.resolve();
     this.pendingAck = null;
+    this.pointer.reset();
+    this.stopVideo();
+  }
+
+  // ── Video, as the Chromium engine does it ─────────────────────────────
+
+  private videoEncoder(): FrameEncoder | null {
+    if (!this.options.video || !this.viewerCodecs.includes("vp8")) return null;
+    const { width, height } = this.viewport;
+    if (this.encoder && (this.encoder.width !== width || this.encoder.height !== height)) {
+      this.stopVideo();
+    }
+    if (!this.encoder) {
+      const encoder = new FrameEncoder(width, height, (frame) => {
+        if (this.encoder !== encoder) return;
+        this.sendVideo(frame.key, frame.data);
+      });
+      encoder.start();
+      this.encoder = encoder;
+      this.videoNeedsKey = true;
+    }
+    return this.encoder;
+  }
+
+  private sendVideo(key: boolean, data: Buffer): void {
+    const viewer = this.viewer;
+    if (!viewer) return;
+    if (this.videoNeedsKey && !key) return;
+    const { width, height } = this.viewport;
+    const sent = viewer.sendVideo(
+      encodeVideoChunk({ seq: this.videoSeq, codec: "vp8", key, width, height }, data),
+    );
+    this.videoSeq = (this.videoSeq + 1) % 1_000_000_000;
+    this.videoNeedsKey = !sent;
+  }
+
+  private stopVideo(): void {
+    this.encoder?.stop();
+    this.encoder = null;
+    this.videoNeedsKey = true;
   }
 
   async handle(message: RelayMessage): Promise<void> {
     switch (message.type) {
       case "hello":
       case "ping":
+      case "sound":
+        return;
+      case "video-lost":
+        this.stopVideo();
         return;
       case "resize":
         await this.setViewport(message.viewport);
@@ -379,6 +572,12 @@ export class FirefoxEngine implements Engine {
       case "new-tab":
         await this.createTab(message.url);
         return;
+      case "open-browser-page": {
+        const pages = this.options.browserPages;
+        const url = pages ? (message.page === "passwords" ? pages.passwords : pages.account) : null;
+        if (url) await this.createTab(url);
+        return;
+      }
       case "close-tab":
         if (this.tabs.has(message.tabId)) {
           await this.bidi.send("browsingContext.close", { context: message.tabId });
@@ -418,6 +617,10 @@ export class FirefoxEngine implements Engine {
         await this.evaluate(tab, "window.stop()");
         return;
       case "mouse": {
+        if (message.kind === "move" || message.kind === "up") {
+          this.pointer.report(tab, message.x, message.y);
+        }
+        if (message.kind === "up") this.focus.report(tab);
         const actions: object[] = [{ type: "pointerMove", x: message.x, y: message.y }];
         const button = { left: 0, middle: 1, right: 2, back: 3, forward: 4, none: 0 }[
           message.button
@@ -452,6 +655,7 @@ export class FirefoxEngine implements Engine {
         return;
       }
       case "key": {
+        if (message.kind === "up" && FOCUS_KEYS.has(message.key)) this.focus.report(tab);
         const value = keyValue(message.key, message.text);
         if (!value) return;
         await this.bidi.send("input.performActions", {
@@ -498,6 +702,99 @@ export class FirefoxEngine implements Engine {
       case "file-chooser":
         this.expectChosenFiles(message.chooserId, message.files);
         return;
+      case "drop":
+        // Firefox's remote protocol has no way to drop files on a page: the bytes that
+        // follow find no writer and are dropped; the viewer says to use the page's own button.
+        this.viewer?.send({ type: "refused", tabId: tab.id, action: "drop" });
+        return;
+      case "save-image":
+        await this.saveImage(tab, message.url);
+        return;
+      case "find": {
+        // A page still settling (a navigation committing, no body yet) can fail the
+        // search; it is tried again briefly before "no matches" is said.
+        let value: unknown = null;
+        for (let attempt = 0; attempt < 5 && typeof value !== "string"; attempt++) {
+          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 200));
+          value = await this.evaluate(
+            tab,
+            findScript(message.text, message.forward, message.caseSensitive),
+          ).catch(() => null);
+        }
+        const found =
+          typeof value === "string"
+            ? (JSON.parse(value) as { matches: number; active: number })
+            : { matches: 0, active: 0 };
+        this.viewer?.send({ type: "find-result", tabId: tab.id, text: message.text, ...found });
+        this.lastFrameHash = "";
+        return;
+      }
+      case "find-stop":
+        await this.evaluate(tab, FIND_STOP_SCRIPT).catch(() => undefined);
+        return;
+      case "copy": {
+        const value = await this.evaluate(tab, selectionScript(CLIPBOARD_MAX_CHARS)).catch(
+          () => "",
+        );
+        this.viewer?.send({
+          type: "clipboard",
+          tabId: tab.id,
+          text: typeof value === "string" ? value : "",
+        });
+        return;
+      }
+      case "paste": {
+        // Typed as the keyboard would, so it lands wherever the click before it put the focus.
+        const actions = Array.from(message.text).flatMap((char) => [
+          { type: "keyDown", value: char },
+          { type: "keyUp", value: char },
+        ]);
+        await this.bidi.send("input.performActions", {
+          context: tab.id,
+          actions: [{ type: "key", id: "keyboard", actions }],
+        });
+        this.lastFrameHash = "";
+        return;
+      }
+      case "zoom":
+        tab.zoom = message.factor;
+        await this.evaluate(tab, zoomScript(message.factor)).catch(() => undefined);
+        this.lastFrameHash = "";
+        this.queueSnapshot();
+        return;
+      case "reader": {
+        if (!message.on) {
+          // The page itself is gone (replaced by the reading layout): open it afresh.
+          if (tab.reader) {
+            // Firefox's load events are unreliable when the current document was
+            // written by script, so the navigation is awaited and the state settled here.
+            const url = tab.url;
+            await Promise.race([
+              this.bidi
+                .send("browsingContext.navigate", { context: tab.id, url, wait: "complete" })
+                .catch(() => undefined),
+              new Promise((resolve) => setTimeout(resolve, 10_000)),
+            ]);
+            tab.reader = false;
+            tab.loading = false;
+            tab.url = url;
+            this.lastFrameHash = "";
+            void this.refreshTitle(tab);
+            this.queueSnapshot();
+          }
+          return;
+        }
+        const value = await this.evaluate(tab, this.options.readerScript).catch(() => null);
+        const ok = typeof value === "string" && (JSON.parse(value) as { ok: boolean }).ok;
+        if (ok) {
+          tab.reader = true;
+          this.lastFrameHash = "";
+          this.queueSnapshot();
+        } else {
+          this.viewer?.send({ type: "reader-unavailable", tabId: tab.id });
+        }
+        return;
+      }
     }
   }
 
@@ -554,37 +851,137 @@ export class FirefoxEngine implements Engine {
         }
         const hash = createHash("sha1").update(shot.data).digest("hex");
         if (hash === this.lastFrameHash) {
+          if (this.stillSince === 0) this.stillSince = Date.now();
+          // The page has stopped: once, a frame at the viewer's own pixel ratio.
+          if (
+            !this.sharpDone &&
+            this.viewport.scale > 1 &&
+            Date.now() >= this.sharpBackoffUntil &&
+            Date.now() - this.stillSince >= STILL_MS &&
+            Date.now() - this.sharpSentAt >= SHARP_MIN_INTERVAL_MS
+          ) {
+            this.sharpDone = true;
+            this.sharpHold = true;
+            this.sharpSentAt = Date.now();
+            await this.sendSharp(tab, viewer);
+            continue;
+          }
           await new Promise((resolve) => setTimeout(resolve, idle));
           idle = Math.min(IDLE_MAX_MS, Math.round(idle * 1.5));
           continue;
         }
         idle = IDLE_MIN_MS;
         this.lastFrameHash = hash;
+        this.sharpDone = false;
+        const now = Date.now();
+        this.changeTimes = this.changeTimes.filter((at) => now - at < MOTION_WINDOW_MS);
+        this.changeTimes.push(now);
+        if (this.sharpHold && this.changeTimes.length < MOTION_FRAMES && this.viewport.scale > 1) {
+          // A lone change while the sharp picture is up (a blinking cursor, a clock
+          // tick): the viewer keeps the sharp picture and gets a fresh one shortly,
+          // rather than a soft frame and then a sharp one, over and over.
+          this.stillSince = now;
+          await new Promise((resolve) => setTimeout(resolve, IDLE_MIN_MS));
+          continue;
+        }
+        this.sharpHold = false;
+        this.stillSince = 0;
+        const encoder = this.videoEncoder();
+        if (encoder) {
+          // As video: no acknowledgement to wait for; the next picture follows at once.
+          encoder.push(Buffer.from(shot.data, "base64"));
+          await new Promise((resolve) => setTimeout(resolve, 33));
+          continue;
+        }
         const frameId = ++this.frameCounter;
         const bytes = encodeFrame(
-          { tabId: tab.id, frameId, width: this.viewport.width, height: this.viewport.height },
+          {
+            tabId: tab.id,
+            frameId,
+            width: this.viewport.width,
+            height: this.viewport.height,
+            scale: 1,
+          },
           Buffer.from(shot.data, "base64"),
         );
         if (!viewer.sendFrame(bytes)) {
           await new Promise((resolve) => setTimeout(resolve, IDLE_MIN_MS));
           continue;
         }
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(() => {
-            if (this.pendingAck?.frameId === frameId) this.pendingAck = null;
-            resolve();
-          }, ACK_TIMEOUT_MS);
-          this.pendingAck = {
-            frameId,
-            resolve: () => {
-              clearTimeout(timer);
-              resolve();
-            },
-          };
-        });
+        await this.drawn(frameId);
       }
     } finally {
       this.streaming = false;
+    }
+  }
+
+  /** Waits for the viewer to report a frame drawn, or gives up after a while; how long it took. */
+  private async drawn(frameId: number): Promise<number> {
+    const sentAt = Date.now();
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.pendingAck?.frameId === frameId) this.pendingAck = null;
+        resolve();
+      }, ACK_TIMEOUT_MS);
+      this.pendingAck = {
+        frameId,
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+      };
+    });
+    return Date.now() - sentAt;
+  }
+
+  /**
+   * One frame of the still page at the viewer's pixel ratio: the page is
+   * painted at that ratio for the capture and put back, so the frames that
+   * follow when it moves again stay small. Firefox can't scale a capture on
+   * the way out, which is why the ratio is switched rather than kept.
+   */
+  private async sendSharp(tab: Tab, viewer: Viewer): Promise<void> {
+    const { width, height, scale } = this.viewport;
+    let shot: { data: string } | null = null;
+    try {
+      await this.bidi.send("browsingContext.setViewport", {
+        context: tab.id,
+        viewport: { width, height },
+        devicePixelRatio: scale,
+      });
+      shot = await this.bidi.send<{ data: string }>("browsingContext.captureScreenshot", {
+        context: tab.id,
+        origin: "viewport",
+        format: { type: "image/jpeg", quality: SHARP_QUALITY },
+      });
+    } catch {
+      shot = null;
+    } finally {
+      await this.bidi
+        .send("browsingContext.setViewport", {
+          context: tab.id,
+          viewport: { width, height },
+          devicePixelRatio: 1,
+        })
+        .catch(() => undefined);
+    }
+    if (!shot || this.viewer !== viewer || tab.id !== this.activeId) return;
+    const frameId = ++this.frameCounter;
+    const bytes = encodeFrame(
+      {
+        tabId: tab.id,
+        frameId,
+        width: Math.round(width * scale),
+        height: Math.round(height * scale),
+        scale,
+      },
+      Buffer.from(shot.data, "base64"),
+    );
+    if (!viewer.sendFrame(bytes)) return;
+    const took = await this.drawn(frameId);
+    if (took > SHARP_SLOW_MS) {
+      this.sharpBackoffUntil = Date.now() + SHARP_BACKOFF_MS;
+      log("info", "sharp frame was slow to arrive; pausing them", { ms: took });
     }
   }
 
@@ -608,6 +1005,11 @@ export class FirefoxEngine implements Engine {
       canGoBack: false,
       canGoForward: false,
       security: securityOf(url),
+      error: null,
+      zoom: 1,
+      reader: false,
+      icon: null,
+      iconUrl: null,
     };
     this.tabs.set(id, tab);
     this.order.push(id);
@@ -615,6 +1017,7 @@ export class FirefoxEngine implements Engine {
       .send("browsingContext.setViewport", {
         context: id,
         viewport: { width: this.viewport.width, height: this.viewport.height },
+        devicePixelRatio: 1,
       })
       .catch(() => undefined);
     // Popups come to the front, like new tabs.
@@ -664,6 +1067,24 @@ export class FirefoxEngine implements Engine {
     this.queueSnapshot();
   }
 
+  /** The catalogue builds chosen for this session, installed over BiDi (ADR 0018). */
+  private async installExtensions(): Promise<void> {
+    for (const extension of this.options.extensions) {
+      try {
+        await this.bidi.send("webExtension.install", {
+          extensionData: { type: "path", path: extension.path },
+        });
+        this.loadedExtensions.push(extension.slug);
+        log("info", "extension loaded", { slug: extension.slug });
+      } catch (error) {
+        log("warn", "extension not loaded", {
+          slug: extension.slug,
+          message: error instanceof Error ? error.message : "",
+        });
+      }
+    }
+  }
+
   private async evaluate(tab: Tab, expression: string): Promise<unknown> {
     const result = await this.bidi.send<{ result?: { value?: unknown } }>("script.evaluate", {
       expression,
@@ -673,29 +1094,79 @@ export class FirefoxEngine implements Engine {
     return result.result?.value;
   }
 
+  /** Brawzer's own reason for a refused tunnel, when the proxy noted one for that address. */
+  private explained(error: NavigationError | null): NavigationError | null {
+    if (error?.code !== "proxyConnectFailure") return error;
+    return { url: error.url, code: this.options.refusalFor(error.url) ?? error.code };
+  }
+
+  /** Firefox's error page is `about:neterror?e=<code>&u=<address>`; Brawzer draws the explanation. */
+  private async readErrorCode(tab: Tab): Promise<void> {
+    const failed = tab.error;
+    if (!failed) return;
+    // The error document replaces the page shortly after the event; look a few times.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      if (tab.error !== failed) return;
+      try {
+        const value = await this.evaluate(tab, "document.documentURI");
+        if (tab.error !== failed || typeof value !== "string") return;
+        if (value.startsWith("about:neterror?") || value.startsWith("about:certerror?")) {
+          const params = new URLSearchParams(value.slice(value.indexOf("?") + 1));
+          const code = params.get("e") ?? "";
+          const url = params.get("u") ?? failed.url;
+          const explained = this.explained({ url: url || failed.url, code: code.slice(0, 64) });
+          if (explained) tab.error = explained;
+          this.queueSnapshot();
+          return;
+        }
+      } catch {
+        return; // The page moved on.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+
   private async refreshTitle(tab: Tab): Promise<void> {
     try {
       const value = await this.evaluate(
         tab,
-        "JSON.stringify({ title: document.title, url: location.href, complete: document.readyState === 'complete', back: typeof navigation !== 'undefined' ? navigation.canGoBack : history.length > 1, forward: typeof navigation !== 'undefined' ? navigation.canGoForward : false })",
+        "JSON.stringify({ title: document.title, url: location.href, doc: document.documentURI, complete: document.readyState === 'complete', back: typeof navigation !== 'undefined' ? navigation.canGoBack : history.length > 1, forward: typeof navigation !== 'undefined' ? navigation.canGoForward : false })",
       );
       if (typeof value !== "string") return;
       const state = JSON.parse(value) as {
         title: string;
         url: string;
+        doc: string;
         complete: boolean;
         back: boolean;
         forward: boolean;
       };
       let changed = false;
-      // A back-forward cache restore reaches "complete" without a load event.
-      if (tab.loading && state.complete && state.url === tab.url) {
-        tab.loading = false;
-        this.lastFrameHash = "";
+      // Firefox's error page is a document of its own; whichever events were
+      // seen, what is shown decides what the tab reports.
+      const failure = this.explained(errorPageOf(state.doc));
+      if (failure) {
+        if (tab.error?.code !== failure.code || tab.error.url !== failure.url) {
+          tab.error = failure;
+          if (failure.url) tab.url = failure.url;
+          changed = true;
+        }
+        if (tab.loading && state.complete) {
+          tab.loading = false;
+          changed = true;
+        }
+      } else if (tab.error && state.url === tab.url && state.complete) {
+        tab.error = null;
         changed = true;
       }
       if (state.title !== tab.title) {
         tab.title = state.title;
+        changed = true;
+      }
+      // A back-forward cache restore reaches "complete" without a load event.
+      if (tab.loading && state.complete && state.url === tab.url) {
+        tab.loading = false;
+        this.lastFrameHash = "";
         changed = true;
       }
       if (state.back !== tab.canGoBack || state.forward !== tab.canGoForward) {
@@ -721,6 +1192,9 @@ export class FirefoxEngine implements Engine {
         canGoBack: tab.canGoBack,
         canGoForward: tab.canGoForward,
         security: tab.security,
+        error: tab.error,
+        zoom: tab.zoom,
+        reader: tab.reader,
       }));
   }
 
@@ -735,16 +1209,20 @@ export class FirefoxEngine implements Engine {
   }
 
   private async setViewport(viewport: Viewport): Promise<void> {
-    const changed =
+    const resized =
       viewport.width !== this.viewport.width || viewport.height !== this.viewport.height;
+    const changed = resized || viewport.scale !== this.viewport.scale;
     this.viewport = viewport;
     if (!changed) return;
+    this.sharpDone = false;
+    if (!resized) return;
     await Promise.all(
       [...this.tabs.keys()].map((id) =>
         this.bidi
           .send("browsingContext.setViewport", {
             context: id,
             viewport: { width: viewport.width, height: viewport.height },
+            devicePixelRatio: 1,
           })
           .catch(() => undefined),
       ),
@@ -833,6 +1311,63 @@ export class FirefoxEngine implements Engine {
     } finally {
       this.handingOver = false;
     }
+  }
+
+  /** As the Chromium engine's: the page fetches its image where it may, else the proxy does. */
+  private async saveImage(tab: Tab, url: string): Promise<void> {
+    const id = `image-${randomUUID()}`;
+    const transfer: Transfer = {
+      id,
+      tabId: tab.id,
+      kind: "download",
+      filename: imageFilename(url),
+      path: path.join(this.options.downloadDir, id),
+      bytes: 0,
+      finished: false,
+    };
+    this.transfers.set(id, transfer);
+    this.report(transfer, "started");
+    try {
+      let image: { type: string; bytes: Buffer } | null = null;
+      const inPage = await this.evaluateAwaited(
+        tab,
+        fetchImageScript(url, this.options.maxFileBytes),
+      ).catch(() => null);
+      if (typeof inPage === "string") {
+        const parsed = JSON.parse(inPage) as { type?: unknown; data?: unknown };
+        if (typeof parsed.type === "string" && typeof parsed.data === "string") {
+          image = { type: parsed.type, bytes: Buffer.from(parsed.data, "base64") };
+        }
+      }
+      image ??= await this.options.fetchImage(url, this.options.maxFileBytes);
+      if (!image) throw new Error("not an image");
+      transfer.filename = imageFilename(url, image.type);
+      transfer.bytes = image.bytes.length;
+      const file = await open(transfer.path, "w", 0o600);
+      try {
+        await file.write(image.bytes);
+      } finally {
+        await file.close();
+      }
+      this.handoverQueue.push(id);
+      void this.handOver();
+    } catch (error) {
+      transfer.finished = true;
+      this.transfers.delete(id);
+      await rm(transfer.path, { force: true }).catch(() => undefined);
+      log("warn", "save image failed", { message: error instanceof Error ? error.message : "" });
+      this.report(transfer, "failed", "The image couldn’t be read.");
+    }
+  }
+
+  /** A script whose result is a promise, awaited in the page. */
+  private async evaluateAwaited(tab: Tab, expression: string): Promise<unknown> {
+    const result = await this.bidi.send<{ result?: { value?: unknown } }>("script.evaluate", {
+      expression,
+      target: { context: tab.id },
+      awaitPromise: true,
+    });
+    return result.result?.value;
   }
 
   private async printToDrive(tab: Tab): Promise<void> {

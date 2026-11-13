@@ -70,7 +70,7 @@ docker compose -f infra/staging/compose.yaml --env-file infra/staging/staging.en
 ```
 
 - **OpenBao runs in dev mode** as a stand-in for a managed key service: its keys live in memory, so anything encrypted with them becomes unreadable after a restart. It's for checking the stack, not for real data.
-- **Email needs a real Resend key** and a verified sending domain; without one, sign-up confirmation emails aren't delivered.
+- **Email needs a real Resend key** and a verified sending domain; without one, sign-up confirmation emails aren't delivered. See "Email through Resend" below.
 - **Checked on 2026-11-07:**
   - Every service became healthy, and migrations and key setup ran once and exited.
   - Pages were served over HTTP/2 with HSTS and the security headers, with a fresh nonce for each account page.
@@ -125,12 +125,48 @@ Engine API ([ADR 0012](adr/0012-cloud-browser-runtime-isolation.md)):
 - **Profile data and cloud browser downloads** use the same object store and scanner as Drive ([ADR 0013](adr/0013-profile-data-and-drive-hand-off.md)): profile archives under `profiles/<account>/`, downloads as Drive files. The runtime learns Drive's per-file limit from the API (`DRIVE_MAX_FILE_BYTES`, passed into the container); profile archives are capped at 256 MiB compressed. Budget object storage for both.
 - **The test site** (`BROWSER_TEST_SITE`) serves `testsite.invalid` over HTTP and HTTPS inside each runtime for the browser tests (the HTTPS certificate is made per container and trusted only by that container's engine, for that one key). Development and CI only; refused in production.
 
+## The first installation
+
+brawzer.com runs on two Hostman servers in New York with the services
+self-hosted beside the app tier; [infra/hostman/README.md](../infra/hostman/README.md)
+is the record of what was created, how it is deployed
+(`node infra/hostman/deploy.mjs`), backed up and tested
+(`node infra/hostman/smoke.mjs`). Nothing in the code depends on that choice.
+
 ## Not done yet
 
-- **A provider and the managed services themselves** (PostgreSQL, Valkey, the object store, a key service, ClamAV): provisioned per installation; the stacks reach them by address.
-- **A verified Resend sending domain.** It needs the website domain.
-- **A scheduler across several runtime hosts**, a warm pool, and the TURN servers for WebRTC streaming (Phase 3b).
+- **A provider and the managed services themselves** (PostgreSQL, Valkey, the object store, a key service, ClamAV) are provisioned per installation; the stacks reach them by address. `infra/hostman/` does it for Hostman, with the services on the app host rather than managed.
+- **TURN servers for WebRTC streaming** (Phase 3b): declined after the spike; the frame stream is what ships. (The runtime-host scheduler and the warm pool were built in Phase 8.)
 - **An independent penetration test** and the isolation checks on a real host (runbook).
+- **Backups in a second place.** `backup.sh` keeps encrypted copies in the installation's own bucket (runbook, "Backups"); a copy with another provider is the operator's choice.
+
+## Email through Resend
+
+Every email Brawzer sends (sign-up confirmation, sign-in and account
+notices, the welcome, billing, quarantined files, team updates, usage
+notices, and the notices to administrators) goes through one transport.
+To send for real:
+
+1. In Resend, verify the sending domain (SPF and DKIM records) and create an
+   API key with sending permission.
+2. Set `EMAIL_TRANSPORT=resend`, `RESEND_API_KEY=re_…` and
+   `EMAIL_FROM=Brawzer <no-reply@your-domain>` on the API (from the secret
+   manager, never in the repository). `EMAIL_REPLY_TO` is optional.
+3. Add a webhook in Resend pointing at `https://<api>/api/v1/webhooks/resend`
+   for the events `email.bounced` and `email.complained` (the dashboard, or
+   `POST https://api.resend.com/webhooks`, whose answer carries the signing
+   secret once), and set its signing secret as `RESEND_WEBHOOK_SECRET=whsec_…`. From then on a hard
+   bounce or a spam complaint stops every further email to that address, and
+   the person's Account page says so until they change it. Without the
+   secret the route answers 404 and bounces go unnoticed.
+4. `ADMIN_EMAILS` lists who runs the installation; they are emailed about
+   sign-ups, subscriptions, reported pages and quarantined files unless
+   `ADMIN_NOTIFICATIONS=none`.
+
+The mark at the top of each email is served from the web app
+(`/brand/mark.png`), so the web origin must be reachable from mail clients.
+Optional notices carry `List-Unsubscribe` headers and a one-click link;
+security and billing emails are always sent.
 
 ## Running the browser tests against a production build
 

@@ -6,6 +6,9 @@ import https from "node:https";
 import path from "node:path";
 import { promisify } from "node:util";
 
+const TEST_ICON_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR42mPQjrlJEmIY1TCqYfhqAAB0lmAQ1pLtYgAAAABJRU5ErkJggg==";
+
 export const TEST_SITE_HOST = "testsite.invalid";
 /** Loopback ports inside the container; the proxy maps the host's 80 and 443 onto them. */
 export const TEST_SITE_PORTS = { http: 8090, https: 8091 } as const;
@@ -97,9 +100,52 @@ function handleTestSiteRequest(req: http.IncomingMessage, res: http.ServerRespon
         ),
       );
       return;
+    case "/favicon.ico": {
+      // A 16×16 blue square: enough to see a site icon reach the tab strip.
+      const icon = Buffer.from(TEST_ICON_PNG, "base64");
+      res.writeHead(200, { "content-type": "image/png", "content-length": String(icon.length) });
+      res.end(icon);
+      return;
+    }
     case "/second":
       send(200, page("Second page", "<h1>Second page</h1>"));
       return;
+    case "/sound":
+      // A tone starts on a click (as autoplay rules want), loud enough to be unmistakable.
+      send(
+        200,
+        page(
+          "Sound test",
+          `<h1>Sound test</h1>
+<button class="box" style="top:40px" onclick="const c=new AudioContext();const o=c.createOscillator();o.frequency.value=440;const g=c.createGain();g.gain.value=0.5;o.connect(g).connect(c.destination);o.start();document.title='Playing';setInterval(()=>c.resume(),300)">Play a tone</button>`,
+        ),
+      );
+      return;
+    case "/long": {
+      // For the stream load test: a long page whose look changes all the way down.
+      const sections = Array.from({ length: 300 }, (_value, index) => {
+        const hue = (index * 37) % 360;
+        return `<section style="padding:24px 32px;background:hsl(${String(hue)} 60% 92%)"><h2 style="margin:0 0 8px">Section ${String(index + 1)}</h2><p style="margin:0">Scrolling content for the stream load test. Each section has its own colour so every scroll step changes the picture, as a real page with images and text would.</p></section>`;
+      }).join("");
+      send(
+        200,
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Long page</title></head><body style="margin:0;font:18px/1.5 sans-serif">${sections}</body></html>`,
+      );
+      return;
+    }
+    case "/article": {
+      const paragraphs = Array.from(
+        { length: 8 },
+        (_value, index) =>
+          `<p>Paragraph ${String(index + 1)} of the test article. The northern lights appear when charged particles from the sun meet the gases of the upper atmosphere, and the colours depend on which gas is struck and how high up. Green is the most common, red the rarest, and the display is brightest a few hours either side of midnight.</p>`,
+      ).join("");
+      send(
+        200,
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Aurora forecast</title></head>
+<body><nav><a href="/">Home</a> · <a href="/second">Second</a></nav><main><article><h1>Aurora forecast</h1><p class="byline">By the test site</p>${paragraphs}</article></main><footer>Footer text</footer></body></html>`,
+      );
+      return;
+    }
     case "/search": {
       const q = url.searchParams.get("q") ?? "";
       send(200, page(`Results for ${q}`, `<h1>Results for ${escapeHtml(q)}</h1>`));
@@ -140,7 +186,8 @@ function handleTestSiteRequest(req: http.IncomingMessage, res: http.ServerRespon
         page(
           "Upload page",
           `<h1>Upload page</h1>
-<input class="box" style="top:40px" type="file" multiple onchange="document.title=[...this.files].map(f=>f.name+' '+f.size).join(', ')">`,
+<input class="box" style="top:40px" type="file" multiple onchange="document.title=[...this.files].map(f=>f.name+' '+f.size).join(', ')">
+<div style="position:absolute;top:200px;left:0;right:0;height:300px;background:#eef" ondragover="event.preventDefault()" ondrop="event.preventDefault();document.title=[...event.dataTransfer.files].map(f=>f.name+' '+f.size).join(', ')">Drop files here</div>`,
         ),
       );
       return;
@@ -149,6 +196,12 @@ function handleTestSiteRequest(req: http.IncomingMessage, res: http.ServerRespon
         "set-cookie": "brawzer_test=kept; Max-Age=86400; Path=/; SameSite=Lax",
       });
       return;
+    case "/agent": {
+      // What a website is told about the browser: its user agent and brand hints.
+      const agent = `${req.headers["user-agent"] ?? "none"} | ${String(req.headers["sec-ch-ua"] ?? "none")}`;
+      send(200, page(`Agent: ${agent}`, `<h1>${escapeHtml(agent)}</h1>`));
+      return;
+    }
     case "/cookie": {
       const cookie = req.headers.cookie ?? "none";
       send(200, page(`Cookie: ${cookie}`, `<h1>Cookie: ${escapeHtml(cookie)}</h1>`));

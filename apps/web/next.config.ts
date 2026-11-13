@@ -64,6 +64,8 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: workspaceRoot,
   reactStrictMode: true,
   poweredByHeader: false,
+  // No "N" button in the corner while developing: it reads as part of the desktop.
+  devIndicators: false,
   typedRoutes: true,
   cacheComponents: true,
   partialPrefetching: true,
@@ -80,6 +82,12 @@ const nextConfig: NextConfig = {
   headers: () =>
     Promise.resolve([
       { source: "/:path*", headers: securityHeaders },
+      {
+        // The desktop shows cloud browsers in windows by framing this page
+        // (src/proxy.ts sets its policy's frame-ancestors to 'self' as well).
+        source: "/app/browser/window",
+        headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }],
+      },
       {
         // Signed-in pages show account data: never cache them (a shared
         // computer's next user must not see them) and never index them.

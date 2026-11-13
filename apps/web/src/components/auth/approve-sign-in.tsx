@@ -97,6 +97,10 @@ export function ApproveSignIn({
   }
   return (
     <div className="flex flex-col gap-5">
+      <p className="text-footnote text-ink-secondary">
+        Approving asks for your passkey if you have one, so your password is never typed on this
+        phone.
+      </p>
       <Panel className="p-5">
         <dl className="grid gap-2 text-callout">
           <div className="flex gap-3">

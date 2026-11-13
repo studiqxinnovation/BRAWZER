@@ -5,13 +5,15 @@ import { Button } from "@brawzer/ui/components/button";
 import { Field, FieldError, FieldLabel, Input } from "@brawzer/ui/components/field";
 import { FormMessage } from "@brawzer/ui/components/form-message";
 import { PasswordInput } from "@brawzer/ui/components/password-input";
-import { KeyRound } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, KeyRound } from "lucide-react";
+import Link from "next/link";
 import { type SubmitEvent, useRef, useState } from "react";
 import { login } from "@/lib/api/auth";
 import { signInOptions, verifySignIn } from "@/lib/api/passkeys";
 import { requestPasskey, usePasskeysSupported } from "@/lib/passkeys";
 import { fieldErrorsFromDetails, fieldErrorsFromIssues } from "@/lib/api/client";
 import { safeNextPath } from "@/lib/redirect";
+import { playSound } from "@/lib/sounds";
 import { focusFirstInvalid, KeepSignedIn, TextLink } from "./auth-ui";
 import { SecondStep } from "./second-step";
 
@@ -21,8 +23,16 @@ interface Notice {
   message: string;
 }
 
-export function SignInForm() {
+export function SignInForm({
+  screen = false,
+  staff = false,
+}: {
+  screen?: boolean;
+  /** The admin console's sign-in: lands on /admin and offers no account creation. */
+  staff?: boolean;
+}) {
   const formRef = useRef<HTMLFormElement>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<Notice | null>(null);
   const [keepSignedIn, setKeepSignedIn] = useState(false);
@@ -32,8 +42,31 @@ export function SignInForm() {
   const passkeysSupported = usePasskeysSupported();
 
   function goToNext() {
+    const next = safeNextPath(
+      new URLSearchParams(window.location.search).get("next"),
+      staff ? "/admin" : "/app",
+    );
     // A full page load: the signed-in area renders on the server with the new cookie.
-    window.location.replace(safeNextPath(new URLSearchParams(window.location.search).get("next")));
+    if (!screen) {
+      window.location.replace(next);
+      return;
+    }
+    // Signed in: a welcome chime and "Welcome" for a beat, then the screen lifts away.
+    playSound("boot");
+    const screenElement = document.querySelector(".lg-screen");
+    const welcome = screenElement?.querySelector(".lg-welcome");
+    if (welcome) welcome.textContent = "Welcome";
+    screenElement?.classList.add("lg-done");
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      window.location.replace(next);
+      return;
+    }
+    setTimeout(() => {
+      screenElement?.classList.add("lg-out");
+    }, 700);
+    setTimeout(() => {
+      window.location.replace(next);
+    }, 1_150);
   }
 
   async function signInWithPasskey() {
@@ -117,6 +150,126 @@ export function SignInForm() {
     );
   }
 
+  if (screen) {
+    // The prototype's log-in screen: pills on the blurred wallpaper, the arrow to go.
+    return (
+      <form method="post" ref={formRef} noValidate onSubmit={handleSubmit} className="lg-form">
+        {notice && (
+          <div className={notice.tone === "info" ? "lg-err lg-info" : "lg-err"} role="alert">
+            {notice.title && <b>{notice.title}</b>}
+            {notice.message}
+          </div>
+        )}
+        <label className="sr-only" htmlFor="login-email">
+          Email
+        </label>
+        <input
+          id="login-email"
+          className="lg-in"
+          type="email"
+          name="email"
+          placeholder="Email"
+          autoComplete="username"
+          inputMode="email"
+          autoCapitalize="none"
+          spellCheck={false}
+          required
+          aria-invalid={errors.email ? true : undefined}
+          aria-describedby={errors.email ? "login-email-error" : undefined}
+        />
+        {errors.email && (
+          <p id="login-email-error" className="lg-field-err">
+            {errors.email}
+          </p>
+        )}
+        <div className="lg-row">
+          <div className="lg-pw">
+            <label className="sr-only" htmlFor="login-password">
+              Password
+            </label>
+            <input
+              id="login-password"
+              className="lg-in"
+              type={showPassword ? "text" : "password"}
+              name="password"
+              placeholder="Enter password"
+              autoComplete="current-password"
+              required
+              aria-invalid={errors.password ? true : undefined}
+              aria-describedby={errors.password ? "login-password-error" : undefined}
+            />
+            <button
+              type="button"
+              className="lg-eye"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-pressed={showPassword}
+              onClick={() => {
+                setShowPassword((current) => !current);
+              }}
+            >
+              {showPassword ? (
+                <EyeOff aria-hidden="true" className="size-4" />
+              ) : (
+                <Eye aria-hidden="true" className="size-4" />
+              )}
+            </button>
+          </div>
+          <button type="submit" className="lg-go" aria-label="Sign in" disabled={pending}>
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </button>
+        </div>
+        {errors.password && (
+          <p id="login-password-error" className="lg-field-err">
+            {errors.password}
+          </p>
+        )}
+        <label className="lg-keep">
+          <input
+            type="checkbox"
+            aria-describedby="login-keep-note"
+            checked={keepSignedIn}
+            onChange={(event) => {
+              setKeepSignedIn(event.target.checked);
+            }}
+          />
+          Keep me signed in on this device
+        </label>
+        <p id="login-keep-note" className="lg-small">
+          Only on your own computer. Otherwise you’re signed out when the browser closes, or after
+          30 minutes without activity.
+        </p>
+        <div className="lg-links">
+          {passkeysSupported && (
+            <button
+              type="button"
+              className="lg-link"
+              disabled={passkeyPending}
+              onClick={() => void signInWithPasskey()}
+            >
+              Sign in with a passkey
+            </button>
+          )}
+          {!staff && (
+            <Link href="/sign-in/phone" className="lg-link">
+              Sign in with your phone
+            </Link>
+          )}
+          <Link href="/forgot-password" className="lg-link">
+            Forgot password?
+          </Link>
+          <Link href="/recover" className="lg-link">
+            Lost your passkey or authenticator?
+          </Link>
+          {!staff && (
+            <Link href="/create-account" className="lg-link">
+              Create an account
+            </Link>
+          )}
+        </div>
+      </form>
+    );
+  }
+
   return (
     <form
       method="post"
@@ -151,10 +304,12 @@ export function SignInForm() {
         </>
       )}
 
-      <p className="text-footnote text-ink-secondary">
-        No Bluetooth on this computer?{" "}
-        <TextLink href="/sign-in/phone">Sign in with your phone</TextLink> instead.
-      </p>
+      {!staff && (
+        <p className="text-footnote text-ink-secondary">
+          No Bluetooth on this computer?{" "}
+          <TextLink href="/sign-in/phone">Sign in with your phone</TextLink> instead.
+        </p>
+      )}
 
       <Field name="email" invalid={Boolean(errors.email)}>
         <FieldLabel>Email</FieldLabel>

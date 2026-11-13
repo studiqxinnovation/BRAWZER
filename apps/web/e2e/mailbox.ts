@@ -87,10 +87,11 @@ export async function createConfirmedAccount(
   baseURL: string,
   email: string,
   password: string,
+  options: { chooseDesktop?: boolean } = {},
 ): Promise<void> {
   const origin = new URL(baseURL).origin;
   const registered = await request.post("/api/v1/auth/register", {
-    data: { email, password },
+    data: { name: "Test Person", email, password },
     headers: { origin },
   });
   expect(registered.status()).toBe(202);
@@ -101,6 +102,15 @@ export async function createConfirmedAccount(
     headers: { origin },
   });
   expect(verified.status()).toBe(200);
+  // A returning person: the desktop style is chosen (as this computer's own), so
+  // "Choose your desktop" doesn't ask. The desktop test that asks starts without it.
+  if (options.chooseDesktop !== false) {
+    const chosen = await request.put("/api/v1/apps/desktop/records/state", {
+      data: { data: { style: process.platform === "darwin" ? "mac" : "windows" } },
+      headers: { origin },
+    });
+    expect(chosen.status()).toBe(200);
+  }
   // Verification signs in; start the browser tests signed out.
   await request.post("/api/v1/auth/logout", { headers: { origin } });
 }
@@ -117,6 +127,15 @@ export async function signIn(
     headers: { origin: new URL(baseURL).origin },
   });
   expect(response.status()).toBe(200);
+  // A fresh tab at /app starts on the plain desktop; the tests want the dashboard out.
+  await context.addInitScript(() => {
+    try {
+      if (location.pathname.startsWith("/app") && !sessionStorage.getItem("brawzer:dash"))
+        sessionStorage.setItem("brawzer:dash", "shown");
+    } catch {
+      // Storage blocked.
+    }
+  });
 }
 
 /** Another device: a separate browser context with its own cookies, signed in. */
@@ -135,6 +154,49 @@ export async function otherDevice(
 export async function signOut(page: Page): Promise<void> {
   // The session keeper marks <html> after hydration; clicking earlier does nothing.
   await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await clickSignOut(page);
   await expect(page).toHaveURL(/\/sign-in\?signed_out=1$/);
 }
+
+/**
+ * "Sign out": the sidebar's button in the classic layout and on phones; on
+ * the desktop, as on the prototype, it's in the dashboard's Account menu.
+ */
+export async function clickSignOut(page: Page): Promise<void> {
+  const button = page.getByRole("button", { name: "Sign out", exact: true });
+  if (await button.isVisible()) {
+    await button.click();
+    return;
+  }
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+}
+
+/** The page's own cookie is signed in as `email`: asked of the API, not read off the page. */
+/**
+ * After signing in through the form, a wide screen starts on the plain
+ * desktop: the dashboard comes out of the Dock (Mac) or the taskbar (Windows).
+ */
+export async function openDashboard(page: Page): Promise<void> {
+  await expect(page.locator("html")).toHaveAttribute("data-session-keeper", /.+/);
+  const desktop = await page.evaluate(
+    () =>
+      matchMedia("(min-width: 64rem)").matches &&
+      document.documentElement.dataset.desktop !== "off",
+  );
+  if (!desktop) return;
+  await page
+    .getByRole("navigation", { name: /^(Dock|Taskbar)$/ })
+    .getByRole("button", { name: /^Brawzer/ })
+    .click();
+}
+
+export async function expectSignedInAs(page: Page, email: string): Promise<void> {
+  // The page's own origin: a passkey test signs in on localhost, not the base URL.
+  const response = await page.request.get(new URL("/api/v1/auth/session", page.url()).toString());
+  expect(response.status()).toBe(200);
+  expect(((await response.json()) as { account: { email: string } }).account.email).toBe(email);
+}
+
+/** Home's heading: a greeting by the person's own clock. */
+export const GREETING = /^(Good (morning|afternoon|evening)|Welcome back)/;

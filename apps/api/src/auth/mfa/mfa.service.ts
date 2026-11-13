@@ -200,7 +200,25 @@ export class MfaService {
   }
 
   async disable(auth: AuthContext, meta: RequestMeta): Promise<void> {
-    const { user, session } = auth;
+    await this.disableFor(auth.user, auth.session.id, meta);
+  }
+
+  /** Staff turn two-factor off for a customer who lost it (Phase 11); the owner is told as usual. */
+  async disableForUser(userId: string, meta: RequestMeta): Promise<void> {
+    const [user] = await this.database.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+    if (!user) throw new ApiException("not_found", 404, "That account doesn’t exist.");
+    await this.disableFor(user, null, meta);
+  }
+
+  private async disableFor(
+    user: { id: string; email: string },
+    sessionId: string | null,
+    meta: RequestMeta,
+  ): Promise<void> {
     if (!(await this.isEnabled(user.id))) {
       throw new ApiException("bad_request", 400, "Two-factor authentication isn’t on.");
     }
@@ -211,8 +229,9 @@ export class MfaService {
     await this.events.record({
       type: "mfa.disabled",
       userId: user.id,
-      sessionId: session.id,
+      ...(sessionId ? { sessionId } : {}),
       meta,
+      ...(sessionId ? {} : { metadata: { by: "staff" } }),
     });
     this.email.sendMfaDisabled(user.email);
   }

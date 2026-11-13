@@ -8,11 +8,13 @@
     "dev": "nest start --watch --preserveWatchOutput",
     "build": "nest build",
     "start": "node dist/main.js",
+    "cli": "node --env-file-if-exists=../../.env dist/cli/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "catalog:",
     "@aws-sdk/client-s3": "catalog:",
     "@aws-sdk/lib-storage": "catalog:",
     "@brawzer/contracts": "workspace:*",
@@ -31,16 +33,16 @@
     "@node-rs/argon2": "catalog:",
     "@simplewebauthn/server": "catalog:",
     "fastify": "catalog:",
-    "ioredis": "catalog:",
     "file-type": "catalog:",
+    "ioredis": "catalog:",
     "otplib": "catalog:",
     "pino": "catalog:",
     "qrcode": "catalog:",
+    "reflect-metadata": "catalog:",
+    "rxjs": "catalog:",
     "socks": "catalog:",
     "stripe": "catalog:",
     "ws": "catalog:",
-    "reflect-metadata": "catalog:",
-    "rxjs": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

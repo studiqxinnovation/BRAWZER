@@ -11,5 +11,6 @@ import { HealthService } from "./health.service.js";
   imports: [DatabaseModule, RedisModule, StorageModule, ScanningModule, BrowserModule],
   controllers: [HealthController],
   providers: [HealthService],
+  exports: [HealthService],
 })
 export class HealthModule {}

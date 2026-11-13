@@ -32,6 +32,7 @@ export function CreateAccountForm() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const parsed = registerRequestSchema.safeParse({
+      name: form.get("name"),
       email: form.get("email"),
       password: form.get("password"),
     });
@@ -89,7 +90,7 @@ export function CreateAccountForm() {
   return (
     <div className="flex flex-col gap-8">
       <AuthHeading title="Create your Brawzer account" headingRef={headingRef}>
-        <p>One account for your cloud browser, profiles and Drive.</p>
+        <p>One account for your cloud browser, Drive and desktop. It takes a minute.</p>
       </AuthHeading>
 
       <form
@@ -100,6 +101,15 @@ export function CreateAccountForm() {
         className="flex flex-col gap-5"
       >
         {failure && <FormMessage tone="danger">{failure}</FormMessage>}
+
+        <Field name="name" invalid={Boolean(errors.name)}>
+          <FieldLabel>Your name</FieldLabel>
+          <Input name="name" autoComplete="name" maxLength={80} spellCheck={false} required />
+          <FieldDescription>
+            How Brawzer addresses you. Change it any time on the Account page.
+          </FieldDescription>
+          {errors.name && <FieldError match>{errors.name}</FieldError>}
+        </Field>
 
         <Field name="email" invalid={Boolean(errors.email)}>
           <FieldLabel>Email</FieldLabel>

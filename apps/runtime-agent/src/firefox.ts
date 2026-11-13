@@ -12,6 +12,8 @@ export interface FirefoxLaunchOptions {
   viewport: { width: number; height: number };
   /** The first tab's page: Brawzer's own start page, through the proxy. */
   startUrl: string;
+  /** Sound: where the engine finds the session's audio server. */
+  extraEnv?: Record<string, string> | undefined;
 }
 
 export interface LaunchedFirefox {
@@ -103,6 +105,7 @@ export async function launchFirefox(options: FirefoxLaunchOptions): Promise<Laun
         LANG: "en_US.UTF-8",
         TZ: "UTC",
         DBUS_SESSION_BUS_ADDRESS: "disabled:",
+        ...options.extraEnv,
       },
     },
   );

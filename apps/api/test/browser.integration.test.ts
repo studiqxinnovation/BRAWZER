@@ -1,4 +1,6 @@
 import {
+  binaryKind,
+  decodeAudioChunk,
   accountExportSchema,
   type AgentMessage,
   agentMessageSchema,
@@ -10,7 +12,12 @@ import {
   streamTicketSchema,
   type TabState,
 } from "@brawzer/contracts";
-import { driveFileSchema, profileListSchema, profileSchema } from "@brawzer/contracts";
+import {
+  driveFileSchema,
+  historyPageSchema,
+  profileListSchema,
+  profileSchema,
+} from "@brawzer/contracts";
 import { WebSocket } from "ws";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHarness, type Harness, type TestBrowser } from "./support/harness.js";
@@ -65,6 +72,8 @@ async function ticketFor(client: TestBrowser, id: string) {
 class Viewer {
   readonly messages: AgentMessage[] = [];
   readonly frames: { tabId: string; frameId: number; bytes: number }[] = [];
+  /** Sound chunks, with whether anything audible was in them. */
+  readonly audio: { seq: number; bytes: number; loud: boolean }[] = [];
   closeCode: number | null = null;
   private readonly socket: WebSocket;
   private waiters: (() => void)[] = [];
@@ -83,7 +92,24 @@ class Viewer {
     });
     this.socket.on("message", (data: Buffer, isBinary: boolean) => {
       if (isBinary) {
-        const frame = decodeFrame(new Uint8Array(data));
+        const bytes = new Uint8Array(data);
+        if (binaryKind(bytes) === "audio") {
+          const chunk = decodeAudioChunk(bytes);
+          if (chunk) {
+            const view = new DataView(
+              chunk.samples.buffer,
+              chunk.samples.byteOffset,
+              chunk.samples.byteLength,
+            );
+            let loud = false;
+            for (let offset = 0; offset + 1 < chunk.samples.length; offset += 2) {
+              if (Math.abs(view.getInt16(offset, true)) > 2000) loud = true;
+            }
+            this.audio.push({ seq: chunk.header.seq, bytes: chunk.samples.length, loud });
+          }
+          return;
+        }
+        const frame = decodeFrame(bytes);
         if (frame) {
           this.frames.push({ ...frame.header, bytes: frame.image.length });
           this.send({
@@ -197,7 +223,7 @@ describe("cloud browser sessions", () => {
     const overview = browserOverviewSchema.parse(response.json());
     expect(overview.session).toBeNull();
     expect(overview.runtime).toBe("available");
-    expect(overview.limits).toEqual({ idleMinutes: 15, maxHours: 4 });
+    expect(overview.limits).toEqual({ idleMinutes: 15, maxHours: 4, liveSessions: 3 });
   });
 
   it("starts a session, streams the page, browses the test site and ends", async () => {
@@ -206,12 +232,19 @@ describe("cloud browser sessions", () => {
     expect(session.status).toBe("running");
     expect(session.startedAt).not.toBeNull();
 
-    // One live session per account.
-    const second = await client.post("/browser/sessions", {});
-    expect(second.statusCode).toBe(409);
+    // Several browsers at once (three on the free plan), a profile in one at a time.
+    const [profile] = profileListSchema.parse((await client.get("/profiles")).json()).profiles;
+    const second = await client.post("/browser/sessions", { profileId: profile?.id });
+    expect(second.statusCode, second.body).toBe(201);
+    const secondId = browserSessionSchema.parse(second.json()).id;
+    const twice = await client.post("/browser/sessions", { profileId: profile?.id });
+    expect(twice.statusCode).toBe(409);
+    expect(h.errorOf(twice).message).toContain("is already open in another browser");
 
     const overview = browserOverviewSchema.parse((await client.get("/browser")).json());
-    expect(overview.session?.id).toBe(session.id);
+    expect(overview.session?.id).toBe(secondId);
+    expect(overview.sessions.map((entry) => entry.id)).toEqual([secondId, session.id]);
+    expect((await client.delete(`/browser/sessions/${secondId}`)).statusCode).toBe(204);
 
     const ticket = await ticketFor(client, session.id);
     expect(ticket.url).toBe(`ws://127.0.0.1:4100/api/v1/browser/sessions/${session.id}/stream`);
@@ -235,6 +268,12 @@ describe("cloud browser sessions", () => {
     );
     expect(viewer.activeTab()).toMatchObject({ url: "https://testsite.invalid/second" });
 
+    // Websites are told it's Bee, built on Chromium, and never that it runs without a window.
+    const beeAgent = await agentOf(viewer, tab!.id);
+    expect(beeAgent).toMatch(/ Chrome\/\d+[.\d]* Safari\/537\.36 Bee\/[\d.]+ \| /);
+    expect(beeAgent).toMatch(/"Chromium";v="\d+"/);
+    expect(beeAgent).not.toContain("Headless");
+
     // The test site, through the filtering proxy.
     viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
     await viewer.until(() => viewer.activeTab()?.title === "Brawzer test site", "test site title");
@@ -246,6 +285,100 @@ describe("cloud browser sessions", () => {
     await viewer.until(() => viewer.frames.length > 0, "a frame");
     expect(viewer.frames[0]).toMatchObject({ tabId: tab!.id, width: 800, height: 600 });
     expect(viewer.frames[0]!.bytes).toBeGreaterThan(1000);
+
+    // A connection the proxy refuses (a private address) is reported
+    // as data, with the address that failed and the engine's code, so Brawzer
+    // draws the error page; the next page clears it.
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "https://10.0.0.1/" });
+    await viewer.until(
+      () => viewer.activeTab()?.error?.code === "BRAWZER_REFUSED_ADDRESS",
+      "navigation error",
+    );
+    expect(viewer.activeTab()).toMatchObject({
+      url: "https://10.0.0.1/",
+      error: { url: "https://10.0.0.1/", code: "BRAWZER_REFUSED_ADDRESS" },
+    });
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
+    await viewer.until(
+      () => viewer.activeTab()?.title === "Brawzer test site" && viewer.activeTab()?.error === null,
+      "error cleared",
+    );
+
+    // Brawzer's page tools run inside the page: find reports its count and
+    // place, zoom is kept on the tab, reader view replaces an article page.
+    viewer.send({ type: "find", tabId: tab!.id, text: "second", forward: true });
+    await viewer.until(
+      () =>
+        viewer.messages.some(
+          (m) =>
+            m.type === "find-result" && m.text === "second" && m.matches >= 1 && m.active === 1,
+        ),
+      "find result",
+    );
+    // Clipboard with intent: the selection the find made, asked for on purpose;
+    // a paste types into the focused field.
+    viewer.send({ type: "copy", tabId: tab!.id });
+    await viewer.until(
+      () => viewer.messages.some((m) => m.type === "clipboard" && m.text === "Second"),
+      "selection copied",
+    );
+    viewer.send({ type: "find-stop", tabId: tab!.id });
+    viewer.send({ type: "zoom", tabId: tab!.id, factor: 1.5 });
+    await viewer.until(() => viewer.activeTab()?.zoom === 1.5, "zoom applied");
+    viewer.send({ type: "reader", tabId: tab!.id, on: true });
+    await viewer.until(
+      () => viewer.messages.some((m) => m.type === "reader-unavailable"),
+      "no article on the home page",
+    );
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/article" });
+    await viewer.until(
+      () => viewer.activeTab()?.title === "Aurora forecast" && !viewer.activeTab()?.loading,
+      "article page",
+    );
+    expect(viewer.activeTab()?.zoom).toBe(1.5);
+    viewer.send({ type: "reader", tabId: tab!.id, on: true });
+    await viewer.until(() => viewer.activeTab()?.reader === true, "reader view");
+    viewer.send({ type: "reader", tabId: tab!.id, on: false });
+    await viewer.until(
+      () => viewer.activeTab()?.reader === false && viewer.activeTab()?.title === "Aurora forecast",
+      "reader view left",
+    );
+    viewer.send({ type: "zoom", tabId: tab!.id, factor: 1 });
+    await viewer.until(() => viewer.activeTab()?.zoom === 1, "zoom reset");
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
+    await viewer.until(() => viewer.activeTab()?.title === "Brawzer test site", "home again");
+
+    // Sound: what the page plays reaches the viewer as audio chunks, and only while wanted.
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/sound" });
+    await viewer.until(() => viewer.activeTab()?.title === "Sound test", "sound page");
+    for (const kind of ["down", "up"] as const) {
+      viewer.send({
+        type: "mouse",
+        tabId: tab!.id,
+        kind,
+        x: 100,
+        y: 60,
+        button: "left",
+        buttons: kind === "down" ? 1 : 0,
+        clickCount: 1,
+        modifiers: 0,
+      });
+    }
+    await viewer.until(() => viewer.activeTab()?.title === "Playing", "tone started");
+    await viewer.until(() => viewer.audio.some((chunk) => chunk.loud), "audible sound", 20_000);
+    expect(viewer.audio[0]?.bytes).toBe(960);
+    viewer.send({ type: "sound", on: false });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const heard = viewer.audio.length;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    expect(viewer.audio.length).toBe(heard);
+    viewer.send({ type: "sound", on: true });
+    await viewer.until(() => viewer.audio.length > heard, "sound back on", 20_000);
+    viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
+    await viewer.until(
+      () => viewer.activeTab()?.title === "Brawzer test site" && !viewer.activeTab()?.loading,
+      "home after sound",
+    );
 
     // A click on the "Second page" box (fixed at 40,40 → 320,96).
     const click = (kind: "down" | "up") =>
@@ -297,6 +430,8 @@ describe("cloud browser sessions", () => {
       button: "left",
       clickCount: 1,
     });
+    // A paste from the local computer types into the focused field, then keys follow.
+    viewer.send({ type: "paste", tabId: tab!.id, text: "brown " });
     for (const char of "hi") {
       viewer.send({
         type: "key",
@@ -332,7 +467,10 @@ describe("cloud browser sessions", () => {
       code: "Enter",
       keyCode: 13,
     });
-    await viewer.until(() => viewer.activeTab()?.title === "Results for hi", "search results");
+    await viewer.until(
+      () => viewer.activeTab()?.title === "Results for brown hi",
+      "search results",
+    );
 
     // A page dialog reaches the viewer, who answers it.
     viewer.send({ type: "navigate", tabId: tab!.id, url: "http://testsite.invalid/" });
@@ -424,13 +562,31 @@ describe("cloud browser sessions", () => {
     expect(viewer.closeCode).toBe(STREAM_CLOSE_CODES.ended);
     const after = browserOverviewSchema.parse((await client.get("/browser")).json());
     expect(after.session).toBeNull();
+    // Home's numbers: when it browsed, never what.
+    expect(after.activity.recentStarts).toHaveLength(2);
+    expect(after.activity.lastEndedAt).not.toBeNull();
+    expect(after.activity.minutesThisMonth.map((entry) => entry.engine)).toEqual(["bee"]);
+    // The Sessions page's history: each ended session with why, never what was browsed.
+    expect(after.activity.ended.length).toBeGreaterThanOrEqual(1);
+    for (const entry of after.activity.ended) {
+      expect(entry.engine).toBe("bee");
+      expect(Object.keys(entry).sort()).toEqual(
+        ["endedAt", "engine", "id", "profileId", "reason", "startedAt"].sort(),
+      );
+      expect(new Date(entry.endedAt).getTime()).toBeGreaterThanOrEqual(
+        new Date(entry.startedAt).getTime(),
+      );
+    }
 
     expect(await h.eventTypes(email)).toEqual(
       expect.arrayContaining(["browser.session_started", "browser.session_ended"]),
     );
     const exported = accountExportSchema.parse((await client.get("/account/export")).json());
-    expect(exported.browserSessions).toHaveLength(1);
-    expect(exported.browserSessions[0]).toMatchObject({ engine: "bee", endReason: "user" });
+    // Both browsers it opened, each ended by the person.
+    expect(exported.browserSessions).toHaveLength(2);
+    for (const entry of exported.browserSessions) {
+      expect(entry).toMatchObject({ engine: "bee", endReason: "user" });
+    }
   }, 90_000);
 
   it("refuses the stream without a valid ticket, and a ticket works only once", async () => {
@@ -485,6 +641,36 @@ describe("cloud browser sessions", () => {
       [session.id],
     );
     expect(rows.rows[0]).toEqual({ status: "ended", end_reason: "signed_out" });
+  }, 60_000);
+
+  it("stops streaming while the sign-in is locked, and the browser waits for it", async () => {
+    const { client } = await account("browser-lock");
+    const session = await startSession(client);
+    const url = `${baseUrl}/api/v1/browser/sessions/${session.id}/stream`;
+    const ticket = await ticketFor(client, session.id);
+    const viewer = new Viewer(url, ticket.ticket, h.origin);
+    await viewer.until(() => viewer.messages.some((m) => m.type === "welcome"), "welcome");
+
+    expect((await client.post("/auth/session/lock")).statusCode).toBe(204);
+    await viewer.until(() => viewer.closeCode !== null, "closed on lock");
+    expect(viewer.closeCode).toBe(STREAM_CLOSE_CODES.locked);
+    // No new stream while locked, but the browser keeps running.
+    expect((await client.post(`/browser/sessions/${session.id}/ticket`, {})).statusCode).toBe(423);
+    const rows = await h.database.pool.query<{ status: string }>(
+      "select status from browser_sessions where id = $1",
+      [session.id],
+    );
+    expect(rows.rows[0]?.status).toBe("running");
+
+    // Unlocked, it streams again.
+    expect(
+      (await client.post("/auth/reauthenticate", { password: "violet-harbor-lantern" })).statusCode,
+    ).toBe(200);
+    const again = await ticketFor(client, session.id);
+    const back = new Viewer(url, again.ticket, h.origin);
+    await back.until(() => back.messages.some((m) => m.type === "welcome"), "welcome again");
+    back.close();
+    await client.delete(`/browser/sessions/${session.id}`);
   }, 60_000);
 });
 
@@ -685,19 +871,205 @@ describe("the egress (ADR 0014)", () => {
       "Through the proxy: nowhere-at-all.example",
     );
     expect(socks.requests).toContain("nowhere-at-all.example:80");
+
+    // The account's site rules are applied by the egress, before the proxy sees anything.
+    expect(
+      (await client.post("/site-rules", { kind: "block", host: "nowhere-at-all.example" }))
+        .statusCode,
+    ).toBe(201);
+    viewer.close();
+    expect((await client.delete(`/browser/sessions/${session.id}`)).statusCode).toBe(204);
+    const ruled = await openSession(client, profile.id);
+    await openPage(
+      ruled.viewer,
+      ruled.tab.id,
+      "http://sub.nowhere-at-all.example/",
+      "Blocked by Brawzer",
+    );
+    expect(socks.requests).not.toContain("sub.nowhere-at-all.example:80");
+    await openPage(
+      ruled.viewer,
+      ruled.tab.id,
+      "http://elsewhere.example/",
+      "Through the proxy: elsewhere.example",
+    );
+    ruled.viewer.close();
+    expect((await client.delete(`/browser/sessions/${ruled.session.id}`)).statusCode).toBe(204);
+    const rules = (await client.get("/site-rules")).json<{ rules: { id: string }[] }>().rules;
+    for (const rule of rules)
+      expect((await client.delete(`/site-rules/${rule.id}`)).statusCode).toBe(204);
+    const fresh = await openSession(client, profile.id);
+
+    // Private addresses stay refused even with a proxy, unless the profile asks
+    // for them to go through it; loopback never does.
+    await openPage(fresh.viewer, fresh.tab.id, "http://10.0.0.1/", "Blocked by Brawzer");
+    expect(socks.requests).not.toContain("10.0.0.1:80");
+    fresh.viewer.close();
+    expect((await client.delete(`/browser/sessions/${fresh.session.id}`)).statusCode).toBe(204);
+    const opted = await client.patch(`/profiles/${profile.id}`, { privateThroughProxy: true });
+    expect(opted.statusCode, opted.body).toBe(200);
+    expect(opted.json<{ privateThroughProxy: boolean }>().privateThroughProxy).toBe(true);
+    const again = await openSession(client, profile.id);
+    await openPage(again.viewer, again.tab.id, "http://10.0.0.1/", "Through the proxy: 10.0.0.1");
+    expect(socks.requests).toContain("10.0.0.1:80");
+    await openPage(
+      again.viewer,
+      again.tab.id,
+      "http://127.0.0.1:7000/healthz",
+      "Blocked by Brawzer",
+    );
+    expect(socks.requests).not.toContain("127.0.0.1:7000");
     // The runtime's own environment never holds the proxy's password.
     const containers = await h.database.pool.query<{ container_id: string }>(
       "select container_id from browser_sessions where id = $1",
-      [session.id],
+      [again.session.id],
     );
     const runtimeEnv = (
       await fetchDocker(`/containers/${containers.rows[0]?.container_id ?? ""}/json`)
     ).Config.Env.join("\n");
     expect(runtimeEnv).not.toContain(auth.password);
     expect(runtimeEnv).toContain("BRAWZER_EGRESS_PROXY=");
-    viewer.close();
-    await client.delete(`/browser/sessions/${session.id}`);
-  }, 90_000);
+    expect(runtimeEnv).toContain("BRAWZER_PRIVATE_VIA_EGRESS=true");
+    again.viewer.close();
+    await client.delete(`/browser/sessions/${again.session.id}`);
+  }, 120_000);
+
+  it("browses through a team's proxy, and ends the session when its person leaves the team", async () => {
+    const owner = await account("browser-team-owner");
+    expect((await owner.client.post("/team", { name: "Browsing crew" })).statusCode).toBe(200);
+    const member = await account("browser-team-member");
+    expect(
+      (await owner.client.post("/team/invitations", { email: member.email, role: "member" }))
+        .statusCode,
+    ).toBe(200);
+    const invitation = (await member.client.get("/team")).json<{ invitations: { id: string }[] }>()
+      .invitations[0]?.id;
+    expect(
+      (await member.client.post(`/team/invitations/${invitation ?? ""}/join`, {})).statusCode,
+    ).toBe(200);
+
+    const socks = await answeringSocks5Proxy({ username: "crew", password: "team-pass-123" });
+    servers.push(socks);
+    const added = await owner.client.post("/proxies", {
+      name: "Crew exit",
+      protocol: "socks5",
+      host: "127.0.0.1",
+      port: socks.port,
+      credentials: { username: "crew", password: "team-pass-123" },
+      team: true,
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    const proxyId = added.json<{ id: string }>().id;
+    const profile = profileListSchema.parse((await member.client.get("/profiles")).json())
+      .profiles[0]!;
+    expect((await member.client.patch(`/profiles/${profile.id}`, { proxyId })).statusCode).toBe(
+      200,
+    );
+
+    const { session, viewer, tab } = await openSession(member.client, profile.id);
+    expect(session.proxyId).toBe(proxyId);
+    await openPage(viewer, tab.id, "http://crew.example/", "Through the proxy: crew.example");
+    expect(socks.requests).toContain("crew.example:80");
+
+    // Leaving the team ends the session: the proxy is no longer theirs.
+    expect((await member.client.post("/team/leave", {})).statusCode).toBe(200);
+    await viewer.until(() => viewer.closeCode !== null, "closed after leaving the team");
+    expect((await member.client.get("/browser")).json<{ session: unknown }>().session).toBeNull();
+    const ended = (await member.client.get("/security/events"))
+      .json<{ events: { type: string; details: { reason?: string } }[] }>()
+      .events.find((event) => event.type === "browser.session_ended");
+    expect(ended?.details.reason).toBe("team_left");
+  }, 120_000);
+
+  it("records a profile's history from its sessions, and hands its tabs to the next one", async () => {
+    const { client } = await account("browser-history");
+    const profile = profileListSchema.parse((await client.get("/profiles")).json()).profiles[0]!;
+    const historyUrls = async () =>
+      historyPageSchema
+        .parse((await client.get(`/profiles/${profile.id}/history`)).json())
+        .entries.map((entry) => `${entry.url} ${entry.title}`);
+
+    const { session, viewer, tab } = await openSession(client, profile.id);
+    await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
+    await openPage(viewer, tab.id, "http://testsite.invalid/second", "Second page");
+    viewer.send({ type: "new-tab", url: "http://testsite.invalid/upload" });
+    await viewer.until(
+      () =>
+        viewer.tabs()?.tabs.some((entry) => entry.title === "Upload page" && !entry.loading) ??
+        false,
+      "the second tab",
+    );
+    // Visits are recorded as pages finish loading; Brawzer's start page never is.
+    await expect
+      .poll(historyUrls, { timeout: 10_000 })
+      .toEqual([
+        "http://testsite.invalid/upload Upload page",
+        "http://testsite.invalid/second Second page",
+        "http://testsite.invalid/ Brawzer test site",
+      ]);
+
+    // Handing off ends the session and keeps its tabs for the next one, on any device.
+    expect((await client.post(`/browser/sessions/${session.id}/hand-off`, {})).statusCode).toBe(
+      204,
+    );
+    await viewer.until(() => viewer.closeCode !== null, "closed by the hand-off");
+    await expect
+      .poll(
+        async () =>
+          browserOverviewSchema
+            .parse((await client.get("/browser")).json())
+            .savedTabs.map((saved) => [
+              saved.profileId,
+              saved.handedOff,
+              saved.tabs.map((entry) => entry.url),
+            ]),
+        { timeout: 10_000 },
+      )
+      .toEqual([
+        [profile.id, true, ["http://testsite.invalid/second", "http://testsite.invalid/upload"]],
+      ]);
+    const ended = (await client.get("/security/events"))
+      .json<{ events: { type: string; details: { reason?: string } }[] }>()
+      .events.find((event) => event.type === "browser.session_ended");
+    expect(ended?.details.reason).toBe("handed_off");
+
+    // The next session continues from them: the tabs reopen, in their order.
+    const resumed = await client.post("/browser/sessions", { profileId: profile.id, resume: true });
+    expect(resumed.statusCode, resumed.body).toBe(201);
+    const next = browserSessionSchema.parse(resumed.json());
+    const ticket = await ticketFor(client, next.id);
+    const again = new Viewer(
+      `${baseUrl}/api/v1/browser/sessions/${next.id}/stream`,
+      ticket.ticket,
+      h.origin,
+    );
+    await again.until(
+      () => {
+        const titles = again.tabs()?.tabs.map((entry) => (entry.loading ? "" : entry.title));
+        return titles?.join("|") === "Second page|Upload page";
+      },
+      "the reopened tabs",
+      30_000,
+    );
+    again.close();
+    expect((await client.delete(`/browser/sessions/${next.id}`)).statusCode).toBe(204);
+
+    // A temporary session keeps nothing, and has nothing to hand off.
+    const before = await historyUrls();
+    const temporary = await openSession(client);
+    await openPage(
+      temporary.viewer,
+      temporary.tab.id,
+      "http://testsite.invalid/upload",
+      "Upload page",
+    );
+    expect(
+      (await client.post(`/browser/sessions/${temporary.session.id}/hand-off`, {})).statusCode,
+    ).toBe(409);
+    temporary.viewer.close();
+    expect((await client.delete(`/browser/sessions/${temporary.session.id}`)).statusCode).toBe(204);
+    expect(await historyUrls()).toEqual(before);
+  }, 180_000);
 
   it("asks the owner to confirm it's them before a profile's proxy changes", async () => {
     const { client, email } = await account("browser-proxy-stepup");
@@ -769,6 +1141,14 @@ describe("Firefox, the second engine", () => {
     expect(created.statusCode, created.body).toBe(201);
     const profile = profileSchema.parse(created.json());
     expect(profile.engine).toBe("firefox");
+    // The whole catalogue runs on Firefox; the agent installs it at start.
+    expect(
+      (
+        await client.patch(`/profiles/${profile.id}`, {
+          extensions: ["ubo-lite", "ublock-origin", "dark-reader"],
+        })
+      ).statusCode,
+    ).toBe(200);
     const upload = await client.upload("/drive/files", {
       name: "notes.txt",
       content: Buffer.from("hello drive"),
@@ -779,9 +1159,62 @@ describe("Firefox, the second engine", () => {
     expect(session.engine).toBe("firefox");
     const welcome = viewer.messages.find((m) => m.type === "welcome");
     expect(welcome?.type === "welcome" && welcome.engine.name).toBe("firefox");
+    expect(welcome?.type === "welcome" && welcome.extensions).toEqual([
+      "ubo-lite",
+      "ublock-origin",
+      "dark-reader",
+    ]);
 
     // HTTP and HTTPS through the proxy, with frames arriving.
     await openPage(viewer, tab.id, "https://testsite.invalid/second", "Second page");
+    // A refused connection: Firefox's error page is reported as data, never shown.
+    viewer.send({ type: "navigate", tabId: tab.id, url: "https://10.0.0.1/" });
+    await viewer.until(
+      () => viewer.activeTab()?.error?.code === "BRAWZER_REFUSED_ADDRESS",
+      "firefox navigation error",
+    );
+    await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
+    expect(viewer.activeTab()?.error).toBeNull();
+
+    // Sound on Firefox, through the same audio server.
+    await openPage(viewer, tab.id, "http://testsite.invalid/sound", "Sound test");
+    click(viewer, tab.id, 100, 60);
+    await viewer.until(() => viewer.activeTab()?.title === "Playing", "firefox tone started");
+    await viewer.until(
+      () => viewer.audio.some((chunk) => chunk.loud),
+      "firefox audible sound",
+      20_000,
+    );
+    await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
+
+    // Find, zoom and reader view work the same way on Firefox.
+    viewer.send({ type: "find", tabId: tab.id, text: "second", forward: true });
+    await viewer.until(
+      () =>
+        viewer.messages.some(
+          (m) =>
+            m.type === "find-result" && m.text === "second" && m.matches >= 1 && m.active === 1,
+        ),
+      "firefox find result",
+    );
+    viewer.send({ type: "copy", tabId: tab.id });
+    await viewer.until(
+      () => viewer.messages.some((m) => m.type === "clipboard" && m.text === "Second"),
+      "firefox selection copied",
+    );
+    viewer.send({ type: "find-stop", tabId: tab.id });
+    viewer.send({ type: "zoom", tabId: tab.id, factor: 1.25 });
+    await viewer.until(() => viewer.activeTab()?.zoom === 1.25, "firefox zoom");
+    await openPage(viewer, tab.id, "http://testsite.invalid/article", "Aurora forecast");
+    viewer.send({ type: "reader", tabId: tab.id, on: true });
+    await viewer.until(() => viewer.activeTab()?.reader === true, "firefox reader view");
+    viewer.send({ type: "reader", tabId: tab.id, on: false });
+    await viewer.until(
+      () => viewer.activeTab()?.reader === false && !viewer.activeTab()?.loading,
+      "firefox reader view left",
+    );
+    viewer.send({ type: "zoom", tabId: tab.id, factor: 1 });
+    await viewer.until(() => viewer.activeTab()?.zoom === 1, "firefox zoom reset");
     await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
     await viewer.until(() => viewer.frames.length > 0, "a frame");
     expect(viewer.frames[0]).toMatchObject({ tabId: tab.id, width: 800, height: 600 });
@@ -792,6 +1225,7 @@ describe("Firefox, the second engine", () => {
     viewer.send({ type: "back", tabId: tab.id });
     await viewer.until(() => viewer.activeTab()?.title === "Brawzer test site", "back");
     click(viewer, tab.id, 100, 220);
+    viewer.send({ type: "paste", tabId: tab.id, text: "brown " });
     viewer.send({ type: "text", tabId: tab.id, text: "fox" });
     viewer.send({
       type: "key",
@@ -809,7 +1243,10 @@ describe("Firefox, the second engine", () => {
       code: "Enter",
       keyCode: 13,
     });
-    await viewer.until(() => viewer.activeTab()?.title === "Results for fox", "search submitted");
+    await viewer.until(
+      () => viewer.activeTab()?.title === "Results for brown fox",
+      "search submitted",
+    );
 
     // A dialog, drawn by Brawzer and answered.
     await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
@@ -883,4 +1320,222 @@ describe("Firefox, the second engine", () => {
       "notes.txt",
     ]);
   }, 180_000);
+});
+
+/** The environment Docker started a session's runtime and egress containers with. */
+async function containerEnv(sessionId: string): Promise<{ runtime: string[]; egress: string[] }> {
+  const row = await h.database.pool.query<{ container_id: string }>(
+    "select container_id from browser_sessions where id = $1",
+    [sessionId],
+  );
+  return {
+    runtime: (await fetchDocker(`/containers/${row.rows[0]?.container_id ?? ""}/json`)).Config.Env,
+    // The egress sidecar is named after the session (no warm pool in these tests).
+    egress: (await fetchDocker(`/containers/brawzer-egress-${sessionId}/json`)).Config.Env,
+  };
+}
+
+describe("Google Chrome, the third engine", () => {
+  it("browses, and opens Chrome's own account and password pages only when the profile allows", async () => {
+    const { client, email } = await account("browser-chrome");
+    const created = await client.post("/profiles", {
+      name: "Chrome",
+      color: "rose",
+      engine: "chrome",
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const profile = profileSchema.parse(created.json());
+    expect(profile).toMatchObject({ engine: "chrome", browserAccount: false });
+
+    const first = await openSession(client, profile.id);
+    expect(first.session.engine).toBe("chrome");
+    const welcome = first.viewer.messages.find((m) => m.type === "welcome");
+    expect(welcome?.type === "welcome" && welcome.engine.name).toBe("chrome");
+    // Websites are told it's Chrome, not Bee Browser.
+    const chromeAgent = await agentOf(first.viewer, first.tab.id);
+    expect(chromeAgent).toMatch(/ Chrome\/\d+[.\d]* Safari\/537\.36 \| /);
+    expect(chromeAgent).toMatch(/"Google Chrome";v="\d+"/);
+    expect(chromeAgent).not.toContain("Headless");
+    expect(chromeAgent).not.toContain("Bee/");
+    await openPage(first.viewer, first.tab.id, "https://testsite.invalid/second", "Second page");
+    first.viewer.send({ type: "navigate", tabId: first.tab.id, url: "https://10.0.0.1/" });
+    await first.viewer.until(
+      () => first.viewer.activeTab()?.error?.code === "BRAWZER_REFUSED_ADDRESS",
+      "chrome navigation error",
+    );
+    await openPage(first.viewer, first.tab.id, "http://testsite.invalid/", "Brawzer test site");
+    await first.viewer.until(() => first.viewer.frames.length > 0, "a frame");
+    click(first.viewer, first.tab.id, 100, 60);
+    await first.viewer.until(
+      () => first.viewer.activeTab()?.title === "Second page",
+      "clicked link",
+    );
+    const firstEnv = await containerEnv(first.session.id);
+    expect(firstEnv.runtime).toContain("BRAWZER_ENGINE=chrome");
+    expect(firstEnv.runtime).not.toContain("BRAWZER_BROWSER_ACCOUNT=true");
+    expect(firstEnv.egress).not.toContain("EGRESS_ACCOUNT_SYNC=true");
+
+    // With the browser account off, the browser's own pages stay out of reach.
+    first.viewer.send({ type: "open-browser-page", page: "passwords" });
+    first.viewer.send({ type: "new-tab", url: "http://testsite.invalid/" });
+    await first.viewer.until(() => first.viewer.tabs()?.tabs.length === 2, "second tab");
+    expect(first.viewer.tabs()?.tabs.map((tab) => tab.url)).not.toContainEqual(
+      expect.stringMatching(/^chrome:/),
+    );
+    first.viewer.close();
+    expect((await client.delete(`/browser/sessions/${first.session.id}`)).statusCode).toBe(204);
+
+    // Turning it on is a recent-sign-in change, like a proxy.
+    await h.expireConfirmation(email);
+    const stale = await client.patch(`/profiles/${profile.id}`, { browserAccount: true });
+    expect(stale.statusCode).toBe(403);
+    expect(h.errorOf(stale).code).toBe("reauthentication_required");
+    expect(
+      (await client.post("/auth/reauthenticate", { password: "violet-harbor-lantern" })).statusCode,
+    ).toBe(200);
+    const on = await client.patch(`/profiles/${profile.id}`, { browserAccount: true });
+    expect(on.statusCode, on.body).toBe(200);
+    expect(profileSchema.parse(on.json()).browserAccount).toBe(true);
+
+    // Now the session may sign in to Google and show Chrome's saved passwords.
+    const second = await openSession(client, profile.id);
+    const secondEnv = await containerEnv(second.session.id);
+    expect(secondEnv.runtime).toContain("BRAWZER_BROWSER_ACCOUNT=true");
+    expect(secondEnv.egress).toContain("EGRESS_ACCOUNT_SYNC=true");
+    second.viewer.send({ type: "open-browser-page", page: "passwords" });
+    await second.viewer.until(
+      () => second.viewer.activeTab()?.url.startsWith("chrome://password-manager/") === true,
+      "Chrome's password manager",
+      30_000,
+    );
+    second.viewer.send({ type: "open-browser-page", page: "account" });
+    await second.viewer.until(
+      () => second.viewer.activeTab()?.url.startsWith("chrome://settings/") === true,
+      "Chrome's account settings",
+      30_000,
+    );
+    // Its other pages are still not tabs.
+    expect(second.viewer.tabs()?.tabs.map((tab) => tab.url)).not.toContainEqual(
+      expect.stringMatching(/^chrome:\/\/(?!password-manager|settings)/),
+    );
+    second.viewer.close();
+    expect((await client.delete(`/browser/sessions/${second.session.id}`)).statusCode).toBe(204);
+
+    // A profile that keeps nothing has no account to keep.
+    const forget = await client.patch(`/profiles/${profile.id}`, { keepData: false });
+    expect(forget.statusCode, forget.body).toBe(200);
+    const third = await client.post("/browser/sessions", { profileId: profile.id });
+    expect(third.statusCode, third.body).toBe(201);
+    const thirdId = browserSessionSchema.parse(third.json()).id;
+    expect((await containerEnv(thirdId)).runtime).not.toContain("BRAWZER_BROWSER_ACCOUNT=true");
+    expect((await client.delete(`/browser/sessions/${thirdId}`)).statusCode).toBe(204);
+  }, 240_000);
+});
+
+/** What the test site's /agent page says the browser told it: user agent | brand hints. */
+async function agentOf(viewer: Viewer, tabId: string): Promise<string> {
+  viewer.send({ type: "navigate", tabId, url: "https://testsite.invalid/agent" });
+  await viewer.until(() => viewer.activeTab()?.title.startsWith("Agent: ") === true, "agent page");
+  return viewer.activeTab()?.title ?? "";
+}
+
+describe("Chromium and Microsoft Edge", () => {
+  it("opens Chromium as Chromium, with nothing of Bee in what websites see", async () => {
+    const { client } = await account("browser-chromium");
+    const created = await client.post("/profiles", {
+      name: "Plain",
+      color: "slate",
+      engine: "chromium",
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const profile = profileSchema.parse(created.json());
+    const { session, viewer, tab } = await openSession(client, profile.id);
+    expect(session.engine).toBe("chromium");
+    const welcome = viewer.messages.find((m) => m.type === "welcome");
+    expect(welcome?.type === "welcome" && welcome.engine.name).toBe("chromium");
+    const agent = await agentOf(viewer, tab.id);
+    expect(agent).toMatch(/ Chrome\/\d+[.\d]* Safari\/537\.36 \| /);
+    expect(agent).toMatch(/"Chromium";v="\d+"/);
+    expect(agent).not.toMatch(/Headless|Bee\/|Google Chrome/);
+    await openPage(viewer, tab.id, "http://testsite.invalid/", "Brawzer test site");
+    click(viewer, tab.id, 100, 60);
+    await viewer.until(() => viewer.activeTab()?.title === "Second page", "clicked link");
+    viewer.close();
+    expect((await client.delete(`/browser/sessions/${session.id}`)).statusCode).toBe(204);
+  }, 90_000);
+
+  it("offers Edge only where the runtime image is x86-64, and browses with it there", async () => {
+    const { client } = await account("browser-edge");
+    const image = (await fetchDocker(
+      `/images/${encodeURIComponent(h.config.browser.image)}/json`,
+    )) as unknown as { Architecture?: string };
+    const offered = profileListSchema.parse((await client.get("/profiles")).json()).engines;
+    if (image.Architecture !== "amd64") {
+      // Microsoft ships Edge for x86-64 Linux only: it isn't offered, or made, here.
+      expect(offered).not.toContain("edge");
+      const refused = await client.post("/profiles", {
+        name: "Edge",
+        color: "teal",
+        engine: "edge",
+      });
+      expect(refused.statusCode).toBe(400);
+      const overview = browserOverviewSchema.parse((await client.get("/browser")).json());
+      expect(overview.engines).not.toContain("edge");
+      return;
+    }
+
+    expect(offered).toContain("edge");
+    const created = await client.post("/profiles", { name: "Edge", color: "teal", engine: "edge" });
+    expect(created.statusCode, created.body).toBe(201);
+    const profile = profileSchema.parse(created.json());
+    const on = await client.patch(`/profiles/${profile.id}`, { browserAccount: true });
+    expect(on.statusCode, on.body).toBe(200);
+    const { session, viewer, tab } = await openSession(client, profile.id);
+    expect(session.engine).toBe("edge");
+    const welcome = viewer.messages.find((m) => m.type === "welcome");
+    expect(welcome?.type === "welcome" && welcome.engine.name).toBe("edge");
+    const agent = await agentOf(viewer, tab.id);
+    expect(agent).toMatch(/ Edg\/[\d.]+ \| /);
+    expect(agent).toMatch(/"Microsoft Edge";v="\d+"/);
+    expect(agent).not.toContain("Headless");
+    await openPage(viewer, tab.id, "https://testsite.invalid/second", "Second page");
+    viewer.send({ type: "navigate", tabId: tab.id, url: "https://10.0.0.1/" });
+    await viewer.until(
+      () => viewer.activeTab()?.error?.code === "BRAWZER_REFUSED_ADDRESS",
+      "edge navigation error",
+    );
+    // Its passwords, for a profile with its browser account on.
+    viewer.send({ type: "open-browser-page", page: "passwords" });
+    await viewer.until(
+      () => viewer.activeTab()?.url.startsWith("edge://wallet") === true,
+      "Edge's passwords",
+      30_000,
+    );
+    viewer.close();
+    expect((await client.delete(`/browser/sessions/${session.id}`)).statusCode).toBe(204);
+  }, 180_000);
+});
+
+describe("extensions on Bee", () => {
+  it("loads a profile's catalogue extensions over the pipe and says which", async () => {
+    const { client } = await account("browser-extensions");
+    const profile = profileListSchema.parse((await client.get("/profiles")).json()).profiles[0]!;
+    // uBlock Origin itself is Firefox-only: it is kept on the profile and left out on Bee.
+    const set = await client.patch(`/profiles/${profile.id}`, {
+      extensions: ["ubo-lite", "ublock-origin", "dark-reader"],
+    });
+    expect(set.statusCode, set.body).toBe(200);
+    const { session, viewer } = await openSession(client, profile.id);
+    const welcome = viewer.messages.find((m) => m.type === "welcome");
+    expect(welcome?.type === "welcome" && welcome.extensions).toEqual(["ubo-lite", "dark-reader"]);
+    const runtime = await h.database.pool.query<{ container_id: string }>(
+      "select container_id from browser_sessions where id = $1",
+      [session.id],
+    );
+    const env = (await fetchDocker(`/containers/${runtime.rows[0]?.container_id ?? ""}/json`))
+      .Config.Env;
+    expect(env).toContain("BRAWZER_EXTENSIONS=ubo-lite,dark-reader");
+    viewer.close();
+    expect((await client.delete(`/browser/sessions/${session.id}`)).statusCode).toBe(204);
+  }, 90_000);
 });

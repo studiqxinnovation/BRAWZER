@@ -9,6 +9,7 @@ import { themeBootstrapScript } from "./theme";
  */
 export const STRICT_CSP_PATHS = [
   "/app",
+  "/admin",
   "/sign-in",
   "/create-account",
   "/verify-email",
@@ -17,6 +18,9 @@ export const STRICT_CSP_PATHS = [
   "/confirm-email-change",
   "/undo-email-change",
 ] as const;
+
+/** The one page the desktop shows in its windows: a cloud browser on its own. */
+export const EMBEDDABLE_PATH = "/app/browser/window";
 
 export function needsStrictCsp(pathname: string): boolean {
   return STRICT_CSP_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -36,7 +40,13 @@ export function generateNonce(): string {
  */
 export function strictContentSecurityPolicy(
   nonce: string,
-  options: { development: boolean; https: boolean; streamOrigin?: string },
+  options: {
+    development: boolean;
+    https: boolean;
+    streamOrigin?: string;
+    /** May be shown in a frame by Brawzer's own pages (the desktop's browser windows), no one else's. */
+    embeddable?: boolean;
+  },
 ): string {
   const stream = options.streamOrigin ? ` ${options.streamOrigin}` : "";
   return [
@@ -48,7 +58,7 @@ export function strictContentSecurityPolicy(
     "font-src 'self'",
     // The cloud browser stream is a WebSocket on the API's public address.
     `connect-src 'self'${stream}${options.development ? " ws: wss:" : ""}`,
-    "frame-ancestors 'none'",
+    `frame-ancestors ${options.embeddable ? "'self'" : "'none'"}`,
     "base-uri 'none'",
     "form-action 'self'",
     "object-src 'none'",

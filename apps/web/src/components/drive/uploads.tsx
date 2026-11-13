@@ -1,6 +1,6 @@
 "use client";
 
-import type { DriveUsage } from "@brawzer/contracts";
+import type { DriveSpace, DriveUsage } from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
 import { useToast } from "@brawzer/ui/components/toast";
 import { CircleAlert, CircleCheck, ShieldAlert, Upload, X } from "lucide-react";
@@ -23,7 +23,11 @@ interface UploadState {
 let nextId = 1;
 
 /** Tracks the files being uploaded from this page. */
-export function useUploads(folderId: string | null, usage: DriveUsage) {
+export function useUploads(
+  folderId: string | null,
+  usage: DriveUsage,
+  space: DriveSpace = "personal",
+) {
   const router = useRouter();
   const toast = useToast();
   const [uploads, setUploads] = useState<UploadState[]>([]);
@@ -52,9 +56,14 @@ export function useUploads(folderId: string | null, usage: DriveUsage) {
           ]);
           continue;
         }
-        const handle = uploadDriveFile(file, folderId, (fraction) => {
-          patch(id, { fraction, status: fraction >= 1 ? "scanning" : "uploading" });
-        });
+        const handle = uploadDriveFile(
+          file,
+          folderId,
+          (fraction) => {
+            patch(id, { fraction, status: fraction >= 1 ? "scanning" : "uploading" });
+          },
+          space,
+        );
         setUploads((current) => [
           ...current,
           { id, name: file.name, size: file.size, fraction: 0, status: "uploading", handle },
@@ -87,7 +96,7 @@ export function useUploads(folderId: string | null, usage: DriveUsage) {
         });
       }
     },
-    [folderId, patch, router, toast, usage.maxFileBytes],
+    [folderId, patch, router, space, toast, usage.maxFileBytes],
   );
 
   const dismiss = useCallback((id: number) => {

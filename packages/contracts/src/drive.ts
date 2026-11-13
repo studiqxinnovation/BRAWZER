@@ -24,10 +24,47 @@ export const PREVIEWABLE_TYPES = [
   "image/avif",
   "application/pdf",
   "text/plain",
+  // Audio, for Music (Phase 9): it plays, and can't run as a page.
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/aac",
+  "audio/ogg",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/vnd.wave",
+  "audio/flac",
+  "audio/x-flac",
 ] as const;
+
+/** Office files the Brawzer Suite opens: Word, Excel and PowerPoint. */
+export const OFFICE_TYPES = {
+  word: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  excel: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  powerpoint: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+} as const;
+
+/** What the desktop's viewers list across Drive: Photos, PDF Viewer, Music, the editors. */
+export const driveFileKinds = [
+  "images",
+  "pdfs",
+  "audio",
+  "text",
+  "documents",
+  "sheets",
+  "presentations",
+] as const;
+export type DriveFileKind = (typeof driveFileKinds)[number];
 
 export const isPreviewable = (contentType: string): boolean =>
   (PREVIEWABLE_TYPES as readonly string[]).includes(contentType);
+
+export const isOfficeType = (contentType: string): boolean =>
+  (Object.values(OFFICE_TYPES) as readonly string[]).includes(contentType);
+
+/** What an app on the desktop can read through the preview route: previewable files and Office files. */
+export const isAppOpenable = (contentType: string): boolean =>
+  isPreviewable(contentType) || isOfficeType(contentType);
 
 export const driveFileStatusSchema = z.enum(driveFileStatuses);
 export const driveFileSourceSchema = z.enum(driveFileSources);
@@ -47,14 +84,36 @@ export const driveNameSchema = z
   .refine((value) => !/[/\\]/.test(value), { error: "A name can’t contain slashes." })
   .refine((value) => value !== "." && value !== "..", { error: "That isn’t a usable name." });
 
+/** Whose Drive: the person's own, or their team's shared space (Phase 8, idea 19). */
+export const driveSpaces = ["personal", "team"] as const;
+export const driveSpaceSchema = z.enum(driveSpaces, { error: "Choose personal or team." });
+export type DriveSpace = z.infer<typeof driveSpaceSchema>;
+
 export const driveFolderSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   /** Null at the top level. */
   parentId: z.uuid().nullable(),
+  /** In a team's space: whether the signed-in person may delete it (who made it, owner, admins). */
+  canDelete: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
+
+/**
+ * Send to Phone (Phase 9): a link to the file in Brawzer's Drive, and its QR
+ * code. Opening it needs a sign-in on the phone; the link itself grants
+ * nothing.
+ */
+export const drivePhoneLinkSchema = z.object({
+  url: z.url(),
+  /** The QR code as SVG markup, drawn by the server. */
+  qrSvg: z.string(),
+});
+export type DrivePhoneLink = z.infer<typeof drivePhoneLinkSchema>;
+
+/** How long a file stays in Trash before it's removed for good. */
+export const DRIVE_TRASH_DAYS = 30;
 
 export const driveFileSchema = z.object({
   id: z.uuid(),
@@ -70,8 +129,12 @@ export const driveFileSchema = z.object({
   /** Clean and of a type the browser can show. */
   previewable: z.boolean(),
   source: driveFileSourceSchema,
+  /** In a team's space: whether the signed-in person may delete it (who added it, owner, admins). */
+  canDelete: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+  /** In Trash since then; it's removed for good DRIVE_TRASH_DAYS later. */
+  trashedAt: z.iso.datetime().nullable(),
 });
 
 export const driveUsageSchema = z.object({
@@ -88,6 +151,13 @@ export const driveUsageSchema = z.object({
 export const driveOverviewSchema = z.object({
   folders: z.array(driveFolderSchema),
   usage: driveUsageSchema,
+  space: driveSpaceSchema,
+  /** The person's team, whose space they can switch to; null outside a team. */
+  team: z.object({ name: z.string() }).nullable(),
+});
+
+export const driveSpaceQuerySchema = z.object({
+  space: driveSpaceSchema.default("personal"),
 });
 
 export const driveFileListSchema = z.object({
@@ -98,11 +168,17 @@ export const driveFileListSchema = z.object({
 export const driveFileQuerySchema = z.object({
   folderId: z.uuid({ error: "That isn’t a folder ID." }).optional(),
   q: z.string().trim().max(100, "Use at most 100 characters.").optional(),
+  /** Every clean file of this kind, wherever it is (the desktop's viewers). */
+  kind: z.enum(driveFileKinds, { error: "That isn’t a kind of file." }).optional(),
+  /** For the top level and searches; a folder belongs to its own space. */
+  space: driveSpaceSchema.default("personal"),
 });
 
 export const createFolderRequestSchema = z.object({
   name: driveNameSchema,
   parentId: z.uuid({ error: "That isn’t a folder ID." }).nullable().optional(),
+  /** Where a top-level folder goes; a subfolder goes where its parent is. */
+  space: driveSpaceSchema.default("personal"),
 });
 
 export const updateFolderRequestSchema = z
@@ -120,6 +196,11 @@ export const updateFileRequestSchema = z
     folderId: z.uuid({ error: "That isn’t a folder ID." }).nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { error: "Change at least one thing." });
+
+export const copyFileRequestSchema = z.object({
+  /** Where the copy goes; null: the top level; absent: beside the original. */
+  folderId: z.uuid({ error: "That isn’t a folder ID." }).nullable().optional(),
+});
 
 export const downloadTicketSchema = z.object({
   /** Path of the content, with the ticket; valid once, for DOWNLOAD_TICKET_SECONDS. */
@@ -143,4 +224,5 @@ export type DriveFileList = z.infer<typeof driveFileListSchema>;
 export type CreateFolderRequest = z.input<typeof createFolderRequestSchema>;
 export type UpdateFolderRequest = z.input<typeof updateFolderRequestSchema>;
 export type UpdateFileRequest = z.input<typeof updateFileRequestSchema>;
+export type CopyFileRequest = z.input<typeof copyFileRequestSchema>;
 export type DownloadTicket = z.infer<typeof downloadTicketSchema>;

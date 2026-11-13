@@ -16,6 +16,15 @@
     "ExtensionSettings": {
       "*": {
         "installation_mode": "blocked"
+      },
+      "uBOLiteRedux@raymondhill.net": {
+        "installation_mode": "allowed"
+      },
+      "uBlock0@raymondhill.net": {
+        "installation_mode": "allowed"
+      },
+      "addon@darkreader.org": {
+        "installation_mode": "allowed"
       }
     },
     "NoDefaultBookmarks": true,

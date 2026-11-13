@@ -140,6 +140,75 @@ export function EndSessionDialog({
   );
 }
 
+/** Ends the session here so its tabs wait for the profile's next one, on any device (ADR 0020). */
+export function HandOffDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  busy,
+  profileName,
+  tabs,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  busy: boolean;
+  profileName: string;
+  tabs: number;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogTitle>Continue on another device?</AlertDialogTitle>
+        <AlertDialogDescription>
+          The session ends here and “{profileName}” keeps its data, as when you end it. Its{" "}
+          {tabs === 1 ? "open tab waits" : `${String(tabs)} open tabs wait`} for the profile’s next
+          session: on your other device, open Brawzer’s Browser page and choose Continue. They’re
+          offered for 7 days.
+        </AlertDialogDescription>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button variant="secondary" />}>Stay here</AlertDialogClose>
+          <Button variant="primary" loading={busy} onClick={onConfirm}>
+            End and continue elsewhere
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/** Copying to the local clipboard is the one thing that leaves something on this computer. */
+export function ConfirmCopyDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  chars,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  chars: number;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogTitle>Copy to this computer’s clipboard?</AlertDialogTitle>
+        <AlertDialogDescription>
+          {String(chars)} characters from the page would go to the clipboard of the computer you’re
+          using, where other programs can read them until something else is copied. Brawzer records
+          that you copied, never what. This is asked once per session.
+        </AlertDialogDescription>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button variant="secondary" />}>Don’t copy</AlertDialogClose>
+          <Button variant="primary" onClick={onConfirm}>
+            Copy
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 const SHORTCUTS: readonly { keys: readonly string[]; does: string }[] = [
   { keys: ["Alt", "L"], does: "Edit the address" },
   { keys: ["Alt", "T"], does: "New tab" },
@@ -147,6 +216,13 @@ const SHORTCUTS: readonly { keys: readonly string[]; does: string }[] = [
   { keys: ["Delete"], does: "Close the focused tab" },
   { keys: ["Alt", "R"], does: "Reload" },
   { keys: ["Alt", "P"], does: "Save the page as a PDF in Drive" },
+  { keys: ["Alt", "F"], does: "Find in page" },
+  { keys: ["Alt", "+"], does: "Zoom in" },
+  { keys: ["Alt", "-"], does: "Zoom out" },
+  { keys: ["Alt", "0"], does: "Reset zoom" },
+  { keys: ["Alt", "Shift", "R"], does: "Reader view" },
+  { keys: ["Alt", "C"], does: "Copy the page’s selection to this computer" },
+  { keys: ["Alt", "V"], does: "Paste from this computer into the page" },
   { keys: ["Alt", "←"], does: "Back" },
   { keys: ["Alt", "→"], does: "Forward" },
   { keys: ["Shift", "Esc"], does: "Leave the page, back to Brawzer’s controls" },

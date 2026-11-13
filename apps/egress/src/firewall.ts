@@ -12,8 +12,11 @@ export interface FirewallOptions {
  * container shares: nothing leaves except through the egress process. The
  * engine's own sockets (another user) can only reach loopback, so even a
  * compromised engine has no route to the internet, the host or Brawzer's
- * services, and no DNS of its own. Replies to connections the host opened
- * (the agent's port) are allowed back out.
+ * services, and no DNS of its own: the DNS rule sits in a chain that runs
+ * before the container engine's own NAT, which rewrites the port of queries
+ * to its embedded resolver on loopback, so a plain port match would miss them.
+ * Replies to connections the host opened (the agent's port) are allowed back
+ * out.
  */
 export function firewallRules(options: FirewallOptions): string {
   const privateRanges = options.allowPrivate
@@ -28,6 +31,10 @@ delete table inet brawzer
 table inet brawzer {
   chain input {
     type filter hook input priority 0; policy accept;
+  }
+  chain dns {
+    type filter hook output priority -300; policy accept;
+    meta l4proto { tcp, udp } th dport 53 meta skuid != ${String(options.uid)} drop
   }
   chain output {
     type filter hook output priority 0; policy drop;

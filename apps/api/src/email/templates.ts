@@ -22,15 +22,37 @@ export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => entities[character] ?? character);
 }
 
+/**
+ * Where the mark shown at the top of each email lives (set once by the
+ * service from the web app's address). Clients that block images still see
+ * the "Brawzer" wordmark beside it.
+ */
+let markUrl: string | null = null;
+export function setMarkUrl(url: string | null): void {
+  markUrl = url;
+}
+
 interface LayoutOptions {
   preheader: string;
   heading: string;
   paragraphs: readonly string[];
   action?: { label: string; url: string };
+  /** Short facts in a table, such as a plan and when it renews. */
+  facts?: readonly (readonly [string, string])[];
   footnote: string;
+  /** For an optional notice: why the person gets it, and the link that stops it. */
+  unsubscribe?: { reason: string; url: string };
 }
 
-function renderHtml({ preheader, heading, paragraphs, action, footnote }: LayoutOptions): string {
+function renderHtml({
+  preheader,
+  heading,
+  paragraphs,
+  action,
+  facts,
+  footnote,
+  unsubscribe,
+}: LayoutOptions): string {
   const font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
   const body = paragraphs
     .map(
@@ -38,9 +60,24 @@ function renderHtml({ preheader, heading, paragraphs, action, footnote }: Layout
         `<p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#5e5b56;">${escapeHtml(text)}</p>`,
     )
     .join("");
+  const table =
+    facts && facts.length > 0
+      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 20px;border:1px solid #e4e2dd;border-radius:10px;">${facts
+          .map(
+            ([label, value], index) =>
+              `<tr><td style="padding:10px 14px;font-size:13px;color:#6f6b65;${index > 0 ? "border-top:1px solid #eeece8;" : ""}">${escapeHtml(label)}</td><td align="right" style="padding:10px 14px;font-size:13px;font-weight:600;color:#1c1b19;${index > 0 ? "border-top:1px solid #eeece8;" : ""}">${escapeHtml(value)}</td></tr>`,
+          )
+          .join("")}</table>`
+      : "";
   const button = action
     ? `<p style="margin:24px 0 20px;"><a href="${escapeHtml(action.url)}" style="display:inline-block;background:#2b5be0;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;line-height:20px;padding:12px 20px;border-radius:8px;">${escapeHtml(action.label)}</a></p>
 <p style="margin:0;font-size:13px;line-height:18px;color:#6f6b65;">Or copy this link into your browser:<br><span style="word-break:break-all;color:#2453cf;">${escapeHtml(action.url)}</span></p>`
+    : "";
+  const mark = markUrl
+    ? `<img src="${escapeHtml(markUrl)}" width="28" height="28" alt="" style="display:inline-block;vertical-align:middle;border-radius:7px;margin-right:10px;">`
+    : "";
+  const stop = unsubscribe
+    ? `<p style="margin:10px 0 0;font-size:12px;line-height:18px;color:#6f6b65;">${escapeHtml(unsubscribe.reason)} <a href="${escapeHtml(unsubscribe.url)}" style="color:#2453cf;">Stop these emails</a>.</p>`
     : "";
   return `<!doctype html>
 <html lang="en">
@@ -55,12 +92,13 @@ function renderHtml({ preheader, heading, paragraphs, action, footnote }: Layout
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8f7f4;padding:32px 16px;">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
-<tr><td style="padding:0 4px 20px;font-size:18px;font-weight:600;letter-spacing:-0.02em;color:#1c1b19;">Brawzer</td></tr>
+<tr><td style="padding:0 4px 20px;font-size:18px;font-weight:600;letter-spacing:-0.02em;color:#1c1b19;">${mark}<span style="vertical-align:middle;">Brawzer</span></td></tr>
 <tr><td style="background:#ffffff;border:1px solid #e4e2dd;border-radius:16px;padding:32px;">
 <h1 style="margin:0 0 16px;font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.01em;color:#1c1b19;">${escapeHtml(heading)}</h1>
-${body}${button}
+${body}${table}${button}
 </td></tr>
-<tr><td style="padding:20px 4px 0;font-size:12px;line-height:18px;color:#6f6b65;">${escapeHtml(footnote)}</td></tr>
+<tr><td style="padding:20px 4px 0;font-size:12px;line-height:18px;color:#6f6b65;">${escapeHtml(footnote)}${stop}
+<p style="margin:14px 0 0;font-size:12px;line-height:18px;color:#9a968f;">Brawzer · Your computer in the cloud. Nothing is saved on your device.</p></td></tr>
 </table>
 </td></tr>
 </table>
@@ -68,13 +106,26 @@ ${body}${button}
 </html>`;
 }
 
-function renderText({ heading, paragraphs, action, footnote }: LayoutOptions): string {
+function renderText({
+  heading,
+  paragraphs,
+  action,
+  facts,
+  footnote,
+  unsubscribe,
+}: LayoutOptions): string {
   return [
     heading,
     "",
     ...paragraphs.flatMap((text) => [text, ""]),
+    ...(facts && facts.length > 0
+      ? [...facts.map(([label, value]) => `${label}: ${value}`), ""]
+      : []),
     ...(action ? [`${action.label}: ${action.url}`, ""] : []),
     footnote,
+    ...(unsubscribe ? ["", `${unsubscribe.reason} Stop these emails: ${unsubscribe.url}`] : []),
+    "",
+    "Brawzer · Your computer in the cloud. Nothing is saved on your device.",
   ].join("\n");
 }
 
@@ -336,5 +387,465 @@ export function phoneSignInMessage(
     ],
     action: { label: "Review sessions", url },
     footnote: "Brawzer sends this every time a sign-in is approved from a phone.",
+  });
+}
+
+/** Usage at or near a plan's limit (Phase 8, idea 20). `used` and `limit` arrive worded. */
+export function usageNoticeMessage(
+  kind: "browsing" | "storage" | "files",
+  percent: number,
+  used: string,
+  limit: string,
+  url: string,
+): EmailContent {
+  const reached = percent >= 100;
+  const what =
+    kind === "browsing"
+      ? "this month’s cloud browser hours"
+      : kind === "storage"
+        ? "your Drive storage"
+        : "the number of files your Drive holds";
+  const subject = reached
+    ? `You’ve reached ${kind === "browsing" ? "this month’s browsing hours" : kind === "storage" ? "your Drive storage limit" : "your Drive file limit"}`
+    : `You’ve used ${String(percent)}% of ${what}`;
+  const consequence =
+    kind === "browsing"
+      ? reached
+        ? "New cloud browser sessions can’t start until the hours reset on the 1st (UTC). A session already running isn’t interrupted."
+        : "When they run out, new cloud browser sessions can’t start until the 1st (UTC)."
+      : reached
+        ? "New uploads and downloads into Drive are refused until there is room. Nothing already stored is touched."
+        : "When it’s full, new uploads and downloads into Drive are refused until there is room.";
+  return compose(subject, {
+    preheader: `${used} of ${limit}.`,
+    heading: subject,
+    paragraphs: [
+      `You’ve used ${used} of ${limit}${kind === "browsing" ? " this month" : ""}.`,
+      consequence,
+      "Your plan, its limits and what you’ve used are on the Account page, where a plan with more room can be chosen when one is offered.",
+    ],
+    action: { label: "See your plan", url },
+    footnote:
+      kind === "browsing"
+        ? "Brawzer sends this once at 80% and once at 100% of each month’s hours."
+        : "Brawzer sends this once at 80% and once at 100%, and again only after you’ve made room.",
+  });
+}
+
+export function teamInvitationMessage(team: string, invitedBy: string, url: string): EmailContent {
+  return compose(`${invitedBy} invited you to the team “${team}” on Brawzer`, {
+    preheader: `Join “${team}” from your Team page.`,
+    heading: `Join “${team}” on Brawzer`,
+    paragraphs: [
+      `${invitedBy} invited you to their team “${team}”. In a team you use the owner’s plan, and share its proxies and its Drive space; your own profiles and files stay yours.`,
+      "Sign in to Brawzer with this email address and open the Team page to join or decline. If you don’t have an account yet, create one with this address first. The invitation lasts 7 days.",
+    ],
+    action: { label: "Open the Team page", url },
+    footnote:
+      "If you don’t know who this is, ignore this email. Nothing happens unless you join from your own account.",
+  });
+}
+
+// ── After sign-up ───────────────────────────────────────────────────────
+
+export function welcomeMessage(
+  appUrl: string,
+  securityUrl: string,
+  name: string | null = null,
+): EmailContent {
+  const greeting = name
+    ? `Thanks for confirming your email, ${name}.`
+    : "Thanks for confirming your email.";
+  return compose("Welcome to Brawzer", {
+    preheader: "Your computer in the cloud is ready.",
+    heading: "Your computer in the cloud is ready",
+    paragraphs: [
+      `${greeting} Brawzer runs a whole computer for you in the cloud: browsers that open in an isolated container, Drive for your files, and a desktop of apps, all reached from any device without leaving anything behind on it.`,
+      "Three things to try first: open a cloud browser from the Dock, drop a file into Drive, and look at Shield, where every sign-in and change to your account is listed.",
+      "Brawzer never sees your passwords, and a page in a cloud browser can't reach this computer. If anything about your account changes, an email like this one tells you.",
+    ],
+    action: { label: "Open Brawzer", url: appUrl },
+    footnote: `How Brawzer keeps you safe: ${securityUrl}`,
+  });
+}
+
+// ── Billing ─────────────────────────────────────────────────────────────
+
+export function subscriptionStartedMessage(
+  plan: string,
+  price: string | null,
+  renewsOn: string | null,
+  trialEndsOn: string | null,
+  url: string,
+): EmailContent {
+  const trial = trialEndsOn !== null;
+  return compose(trial ? `Your ${plan} trial has started` : `You’re on the ${plan} plan`, {
+    preheader: trial ? `Free until ${trialEndsOn}.` : `Thank you. ${plan} is active now.`,
+    heading: trial ? `Your ${plan} trial has started` : `Welcome to ${plan}`,
+    paragraphs: [
+      trial
+        ? `${plan} is yours to use in full until ${trialEndsOn}. If you keep it, the first payment is taken then; cancel before and nothing is charged.`
+        : `Thank you. ${plan}’s limits apply from now, and your plan renews on its own until you cancel.`,
+      "Your plan, its limits, invoices and the way to change or cancel it are on the Account page.",
+    ],
+    facts: [
+      ["Plan", plan],
+      ...(price ? ([["Price", price]] as const) : []),
+      ...(trial
+        ? ([["Trial ends", trialEndsOn]] as const)
+        : renewsOn
+          ? ([["Renews on", renewsOn]] as const)
+          : []),
+    ],
+    action: { label: "See your plan", url },
+    footnote: "Brawzer sends this when a plan starts; receipts come from the payment provider.",
+  });
+}
+
+export function subscriptionChangedMessage(
+  plan: string,
+  renewsOn: string | null,
+  url: string,
+): EmailContent {
+  return compose(`Your plan is now ${plan}`, {
+    preheader: `${plan}’s limits apply from now.`,
+    heading: `Your plan is now ${plan}`,
+    paragraphs: [
+      `${plan}’s limits apply from now. Anything above the new limits stays as it is, but nothing more can be added until there is room.`,
+    ],
+    facts: [["Plan", plan], ...(renewsOn ? ([["Renews on", renewsOn]] as const) : [])],
+    action: { label: "See your plan", url },
+    footnote: "If you didn’t change your plan, sign in and check Shield for what happened.",
+  });
+}
+
+export function subscriptionEndingMessage(plan: string, endsOn: string, url: string): EmailContent {
+  return compose(`Your ${plan} plan ends on ${endsOn}`, {
+    preheader: "Nothing more is charged; the free plan follows.",
+    heading: `${plan} ends on ${endsOn}`,
+    paragraphs: [
+      `Your subscription was cancelled. ${plan} stays yours until ${endsOn}; after that the free plan and its limits apply, and nothing more is charged.`,
+      "Your files, profiles and settings stay. Anything above the free plan’s limits is kept but can’t be added to until there is room.",
+      "Changed your mind? Resume the plan from the Account page before it ends.",
+    ],
+    action: { label: "See your plan", url },
+    footnote: "If you didn’t cancel, sign in and check Shield for what happened.",
+  });
+}
+
+export function subscriptionEndedMessage(plan: string, url: string): EmailContent {
+  return compose(`Your ${plan} plan has ended`, {
+    preheader: "You’re on the free plan now.",
+    heading: `${plan} has ended`,
+    paragraphs: [
+      "You’re on the free plan now, and nothing more is charged. Your files, profiles and settings stay; anything above the free plan’s limits is kept but can’t be added to until there is room.",
+      "You can choose a plan again at any time from the Account page.",
+    ],
+    action: { label: "See your plan", url },
+    footnote: "If this is a surprise, sign in and check Shield for what happened.",
+  });
+}
+
+export function paymentFailedMessage(
+  plan: string,
+  amount: string | null,
+  retryOn: string | null,
+  url: string,
+): EmailContent {
+  return compose("Your payment for Brawzer didn’t go through", {
+    preheader: "Update your card to keep your plan.",
+    heading: "Your payment didn’t go through",
+    paragraphs: [
+      `The payment for your ${plan} plan${amount ? ` (${amount})` : ""} was declined by your bank or card. Nothing has changed yet.`,
+      retryOn
+        ? `The payment provider tries again on ${retryOn}. Update your card before then from the Account page and the plan carries on; if the payments keep failing, the plan ends and the free plan follows.`
+        : "Update your card from the Account page and the plan carries on; if the payments keep failing, the plan ends and the free plan follows.",
+    ],
+    action: { label: "Update your payment method", url },
+    footnote: "Brawzer never sees your card details; they are held by the payment provider.",
+  });
+}
+
+export function trialEndingMessage(
+  plan: string,
+  endsOn: string,
+  price: string | null,
+  url: string,
+): EmailContent {
+  return compose(`Your ${plan} trial ends on ${endsOn}`, {
+    preheader: price ? `${price} from then, unless you cancel.` : "Decide before then.",
+    heading: `Your ${plan} trial ends on ${endsOn}`,
+    paragraphs: [
+      price
+        ? `From ${endsOn}, ${plan} costs ${price}, taken from the card on file. To keep it, do nothing. To stop, cancel from the Account page before then and nothing is charged.`
+        : `From ${endsOn} the plan is charged to the card on file. To keep it, do nothing. To stop, cancel from the Account page before then and nothing is charged.`,
+    ],
+    action: { label: "See your plan", url },
+    footnote: "Brawzer sends this once, three days before a trial ends.",
+  });
+}
+
+// ── Drive ───────────────────────────────────────────────────────────────
+
+export function fileQuarantinedMessage(
+  name: string,
+  threat: string | null,
+  source: "upload" | "browser",
+  when: string,
+  url: string,
+): EmailContent {
+  return compose(`“${name}” was quarantined in your Drive`, {
+    preheader: "The malware scan found a threat. The file is isolated.",
+    heading: "A file was quarantined",
+    paragraphs: [
+      `${source === "browser" ? "A file a cloud browser saved to your Drive" : "A file uploaded to your Drive"} matched known malware${threat ? ` (${threat})` : ""} and was put in quarantine at ${when}.`,
+      "It is kept, but it can’t be opened, previewed, sent to a page or downloaded to a computer. You can delete it from Files. Nothing else in your Drive was touched, and the file never ran anywhere.",
+    ],
+    action: { label: "See the file", url },
+    footnote:
+      "Brawzer scans every file on its way into Drive. If you didn’t expect this file, check Shield for what else happened in your account.",
+  });
+}
+
+// ── Teams ───────────────────────────────────────────────────────────────
+
+export function teamMemberJoinedMessage(
+  team: string,
+  who: string,
+  url: string,
+  unsubscribeUrl: string,
+): EmailContent {
+  return compose(`${who} joined “${team}”`, {
+    preheader: "They use the team’s plan and shared Drive from now.",
+    heading: `${who} joined “${team}”`,
+    paragraphs: [
+      `${who} accepted the invitation to your team. They use the team’s plan and can see the shared Drive from now; their own profiles and files stay theirs.`,
+    ],
+    action: { label: "Open the Team page", url },
+    footnote: "Team members, roles and invitations are managed on the Team page.",
+    unsubscribe: { reason: "You get team updates because you run this team.", url: unsubscribeUrl },
+  });
+}
+
+export function teamMemberRemovedMessage(team: string, url: string): EmailContent {
+  return compose(`You’re no longer in “${team}”`, {
+    preheader: "Your own plan and limits apply again.",
+    heading: `You’re no longer in “${team}”`,
+    paragraphs: [
+      `An owner or admin of “${team}” removed you. Your own plan and limits apply again, and you no longer see the team’s shared Drive. Your own profiles, files and settings are untouched.`,
+    ],
+    action: { label: "See your account", url },
+    footnote: "If you think this is a mistake, ask the team’s owner for a new invitation.",
+  });
+}
+
+export function teamOwnershipTransferredMessage(
+  team: string,
+  from: string,
+  url: string,
+): EmailContent {
+  return compose(`You now own “${team}”`, {
+    preheader: "The team uses your plan from now.",
+    heading: `You now own “${team}”`,
+    paragraphs: [
+      `${from} made you the owner of “${team}”. The team uses your plan and its limits from now, and you can invite, remove and change the roles of its members. ${from} stays in the team as an admin.`,
+    ],
+    action: { label: "Open the Team page", url },
+    footnote: "Ownership can be passed on again from the Team page.",
+  });
+}
+
+// ── For the people who run Brawzer ──────────────────────────────────────
+
+// ── Support requests ────────────────────────────────────────────────────
+
+export function ticketReceivedMessage(number: number, subject: string, url: string): EmailContent {
+  return compose(`We’ve got your request #${String(number)}: ${subject}`, {
+    preheader: "Brawzer’s team will reply by email and in Help.",
+    heading: "We’ve got your request",
+    paragraphs: [
+      `Thanks for writing. Your request is number ${String(number)}, “${subject}”. Someone from Brawzer’s team will reply here and in Help, where you can add anything you forgot.`,
+    ],
+    action: { label: "Open the request", url },
+    footnote: "You get this because you asked Brawzer for help from your account.",
+  });
+}
+
+export function ticketReplyMessage(
+  number: number,
+  subject: string,
+  reply: string,
+  solved: boolean,
+  url: string,
+): EmailContent {
+  return compose(`Re: #${String(number)} ${subject}`, {
+    preheader: reply.slice(0, 120),
+    heading: solved ? "Your request is solved" : "A reply from Brawzer",
+    paragraphs: [
+      ...reply
+        .split(/\n{2,}/)
+        .map((part) => part.trim())
+        .filter(Boolean),
+      solved
+        ? "We’ve marked this request as solved. If it isn’t, reply from Help and it opens again. You can also rate how we did there."
+        : "Reply from Help; this address doesn’t read replies.",
+    ],
+    action: { label: "Open the request", url },
+    footnote: `Request #${String(number)} · ${subject}`,
+  });
+}
+
+// ── Account recovery ────────────────────────────────────────────────────
+
+export function recoveryConfirmMessage(url: string): EmailContent {
+  return compose("Confirm your Brawzer account recovery", {
+    preheader: "Someone asked to recover your account. Confirm it was you.",
+    heading: "Recover your account?",
+    paragraphs: [
+      "Someone asked to recover the Brawzer account with this address, for when every way of signing in is lost. If that was you, confirm it below. Then there is a 48-hour wait, during which you can cancel from an email we’ll send you, before Brawzer’s team can release the account.",
+      "If it wasn’t you, do nothing: nothing changes without this confirmation, and the link stops working in 24 hours.",
+    ],
+    action: { label: "Yes, recover my account", url },
+    footnote: "Brawzer’s team will never ask you for your password or your codes.",
+  });
+}
+
+export function recoveryWaitingMessage(releaseAt: string, cancelUrl: string): EmailContent {
+  return compose("Your account recovery is confirmed: 48-hour wait", {
+    preheader: `Brawzer can release the account from ${releaseAt}. Cancel any time before.`,
+    heading: "Recovery confirmed",
+    paragraphs: [
+      `Brawzer’s team is checking the request. The account can be released at the earliest on ${releaseAt}. Releasing removes the lost passkeys and authenticator and sends a link to choose a new password. Files and settings stay as they are.`,
+      "If you didn’t ask for this, cancel now. Cancelling tells our security team that someone else tried.",
+    ],
+    action: { label: "This wasn’t me: cancel the recovery", url: cancelUrl },
+    footnote: "The cancel link works for 7 days. Nothing changes before the wait ends.",
+  });
+}
+
+export function recoveryCancelledMessage(): EmailContent {
+  return compose("Your account recovery was cancelled", {
+    preheader: "Nothing changed. Our security team has been told.",
+    heading: "Recovery cancelled",
+    paragraphs: [
+      "The recovery request for your account was cancelled, so nothing changes. Our security team has been told that someone may have tried to get in.",
+      "If you can still sign in, now is a good moment to change your password from Shield.",
+    ],
+    footnote:
+      "If you did ask for recovery and cancelled by mistake, start again from the sign-in page.",
+  });
+}
+
+export function recoveryReleasedMessage(url: string): EmailContent {
+  return compose("Your Brawzer account is released", {
+    preheader: "Choose a new password; the lost sign-in methods are gone.",
+    heading: "Welcome back",
+    paragraphs: [
+      "Brawzer’s team released your account. The lost passkeys and authenticator have been removed and every device has been signed out. Choose a new password with the link below, then set up a passkey or an authenticator again from Shield.",
+    ],
+    action: { label: "Choose a new password", url },
+    footnote:
+      "The link works once and expires in 30 minutes. Your files and settings are as you left them.",
+  });
+}
+
+export function extensionBlockedMessage(name: string, reason: string, url: string): EmailContent {
+  return compose(`${name} was removed from your Brawzer browsers`, {
+    preheader: "Brawzer’s team blocked an extension you had installed.",
+    heading: `${name} has been removed`,
+    paragraphs: [
+      `Brawzer’s team blocked the extension “${name}” for everyone, so it has been removed from your browser profiles. It won’t load in your next session.`,
+      `Why: ${reason}`,
+      "Your profiles, files and settings are otherwise unchanged. The Extensions page shows what is still available.",
+    ],
+    action: { label: "Open Extensions", url },
+    footnote:
+      "Extensions run inside your cloud browser, so a harmful one could read what you do there. Blocking is how we keep that from happening.",
+  });
+}
+
+export function abuseWarningMessage(kind: string, note: string, url: string): EmailContent {
+  return compose("A warning about how your Brawzer account is being used", {
+    preheader: "Please read: this is about Brawzer’s acceptable use policy.",
+    heading: "A warning from Brawzer’s team",
+    paragraphs: [
+      `We received a report that your account is being used for ${kind}, which Brawzer’s acceptable use policy doesn’t allow. Cloud browsers that are misused get Brawzer’s addresses blocked for every customer, so we take these reports seriously.`,
+      `What we were told: ${note}`,
+      "If this wasn’t you, change your password and check your devices from Shield now. If it was, please stop: a further report leads to suspension.",
+    ],
+    action: { label: "Open Shield", url },
+    footnote: "You can reply through Help if you think this is a mistake.",
+  });
+}
+
+export function weeklySummaryMessage(
+  weekOf: string,
+  facts: readonly (readonly [string, string])[],
+  needsYou: readonly string[],
+  url: string,
+): EmailContent {
+  return compose(`Brawzer this week: ${weekOf}`, {
+    preheader: facts
+      .slice(0, 3)
+      .map(([label, value]) => `${label} ${value}`)
+      .join(" · "),
+    heading: `The week of ${weekOf}`,
+    paragraphs: [
+      "Where Brawzer stands this Monday, from the console’s own figures. Nothing here is estimated.",
+      ...(needsYou.length
+        ? [`Needs you: ${needsYou.join("; ")}.`]
+        : ["Nothing is waiting for you in the console."]),
+    ],
+    facts,
+    action: { label: "Open the console", url },
+    footnote: "You get this because the weekly email is on in the console. Turn it off there.",
+  });
+}
+
+export function adminNoticeMessage(
+  kind: "sign-up" | "subscription" | "report" | "quarantine" | "ticket" | "recovery",
+  facts: readonly (readonly [string, string])[],
+  url: string,
+): EmailContent {
+  const title =
+    kind === "sign-up"
+      ? "A new account was created"
+      : kind === "subscription"
+        ? "A subscription changed"
+        : kind === "report"
+          ? "A page was reported"
+          : kind === "ticket"
+            ? "A support request came in"
+            : kind === "recovery"
+              ? "An account recovery needs a look"
+              : "A file was quarantined";
+  return compose(`Brawzer: ${title.toLowerCase()}`, {
+    preheader: facts.map(([label, value]) => `${label}: ${value}`).join(" · "),
+    heading: title,
+    paragraphs: [
+      kind === "sign-up"
+        ? "Someone confirmed their email and has an account now."
+        : kind === "subscription"
+          ? "The payment provider reported a change to an account’s plan."
+          : kind === "report"
+            ? "Someone reported a page from a cloud browser. The report, with its picture if one was attached, is on the Admin page."
+            : kind === "ticket"
+              ? "Someone asked Brawzer’s team for help from their account. The request is in the console’s Support inbox."
+              : kind === "recovery"
+                ? "An account recovery case changed. Recovery is how accounts get stolen, so look at it in the console."
+                : "The malware scan caught a file on its way into a Drive. It is isolated; nothing ran.",
+    ],
+    facts,
+    action: {
+      label:
+        kind === "ticket"
+          ? "Open the inbox"
+          : kind === "recovery"
+            ? "Open recovery"
+            : "Open the Admin page",
+      url,
+    },
+    footnote:
+      "You get these because your address is in ADMIN_EMAILS. Set ADMIN_NOTIFICATIONS=none to stop them.",
   });
 }

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { PassThrough } from "node:stream";
+import { BackPressure, TRANSFER_BUFFER_BYTES } from "./back-pressure.js";
 import {
   agentMessageSchema,
   binaryKind,
@@ -33,6 +34,8 @@ import { REDIS } from "../redis/redis.module.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { BrowserService, SESSION_ENDED_CHANNEL } from "./browser.service.js";
 import { StreamTickets } from "./stream-tickets.js";
+import { MetricsService } from "../metrics/metrics.service.js";
+import { HistoryService } from "../history/history.service.js";
 
 const logger = new Logger("StreamGateway");
 const TICKET_WAIT_MS = 5_000;
@@ -102,7 +105,12 @@ interface IncomingTransfer {
  */
 @Injectable()
 export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutdown {
-  private readonly relays = new Map<string, { close(code: number, reason: string): void }>();
+  private readonly relays = new Map<
+    string,
+    { authSessionId: string; close(code: number, reason: string): void }
+  >();
+  /** Figures for the metrics: how often a download had to pause its agent. */
+  readonly stats = { transferPauses: 0 };
   private subscriber: Redis | null = null;
 
   constructor(
@@ -112,14 +120,31 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
     @Inject(DriveService) private readonly drive: DriveService,
     @Inject(SecurityEventsService) private readonly securityEvents: SecurityEventsService,
     @Inject(REDIS) private readonly redis: Redis,
+    @Inject(MetricsService) private readonly metrics: MetricsService,
+    @Inject(HistoryService) private readonly history: HistoryService,
   ) {
     this.browser.events.on("ended", (sessionId: string) => {
       this.relays.get(sessionId)?.close(STREAM_CLOSE_CODES.ended, "ended");
     });
+    // A sign-in locked here stops its streams now; on other instances, the
+    // periodic check stops them within CHECK_INTERVAL_MS.
+    this.browser.onSignInLocked((authSessionId) => {
+      for (const relay of [...this.relays.values()]) {
+        if (relay.authSessionId === authSessionId) relay.close(STREAM_CLOSE_CODES.locked, "locked");
+      }
+    });
+  }
+
+  /** Pages watching this session from this instance (one relay per session). */
+  viewersOf(sessionId: string): number {
+    return this.relays.has(sessionId) ? 1 : 0;
   }
 
   /** A session ended on any instance: cut its viewer here too (ADR 0016). */
   onApplicationBootstrap(): void {
+    this.metrics.gauge("brawzer_stream_viewers", "Pages watching a session on this instance.", () =>
+      Promise.resolve([{ value: this.relays.size }]),
+    );
     const subscriber = this.redis.duplicate({
       enableOfflineQueue: true,
       maxRetriesPerRequest: null,
@@ -206,10 +231,21 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
     agent.binaryType = "nodebuffer";
 
     const incoming = new Map<string, IncomingTransfer>();
+    // Downloads are bounded in memory: a full buffer pauses the agent until Drive catches up.
+    const pressure = new BackPressure(agent, () => {
+      this.stats.transferPauses += 1;
+      this.metrics.count(
+        "brawzer_transfer_pauses_total",
+        "Downloads that paused their agent while Drive caught up.",
+      );
+    });
+    // History and open tabs, for profiles that keep them (ADR 0020).
+    const observer = this.history.observe(id);
     let closed = false;
     const close = (code: number, reason: string) => {
       if (closed) return;
       closed = true;
+      void observer.close();
       clearInterval(check);
       clearInterval(touch);
       if (this.relays.get(id) === relay) this.relays.delete(id);
@@ -217,6 +253,7 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         transfer.body.destroy(new Error("The stream closed before the file arrived."));
       }
       incoming.clear();
+      pressure.releaseAll();
       if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
         client.close(code, reason);
       }
@@ -225,15 +262,17 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
       }
       void this.browser.touch(id).catch(() => undefined);
     };
-    const relay = { close };
+    const relay = { authSessionId: claims.authSessionId, close };
 
     // Only one viewer per session: a new one replaces the old one.
     this.relays.get(id)?.close(STREAM_CLOSE_CODES.replaced, "replaced");
     this.relays.set(id, relay);
 
     const check = setInterval(() => {
-      void this.browser.viewerAllowed(id, claims.authSessionId).then((allowed) => {
-        if (!allowed) {
+      void this.browser.viewerState(id, claims.authSessionId).then((state) => {
+        if (state === "locked") {
+          close(STREAM_CLOSE_CODES.locked, "locked");
+        } else if (state === "ended") {
           sendError(client, "ended", "This browser session has ended.");
           close(STREAM_CLOSE_CODES.ended, "ended");
         }
@@ -280,9 +319,21 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         if (++bad > MAX_BAD_MESSAGES) close(STREAM_CLOSE_CODES.badMessage, "bad messages");
         return;
       }
-      if (parsed.data.type === "file-chooser") {
+      if (parsed.data.type === "file-chooser" || parsed.data.type === "drop") {
         void this.answerChooser(parsed.data, auth, meta, agent, toAgent);
         return;
+      }
+      if (parsed.data.type === "paste") {
+        // Clipboard with intent: the act is recorded (how much), never the text.
+        void this.securityEvents
+          .record({
+            type: "browser.clipboard_pasted",
+            userId: auth.user.id,
+            sessionId: auth.session.id,
+            meta,
+            metadata: { chars: parsed.data.text.length },
+          })
+          .catch(() => undefined);
       }
       toAgent(parsed.data);
     };
@@ -302,8 +353,35 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         }
         const message = agentMessageSchema.safeParse(candidate);
         if (!message.success) return;
+        if (message.data.type === "welcome" || message.data.type === "tabs") {
+          observer.tabs(message.data.tabs);
+        }
+        if (message.data.type === "welcome") {
+          // A session continuing from saved tabs reopens them once, in their order.
+          const activeTabId = message.data.activeTabId;
+          void this.history
+            .claimRestore(id)
+            .then((urls) => {
+              const [first, ...rest] = urls;
+              if (!first) return;
+              toAgent({ type: "navigate", tabId: activeTabId, url: first });
+              for (const url of rest) toAgent({ type: "new-tab", url });
+            })
+            .catch(() => undefined);
+        }
         if (message.data.type === "transfer" && message.data.state === "received") {
-          this.receiveTransfer(message.data, incoming, auth, meta, toPage);
+          this.receiveTransfer(message.data, incoming, auth, meta, toPage, pressure);
+        }
+        if (message.data.type === "clipboard" && message.data.text !== "") {
+          void this.securityEvents
+            .record({
+              type: "browser.clipboard_copied",
+              userId: auth.user.id,
+              sessionId: auth.session.id,
+              meta,
+              metadata: { chars: message.data.text.length },
+            })
+            .catch(() => undefined);
         }
         toPage(message.data);
         return;
@@ -313,16 +391,30 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         const chunk = decodeTransferChunk(bytes);
         const transfer = chunk ? incoming.get(chunk.header.transferId) : undefined;
         if (!chunk || !transfer) return;
-        if (chunk.data.length > 0) transfer.body.write(Buffer.from(chunk.data));
+        if (chunk.data.length > 0) {
+          pressure.write(chunk.header.transferId, transfer.body, Buffer.from(chunk.data));
+        }
         if (chunk.header.last) {
           transfer.body.end();
           incoming.delete(chunk.header.transferId);
+          pressure.release(chunk.header.transferId);
         }
         return;
       }
       if (client.readyState !== WebSocket.OPEN) return;
+      const kind = binaryKind(bytes);
+      if (kind === "audio" || kind === "video") {
+        // Sound and video are live: a page that is behind loses some, and never waits for it
+        // (a missed video chunk makes it ask the agent for a key frame).
+        if (client.bufferedAmount <= MAX_BUFFERED_BYTES) client.send(bytes, { binary: true });
+        return;
+      }
       if (client.bufferedAmount > MAX_BUFFERED_BYTES) {
         // The page is behind: drop the frame and acknowledge it in its place.
+        this.metrics.count(
+          "brawzer_frames_dropped_total",
+          "Frames dropped because the page was behind.",
+        );
         const frame = decodeFrame(bytes);
         if (frame && agent.readyState === WebSocket.OPEN) {
           agent.send(
@@ -335,6 +427,7 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
         }
         return;
       }
+      this.metrics.count("brawzer_frames_relayed_total", "Frames relayed to pages.");
       client.send(bytes, { binary: true });
     });
     agent.on("close", () => {
@@ -359,8 +452,9 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
     auth: { user: { id: string }; session: { id: string } },
     meta: RequestMeta,
     toPage: (message: object) => void,
+    pressure: BackPressure,
   ): void {
-    const body = new PassThrough();
+    const body = new PassThrough({ highWaterMark: TRANSFER_BUFFER_BYTES });
     incoming.set(message.transferId, { message, body });
     void (async () => {
       try {
@@ -376,6 +470,14 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
           },
           meta,
         );
+        this.metrics.count(
+          "brawzer_transfers_total",
+          "Downloads and printed pages, by kind and outcome.",
+          {
+            kind: message.kind,
+            state: file.status === "infected" ? "quarantined" : "saved",
+          },
+        );
         toPage({
           ...message,
           state: file.status === "infected" ? "quarantined" : "saved",
@@ -387,7 +489,16 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
       } catch (error) {
         incoming.delete(message.transferId);
         if (!body.destroyed) body.destroy();
+        pressure.release(message.transferId);
         const refusal = error instanceof ApiException ? error : null;
+        this.metrics.count(
+          "brawzer_transfers_total",
+          "Downloads and printed pages, by kind and outcome.",
+          {
+            kind: message.kind,
+            state: refusal?.code === "payload_too_large" ? "too_large" : "failed",
+          },
+        );
         toPage({
           ...message,
           state: refusal?.code === "payload_too_large" ? "too_large" : "failed",
@@ -408,7 +519,7 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
    * are opened; anything else is silently left out.
    */
   private async answerChooser(
-    answer: Extract<ClientMessage, { type: "file-chooser" }>,
+    answer: Extract<ClientMessage, { type: "file-chooser" | "drop" }>,
     auth: { user: { id: string }; session: { id: string } },
     meta: RequestMeta,
     agent: WebSocket,
@@ -428,7 +539,18 @@ export class StreamGateway implements OnApplicationBootstrap, OnApplicationShutd
       name: file.file.name,
       bytes: file.file.size,
     }));
-    toAgent({ type: "file-chooser", tabId: answer.tabId, chooserId: answer.chooserId, files });
+    if (answer.type === "drop") {
+      toAgent({
+        type: "drop",
+        tabId: answer.tabId,
+        dropId: answer.dropId,
+        x: answer.x,
+        y: answer.y,
+        files,
+      });
+    } else {
+      toAgent({ type: "file-chooser", tabId: answer.tabId, chooserId: answer.chooserId, files });
+    }
     if (files.length === 0) {
       for (const file of opened) file.body.destroy();
       return;

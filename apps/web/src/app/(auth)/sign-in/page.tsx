@@ -1,7 +1,6 @@
-import { FormMessage } from "@brawzer/ui/components/form-message";
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { AuthHeading, TextLink } from "@/components/auth/auth-ui";
+import { LoginScreen } from "@/components/auth/login-screen";
 import { SignInForm } from "@/components/auth/sign-in-form";
 
 export const metadata: Metadata = {
@@ -15,32 +14,54 @@ async function SignInNotice({ searchParams }: Pick<PageProps<"/sign-in">, "searc
   const params = await searchParams;
   if (params.signed_out === "1") {
     return (
-      <FormMessage tone="success" title="You’ve signed out">
+      <div className="lg-err lg-info" role="status">
+        <b>You’ve signed out</b>
         On a shared computer, close the browser window as well.
-      </FormMessage>
+      </div>
+    );
+  }
+  if (params.signed_out === "switch") {
+    return (
+      <div className="lg-err lg-info" role="status">
+        <b>Ready for someone else</b>
+        The last person was signed out so you can sign in. Their cloud browsers wait for them for a
+        while, and nothing of theirs stays on this computer.
+      </div>
     );
   }
   if (params.signed_out === "idle") {
     return (
-      <FormMessage tone="info" title="You were signed out">
+      <div className="lg-err lg-info" role="status">
+        <b>You were signed out</b>
         There was no activity for a while, so Brawzer signed you out to protect your account on this
         computer.
-      </FormMessage>
+      </div>
     );
   }
   if (params.signed_out === "deleted") {
     return (
-      <FormMessage tone="success" title="Your account was deleted">
+      <div className="lg-err lg-info" role="status">
+        <b>Your account was deleted</b>
         Your account and the data stored with it were deleted, and every device was signed out. On a
         shared computer, close the browser window as well.
-      </FormMessage>
+      </div>
+    );
+  }
+  if (params.signed_out === "wiped") {
+    return (
+      <div className="lg-err lg-info" role="status">
+        <b>This computer is clean</b>
+        Every app and browser session was closed, the clipboard cleared and you were signed out.
+        Your Drive is safe in the cloud. On a shared computer, close the browser window as well.
+      </div>
     );
   }
   if (params.expired === "1") {
     return (
-      <FormMessage tone="info" title="Your session has ended">
+      <div className="lg-err lg-info" role="status">
+        <b>Your session has ended</b>
         Sign in again to continue.
-      </FormMessage>
+      </div>
     );
   }
   return null;
@@ -48,17 +69,15 @@ async function SignInNotice({ searchParams }: Pick<PageProps<"/sign-in">, "searc
 
 export default function SignInPage({ searchParams }: PageProps<"/sign-in">) {
   return (
-    <div className="flex w-full max-w-sm flex-col gap-8">
-      <AuthHeading title="Sign in to Brawzer">
-        <p>Your cloud browser, profiles and files, on any computer.</p>
-      </AuthHeading>
-      <Suspense fallback={null}>
-        <SignInNotice searchParams={searchParams} />
-      </Suspense>
-      <SignInForm />
-      <p className="text-callout text-ink-secondary">
-        New to Brawzer? <TextLink href="/create-account">Create an account</TextLink>
-      </p>
-    </div>
+    <LoginScreen
+      notice={
+        <Suspense fallback={null}>
+          <SignInNotice searchParams={searchParams} />
+        </Suspense>
+      }
+    >
+      <h1 className="lg-name">Sign in to Brawzer</h1>
+      <SignInForm screen />
+    </LoginScreen>
   );
 }

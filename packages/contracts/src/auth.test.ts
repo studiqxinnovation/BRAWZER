@@ -48,11 +48,21 @@ describe("loginRequestSchema", () => {
 describe("registerRequestSchema", () => {
   it("strips unexpected fields", () => {
     const parsed = registerRequestSchema.parse({
+      name: "Ana Silva",
       email: "a@example.com",
       password: "long enough pass",
       isAdmin: true,
     });
     expect(parsed).not.toHaveProperty("isAdmin");
+  });
+
+  it("asks for a name, trimmed, on one line", () => {
+    const base = { email: "a@example.com", password: "long enough pass" };
+    expect(registerRequestSchema.parse({ ...base, name: "  Ana Silva " }).name).toBe("Ana Silva");
+    expect(registerRequestSchema.safeParse({ ...base, name: "   " }).success).toBe(false);
+    expect(registerRequestSchema.safeParse({ ...base, name: "Ana\nSilva" }).success).toBe(false);
+    expect(registerRequestSchema.safeParse({ ...base, name: "a".repeat(81) }).success).toBe(false);
+    expect(registerRequestSchema.safeParse(base).success).toBe(false);
   });
 });
 

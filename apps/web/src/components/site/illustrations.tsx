@@ -12,13 +12,11 @@ import {
   FileArchive,
   FileImage,
   FileText,
-  Globe,
   Keyboard,
   Monitor,
   Plus,
   ScanEye,
   Search,
-  UserRound,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { ProfileAvatar } from "@/components/profile-avatar";
@@ -267,50 +265,6 @@ export function DrivePanel({ className }: { className?: string }) {
             <div className="h-full w-[31%] rounded-full bg-accent" />
           </div>
         </div>
-      </div>
-    </figure>
-  );
-}
-
-/* ── Proxy route ─────────────────────────────────────────────────────── */
-
-/** Illustration of a profile's traffic leaving through its proxy. */
-export function ProxyRoute({ className }: { className?: string }) {
-  const steps = [
-    { icon: <UserRound />, title: "Work profile", detail: "Opens daily.example" },
-    {
-      icon: <Globe />,
-      title: "Proxy · Frankfurt, Germany",
-      detail: "SOCKS5 · credentials encrypted on Brawzer’s servers",
-    },
-    { icon: <Eye />, title: "What the website sees", detail: "Visitor from 203.0.113.42" },
-  ];
-  return (
-    <figure
-      role="img"
-      aria-label="Illustration: a Work profile reaching a website through a proxy in Frankfurt, so the website sees the proxy's address."
-      className={cn("rounded-xl border border-line bg-surface p-6 shadow-lg", className)}
-    >
-      <ol aria-hidden="true" className="relative space-y-6">
-        <span className="absolute top-5 bottom-5 left-[1.1875rem] w-px bg-line-strong" />
-        {steps.map((step) => (
-          <li key={step.title} className="relative flex items-start gap-4">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-line bg-surface-raised text-ink-secondary [&_svg]:size-[1.125rem]">
-              {step.icon}
-            </span>
-            <div className="pt-1">
-              <p className="text-callout font-semibold text-ink">{step.title}</p>
-              <p className="mt-0.5 text-footnote text-ink-secondary">{step.detail}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-      <div
-        aria-hidden="true"
-        className="mt-6 flex items-center gap-2 border-t border-line pt-4 text-footnote text-ink-secondary"
-      >
-        <StatusDot tone="success" />
-        Connected · checked 12 seconds ago
       </div>
     </figure>
   );

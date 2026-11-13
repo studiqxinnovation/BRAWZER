@@ -34,8 +34,26 @@ export default function PrivacyPage() {
                 only to provide the service to you.
               </li>
               <li>
+                Each profile’s history, bookmarks and open tabs, encrypted with that profile’s own
+                key so only you can read them. History is kept only for profiles that keep their
+                data; you can switch it off, forget a page or clear it, and pages not visited for 90
+                days are forgotten.
+              </li>
+              <li>
+                Saved passwords, for a profile whose browser account you switch on: they stay in
+                that profile’s browsing data, encrypted like the rest of it. If you sign the browser
+                in to your Google, Microsoft or Mozilla account, that company syncs them with you
+                under its own privacy terms, as it would on your own computer.
+              </li>
+              <li>
                 Billing details, handled by a payment provider once paid plans exist. [Provider to
                 be confirmed]
+              </li>
+              <li>
+                Reports you send about a page: what you write, and the page’s address and a picture
+                of it only if you include them. Brawzer’s administrators read them to fix what went
+                wrong. A picture is deleted when the report is closed, or after 30 days; a closed
+                report after 90 days.
               </li>
             </ul>
           ),

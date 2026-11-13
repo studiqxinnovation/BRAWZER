@@ -98,6 +98,7 @@ describe("changing the email address", () => {
     const { email, client } = await account("email-placeholder-owner");
     const placeholder = h.uniqueEmail("email-placeholder");
     const registered = await h.browser().post("/auth/register", {
+      name: "Ana Silva",
       email: placeholder,
       password: "someone-elses-guess",
     });
@@ -398,8 +399,13 @@ describe("undoing an email change", () => {
     // (That inbox already holds the original sign-up email, so wait for the second one.)
     const newcomer = h.browser();
     expect(
-      (await newcomer.post("/auth/register", { email: taken.email, password: PASSWORD }))
-        .statusCode,
+      (
+        await newcomer.post("/auth/register", {
+          name: "Ana Silva",
+          email: taken.email,
+          password: PASSWORD,
+        })
+      ).statusCode,
     ).toBe(202);
     const signUpToken = h.tokenIn(await h.waitForEmail(taken.email, "Confirm your email", 2));
     expect(

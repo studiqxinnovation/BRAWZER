@@ -16,6 +16,7 @@ import { DATABASE } from "../database/database.module.js";
 import { createDefaultProfile } from "../profiles/default-profile.js";
 import { EmailService } from "../email/email.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
+import { BlockedAddressesService } from "../security-events/blocked-addresses.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { BreachedPasswordCheck } from "./breached-passwords.js";
 import { EmailTokenService } from "./email-token.service.js";
@@ -72,6 +73,7 @@ export class AuthService {
     @Inject(EmailService) private readonly email: EmailService,
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
+    @Inject(BlockedAddressesService) private readonly blocked: BlockedAddressesService,
     @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
     @Inject(MfaService) private readonly mfa: MfaService,
     @Inject(NewDeviceService) private readonly newDevices: NewDeviceService,
@@ -100,6 +102,7 @@ export class AuthService {
    */
   async register(input: RegisterInput, meta: RequestMeta): Promise<void> {
     await this.limiter.enforce(RATE_LIMITS.registerPerIp, ipOf(meta));
+    await this.refuseBlockedNetwork(meta);
     assertAcceptablePassword(input.password, input.email);
     await this.breached.assertNotBreached(input.password);
     const pendingPasswordHash = await hashPassword(input.password);
@@ -108,6 +111,7 @@ export class AuthService {
       .insert(schema.users)
       .values({
         email: input.email,
+        name: input.name,
         // Administrators are named by the installation (ADMIN_EMAILS), never by a request.
         role: this.config.adminEmails.includes(input.email) ? "admin" : "user",
       })
@@ -129,6 +133,11 @@ export class AuthService {
       this.email.sendAccountExists(existing.email);
       return;
     }
+    // Not confirmed yet: the latest sign-up attempt's name is the one that counts.
+    await this.database.db
+      .update(schema.users)
+      .set({ name: input.name, updatedAt: new Date() })
+      .where(eq(schema.users.id, existing.id));
     const token = await this.emailTokens.issue(existing.id, "verify_email", {
       pendingPasswordHash,
     });
@@ -181,6 +190,17 @@ export class AuthService {
       meta,
       metadata: { method: "sign_up_link" },
     });
+    // The account exists now: welcome the person, and tell whoever runs Brawzer.
+    this.email.sendWelcome(result.user.email, result.user.name);
+    this.email.notifyAdmins(
+      "sign-up",
+      [
+        ["Name", result.user.name ?? "(not given)"],
+        ["Email", result.user.email],
+        ["When", new Date().toISOString()],
+      ],
+      `sign-up:${result.user.id}`,
+    );
     await this.events.record({
       type: "sign_in.succeeded",
       userId: result.user.id,
@@ -192,12 +212,24 @@ export class AuthService {
     return result;
   }
 
+  /** Addresses Brawzer's team blocked (Phase 11.5) can't sign in or register. */
+  private async refuseBlockedNetwork(meta: RequestMeta): Promise<void> {
+    if (await this.blocked.isBlocked(meta.ip)) {
+      throw new ApiException(
+        "forbidden",
+        403,
+        "Sign-in isn’t available from this network. If you think that’s a mistake, contact support from another connection.",
+      );
+    }
+  }
+
   async login(
     input: LoginInput,
     meta: RequestMeta,
     presentedToken?: string,
   ): Promise<SignedIn | SecondStepRequired> {
     await this.limiter.enforce(RATE_LIMITS.signInPerIp, ipOf(meta));
+    await this.refuseBlockedNetwork(meta);
     // Keyed by the submitted address whether or not it has an account, so lockouts reveal nothing.
     const lockout = await this.limiter.isBlocked(RATE_LIMITS.signInFailuresPerAccount, input.email);
     if (!lockout.allowed) throw rateLimited(lockout.retryAfterSeconds);
@@ -224,6 +256,19 @@ export class AuthService {
     }
 
     await this.limiter.reset(RATE_LIMITS.signInFailuresPerAccount, input.email);
+    if (user.suspendedAt !== null) {
+      await this.events.record({
+        type: "sign_in.failed",
+        userId: user.id,
+        meta,
+        metadata: { reason: "suspended" },
+      });
+      throw new ApiException(
+        "forbidden",
+        403,
+        "This account is suspended. Contact support if you think that’s a mistake.",
+      );
+    }
     if (needsRehash(passwordHash)) {
       await this.database.db
         .update(schema.users)
@@ -271,6 +316,18 @@ export class AuthService {
       403,
       "Confirm your email address to finish creating your account. We’ve emailed you a link.",
     );
+  }
+
+  /** Locks this sign-in until its owner confirms it's them (the desktop's lock screen). */
+  async lock(auth: AuthContext, meta: RequestMeta): Promise<void> {
+    if (auth.session.lockedAt) return;
+    await this.sessions.lock(auth.session.id);
+    await this.events.record({
+      type: "session.locked",
+      userId: auth.user.id,
+      sessionId: auth.session.id,
+      meta,
+    });
   }
 
   /** Ends the session the request belongs to. Always succeeds, so the cookie can always be cleared. */
@@ -456,9 +513,10 @@ export class AuthService {
     }
     await this.mfa.checkCodeForConfirmation(user.id, code);
     await this.limiter.reset(RATE_LIMITS.reauthFailures, user.id);
-    const at = await this.sessions.confirmIdentity(session.id);
+    const at = await this.sessions.confirmIdentity(session.id, "password");
     await this.events.record({
-      type: "reauthenticated",
+      // Confirming on a locked session is what unlocks it.
+      type: session.lockedAt ? "session.unlocked" : "reauthenticated",
       userId: user.id,
       sessionId: session.id,
       meta,

@@ -44,6 +44,7 @@ import { SessionsController } from "./sessions.controller.js";
   ],
   // Later modules (profiles, sessions, Drive) protect their routes with SessionGuard.
   exports: [
+    AuthService,
     SessionService,
     SessionGuard,
     RecentAuthGuard,

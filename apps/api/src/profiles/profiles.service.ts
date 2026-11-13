@@ -1,4 +1,9 @@
-import { type BrowserEngine, type Profile, type ProfileColor } from "@brawzer/contracts";
+import {
+  type BrowserEngine,
+  catalogueEntry,
+  type Profile,
+  type ProfileColor,
+} from "@brawzer/contracts";
 import {
   and,
   asc,
@@ -8,6 +13,7 @@ import {
   type ProfileRow,
   schema,
   sql,
+  inArray,
 } from "@brawzer/db";
 import { Inject, Injectable } from "@nestjs/common";
 import type { AuthContext } from "../auth/session.service.js";
@@ -18,6 +24,7 @@ import type { RequestMeta } from "../common/request-meta.js";
 import { DATABASE } from "../database/database.module.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { BillingService } from "../billing/billing.service.js";
+import { HistoryService } from "../history/history.service.js";
 import { ProfileDataService } from "./profile-data.service.js";
 
 const notFound = () => new ApiException("not_found", 404, "That profile doesn’t exist.");
@@ -41,6 +48,10 @@ export function toProfile(row: ProfileRow): Profile {
     position: row.position,
     proxyId: row.proxyId,
     keepData: row.keepData,
+    keepHistory: row.keepHistory,
+    browserAccount: row.browserAccount,
+    privateThroughProxy: row.privateThroughProxy,
+    extensions: row.extensions,
     data:
       row.dataObjectKey && row.dataSavedAt
         ? { bytes: row.dataBytes ?? 0, savedAt: row.dataSavedAt.toISOString() }
@@ -62,6 +73,7 @@ export class ProfilesService {
     @Inject(SecurityEventsService) private readonly events: SecurityEventsService,
     @Inject(ProfileDataService) private readonly data: ProfileDataService,
     @Inject(BillingService) private readonly billing: BillingService,
+    @Inject(HistoryService) private readonly history: HistoryService,
   ) {}
 
   /** The row, for the cloud browser: which data to restore and whether to save it. */
@@ -139,14 +151,46 @@ export class ProfilesService {
       color?: ProfileColor | undefined;
       proxyId?: string | null | undefined;
       keepData?: boolean | undefined;
+      keepHistory?: boolean | undefined;
+      browserAccount?: boolean | undefined;
+      privateThroughProxy?: boolean | undefined;
+      extensions?: string[] | undefined;
     },
   ): Promise<Profile> {
+    if (input.extensions?.length) {
+      // Brawzer's team may have blocked an extension for everyone (Phase 11.4).
+      const blocked = await this.database.db
+        .select({ slug: schema.extensionPolicies.slug, reason: schema.extensionPolicies.reason })
+        .from(schema.extensionPolicies)
+        .where(
+          and(
+            inArray(schema.extensionPolicies.slug, input.extensions),
+            eq(schema.extensionPolicies.status, "blocked"),
+          ),
+        );
+      if (blocked.length > 0) {
+        const names = blocked.map((entry) => catalogueEntry(entry.slug)?.name ?? entry.slug);
+        throw new ApiException(
+          "validation_failed",
+          422,
+          `${names.join(", ")} ${names.length === 1 ? "is" : "are"} blocked by Brawzer’s team${blocked[0]?.reason ? `: ${blocked[0].reason}` : "."}`,
+        );
+      }
+    }
     if (input.proxyId) {
-      // Only the account's own proxies can be assigned.
+      // Only the account's own proxies, or its team's (ADR 0019), can be assigned.
       const [proxy] = await this.database.db
         .select({ id: schema.proxies.id })
         .from(schema.proxies)
-        .where(and(eq(schema.proxies.id, input.proxyId), eq(schema.proxies.userId, userId)))
+        .where(
+          and(
+            eq(schema.proxies.id, input.proxyId),
+            sql`(
+              (${schema.proxies.userId} = ${userId} and ${schema.proxies.teamId} is null)
+              or ${schema.proxies.teamId} = (select team_id from team_members where user_id = ${userId})
+            )`,
+          ),
+        )
         .limit(1);
       if (!proxy) throw proxyMissing();
     }
@@ -159,6 +203,12 @@ export class ProfilesService {
           ...(input.color === undefined ? {} : { color: input.color }),
           ...(input.proxyId === undefined ? {} : { proxyId: input.proxyId }),
           ...(input.keepData === undefined ? {} : { keepData: input.keepData }),
+          ...(input.keepHistory === undefined ? {} : { keepHistory: input.keepHistory }),
+          ...(input.browserAccount === undefined ? {} : { browserAccount: input.browserAccount }),
+          ...(input.privateThroughProxy === undefined
+            ? {}
+            : { privateThroughProxy: input.privateThroughProxy }),
+          ...(input.extensions === undefined ? {} : { extensions: input.extensions }),
           updatedAt: new Date(),
         })
         .where(and(eq(schema.profiles.id, id), eq(schema.profiles.userId, userId)))
@@ -203,6 +253,8 @@ export class ProfilesService {
     const row = await this.find(auth.user.id, id);
     if (!row) throw notFound();
     await this.data.clear(row);
+    // The history Brawzer keeps is browsing data too; bookmarks stay, as in any browser.
+    await this.history.clearFor(row.id);
     await this.events.record({
       type: "profile.data_cleared",
       userId: auth.user.id,

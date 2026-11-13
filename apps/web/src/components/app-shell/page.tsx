@@ -1,6 +1,7 @@
 import { FormMessage } from "@brawzer/ui/components/form-message";
 import { cn } from "@brawzer/ui/lib/cn";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
+import { PageCrumb } from "./page-crumb";
 
 export function PageContainer({
   children,
@@ -10,19 +11,36 @@ export function PageContainer({
   className?: string;
 }) {
   return (
-    <div className={cn("mx-auto w-full max-w-4xl px-5 py-8 sm:px-8 sm:py-12", className)}>
+    <div className={cn("ad-page mx-auto w-full max-w-4xl px-5 py-8 sm:px-8 sm:py-12", className)}>
       {children}
     </div>
   );
 }
 
-export function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
+/**
+ * A page's title and what it's for. On the desktop it's drawn as the
+ * prototype's page head: the menu it's in ("Browse"), then the title.
+ */
+export function PageHeader({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  /** A button at the head's right, as the prototype's page heads have (.pg-head). */
+  action?: ReactNode;
+  children?: ReactNode;
+}) {
   return (
-    <div className="mb-8 sm:mb-10">
-      <h1 className="text-title-1 text-balance text-ink">{title}</h1>
-      {children && (
-        <div className="mt-2 max-w-2xl text-body text-pretty text-ink-secondary">{children}</div>
-      )}
+    <div className="ad-page-head mb-8 flex items-end justify-between gap-4 sm:mb-10">
+      <div className="min-w-0">
+        <PageCrumb />
+        <h1 className="text-title-1 text-balance text-ink">{title}</h1>
+        {children && (
+          <div className="mt-2 max-w-2xl text-body text-pretty text-ink-secondary">{children}</div>
+        )}
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }
@@ -35,11 +53,144 @@ export function SectionHeading({ id, children }: { id: string; children: ReactNo
   );
 }
 
-/** A plain bordered surface for one block of content. */
+/** The prototype's row of stat cards at the top of a page (.pg-grid). */
+export function StatCards({ children }: { children: ReactNode }) {
+  return <div className="ad-stats">{children}</div>;
+}
+
+/** One stat card (.pg-card): a label, a big figure, and a line or a bar under it. */
+export function StatCard({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <section className="ad-stat" aria-label={label}>
+      <h2 className="ad-stat-label">{label}</h2>
+      <p className="ad-stat-big">{value}</p>
+      {children && <div className="ad-stat-small">{children}</div>}
+    </section>
+  );
+}
+
+/** A plain bordered surface for one block of content (the prototype's info-card). */
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("rounded-xl border border-line bg-surface", className)}>{children}</div>
+    <div className={cn("ad-info rounded-xl border border-line bg-surface", className)}>
+      {children}
+    </div>
   );
+}
+
+/** The prototype's page grid (.pg-grid): two or three columns of cards. */
+export function Grid({
+  cols,
+  className,
+  children,
+}: {
+  cols: 2 | 3;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn("ad-grid", className)} data-cols={cols}>
+      {children}
+    </div>
+  );
+}
+
+/** A card with a small uppercase label (.pg-card with .pg-label). */
+export function Card({
+  label,
+  className,
+  children,
+  ...rest
+}: {
+  label?: string;
+  className?: string;
+  children?: ReactNode;
+} & Omit<ComponentProps<"section">, "className" | "children">) {
+  return (
+    <section className={cn("ad-card", className)} aria-label={label} {...rest}>
+      {label && <h2 className="ad-card-label">{label}</h2>}
+      {children}
+    </section>
+  );
+}
+
+/** The head of an info card: a title, and something at its right (a count, a button). */
+export function InfoHead({
+  id,
+  title,
+  children,
+}: {
+  id?: string;
+  title: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="ad-info-head">
+      <h2 id={id} className="ad-info-title">
+        {title}
+      </h2>
+      {children}
+    </div>
+  );
+}
+
+/** One row of an info card (.li): something at the left, a title and a line, then actions. */
+export function Row({
+  icon,
+  title,
+  sub,
+  body,
+  className,
+  children,
+  ...rest
+}: {
+  icon?: ReactNode;
+  title: ReactNode;
+  sub?: ReactNode;
+  /** More under the row, across its width: a form, a list. */
+  body?: ReactNode;
+  className?: string;
+  children?: ReactNode;
+} & Omit<ComponentProps<"div">, "className" | "children" | "title">) {
+  return (
+    <div className={cn("ad-li", className)} {...rest}>
+      {icon}
+      <div className="ad-li-main">
+        <div className="ad-li-title">{title}</div>
+        {sub && <div className="ad-li-sub">{sub}</div>}
+      </div>
+      {children && <div className="ad-li-acts">{children}</div>}
+      {body && <div className="ad-li-body">{body}</div>}
+    </div>
+  );
+}
+
+/** A small coloured label (.pill). */
+export function Pill({
+  tone = "grey",
+  children,
+}: {
+  tone?: "green" | "orange" | "red" | "blue" | "grey";
+  children: ReactNode;
+}) {
+  return (
+    <span className="ad-pill" data-tone={tone}>
+      {children}
+    </span>
+  );
+}
+
+/** What a list says when it's empty (.empty). */
+export function Empty({ children }: { children: ReactNode }) {
+  return <p className="ad-empty">{children}</p>;
 }
 
 /** Shown when the API can't be reached while rendering a signed-in page. */

@@ -11,6 +11,7 @@ const minimal = {
 };
 
 const production = {
+  METRICS_TOKEN: "a-scraper-token-for-tests",
   ...minimal,
   NODE_ENV: "production",
   WEB_ORIGIN: "https://brawzer.example",
@@ -165,6 +166,7 @@ describe("parseConfig", () => {
       "EMAIL_TRANSPORT: must be resend in production",
       "KEY_PROVIDER: must be a key management service (vault) in production",
       "PROXY_TEST_URL: must be set to an https URL in production",
+      "METRICS_TOKEN: is required in production (16+ characters)",
       "BROWSER_STREAM_URL: must be set to a wss:// URL in production",
     ]);
     expect(issuesOf({ ...production, RESEND_API_KEY: undefined })).toEqual([
@@ -240,6 +242,43 @@ describe("parseConfig", () => {
     expect(remote.agentBind).toBe("0.0.0.0");
     expect(remote.agentHost).toBe("runtime.internal");
     expect(remote.containerRuntime).toBe("runsc");
+
+    // Several runtime hosts, the first one primary; names unique; TLS in production.
+    const hosts = parseConfig(
+      {
+        ...minimal,
+        RUNTIME_HOSTS: JSON.stringify([
+          { name: "rt-1", docker: "tcp://rt1.internal:2376", capacity: 3 },
+          { name: "rt-2", docker: "tcp://rt2.internal:2376", agentHost: "rt2.lan", capacity: 2 },
+        ]),
+      },
+      "1",
+    ).browser;
+    expect(hosts.hosts.map((host) => [host.name, host.agentHost, host.capacity])).toEqual([
+      ["rt-1", "rt1.internal", 3],
+      ["rt-2", "rt2.lan", 2],
+    ]);
+    expect(hosts.docker).toEqual({ kind: "tcp", host: "rt1.internal", port: 2376, tls: null });
+    expect(hosts.agentHost).toBe("rt1.internal");
+    expect(
+      issuesOf({
+        ...minimal,
+        RUNTIME_HOSTS: JSON.stringify([
+          { name: "a", docker: "/tmp/d.sock", capacity: 1 },
+          { name: "a", docker: "/tmp/e.sock", capacity: 1 },
+        ]),
+      }),
+    ).toEqual(['RUNTIME_HOSTS: "a" is listed twice']);
+    expect(issuesOf({ ...minimal, RUNTIME_HOSTS: "nope" })).toEqual([
+      "RUNTIME_HOSTS: must be a JSON array of hosts",
+    ]);
+    expect(
+      issuesOf({
+        ...production,
+        RUNTIME_HOSTS: JSON.stringify([{ name: "rt-1", docker: "tcp://rt1:2376", capacity: 1 }]),
+      }),
+    ).toContain('RUNTIME_HOSTS: "rt-1" needs mutual TLS in production');
+    expect(parseConfig(minimal, "1").browser.hosts.map((host) => host.name)).toEqual(["local"]);
 
     expect(issuesOf({ ...production, DOCKER_HOST: "tcp://runtime.internal:2376" })).toEqual([
       "DOCKER_TLS_CA, DOCKER_TLS_CERT, DOCKER_TLS_KEY: a TCP engine needs mutual TLS in production",
@@ -351,8 +390,11 @@ describe("parseConfig", () => {
     expect(parseConfig(minimal, "1").email).toEqual({
       transport: "mailpit",
       from: "Brawzer <no-reply@brawzer.localhost>",
+      replyTo: undefined,
       mailpitApiUrl: "http://127.0.0.1:8125",
       resendApiKey: undefined,
+      resendWebhookSecret: undefined,
+      adminNotifications: "all",
     });
   });
 });

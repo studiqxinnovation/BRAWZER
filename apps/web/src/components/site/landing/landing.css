@@ -1,0 +1,648 @@
+/*
+ * The home page's motion (class names start with lp- so they never meet Tailwind's): a dark 3D stage, then sections in the theme.
+ * Everything here is decoration over real content; "reduce motion" stills it all.
+ */
+
+@property --landing-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* In Tailwind's components layer, so utilities (hidden, positions) still win. */
+@layer components {
+  .lp-landing {
+    /* Apple's own font on Apple devices, Inter elsewhere. */
+    font-family:
+      -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", var(--font-inter),
+      system-ui, sans-serif;
+    font-feature-settings: "ss01", "cv11";
+    overflow-x: clip;
+  }
+
+  .lp-emoji {
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    line-height: 1;
+  }
+
+  /* ── The stage ─────────────────────────────────────────────────────────── */
+
+  .lp-stage {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 80% at 50% -10%, #111a3a 0%, transparent 60%),
+      linear-gradient(180deg, #05060c 0%, #070a16 60%, #04050a 100%);
+    color: #f4f6fb;
+  }
+
+  .lp-aurora {
+    position: absolute;
+    inset: -25%;
+    z-index: -3;
+    pointer-events: none;
+  }
+
+  .lp-blob {
+    position: absolute;
+    width: 62vmax;
+    height: 62vmax;
+    border-radius: 50%;
+    opacity: 0.55;
+    mix-blend-mode: screen;
+    animation: drift 26s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+
+  .lp-blob-blue {
+    left: -6%;
+    top: -12%;
+    background: radial-gradient(closest-side, rgb(51 102 232 / 0.85), transparent);
+  }
+
+  .lp-blob-violet {
+    right: -12%;
+    top: 0;
+    background: radial-gradient(closest-side, rgb(139 92 246 / 0.7), transparent);
+    animation-duration: 32s;
+    animation-delay: -9s;
+  }
+
+  .lp-blob-honey {
+    left: 28%;
+    bottom: -28%;
+    background: radial-gradient(closest-side, rgb(245 184 61 / 0.42), transparent);
+    animation-duration: 38s;
+    animation-delay: -15s;
+  }
+
+  .lp-blob-teal {
+    left: -18%;
+    bottom: -18%;
+    background: radial-gradient(closest-side, rgb(20 184 166 / 0.38), transparent);
+    animation-duration: 34s;
+    animation-delay: -4s;
+  }
+
+  @keyframes drift {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(7%, 5%, 0) scale(1.14);
+    }
+    100% {
+      transform: translate3d(-5%, 9%, 0) scale(0.94);
+    }
+  }
+
+  .lp-stars {
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background-image:
+      radial-gradient(1px 1px at 8% 18%, rgb(255 255 255 / 0.85), transparent),
+      radial-gradient(1px 1px at 22% 62%, rgb(255 255 255 / 0.6), transparent),
+      radial-gradient(1.5px 1.5px at 35% 28%, rgb(255 255 255 / 0.9), transparent),
+      radial-gradient(1px 1px at 48% 8%, rgb(255 255 255 / 0.55), transparent),
+      radial-gradient(1px 1px at 63% 44%, rgb(255 255 255 / 0.7), transparent),
+      radial-gradient(1.5px 1.5px at 77% 16%, rgb(255 255 255 / 0.85), transparent),
+      radial-gradient(1px 1px at 88% 58%, rgb(255 255 255 / 0.6), transparent),
+      radial-gradient(1px 1px at 94% 30%, rgb(255 255 255 / 0.75), transparent),
+      radial-gradient(1px 1px at 15% 84%, rgb(255 255 255 / 0.5), transparent),
+      radial-gradient(1px 1px at 56% 76%, rgb(255 255 255 / 0.55), transparent);
+    animation: twinkle 7s ease-in-out infinite alternate;
+  }
+
+  .lp-stars-far {
+    transform: scale(1.6) rotate(12deg);
+    opacity: 0.55;
+    animation-duration: 11s;
+    animation-delay: -4s;
+  }
+
+  @keyframes twinkle {
+    from {
+      opacity: 0.35;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* A perspective grid running toward the viewer. */
+  .lp-floor {
+    position: absolute;
+    left: -50%;
+    right: -50%;
+    bottom: -6%;
+    height: 46%;
+    z-index: -1;
+    pointer-events: none;
+    transform: perspective(520px) rotateX(74deg);
+    transform-origin: 50% 100%;
+    background-image:
+      linear-gradient(rgb(125 162 255 / 0.32) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(125 162 255 / 0.32) 1px, transparent 1px);
+    background-size: 72px 72px;
+    mask-image: linear-gradient(to top, black 5%, transparent 80%);
+    animation: run 3.2s linear infinite;
+  }
+
+  @keyframes run {
+    to {
+      background-position:
+        0 72px,
+        0 0;
+    }
+  }
+
+  /* The hero's own entrance. */
+  .lp-rise {
+    animation: rise 1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: var(--delay, 0ms);
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 28px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* A light sweep over the headline's second line: drawn by a pseudo-element, so it's never text. */
+  .lp-sheen {
+    position: relative;
+    display: inline-block;
+    color: #d9e1ff;
+    text-shadow: 0 0 40px rgb(125 162 255 / 0.45);
+  }
+
+  .lp-sheen::after {
+    content: attr(data-text) / "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      100deg,
+      transparent 20%,
+      #ffe6a8 38%,
+      #c4b5fd 50%,
+      #7da2ff 62%,
+      transparent 80%
+    );
+    background-size: 250% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: sweep 6s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  @keyframes sweep {
+    from {
+      background-position: 120% 0;
+    }
+    to {
+      background-position: -120% 0;
+    }
+  }
+
+  .lp-glass {
+    background: rgb(255 255 255 / 0.07);
+    border: 1px solid rgb(255 255 255 / 0.16);
+    backdrop-filter: blur(16px) saturate(160%);
+    color: #f4f6fb;
+  }
+
+  .lp-glass:hover {
+    background: rgb(255 255 255 / 0.12);
+  }
+
+  .lp-glow {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.12) inset,
+      0 18px 48px -12px color-mix(in srgb, var(--bw-accent) 80%, transparent);
+  }
+
+  /* ── The floating Bee Browser ──────────────────────────────────────────── */
+
+  .lp-scene {
+    perspective: 1900px;
+    perspective-origin: 50% 0%;
+  }
+
+  .lp-rig {
+    position: relative;
+    transform-style: preserve-3d;
+    transform: rotateX(calc((1 - var(--flat, 0.3)) * 18deg + var(--py, 0) * -7deg))
+      rotateY(calc(var(--px, 0) * 12deg - (1 - var(--flat, 0.3)) * 5deg));
+    transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .lp-float {
+    position: relative;
+    transform-style: preserve-3d;
+    animation: float 8s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    50% {
+      transform: translate3d(0, -14px, 0);
+    }
+  }
+
+  .lp-window {
+    position: relative;
+    border-radius: 20px;
+    transform: translateZ(0);
+    box-shadow:
+      0 50px 140px -30px rgb(51 102 232 / 0.6),
+      0 30px 60px -30px rgb(0 0 0 / 0.8),
+      0 0 0 1px rgb(255 255 255 / 0.1);
+  }
+
+  .lp-halo {
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    bottom: -14%;
+    height: 32%;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, rgb(51 102 232 / 0.55), transparent);
+    filter: blur(28px);
+    pointer-events: none;
+  }
+
+  .lp-chip {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.6rem 0.95rem;
+    border-radius: 999px;
+    background: rgb(12 15 28 / 0.78);
+    border: 1px solid rgb(255 255 255 / 0.16);
+    backdrop-filter: blur(14px) saturate(160%);
+    color: #f4f6fb;
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    box-shadow: 0 20px 50px -14px rgb(0 0 0 / 0.7);
+    transform: translateZ(var(--z, 80px));
+    animation: bob 6s ease-in-out infinite;
+    animation-delay: var(--delay, 0ms);
+  }
+
+  @keyframes bob {
+    50% {
+      transform: translateZ(var(--z, 80px)) translateY(-10px);
+    }
+  }
+
+  /* ── The capability band ───────────────────────────────────────────────── */
+
+  .lp-marquee {
+    overflow: hidden;
+    mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
+  }
+
+  .lp-track {
+    display: flex;
+    gap: 0.75rem;
+    width: max-content;
+    animation: marquee 48s linear infinite;
+  }
+
+  .lp-marquee:hover .lp-track {
+    animation-play-state: paused;
+  }
+
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* ── How it works ──────────────────────────────────────────────────────── */
+
+  .lp-flow {
+    perspective: 1400px;
+  }
+
+  .lp-node {
+    transform-style: preserve-3d;
+    transform: rotateX(10deg) rotateY(var(--turn, 0deg));
+    transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .lp-node:hover {
+    transform: rotateX(0deg) rotateY(0deg) translateZ(20px);
+  }
+
+  .lp-beam {
+    position: relative;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--bw-accent) 10%, transparent),
+      color-mix(in srgb, var(--bw-accent) 70%, transparent),
+      color-mix(in srgb, var(--bw-accent) 10%, transparent)
+    );
+  }
+
+  .lp-packet {
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--bw-accent);
+    box-shadow:
+      0 0 14px var(--bw-accent),
+      0 0 4px #fff;
+    animation: packet 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    animation-delay: var(--delay, 0ms);
+  }
+
+  @media (min-width: 768px) {
+    .lp-beam {
+      height: 2px;
+      width: 100%;
+    }
+
+    .lp-packet {
+      top: -4px;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .lp-beam {
+      width: 2px;
+      height: 56px;
+      margin-inline: auto;
+      background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--bw-accent) 10%, transparent),
+        color-mix(in srgb, var(--bw-accent) 70%, transparent),
+        color-mix(in srgb, var(--bw-accent) 10%, transparent)
+      );
+    }
+
+    .lp-packet {
+      left: -4px;
+      animation-name: packetDown;
+    }
+  }
+
+  @keyframes packet {
+    from {
+      left: 0;
+      opacity: 0;
+    }
+    15%,
+    85% {
+      opacity: 1;
+    }
+    to {
+      left: calc(100% - 9px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes packetDown {
+    from {
+      top: 0;
+      opacity: 0;
+    }
+    15%,
+    85% {
+      opacity: 1;
+    }
+    to {
+      top: calc(100% - 9px);
+      opacity: 0;
+    }
+  }
+
+  /* ── Cards that tilt toward the pointer ────────────────────────────────── */
+
+  .lp-tilt {
+    position: relative;
+    transform-style: preserve-3d;
+    transform: perspective(1000px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg));
+    transition:
+      transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 0.4s ease;
+  }
+
+  .lp-tilt::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(
+      520px circle at var(--gx, 50%) var(--gy, 0%),
+      rgb(255 255 255 / 0.22),
+      transparent 42%
+    );
+    opacity: var(--glare, 0);
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+  }
+
+  .lp-tilt:hover {
+    box-shadow: 0 30px 80px -30px color-mix(in srgb, var(--bw-accent) 55%, transparent);
+  }
+
+  /* An app-icon tile for an emoji: glossy, lit from above, lifted off the card. */
+  .lp-tile-glyph {
+    width: 55%;
+    height: 55%;
+    color: #fff;
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.2));
+  }
+
+  .lp-tile {
+    display: grid;
+    place-items: center;
+    width: 3.4rem;
+    height: 3.4rem;
+    border-radius: 1.05rem;
+    font-size: 1.7rem;
+    background: linear-gradient(150deg, var(--from), var(--to));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.55),
+      inset 0 -10px 18px rgb(0 0 0 / 0.18),
+      0 14px 28px -12px var(--to);
+    transform: translateZ(16px);
+  }
+
+  /* Profiles, fanned out in depth. */
+  .lp-fan {
+    position: relative;
+    height: 11rem;
+    perspective: 900px;
+  }
+
+  .lp-fan-card {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 11rem;
+    height: 7rem;
+    margin: -3.5rem 0 0 -5.5rem;
+    border-radius: 1rem;
+    padding: 0.85rem;
+    color: #fff;
+    font-weight: 600;
+    background: linear-gradient(150deg, var(--from), var(--to));
+    box-shadow: 0 18px 40px -16px rgb(0 0 0 / 0.55);
+    transform: rotate(var(--r)) translate3d(var(--x), 0, var(--z));
+    transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .lp-tilt:hover .lp-fan-card {
+    transform: rotate(calc(var(--r) * 1.6)) translate3d(calc(var(--x) * 1.7), -6px, var(--z));
+  }
+
+  /* Files dropping into Drive. */
+  .lp-drop {
+    animation: drop 3.6s cubic-bezier(0.5, 0, 0.3, 1) infinite;
+    animation-delay: var(--delay, 0ms);
+  }
+
+  @keyframes drop {
+    0% {
+      transform: translate3d(0, -36px, 0) rotate(-8deg);
+      opacity: 0;
+    }
+    20% {
+      opacity: 1;
+    }
+    55%,
+    100% {
+      transform: translate3d(0, 0, 0) rotate(0);
+      opacity: 1;
+    }
+  }
+
+  /* ── The emblem and the orbit ──────────────────────────────────────────── */
+
+  .lp-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(
+      from var(--landing-angle),
+      var(--bw-accent),
+      #8b5cf6,
+      #f5b83d,
+      #14b8a6,
+      var(--bw-accent)
+    );
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), black calc(100% - 2px));
+    animation: turn 7s linear infinite;
+  }
+
+  @keyframes turn {
+    to {
+      --landing-angle: 360deg;
+    }
+  }
+
+  .lp-orbit {
+    position: absolute;
+    inset: 0;
+    animation: spin 46s linear infinite;
+  }
+
+  .lp-orbit-item {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 3rem;
+    height: 3rem;
+    margin: -1.5rem;
+    transform: rotate(var(--a)) translateX(var(--radius)) rotate(calc(-1 * var(--a)));
+  }
+
+  .lp-orbit-item > span {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    border-radius: 999px;
+    font-size: 1.35rem;
+    animation: spin 46s linear infinite reverse;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* ── The last call ─────────────────────────────────────────────────────── */
+
+  .lp-border {
+    position: relative;
+    border-radius: 2rem;
+    padding: 1.5px;
+    background: conic-gradient(
+      from var(--landing-angle),
+      var(--bw-accent),
+      #8b5cf6,
+      #f5b83d,
+      #14b8a6,
+      var(--bw-accent)
+    );
+    animation: turn 8s linear infinite;
+  }
+
+  /* ── Sections that rise into view ──────────────────────────────────────── */
+
+  html[data-motion="on"] .lp-reveal:not([data-shown]):not(:focus-within) {
+    opacity: 0;
+    transform: translate3d(0, 34px, 0) rotateX(8deg);
+  }
+
+  .lp-reveal {
+    transition:
+      opacity 0.9s cubic-bezier(0.2, 0.8, 0.2, 1),
+      transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition-delay: var(--delay, 0ms);
+    transform-origin: 50% 100%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lp-blob,
+    .lp-stars,
+    .lp-floor,
+    .lp-rise,
+    .lp-sheen::after,
+    .lp-float,
+    .lp-chip,
+    .lp-track,
+    .lp-packet,
+    .lp-drop,
+    .lp-ring,
+    .lp-orbit,
+    .lp-orbit-item > span,
+    .lp-border {
+      animation: none;
+    }
+
+    .lp-rig,
+    .lp-tilt,
+    .lp-node,
+    .lp-fan-card,
+    .lp-reveal {
+      transition: none;
+    }
+  }
+}

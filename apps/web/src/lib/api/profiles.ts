@@ -6,6 +6,8 @@ import {
 } from "@brawzer/contracts";
 import { apiRequest } from "./client";
 
+export const fetchProfiles = () => apiRequest("/profiles", { schema: profileListSchema });
+
 export const createProfile = (body: CreateProfileRequest) =>
   apiRequest("/profiles", { method: "POST", body, schema: profileSchema });
 

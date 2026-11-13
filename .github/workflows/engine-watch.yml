@@ -1,0 +1,55 @@
+name: Engine watch
+
+# Every day: does Debian ship a newer Chromium or Firefox ESR than the
+# nightly runtime image holds? If so, the release workflow is started, so a
+# security release reaches the image within a day rather than at the next
+# weekly rebuild (Phase 8, idea 18).
+on:
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+  actions: write
+
+jobs:
+  engines:
+    name: Compare the nightly image with Debian
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Sign in to the registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Pull the nightly runtime image
+        id: pull
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/brawzer-runtime:nightly"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          docker pull "$image"
+      - name: Compare engine versions
+        id: compare
+        env:
+          IMAGE: ${{ steps.pull.outputs.image }}
+        run: |
+          set +e
+          node infra/scripts/engine-versions.mjs "$IMAGE" | tee versions.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          { echo "## Engines in the nightly runtime image"; echo; echo '```'; cat versions.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          case "$status" in
+            0) echo "stale=false" >> "$GITHUB_OUTPUT" ;;
+            3) echo "stale=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
+      - name: Rebuild the images
+        if: steps.compare.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Debian ships a newer engine: starting the release workflow." >> "$GITHUB_STEP_SUMMARY"
+          gh workflow run release.yml --ref "${GITHUB_REF_NAME}"

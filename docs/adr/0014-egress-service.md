@@ -63,9 +63,14 @@ minutes, like deleting a passkey.
 
 ## Consequences
 
+- **Site rules** (Phase 8, idea 8): the account's blocked and allowed hosts are handed to the sidecar at session start and applied first in its decision (`policy` refusals). The deferred "per-account destination allow-list" is this.
+- **Private addresses through the proxy, by choice** (Phase 8, idea 9): a per-profile switch, off by default, lets both filters hand private and internal targets to the saved proxy unresolved. Loopback is refused regardless, on both hops.
+- **Checked in CI** (Phase 8, idea 10): an integration test starts real sessions and probes them from the engine's user: read-only root, `noexec` scratch, no capabilities, the shared namespace, the ruleset, no direct route out, no DNS, and the proxy's refusals for private, loopback and vendor addresses. Writing it found that the engine's user could still resolve names through the container engine's embedded resolver on loopback, because its NAT rewrote the port before the filter saw the packet; the DNS rule now sits in a chain at raw priority, ahead of that NAT.
+
 - Two containers per session, the sidecar small (256 MiB, one CPU). Starting a session takes one more container start.
 - `host.docker.internal` is the only private address development egress containers need (test proxies and echo servers on the host); `EGRESS_LOOPBACK_HOST` rewrites loopback targets to it and is refused in production.
 - A WebRTC or DNS leak would need a route the namespace doesn't have; the engine's flags stay as a second layer.
 - SOCKS4 proxies leak destination names to the egress's resolver (the protocol has no room for a name). Documented on the Proxy page's protocol choice is left to Phase 5's review.
+- **The engine block list holds background services only** (2026-11-10). It used to include `accounts.google.com`, `clients6.google.com`, `dl.google.com` and, through a path entry that matched the whole host, `www.gstatic.com`: hosts that websites use, so signing in to Gmail, YouTube or Google's password manager inside Brawzer was refused. The list now holds update, variation, Safe Browsing, optimisation-hint and component-download hosts, matched by host only; the engine's own sign-in stays off through its policy, not the network.
 - The engine's background services are a block list, not an allow-list of destinations. A per-account allow-list is a product decision for later; the rules are in one place for it.
 - The tester container is per API instance and dies with it; stale testers from earlier instances are removed at start.
