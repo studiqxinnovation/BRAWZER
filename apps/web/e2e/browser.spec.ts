@@ -48,6 +48,7 @@ test.describe("browser", () => {
       .poll(() => viewport.getAttribute("data-frames"), { timeout: 30_000 })
       .not.toBe("0");
     expect(await wcagViolations(page)).toEqual([]);
+    await expect(page.getByText("direct connection")).toBeVisible();
 
     // A bare host opens over HTTPS: the test site served inside the runtime.
     const address = page.getByRole("textbox", { name: "Address or search" });
@@ -144,8 +145,12 @@ test.describe("browser", () => {
     await signedIn(page, baseURL, "browser-start");
     await expect(page.getByRole("button", { name: "Start browsing" })).toBeVisible();
     await expect(page.getByRole("note", { name: /Development state/ })).toContainText(
-      "Browsing through your saved proxies",
+      "WebRTC streaming with sound",
     );
+    // The panel says where websites will see the session from.
+    await expect(
+      page.getByText("Websites see Brawzer’s cloud; the profile has no proxy."),
+    ).toBeVisible();
     // The default profile keeps its data; a temporary session is offered too.
     await expect(page.getByText(/Cookies, history and site data are saved to/)).toBeVisible();
     expect(await wcagViolations(page)).toEqual([]);

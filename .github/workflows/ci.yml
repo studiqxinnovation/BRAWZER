@@ -103,11 +103,24 @@ jobs:
           --build-arg API_INTERNAL_URL=http://api:4100 .
       - name: Build the cloud browser runtime image
         run: docker build -f apps/runtime-agent/Dockerfile -t brawzer-runtime:ci .
+      - name: Build the egress image
+        run: docker build -f apps/egress/Dockerfile -t brawzer-egress:ci .
       - name: Every image runs as a non-root user
         run: |
           test "$(docker image inspect brawzer-api:ci --format '{{.Config.User}}')" = node
           test "$(docker image inspect brawzer-web:ci --format '{{.Config.User}}')" = node
           test "$(docker image inspect brawzer-runtime:ci --format '{{.Config.User}}')" = browser
+      # The egress image starts as root to install its firewall, then drops
+      # to the egress user before it listens (ADR 0014): check the process.
+      - name: The egress service drops privileges
+        run: |
+          id=$(docker run -d --cap-drop ALL --cap-add NET_ADMIN --cap-add SETUID --cap-add SETGID \
+            --security-opt no-new-privileges --read-only \
+            -e EGRESS_MODE=tester -e EGRESS_SECRET=ci-only-secret-of-32-characters!! brawzer-egress:ci)
+          sleep 3
+          uid=$(docker exec "$id" sh -c 'for p in /proc/[0-9]*; do grep -q "^node" "$p/comm" 2>/dev/null && awk "/^Uid:/{print \$2}" "$p/status"; done | sort -u')
+          docker rm -f "$id" >/dev/null
+          test "$uid" = 10002
 
   audit:
     name: Dependency audit

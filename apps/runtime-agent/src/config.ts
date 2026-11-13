@@ -10,6 +10,8 @@ export interface AgentConfig {
   proxyPort: number;
   /** Development and tests only: a local site reachable as http://testsite.invalid/. */
   testSite: boolean;
+  /** The session's egress proxy, when the orchestrator runs one (ADR 0014). */
+  egress: { host: string; port: number } | null;
   /** Writable scratch space; the root file system is read-only. */
   scratchDir: string;
   /** The largest file the engine may download or print; Drive's per-file limit, set by the orchestrator. */
@@ -30,6 +32,7 @@ export function readConfig(env: NodeJS.ProcessEnv): AgentConfig {
     chromiumBinary: env.CHROMIUM_BIN ?? "/usr/bin/chromium",
     proxyPort: 3128,
     testSite: env.BRAWZER_TEST_SITE === "true",
+    egress: readEgress(env.BRAWZER_EGRESS_PROXY),
     scratchDir: env.BRAWZER_SCRATCH_DIR ?? "/tmp",
     maxFileBytes: Math.max(1, Number(env.BRAWZER_MAX_FILE_BYTES ?? "") || 100 * 1024 * 1024),
     initialViewport: {
@@ -37,4 +40,12 @@ export function readConfig(env: NodeJS.ProcessEnv): AgentConfig {
       height: Math.min(800, BROWSER_LIMITS.viewport.maxHeight),
     },
   };
+}
+
+/** `host:port` of the egress proxy, or null for a session that connects on its own. */
+function readEgress(value: string | undefined): { host: string; port: number } | null {
+  if (!value) return null;
+  const match = /^(\[[^\]]+\]|[^:]+):(\d{1,5})$/.exec(value);
+  if (!match) throw new Error("BRAWZER_EGRESS_PROXY must be host:port");
+  return { host: (match[1] ?? "").replace(/^\[|\]$/g, ""), port: Number(match[2]) };
 }

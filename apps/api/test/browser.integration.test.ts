@@ -14,6 +14,7 @@ import { driveFileSchema, profileListSchema, profileSchema } from "@brawzer/cont
 import { WebSocket } from "ws";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHarness, type Harness, type TestBrowser } from "./support/harness.js";
+import { answeringSocks5Proxy, type TestServer } from "./support/proxy-servers.js";
 
 // Requires the local services (`pnpm infra:up`), the Docker engine and the
 // runtime image (`pnpm runtime:build`). Each test starts a real container.
@@ -27,7 +28,12 @@ const EICAR = String.raw`X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TE
 beforeAll(async () => {
   h = await createHarness({
     ipPrefix: "100.69.0",
-    env: { BROWSER_TEST_SITE: "true", DRIVE_MAX_FILE_BYTES: String(MAX_FILE_BYTES) },
+    env: {
+      BROWSER_TEST_SITE: "true",
+      DRIVE_MAX_FILE_BYTES: String(MAX_FILE_BYTES),
+      // The test proxy below runs on this machine's loopback.
+      PROXY_TEST_ALLOW_PRIVATE: "true",
+    },
   });
   baseUrl = await h.listen();
 });
@@ -625,3 +631,129 @@ describe("profiles that keep their data", () => {
     expect(objects.rowCount).toBe(0);
   }, 180_000);
 });
+
+describe("the egress (ADR 0014)", () => {
+  const servers: TestServer[] = [];
+  afterAll(async () => {
+    await Promise.all(servers.map((server) => server.close()));
+  });
+
+  it("gives every session an egress sidecar that owns its network, and records no proxy without one", async () => {
+    const { client } = await account("browser-egress");
+    const { session, viewer } = await openSession(client);
+    expect(session.proxyId).toBeNull();
+    const containers = await h.database.pool.query<{ container_id: string }>(
+      "select container_id from browser_sessions where id = $1",
+      [session.id],
+    );
+    const runtime = containers.rows[0]?.container_id ?? "";
+    expect(runtime).not.toBe("");
+    // The runtime has no network of its own: it shares the egress sidecar's namespace.
+    const inspect = await fetchDocker(`/containers/${runtime}/json`);
+    expect(inspect.HostConfig.NetworkMode).toMatch(/^container:/);
+    expect(inspect.HostConfig.CapAdd ?? []).toEqual([]);
+    viewer.close();
+    expect((await client.delete(`/browser/sessions/${session.id}`)).statusCode).toBe(204);
+    // Both containers go with the session.
+    expect((await fetchDocker(`/containers/${runtime}/json`, true)).status).toBe(404);
+  }, 90_000);
+
+  it("sends a profile's traffic through its proxy, names unresolved, credentials never in the runtime", async () => {
+    const { client } = await account("browser-proxy");
+    const auth = { username: "tester", password: "c0rrect-h0rse" };
+    const socks = await answeringSocks5Proxy(auth);
+    servers.push(socks);
+    const proxy = await client.post("/proxies", {
+      name: "Answering proxy",
+      protocol: "socks5",
+      host: "127.0.0.1",
+      port: socks.port,
+      credentials: auth,
+    });
+    expect(proxy.statusCode, proxy.body).toBe(201);
+    const proxyId = proxy.json<{ id: string }>().id;
+    const profile = profileListSchema.parse((await client.get("/profiles")).json()).profiles[0]!;
+    expect((await client.patch(`/profiles/${profile.id}`, { proxyId })).statusCode).toBe(200);
+
+    const { session, viewer, tab } = await openSession(client, profile.id);
+    expect(session.proxyId).toBe(proxyId);
+    // A name that doesn't exist anywhere: only the proxy can "resolve" it.
+    await openPage(
+      viewer,
+      tab.id,
+      "http://nowhere-at-all.example/page",
+      "Through the proxy: nowhere-at-all.example",
+    );
+    expect(socks.requests).toContain("nowhere-at-all.example:80");
+    // The runtime's own environment never holds the proxy's password.
+    const containers = await h.database.pool.query<{ container_id: string }>(
+      "select container_id from browser_sessions where id = $1",
+      [session.id],
+    );
+    const runtimeEnv = (
+      await fetchDocker(`/containers/${containers.rows[0]?.container_id ?? ""}/json`)
+    ).Config.Env.join("\n");
+    expect(runtimeEnv).not.toContain(auth.password);
+    expect(runtimeEnv).toContain("BRAWZER_EGRESS_PROXY=");
+    viewer.close();
+    await client.delete(`/browser/sessions/${session.id}`);
+  }, 90_000);
+
+  it("asks the owner to confirm it's them before a profile's proxy changes", async () => {
+    const { client, email } = await account("browser-proxy-stepup");
+    const proxy = await client.post("/proxies", {
+      name: "Work proxy",
+      protocol: "http",
+      host: "proxy.example.com",
+      port: 8080,
+    });
+    const proxyId = proxy.json<{ id: string }>().id;
+    const profile = profileListSchema.parse((await client.get("/profiles")).json()).profiles[0]!;
+    await h.expireConfirmation(email);
+    const stale = await client.patch(`/profiles/${profile.id}`, { proxyId });
+    expect(stale.statusCode).toBe(403);
+    expect(h.errorOf(stale).code).toBe("reauthentication_required");
+    // Other changes don't need it.
+    expect((await client.patch(`/profiles/${profile.id}`, { name: "Renamed" })).statusCode).toBe(
+      200,
+    );
+  });
+});
+
+/** Reads the container engine directly, to check what the orchestrator made. */
+async function fetchDocker(
+  path: string,
+  allowMissing = false,
+): Promise<{
+  status: number;
+  HostConfig: { NetworkMode: string; CapAdd: string[] | null };
+  Config: { Env: string[] };
+}> {
+  const http = await import("node:http");
+  return new Promise((resolve, reject) => {
+    const request = http.request(
+      { socketPath: h.config.browser.dockerSocket, path: `/v1.44${path}`, method: "GET" },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => {
+          const status = response.statusCode ?? 0;
+          if (status === 404 && allowMissing) {
+            resolve({ status, HostConfig: { NetworkMode: "", CapAdd: null }, Config: { Env: [] } });
+            return;
+          }
+          if (status >= 400) {
+            reject(new Error(`Docker answered ${String(status)}`));
+            return;
+          }
+          resolve({
+            status,
+            ...(JSON.parse(Buffer.concat(chunks).toString("utf8")) as object),
+          } as never);
+        });
+      },
+    );
+    request.on("error", reject);
+    request.end();
+  });
+}

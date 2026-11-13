@@ -38,6 +38,7 @@ import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { ProfileDataService, ProfileDataTooLargeError } from "../profiles/profile-data.service.js";
 import { ProfilesService } from "../profiles/profiles.service.js";
+import { ProxiesService } from "../proxies/proxies.service.js";
 import { OrchestratorService } from "./orchestrator.service.js";
 import { StreamTickets } from "./stream-tickets.js";
 
@@ -82,6 +83,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(ProfilesService) private readonly profiles: ProfilesService,
     @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
+    @Inject(ProxiesService) private readonly proxies: ProxiesService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -199,6 +201,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
           userId,
           authSessionId: auth.session.id,
           profileId,
+          proxyId: profile?.proxyId ?? null,
           engine: "chromium",
           status: "starting",
           // Sealed once the row id exists; a placeholder keeps the column non-null meanwhile.
@@ -215,9 +218,11 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
         .update(schema.browserSessions)
         .set({ agentSecret: await this.box.seal(secret, secretContext(row.id)) })
         .where(eq(schema.browserSessions.id, row.id));
-      // A profile that keeps its data starts from what was saved last time.
+      // A profile that keeps its data starts from what was saved last time,
+      // and browses through its proxy (ADR 0014).
       const restore = profile?.keepData ? await this.profileData.open(profile) : null;
-      started = await this.orchestrator.start(row.id, secret, restore);
+      const upstream = await this.proxies.forEgress(userId, profile?.proxyId ?? null);
+      started = await this.orchestrator.start(row.id, secret, restore, upstream);
     } catch (error) {
       logger.warn(
         `Runtime for session ${row.id} failed to start: ${error instanceof Error ? error.message : ""}`,
@@ -246,7 +251,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       .returning();
     if (!running) {
       // Ended (sign-out, account deleted) while the container was starting.
-      await this.orchestrator.stop(started.containerId);
+      await this.orchestrator.stopSession(row.id, started.containerId);
       throw notFound();
     }
     await this.securityEvents.record({
@@ -365,7 +370,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       if (reason !== "account_deleted" && reason !== "runtime_failed") {
         await this.saveProfileData(row);
       }
-      await this.orchestrator.stop(row.containerId);
+      await this.orchestrator.stopSession(row.id, row.containerId);
     }
     if (reason !== "account_deleted") {
       await this.securityEvents.record({
@@ -452,7 +457,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     for (const runtime of runtimes) {
       if (!liveIds.has(runtime.sessionId)) {
         logger.log(`Removing orphaned runtime for session ${runtime.sessionId}`);
-        await this.orchestrator.stop(runtime.containerId);
+        await this.orchestrator.stopSession(runtime.sessionId, runtime.containerId);
       }
     }
     await this.reap();
@@ -466,6 +471,7 @@ export function describe(row: BrowserSessionRow): BrowserSession {
     status: row.status,
     engine: row.engine,
     profileId: row.profileId,
+    proxyId: row.proxyId,
     createdAt: row.createdAt.toISOString(),
     startedAt: row.startedAt?.toISOString() ?? null,
     lastViewedAt: row.lastViewedAt?.toISOString() ?? null,

@@ -28,7 +28,9 @@ function listen(
     socket.on("close", () => sockets.delete(socket));
   });
   return new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
+    // All interfaces: egress containers reach this machine through the Docker
+    // bridge on Linux (host-gateway), where the host's loopback isn't visible.
+    server.listen(0, "0.0.0.0", () => {
       resolve({
         port: (server.address() as AddressInfo).port,
         requests,
@@ -192,5 +194,61 @@ export function httpsProxy(certificate: { key: string; cert: string }): Promise<
   const requests: string[] = [];
   const server = createHttpsServer(certificate);
   server.on("connect", connectHandler(requests));
+  return listen(server, requests);
+}
+
+/**
+ * A SOCKS5 proxy that never connects anywhere: it answers every tunnelled
+ * request with a small page naming the destination it was asked for. Used to
+ * prove a cloud browser session's traffic went through the profile's proxy
+ * and that the name reached the proxy unresolved.
+ */
+export function answeringSocks5Proxy(auth: {
+  username: string;
+  password: string;
+}): Promise<TestServer> {
+  const requests: string[] = [];
+  const server = createServer((client) => {
+    client.on("error", () => undefined);
+    client.once("data", () => {
+      client.write(Buffer.from([5, 2]));
+      client.once("data", (message: Buffer) => {
+        const userLength = message[1] ?? 0;
+        const username = message.subarray(2, 2 + userLength).toString();
+        const passwordLength = message[2 + userLength] ?? 0;
+        const password = message
+          .subarray(3 + userLength, 3 + userLength + passwordLength)
+          .toString();
+        if (username !== auth.username || password !== auth.password) {
+          client.end(Buffer.from([1, 1]));
+          return;
+        }
+        client.write(Buffer.from([1, 0]));
+        client.once("data", (request: Buffer) => {
+          const type = request[3];
+          let host = "";
+          let offset = 0;
+          if (type === 1) {
+            host = [...request.subarray(4, 8)].join(".");
+            offset = 8;
+          } else if (type === 3) {
+            const length = request[4] ?? 0;
+            host = request.subarray(5, 5 + length).toString();
+            offset = 5 + length;
+          }
+          const port = request.readUInt16BE(offset);
+          requests.push(`${host}:${String(port)}`);
+          client.write(Buffer.from([5, 0, 0, 1, 0, 0, 0, 0, 0, 0]));
+          // Whatever the page asks for, the proxy "is" the website.
+          client.once("data", () => {
+            const body = `<!doctype html><title>Through the proxy: ${host}</title><h1>Through the proxy</h1>`;
+            client.end(
+              `HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${String(Buffer.byteLength(body))}\r\nConnection: close\r\n\r\n${body}`,
+            );
+          });
+        });
+      });
+    });
+  });
   return listen(server, requests);
 }

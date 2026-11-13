@@ -1,6 +1,6 @@
 import { Socket } from "node:net";
 import { describe, expect, it } from "vitest";
-import { type Lookup, ProxyTester, type ProxyTesterOptions } from "./proxy-tester.js";
+import { type Lookup, ProxyTester, type ProxyTesterOptions } from "./index.ts";
 
 const echoUrl = new URL("http://127.0.0.1:9/echo");
 

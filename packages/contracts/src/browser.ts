@@ -43,8 +43,10 @@ export const browserSessionSchema = z.object({
   id: z.uuid(),
   status: browserSessionStatusSchema,
   engine: browserEngineSchema,
-  /** The profile chosen at start (only its name is used until Phase 4's persistent profiles). */
+  /** The profile chosen at start: its kept data and its proxy apply to the session. */
   profileId: z.uuid().nullable(),
+  /** The saved proxy the session's traffic goes through, if the profile had one at start. */
+  proxyId: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
   /** When the runtime became ready; null while starting or if it never did. */
   startedAt: z.iso.datetime().nullable(),

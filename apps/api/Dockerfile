@@ -16,11 +16,13 @@ COPY apps/api/package.json apps/api/
 COPY packages/contracts/package.json packages/contracts/
 COPY packages/db/package.json packages/db/
 COPY packages/net-policy/package.json packages/net-policy/
+COPY packages/proxy-client/package.json packages/proxy-client/
 RUN pnpm install --frozen-lockfile --filter "@brawzer/api..."
 COPY tsconfig.base.json ./
 COPY packages/contracts packages/contracts
 COPY packages/db packages/db
 COPY packages/net-policy packages/net-policy
+COPY packages/proxy-client packages/proxy-client
 COPY apps/api apps/api
 RUN pnpm --filter "@brawzer/api..." run build \
   && pnpm --filter @brawzer/api deploy --prod /out

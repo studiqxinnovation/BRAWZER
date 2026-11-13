@@ -1,0 +1,2 @@
+ALTER TABLE "browser_sessions" ADD COLUMN "proxy_id" uuid;--> statement-breakpoint
+ALTER TABLE "browser_sessions" ADD CONSTRAINT "browser_sessions_proxy_id_proxies_id_fk" FOREIGN KEY ("proxy_id") REFERENCES "public"."proxies"("id") ON DELETE set null ON UPDATE no action;
