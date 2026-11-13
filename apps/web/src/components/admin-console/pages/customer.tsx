@@ -945,8 +945,9 @@ function BillingTab({
                 </button>
               </div>
               <div className="muted sm" style={{ marginTop: 10 }}>
-                Refunds, invoices and cancellations happen in Stripe and come to the console with
-                Billing (11.3).{" "}
+                Refunds and invoices are on{" "}
+                <Link href={`/admin/invoices?customer=${id}` as never}>Invoices &amp; refunds</Link>
+                ; cancellations happen in Stripe.{" "}
                 {b.stripeConfigured ? "" : "Stripe isn’t configured on this installation."}
               </div>
             </Card>

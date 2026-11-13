@@ -81,6 +81,10 @@ export const staffPermissions = {
   staff: ["admin"],
   announce: ["admin", "care", "technical"],
   coupon: ["admin", "billing"],
+  /** Decide requests that wait for a second person (refunds and discounts over a limit). */
+  approve: ["admin"],
+  /** Read-only money pages. */
+  finance: ["admin", "billing"],
   incident: ["admin", "technical"],
   deleteData: ["admin", "security"],
   notes: ["admin", "care", "billing", "sales", "technical", "security"],
@@ -129,6 +133,13 @@ export const adminPages: readonly AdminPage[] = [
     path: "settings",
   },
   {
+    key: "approvals",
+    title: "Approvals",
+    group: "Company",
+    roles: ["admin"],
+    path: "approvals",
+  },
+  {
     key: "customers",
     title: "Customers",
     group: "Customers",
@@ -156,6 +167,41 @@ export const adminPages: readonly AdminPage[] = [
     group: "Customer care",
     roles: ["admin", "care"],
     path: "carestats",
+  },
+  {
+    key: "subs",
+    title: "Subscriptions",
+    group: "Billing",
+    roles: ["admin", "billing"],
+    path: "subs",
+  },
+  {
+    key: "invoices",
+    title: "Invoices & refunds",
+    group: "Billing",
+    roles: ["admin", "billing", "care"],
+    path: "invoices",
+  },
+  {
+    key: "coupons",
+    title: "Coupons",
+    group: "Billing",
+    roles: ["admin", "billing", "sales"],
+    path: "coupons",
+  },
+  {
+    key: "finance",
+    title: "Finance reports",
+    group: "Billing",
+    roles: ["admin", "billing"],
+    path: "finance",
+  },
+  {
+    key: "trials",
+    title: "Accounts likely to upgrade",
+    group: "Sales",
+    roles: ["admin", "sales"],
+    path: "trials",
   },
   {
     key: "recovery",

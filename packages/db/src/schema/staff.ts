@@ -1,4 +1,4 @@
-import { boolean, index, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { users } from "./auth.ts";
 import { id, timestamptz } from "./columns.ts";
 
@@ -41,4 +41,38 @@ export const staffNotes = pgTable(
     createdAt: timestamptz().notNull().defaultNow(),
   },
   (table) => [index("staff_notes_user_idx").on(table.userId)],
+);
+
+/* Must match `approvalKinds` / `approvalStatuses` in @brawzer/contracts (billing-console.ts). */
+export const approvalKind = pgEnum("approval_kind", ["refund", "coupon"]);
+export const approvalStatus = pgEnum("approval_status", ["waiting", "approved", "declined"]);
+
+/**
+ * The "four eyes" rule (Phase 11.3): an action over a role's limit waits here
+ * for a founder. Approving carries it out; nobody approves their own request.
+ */
+export const approvals = pgTable(
+  "approvals",
+  {
+    id: id(),
+    kind: approvalKind().notNull(),
+    requestedById: uuid().references(() => users.id, { onDelete: "set null" }),
+    /** One line a person reads: "Refund £139.44 of invoice 0042". */
+    what: text().notNull(),
+    /** The account, invoice or code it concerns. */
+    target: text().notNull().default(""),
+    amountMinor: integer(),
+    currency: text(),
+    /** What approving needs to carry the action out. */
+    payload: jsonb()
+      .$type<Record<string, string | number | boolean | null>>()
+      .notNull()
+      .default({}),
+    status: approvalStatus().notNull().default("waiting"),
+    decidedById: uuid().references(() => users.id, { onDelete: "set null" }),
+    decidedAt: timestamptz(),
+    reason: text(),
+    createdAt: timestamptz().notNull().defaultNow(),
+  },
+  (table) => [index("approvals_status_idx").on(table.status, table.createdAt)],
 );

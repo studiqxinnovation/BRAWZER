@@ -23,6 +23,6 @@ import { UsageNoticesService } from "./usage-notices.service.js";
     BillingService,
     UsageNoticesService,
   ],
-  exports: [BillingService, UsageNoticesService],
+  exports: [BillingService, UsageNoticesService, STRIPE],
 })
 export class BillingModule {}

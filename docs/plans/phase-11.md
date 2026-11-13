@@ -23,7 +23,7 @@ buttons, nothing on the device.
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | 11.1 | The console: shell, staff roles and permissions, the audit log, company overview, customers and the customer 360, organisations, team  | Done    |
 | 11.2 | Customer care: support tickets (a Help app for customers, the inbox for staff), account recovery, announcements, incidents and status  | Done    |
-| 11.3 | Billing: subscriptions, invoices and refunds through Stripe, coupons, finance reports, approvals                                       | Planned |
+| 11.3 | Billing: subscriptions, invoices and refunds through Stripe, coupons, finance reports, approvals                                       | Done    |
 | 11.4 | Technical: fleet and runtime hosts, live sessions, browser images, the extension catalogue, network, queues and health                 | Planned |
 | 11.5 | Security and compliance: threats and sign-ins, blocked addresses, abuse reports and suspension, privacy and legal requests, compliance | Planned |
 
@@ -97,3 +97,14 @@ buttons, nothing on the device.
 - **Tests**: `apps/api/test/care.integration.test.ts` and `apps/web/e2e/care.spec.ts`.
 - **Account recovery** (`recovery_cases`, token purposes `recovery_confirm` and `recovery_cancel`, events `recovery.*`): from the sign-in page (“Lost your passkey or authenticator?”) or started by staff for a customer who asked another way. The owner confirms from their email, which starts the 48-hour wait and sends a cancel link that works for 7 days (cancelling marks the case “possible takeover” and tells the founders). Brawzer records whether the confirming device had signed in before; staff record invoice, card and identity-document checks, each worth points. One member of staff marks the checks complete; a different one with `recoveryApprove` releases, early only with a reason that the audit log keeps as EARLY. Releasing removes every passkey, turns the authenticator off, signs out every device and emails a 30-minute password link. The answer to “recover this address” never says whether an account exists.
 - **Tests**: `apps/api/test/recovery.integration.test.ts`, `apps/web/e2e/recovery.spec.ts`.
+
+## 11.3 Billing
+
+- **Subscriptions**: Brawzer’s own `subscriptions` rows (what Stripe’s webhooks said): paying, failing, trials, cancelling, with monthly revenue from the plan’s price and the revenue at risk. Paid plans set by hand are counted apart, since Stripe doesn’t bill them.
+- **Invoices & refunds**: read live from Stripe (`GET /v1/invoices`), one page at a time, each tied back to the account by its Stripe customer. A refund goes to Stripe at once when it is within the role’s limit (care 50, billing 500, in the price’s currency; founders unlimited) and otherwise becomes an approval. Over what is still refundable is refused.
+- **Coupons**: Stripe coupons with promotion codes, listed, made and turned on or off here. Over 15% off from anyone but a founder becomes an approval.
+- **Approvals** (`approvals`): the four-eyes rule. Approving carries the request out in Stripe; nobody decides their own; every decision is audited.
+- **Finance**: twelve months of MRR movements from the `billing.subscription_*` events (which now record the previous plan, so upgrades and downgrades have values; older changes are counted, not valued), with start and end MRR from the subscriptions in force. CSV download. Tax, fees and cash stay in Stripe’s reports.
+- **Accounts likely to upgrade**: free accounts by browsing minutes over 30 days, Drive use, live sessions and last activity. No score, no automatic offers.
+- **Honest omissions**: no payment retries from here (Stripe runs them), no credits or balances, no cancellation offers, no CRM pipeline, no VAT report.
+- **Tests**: `apps/api/test/billing-console.integration.test.ts` against the Stripe double (which now answers invoices, refunds, coupons and promotion codes) and `apps/web/e2e/money.spec.ts`.

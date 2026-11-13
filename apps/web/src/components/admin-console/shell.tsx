@@ -31,6 +31,11 @@ import {
   Megaphone,
   TriangleAlert,
   LifeBuoy,
+  CircleCheck,
+  CreditCard,
+  Receipt,
+  Tag,
+  Target,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -65,6 +70,12 @@ const ICONS: Record<string, typeof Gauge> = {
   replies: BookOpen,
   carestats: ChartColumn,
   recovery: LifeBuoy,
+  approvals: CircleCheck,
+  subs: CreditCard,
+  invoices: Receipt,
+  coupons: Tag,
+  finance: ChartColumn,
+  trials: Target,
   announce: Megaphone,
   incidents: TriangleAlert,
 };

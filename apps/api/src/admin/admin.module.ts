@@ -20,6 +20,8 @@ import { StaffGuard } from "./staff.guard.js";
 import { SupportConsoleController } from "./support-console.controller.js";
 import { CareConsoleController } from "./care-console.controller.js";
 import { RecoveryConsoleController } from "./recovery-console.controller.js";
+import { BillingConsoleController } from "./billing-console.controller.js";
+import { BillingConsoleService } from "./billing-console.service.js";
 
 /** Administration (Phase 6) and the admin console (Phase 11). */
 @Module({
@@ -41,6 +43,7 @@ import { RecoveryConsoleController } from "./recovery-console.controller.js";
     SupportConsoleController,
     CareConsoleController,
     RecoveryConsoleController,
+    BillingConsoleController,
   ],
   providers: [
     AdminService,
@@ -49,6 +52,7 @@ import { RecoveryConsoleController } from "./recovery-console.controller.js";
     StaffAuditService,
     CustomersService,
     CompanyService,
+    BillingConsoleService,
   ],
   exports: [AdminService, StaffAuditService],
 })

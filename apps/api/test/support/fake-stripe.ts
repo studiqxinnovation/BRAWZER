@@ -14,6 +14,13 @@ export interface FakeStripe {
   portals: Record<string, string>[];
   /** Subscriptions a test wants `GET /v1/subscriptions/:id` to answer with. */
   subscriptions: Map<string, object>;
+  /** Invoices a test wants `GET /v1/invoices` to list (newest first). */
+  invoices: Record<string, unknown>[];
+  /** Refunds the API asked for. */
+  refunds: Record<string, string>[];
+  /** Coupons and promotion codes the API created, as Stripe would hold them. */
+  coupons: Record<string, unknown>[];
+  promotionCodes: Record<string, unknown>[];
   close(): Promise<void>;
 }
 
@@ -31,6 +38,10 @@ export function fakeStripe(
     checkouts: [],
     portals: [],
     subscriptions: new Map(),
+    invoices: [],
+    refunds: [],
+    coupons: [],
+    promotionCodes: [],
   };
   // Ids are unique per run: the local database outlives a test run.
   const run = Date.now().toString(36);
@@ -105,6 +116,91 @@ export function fakeStripe(
           return;
         }
         json(200, known);
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/v1/invoices") {
+        const customer = url.searchParams.get("customer");
+        const limit = Number(url.searchParams.get("limit") ?? "10");
+        const after = url.searchParams.get("starting_after");
+        let data = state.invoices.filter((invoice) => !customer || invoice.customer === customer);
+        if (after) {
+          const index = data.findIndex((invoice) => invoice.id === after);
+          data = index >= 0 ? data.slice(index + 1) : [];
+        }
+        json(200, { object: "list", data: data.slice(0, limit), has_more: data.length > limit });
+        return;
+      }
+      const invoiceById = /^\/v1\/invoices\/(.+)$/.exec(url.pathname);
+      if (req.method === "GET" && invoiceById) {
+        const known = state.invoices.find((entry) => entry.id === invoiceById[1]);
+        if (!known) {
+          json(404, { error: { message: "No such invoice" } });
+          return;
+        }
+        json(200, known);
+        return;
+      }
+      if (req.method === "POST" && url.pathname === "/v1/refunds") {
+        state.refunds.push(form);
+        const invoice = state.invoices.find(
+          (entry) => entry.payment_intent === form.payment_intent,
+        );
+        if (invoice) {
+          invoice.amount_refunded = Number(invoice.amount_refunded ?? 0) + Number(form.amount ?? 0);
+        }
+        json(200, {
+          id: next("re"),
+          object: "refund",
+          amount: Number(form.amount ?? 0),
+          status: "succeeded",
+        });
+        return;
+      }
+      if (req.method === "POST" && url.pathname === "/v1/coupons") {
+        const coupon = {
+          id: next("coup"),
+          object: "coupon",
+          name: form.name ?? null,
+          percent_off: form.percent_off ? Number(form.percent_off) : null,
+          amount_off: form.amount_off ? Number(form.amount_off) : null,
+          currency: form.currency ?? null,
+          duration: form.duration ?? "once",
+          duration_in_months: form.duration_in_months ? Number(form.duration_in_months) : null,
+        };
+        state.coupons.push(coupon);
+        json(200, coupon);
+        return;
+      }
+      if (req.method === "POST" && url.pathname === "/v1/promotion_codes") {
+        const coupon =
+          state.coupons.find((entry) => entry.id === form["promotion[coupon]"]) ?? null;
+        const code = {
+          id: next("promo"),
+          object: "promotion_code",
+          code: form.code ?? "",
+          active: true,
+          promotion: { type: "coupon", coupon },
+          times_redeemed: 0,
+          max_redemptions: form.max_redemptions ? Number(form.max_redemptions) : null,
+          expires_at: form.expires_at ? Number(form.expires_at) : null,
+        };
+        state.promotionCodes.push(code);
+        json(200, code);
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/v1/promotion_codes") {
+        json(200, { object: "list", data: [...state.promotionCodes].reverse(), has_more: false });
+        return;
+      }
+      const promo = /^\/v1\/promotion_codes\/(.+)$/.exec(url.pathname);
+      if (req.method === "POST" && promo) {
+        const code = state.promotionCodes.find((entry) => entry.id === promo[1]);
+        if (!code) {
+          json(404, { error: { message: "No such promotion code" } });
+          return;
+        }
+        if (form.active !== undefined) code.active = form.active === "true";
+        json(200, code);
         return;
       }
       json(404, { error: { message: `Unexpected ${req.method ?? ""} ${url.pathname}` } });

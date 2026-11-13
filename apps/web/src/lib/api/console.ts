@@ -40,6 +40,16 @@ import {
   recoveryCaseListSchema,
   type RecoveryCheckRequest,
   type RecoveryReleaseRequest,
+  approvalListSchema,
+  couponListSchema,
+  couponResultSchema,
+  type CreateCouponRequest,
+  financeSchema,
+  invoiceListSchema,
+  type RefundRequest,
+  refundResultSchema,
+  subscriptionListSchema,
+  upgradeSignalListSchema,
 } from "@brawzer/contracts";
 import { z } from "zod";
 import { apiRequest } from "./client";
@@ -276,3 +286,47 @@ export const denyRecovery = (id: string, reason: string) =>
     body: { reason },
     schema: recoveryCaseListSchema,
   });
+
+/* ── Money (11.3) ── */
+
+export const fetchSubscriptions = () =>
+  apiRequest("/console/billing/subscriptions", { schema: subscriptionListSchema });
+export const fetchInvoices = (query: { customer?: string; after?: string } = {}) => {
+  const params = new URLSearchParams();
+  if (query.customer) params.set("customer", query.customer);
+  if (query.after) params.set("after", query.after);
+  const search = params.toString();
+  return apiRequest(`/console/billing/invoices${search ? `?${search}` : ""}`, {
+    schema: invoiceListSchema,
+  });
+};
+export const refundInvoice = (id: string, body: RefundRequest) =>
+  apiRequest(`/console/billing/invoices/${encodeURIComponent(id)}/refund`, {
+    method: "POST",
+    body,
+    schema: refundResultSchema,
+  });
+export const fetchCoupons = () =>
+  apiRequest("/console/billing/coupons", { schema: couponListSchema });
+export const createCoupon = (body: CreateCouponRequest) =>
+  apiRequest("/console/billing/coupons", { method: "POST", body, schema: couponResultSchema });
+export const toggleCoupon = (id: string, active: boolean) =>
+  apiRequest(`/console/billing/coupons/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: { active },
+    schema: couponListSchema,
+  });
+export const fetchFinance = () => apiRequest("/console/billing/finance", { schema: financeSchema });
+export const fetchApprovals = () =>
+  apiRequest("/console/billing/approvals", { schema: approvalListSchema });
+export const decideApproval = (id: string, approve: boolean, reason: string) =>
+  apiRequest(
+    `/console/billing/approvals/${encodeURIComponent(id)}/${approve ? "approve" : "decline"}`,
+    {
+      method: "POST",
+      body: { reason },
+      schema: approvalListSchema,
+    },
+  );
+export const fetchUpgradeSignals = () =>
+  apiRequest("/console/billing/upgrade-signals", { schema: upgradeSignalListSchema });

@@ -534,7 +534,7 @@ export class BillingService {
       type,
       userId: row.userId,
       meta: { ip: null, userAgent: null },
-      metadata: { plan: planCode },
+      metadata: { plan: planCode, from: user.planCode },
     });
     const planName = plan?.name ?? planCode;
     if (type === "billing.subscription_started") {
