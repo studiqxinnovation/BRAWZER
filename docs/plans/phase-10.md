@@ -246,3 +246,37 @@ Store.
   flag), so removing one sticks.
 - The desktop's New menu makes a presentation too. A notification's close
   button is a 24px target.
+
+## 10.9 Web apps as apps, sharp icons
+
+What the owner found: the web apps' tiles were blurry, and clicking one
+opened the Bee Browser window with the site in a tab, not the app.
+
+- **A web app opens as an app.** Its click starts (or returns to) a
+  browser in a profile named after the app, made the first time and set
+  to keep its data, so the app stays signed in between visits, in
+  Brawzer's cloud and never on the computer. The window is the app's:
+  its name and icon in the title bar, its name where the address bar
+  would be, no tabs, no address bar, no profile switcher (`app=` on the
+  framed window's page, `BrowserOpen.app`). The Dock marks it running
+  under its own tile, shows it while open even if it isn't installed,
+  and a second click brings the window forward. The plan's live-session
+  limit still applies: each app is a browser of its own. A site that only
+  lets one browser in by name opens in that browser when the computer has
+  it (`WebApp.engine`): WhatsApp Web turns Bee away, since Bee says it is
+  Chromium with its own name rather than Google Chrome, so WhatsApp runs
+  in Chrome.
+- **The bug behind "it opens the browser page".** The desktop renders
+  the desktop context, so its own `useLaunchBrowser()` found no desktop
+  and sent the dashboard to the Browser page, which then adopted the
+  session as a plain browser window without what it was asked to open.
+  The desktop now hands the hook its own window opener (`show`). A
+  session the overview poll adopts before its launch arrives becomes the
+  app's window when the launch does.
+- **Sharp icons.** The API reads a site's web app manifest and takes its
+  home-screen icons first (192 and 512 pixels, as a rule), then what the
+  page names, then the usual places; the first icon at least 128 pixels
+  wins, else the largest found, measured from the bytes (PNG, ICO, GIF,
+  WebP, JPEG). A page longer than the cap keeps its head, where the
+  icons are named (YouTube's home is over a megabyte). The icon URL
+  carries a version so browsers let go of the old, small ones.

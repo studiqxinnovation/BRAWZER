@@ -14,6 +14,12 @@ export interface WebApp {
   description: string;
   category: WebAppCategory;
   colour: string;
+  /**
+   * The browser it needs, when the site turns others away. Bee says what it
+   * is (Chromium, with its own name), and some sites only let Google Chrome
+   * in by name; those open in Chrome when the computer has it.
+   */
+  engine?: "chrome" | "firefox" | "chromium";
 }
 
 export const webApps: readonly WebApp[] = [
@@ -195,6 +201,7 @@ export const webApps: readonly WebApp[] = [
   },
   {
     id: "whatsapp",
+    engine: "chrome",
     name: "WhatsApp",
     url: "https://web.whatsapp.com/",
     description: "Messages, linked to your phone.",

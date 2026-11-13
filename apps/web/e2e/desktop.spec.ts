@@ -394,7 +394,7 @@ test.describe("desktop", () => {
     expect(await wcagViolations(page)).toEqual([]);
   });
 
-  test("a web app opens its site in a cloud browser window, and Screenshot saves the page to Drive", async ({
+  test("a web app opens as an app of its own, in its own profile, and Screenshot saves the page to Drive", async ({
     page,
     baseURL,
     isMobile,
@@ -413,16 +413,30 @@ test.describe("desktop", () => {
       .filter({ hasText: "Wikipedia" })
       .getByRole("button", { name: "Open", exact: true })
       .click();
-    const window = page.getByRole("region", { name: "Bee Browser window" });
+    const window = page.getByRole("region", { name: "Wikipedia window" });
     await expect(window).toBeVisible({ timeout: 60_000 });
     await expect(window.locator("iframe")).toHaveAttribute(
       "src",
-      /open=https%3A%2F%2Fwww\.wikipedia\.org%2F/,
+      /open=https%3A%2F%2Fwww\.wikipedia\.org%2F.*app=wikipedia/,
     );
-    const viewport = window.frameLocator("iframe").getByTestId("browser-viewport");
+    const frame = window.frameLocator("iframe");
+    const viewport = frame.getByTestId("browser-viewport");
     await expect
       .poll(() => viewport.getAttribute("data-frames"), { timeout: 60_000 })
       .not.toBe("0");
+    // An app, not a browser: its name where the address bar would be, no tabs; a profile of its own.
+    await expect(frame.getByTestId("web-app-name")).toContainText("Wikipedia");
+    await expect(frame.getByRole("textbox", { name: "Address or search" })).toHaveCount(0);
+    await expect(frame.getByRole("tablist")).toHaveCount(0);
+    const dock = page.getByRole("navigation", { name: "Dock" });
+    await expect(dock.getByRole("button", { name: "Wikipedia, open" })).toBeVisible();
+    const profiles = (await (await page.request.get("/api/v1/profiles")).json()) as {
+      profiles: { name: string; keepData: boolean }[];
+    };
+    expect(profiles.profiles.find((profile) => profile.name === "Wikipedia")?.keepData).toBe(true);
+    // Clicking it again goes back to the same window rather than opening another.
+    await dock.getByRole("button", { name: "Wikipedia, open" }).click();
+    await expect(page.getByRole("region", { name: "Wikipedia window" })).toHaveCount(1);
 
     await page
       .getByRole("navigation", { name: "Dock" })
@@ -448,8 +462,8 @@ test.describe("desktop", () => {
         { timeout: 30_000 },
       )
       .toBe(1);
-    await window.getByRole("button", { name: "Close Bee Browser" }).click();
-    await expect(page.getByText("Bee Browser closed")).toBeVisible({ timeout: 30_000 });
+    await window.getByRole("button", { name: "Close Wikipedia" }).click();
+    await expect(page.getByText("Wikipedia closed")).toBeVisible({ timeout: 30_000 });
   });
 
   test("a browser opens from the dock in a window that streams it, minimises and closes", async ({

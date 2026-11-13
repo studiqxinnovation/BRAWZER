@@ -109,6 +109,9 @@ const runningEngine = (windows: readonly DesktopWindow[], engine: BrowserEngine)
   );
 const runningApp = (windows: readonly DesktopWindow[], app: AppId) =>
   windows.some((entry) => entry.content.kind === "app" && entry.content.app === app);
+/** A web app's window: a browser window drawn as that app. */
+const runningWebApp = (windows: readonly DesktopWindow[], id: string) =>
+  windows.some((entry) => entry.content.kind === "browser" && entry.content.open?.app === id);
 
 /** The Dock's middle group: pinned apps, then apps that are open but not pinned. */
 function middleApps(pinned: readonly AppId[], windows: readonly DesktopWindow[]): AppId[] {
@@ -259,8 +262,9 @@ export function Dock({
       {webApps.map((app) => (
         <DockItem
           key={`web-${app.id}`}
+          dock={`web:${app.id}`}
           label={app.name}
-          running={false}
+          running={runningWebApp(windows, app.id)}
           onClick={() => {
             actions.onWebApp(app);
           }}
@@ -356,6 +360,10 @@ export function Taskbar({
   );
   const [time, date] = useSyncExternalStore(subscribeToClock, taskbarClock, () => "|").split("|");
   const focusedWindow = windows.find((entry) => entry.id === focused);
+  const focusedKey =
+    focusedWindow?.content.kind === "browser" && focusedWindow.content.open?.app
+      ? `web:${focusedWindow.content.open.app}`
+      : null;
   const item = (
     key: string,
     label: string,
@@ -369,7 +377,7 @@ export function Taskbar({
       key={key}
       type="button"
       className="dt-tb-item"
-      data-dock={key.startsWith("web-") ? undefined : key}
+      data-dock={key}
       data-running={running || undefined}
       data-active={active || undefined}
       aria-label={running ? `${label}, open` : label}
@@ -451,7 +459,8 @@ export function Taskbar({
             engineDetails[engine].short,
             runningEngine(windows, engine),
             focusedWindow?.content.kind === "browser" &&
-              focusedWindow.content.session.engine === engine,
+              focusedWindow.content.session.engine === engine &&
+              !focusedWindow.content.open?.app,
             () => {
               open.browser(engine);
             },
@@ -478,10 +487,10 @@ export function Taskbar({
         )}
         {webApps.map((app) =>
           item(
-            `web-${app.id}`,
+            `web:${app.id}`,
             app.name,
-            false,
-            false,
+            runningWebApp(windows, app.id),
+            focusedKey === `web:${app.id}`,
             () => {
               actions.onWebApp(app);
             },

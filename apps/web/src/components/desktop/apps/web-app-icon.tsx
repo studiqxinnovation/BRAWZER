@@ -5,7 +5,11 @@ import { useEffect, useRef, useState } from "react";
 import type { WebApp } from "./web-apps";
 
 /** Where the API serves a web app's own icon, fetched from its site. */
-export const webAppIconUrl = (id: string) => `/api/v1/web-apps/${encodeURIComponent(id)}/icon`;
+/** Bumped when the API picks icons differently, so a browser's day-long cache of the old ones lets go. */
+const ICON_VERSION = "2";
+
+export const webAppIconUrl = (id: string) =>
+  `/api/v1/web-apps/${encodeURIComponent(id)}/icon?v=${ICON_VERSION}`;
 
 /*
  * Icons load a few at a time, and only once a tile is on screen. A browser

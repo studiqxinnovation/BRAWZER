@@ -73,6 +73,7 @@ import { clearClipboard, endEverySession, wipeThisComputer } from "@/lib/wipe";
 import { type AppWindowApi, AppWindowContext } from "./apps/app-window";
 import { saveToDrive } from "./apps/drive-save";
 import { type AppId, AppIcon, apps, dockSystemApps, Tile } from "./apps/registry";
+import { WebAppIcon } from "./apps/web-app-icon";
 import { type WebApp, webAppById } from "./apps/web-apps";
 import { ContextMenuHost, type MenuEntry, openContextMenu } from "./context-menu";
 import { DashboardBar } from "./dashboard-bar";
@@ -108,6 +109,7 @@ import {
   type WindowContent,
   windowLabel,
   windowTitle,
+  windowWebApp,
 } from "./windows";
 import "@/components/browser/launcher.css";
 import "./desktop.css";
@@ -170,19 +172,26 @@ const examTarget = (content: WindowContent) =>
 const focusedWindowKey = (entry: DesktopWindow | undefined) =>
   entry
     ? entry.content.kind === "browser"
-      ? `browser:${entry.content.session.engine}`
+      ? entry.content.open?.app
+        ? `web:${entry.content.open.app}`
+        : `browser:${entry.content.session.engine}`
       : entry.content.app
     : null;
 
 /** The Dock or taskbar icon a window flies to when it's minimised. */
 const dockKey = (content: WindowContent) =>
-  content.kind === "browser" ? `browser:${content.session.engine}` : `app:${content.app}`;
+  content.kind === "browser"
+    ? content.open?.app
+      ? `web:${content.open.app}`
+      : `browser:${content.session.engine}`
+    : `app:${content.app}`;
 
 /** A browser window's page, and what it should open once its stream is up. */
 function frameSource(sessionId: string, open?: BrowserOpen): string {
   const params = new URLSearchParams({ session: sessionId, embedded: "1" });
   if (open?.url) params.set("open", open.url);
   if (open?.page) params.set("page", open.page);
+  if (open?.app) params.set("app", open.app);
   return `/app/browser/window?${params.toString()}`;
 }
 
@@ -372,11 +381,32 @@ export function DesktopShell({
     const app = webAppById(id);
     return app ? [app] : [];
   });
-  const { launch } = useLaunchBrowser();
+  // The Dock shows the installed web apps, and any other web app while its window is open.
+  const dockWebApps = [
+    ...installedWebApps,
+    ...windows.flatMap((entry) => {
+      const app = windowWebApp(entry.content);
+      return app && !prefs.webApps.includes(app.id) ? [app] : [];
+    }),
+  ].filter((app, index, list) => list.findIndex((other) => other.id === app.id) === index);
+  // The desktop renders the desktop context, so its own launches are shown
+  // here directly, as windows, never by sending the dashboard to the Browser page.
+  const showSession = useRef<(session: BrowserSession, open?: BrowserOpen) => void>(noop);
+  const { launch, launchWebApp } = useLaunchBrowser({
+    show: (session, open) => {
+      showSession.current(session, open);
+    },
+  });
+  /** A web app in its own window: back to it if it's open, else in its own profile. */
   const openWebApp = (app: WebApp) => {
-    void launch(engines.includes("bee") ? "bee" : (engines[0] ?? "bee"), undefined, {
-      open: { url: app.url },
-    });
+    const open = windows.find(
+      (entry) => entry.content.kind === "browser" && entry.content.open?.app === app.id,
+    );
+    if (open) {
+      focusWindow(open.id);
+      return;
+    }
+    void launchWebApp(engines.includes("bee") ? "bee" : (engines[0] ?? "bee"), app);
   };
 
   const bounds = useCallback(
@@ -440,8 +470,16 @@ export function DesktopShell({
               : undefined;
         if (existing) {
           target = existing.id;
+          // A session the desktop adopted from the list before its launch arrived
+          // becomes the web app's window now: its frame reloads as the app.
+          const becomesApp =
+            content.kind === "browser" &&
+            existing.content.kind === "browser" &&
+            Boolean(content.open?.app) &&
+            !existing.content.open?.app;
           // An open window keeps its frame: what to open is passed to it instead.
-          if (content.kind === "browser" && content.open) {
+          // A web app's window already shows its app: nothing more to open there.
+          if (content.kind === "browser" && content.open && !content.open.app && !becomesApp) {
             const open = content.open;
             queueMicrotask(() => {
               frames.current
@@ -454,7 +492,7 @@ export function DesktopShell({
           }
           // The frame's address stays as it was, so the window doesn't reload.
           const kept =
-            content.kind === "browser" && existing.content.kind === "browser"
+            content.kind === "browser" && existing.content.kind === "browser" && !becomesApp
               ? { ...content, open: existing.content.open }
               : content;
           return current.map((entry) =>
@@ -497,6 +535,9 @@ export function DesktopShell({
     },
     [openWindow],
   );
+  useEffect(() => {
+    showSession.current = openSession;
+  }, [openSession]);
 
   const screenshot = useCallback((sessionId: string) => {
     playSound("shot");
@@ -2157,7 +2198,7 @@ export function DesktopShell({
     focused,
     engines,
     pinned,
-    webApps: installedWebApps,
+    webApps: dockWebApps,
     dashboardHidden: dashHidden,
     onDashboard: dockHome,
     onDashboardMenu: (event: ReactMouseEvent<HTMLElement>) => {
@@ -2452,7 +2493,14 @@ export function DesktopShell({
                   title={windowTitle(entry)}
                   icon={
                     entry.content.kind === "browser" ? (
-                      <EngineLogo engine={entry.content.session.engine} size="sm" />
+                      (() => {
+                        const webApp = windowWebApp(entry.content);
+                        return webApp ? (
+                          <WebAppIcon app={webApp} size={16} />
+                        ) : (
+                          <EngineLogo engine={entry.content.session.engine} size="sm" />
+                        );
+                      })()
                     ) : (
                       <AppIcon app={entry.content.app} size={16} />
                     )

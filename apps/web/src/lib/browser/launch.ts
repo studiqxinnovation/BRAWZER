@@ -1,5 +1,12 @@
-import { type BrowserEngine, engineDetails, type Profile, profileColors } from "@brawzer/contracts";
-import { createProfile } from "@/lib/api/profiles";
+import {
+  type BrowserEngine,
+  engineDetails,
+  type Profile,
+  profileColors,
+  type WebApp,
+} from "@brawzer/contracts";
+import type { ApiResult } from "@/lib/api/client";
+import { createProfile, updateProfile } from "@/lib/api/profiles";
 
 /** What clicking a browser's icon opens: its first profile not open now, or a new one. */
 export function defaultProfile(
@@ -22,4 +29,26 @@ export function makeProfileFor(engine: BrowserEngine, profiles: readonly Profile
   const used = new Set(profiles.map((profile) => profile.color));
   const color = profileColors.find((candidate) => !used.has(candidate)) ?? "indigo";
   return createProfile({ name, color, engine });
+}
+
+/**
+ * The profile a web app runs in: one named after it on this engine, made
+ * the first time and set to keep its data, so the app stays signed in
+ * between visits (in Brawzer's cloud, never on this computer).
+ */
+export async function profileForWebApp(
+  engine: BrowserEngine,
+  app: WebApp,
+  profiles: readonly Profile[],
+): Promise<ApiResult<Profile>> {
+  const existing = profiles.find(
+    (profile) => profile.engine === engine && profile.name.toLowerCase() === app.name.toLowerCase(),
+  );
+  if (existing) return { ok: true, status: 200, data: existing };
+  const used = new Set(profiles.map((profile) => profile.color));
+  const color = profileColors.find((candidate) => !used.has(candidate)) ?? "indigo";
+  const created = await createProfile({ name: app.name, color, engine });
+  if (!created.ok) return created;
+  const kept = await updateProfile(created.data.id, { keepData: true });
+  return kept.ok ? kept : created;
 }

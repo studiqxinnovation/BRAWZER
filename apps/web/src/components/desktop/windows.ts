@@ -1,4 +1,4 @@
-import { type BrowserSession, engineDetails } from "@brawzer/contracts";
+import { type BrowserSession, engineDetails, webAppById } from "@brawzer/contracts";
 import { type AppId, apps } from "./apps/registry";
 import type { BrowserOpen } from "./desktop-context";
 import type { Rect } from "./window-chrome";
@@ -24,14 +24,20 @@ export interface DesktopWindow {
 }
 
 /** What the window is, for its buttons' names: "Chrome", "Calculator". */
+/** The web app a browser window shows as an app, if it is one. */
+export const windowWebApp = (content: WindowContent) =>
+  content.kind === "browser" && content.open?.app ? webAppById(content.open.app) : undefined;
+
 export const windowLabel = (window: DesktopWindow) =>
   window.content.kind === "browser"
-    ? engineDetails[window.content.session.engine].short
+    ? (windowWebApp(window.content)?.name ?? engineDetails[window.content.session.engine].short)
     : apps[window.content.app].name;
 
 /** What its title bar says. */
 export const windowTitle = (window: DesktopWindow) => {
   if (window.content.kind === "browser") {
+    const webApp = windowWebApp(window.content);
+    if (webApp) return `${webApp.name} · in Brawzer’s cloud`;
     return `${engineDetails[window.content.session.engine].name} · in Brawzer’s cloud`;
   }
   const name = apps[window.content.app].name;

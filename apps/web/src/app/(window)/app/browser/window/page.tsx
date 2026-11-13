@@ -1,4 +1,9 @@
-import { browserOverviewSchema, profileListSchema, proxyListSchema } from "@brawzer/contracts";
+import {
+  browserOverviewSchema,
+  profileListSchema,
+  proxyListSchema,
+  webAppById,
+} from "@brawzer/contracts";
 import { Skeleton } from "@brawzer/ui/components/skeleton";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -28,6 +33,8 @@ async function Workspace({ searchParams }: Pick<PageProps<"/app/browser/window">
     typeof params.open === "string" && isWebUrl(params.open) ? params.open : undefined;
   const openPage =
     params.page === "passwords" || params.page === "account" ? params.page : undefined;
+  // A web app's window: drawn as an app, with no tabs or address bar.
+  const webApp = typeof params.app === "string" ? webAppById(params.app) : undefined;
   const [overview, profiles, proxies] = await Promise.all([
     serverGet("/browser", browserOverviewSchema),
     serverGet("/profiles", profileListSchema),
@@ -57,6 +64,7 @@ async function Workspace({ searchParams }: Pick<PageProps<"/app/browser/window">
       select={select}
       mode="window"
       embedded={embedded}
+      app={webApp}
       openOnStart={openUrl || openPage ? { url: openUrl, page: openPage } : undefined}
       initial={overview.data}
       profiles={profiles.data.profiles}

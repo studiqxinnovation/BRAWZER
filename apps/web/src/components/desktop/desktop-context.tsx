@@ -86,6 +86,8 @@ export function useDesktop(): DesktopApi | null {
 export interface BrowserOpen {
   url?: string;
   page?: "passwords" | "account";
+  /** The web app this window is (its id): drawn as an app, with no tabs or address bar. */
+  app?: string;
 }
 
 /** What the desktop asks of a framed browser window. */

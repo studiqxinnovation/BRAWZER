@@ -19,6 +19,7 @@ import {
   type TransferMessage,
   type VideoCodec,
   type Viewport,
+  type WebApp,
 } from "@brawzer/contracts";
 import { Button } from "@brawzer/ui/components/button";
 import { FormMessage } from "@brawzer/ui/components/form-message";
@@ -238,11 +239,14 @@ export function BrowserWorkspace({
   proxies,
   mode = "page",
   embedded = false,
+  app,
   openOnStart,
   select = { session: null, launcher: false },
 }: {
   /** What to open once the stream is up: a site in a new tab, or the browser's own passwords or account page. */
   openOnStart?: BrowserOpen;
+  /** The web app this window is: drawn as an app, its name where the address bar would be, no tabs. */
+  app?: WebApp;
   /** "window": the pop-out, with nothing around it but the browser's own chrome. */
   mode?: "page" | "window";
   /** A window on Brawzer's desktop (framed): the desktop switches and closes browsers. */
@@ -1462,26 +1466,28 @@ export function BrowserWorkspace({
       className="fullscreen:bg-canvas flex h-full min-h-0 flex-col bg-canvas"
       data-testid="browser-workspace"
     >
-      <TabStrip
-        tabs={tabs}
-        activeTabId={activeTabId}
-        favicons={favicons}
-        previews={previews}
-        onActivate={(id) => {
-          // The tab being left keeps its last picture.
-          capturePreview(activeTabId);
-          send({ type: "activate-tab", tabId: id });
-        }}
-        onClose={(id) => {
-          send({ type: "close-tab", tabId: id });
-        }}
-        onNew={() => {
-          send({ type: "new-tab" });
-        }}
-      />
+      {!app && (
+        <TabStrip
+          tabs={tabs}
+          activeTabId={activeTabId}
+          favicons={favicons}
+          previews={previews}
+          onActivate={(id) => {
+            // The tab being left keeps its last picture.
+            capturePreview(activeTabId);
+            send({ type: "activate-tab", tabId: id });
+          }}
+          onClose={(id) => {
+            send({ type: "close-tab", tabId: id });
+          }}
+          onNew={() => {
+            send({ type: "new-tab" });
+          }}
+        />
+      )}
 
       <div className="flex items-center gap-2 border-b border-line bg-canvas px-3 py-2">
-        {!embedded && (
+        {!embedded && !app && (
           <SessionSwitcher
             current={session}
             engine={session.engine}
@@ -1505,31 +1511,45 @@ export function BrowserWorkspace({
             if (activeTab) send({ type: "stop", tabId: activeTab.id });
           }}
         />
-        <AddressBar
-          tab={activeTab}
-          value={shownAddress}
-          editing={address !== null}
-          inputRef={addressRef}
-          onChange={setAddress}
-          onSubmit={submitAddress}
-          onFocus={() => {
-            setAddress(currentAddress);
-          }}
-          onBlur={() => {
-            setAddress(null);
-          }}
-          onEscape={() => {
-            setAddress(null);
-            viewportRef.current?.focus();
-          }}
-          onResetZoom={() => {
-            onShortcut("zoom-reset");
-          }}
-          onLeaveReader={() => {
-            onShortcut("reader");
-          }}
-        />
-        {sessionProfile && activeTab && canBookmark(activeTab.url) && (
+        {app ? (
+          <span
+            className="text-sm flex min-w-0 flex-1 items-center gap-2 truncate px-2 font-medium text-ink"
+            data-testid="web-app-name"
+          >
+            {app.name}
+            {activeTab?.title &&
+              !isStartPage(activeTab.url) &&
+              activeTab.title.trim().toLowerCase() !== app.name.toLowerCase() && (
+                <span className="truncate font-normal text-ink-secondary">· {activeTab.title}</span>
+              )}
+          </span>
+        ) : (
+          <AddressBar
+            tab={activeTab}
+            value={shownAddress}
+            editing={address !== null}
+            inputRef={addressRef}
+            onChange={setAddress}
+            onSubmit={submitAddress}
+            onFocus={() => {
+              setAddress(currentAddress);
+            }}
+            onBlur={() => {
+              setAddress(null);
+            }}
+            onEscape={() => {
+              setAddress(null);
+              viewportRef.current?.focus();
+            }}
+            onResetZoom={() => {
+              onShortcut("zoom-reset");
+            }}
+            onLeaveReader={() => {
+              onShortcut("reader");
+            }}
+          />
+        )}
+        {!app && sessionProfile && activeTab && canBookmark(activeTab.url) && (
           <BookmarkStar
             bookmarked={profileBookmarks.some((bookmark) => bookmark.url === activeTab.url)}
             busy={bookmarkBusy}

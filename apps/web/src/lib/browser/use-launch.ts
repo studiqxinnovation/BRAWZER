@@ -5,6 +5,7 @@ import {
   type BrowserSession,
   engineDetails,
   type Profile,
+  type WebApp,
 } from "@brawzer/contracts";
 import { useToast } from "@brawzer/ui/components/toast";
 import type { Route } from "next";
@@ -12,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { fetchBrowserOverview, startBrowserSession } from "@/lib/api/browser";
 import { fetchProfiles } from "@/lib/api/profiles";
+import { profileForWebApp } from "./launch";
 import { type BrowserOpen, useDesktop } from "@/components/desktop/desktop-context";
 import { desktopActive } from "@/lib/desktop";
 import { readDesktopPrefs } from "@/lib/desktop-prefs";
@@ -32,7 +34,15 @@ export function startEngine(engines: readonly BrowserEngine[]): BrowserEngine {
   return engines.includes("bee") ? "bee" : (engines[0] ?? "bee");
 }
 
-export function useLaunchBrowser() {
+export function useLaunchBrowser(
+  options: {
+    /**
+     * How to show the session once it's running. The desktop itself passes its
+     * window opener: it renders the desktop context, so it can't read it.
+     */
+    show?: (session: BrowserSession, open?: BrowserOpen) => void;
+  } = {},
+) {
   const router = useRouter();
   const toast = useToast();
   const desktop = useDesktop();
@@ -40,6 +50,11 @@ export function useLaunchBrowser() {
 
   /** On the desktop, a window of its own; elsewhere, the Browser page. */
   function show(session: BrowserSession, open?: BrowserOpen) {
+    if (options.show) {
+      options.show(session, open);
+      setOpening(null);
+      return;
+    }
     if (desktop && desktopActive()) {
       desktop.openSession(session, open);
       setOpening(null);
@@ -115,5 +130,38 @@ export function useLaunchBrowser() {
     show(started.data, options.open);
   }
 
-  return { opening, launch };
+  /**
+   * Opens a web app as an app: in a browser profile of its own, named after
+   * it, that keeps its sign-in, drawn as a window with no tabs or address
+   * bar. Back to it if it's open.
+   */
+  async function launchWebApp(engine: BrowserEngine, app: WebApp) {
+    setOpening(engine);
+    const [overview, list] = await Promise.all([fetchBrowserOverview(), fetchProfiles()]);
+    if (!overview.ok) {
+      failed(overview.status, `${app.name} couldn’t open`, overview.error.message);
+      return;
+    }
+    if (!list.ok) {
+      failed(list.status, `${app.name} couldn’t open`, list.error.message);
+      return;
+    }
+    // A site that only lets one browser in by name gets that browser, when the computer has it.
+    const chosen = app.engine && overview.data.engines.includes(app.engine) ? app.engine : engine;
+    const profile = await profileForWebApp(chosen, app, list.data.profiles);
+    if (!profile.ok) {
+      failed(profile.status, `${app.name} couldn’t open`, profile.error.message);
+      return;
+    }
+    const profiles = list.data.profiles.some((candidate) => candidate.id === profile.data.id)
+      ? list.data.profiles
+      : [...list.data.profiles, profile.data];
+    await launch(
+      chosen,
+      { profiles, sessions: overview.data.sessions },
+      { open: { url: app.url, app: app.id }, profileId: profile.data.id },
+    );
+  }
+
+  return { opening, launch, launchWebApp };
 }

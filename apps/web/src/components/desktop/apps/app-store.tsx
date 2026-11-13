@@ -74,7 +74,7 @@ const matches = (query: string, ...text: readonly string[]) =>
  */
 export default function AppStoreApp() {
   const window = useAppWindow();
-  const { launch } = useLaunchBrowser();
+  const { launch, launchWebApp } = useLaunchBrowser();
   const prefs = useSyncExternalStore(
     subscribeToDesktopPrefs,
     readDesktopPrefs,
@@ -257,7 +257,7 @@ export default function AppStoreApp() {
                         <Button
                           size="sm"
                           variant="primary"
-                          onClick={() => void launch("bee", undefined, { open: { url: app.url } })}
+                          onClick={() => void launchWebApp("bee", app)}
                         >
                           Open
                         </Button>
@@ -283,10 +283,7 @@ export default function AppStoreApp() {
                         >
                           Install
                         </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => void launch("bee", undefined, { open: { url: app.url } })}
-                        >
+                        <Button size="sm" onClick={() => void launchWebApp("bee", app)}>
                           Open
                         </Button>
                       </>

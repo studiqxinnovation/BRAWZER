@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { fetchSiteIcon, iconCandidates, isPublicHttps, sniffImageType } from "./site-icon.js";
+import {
+  fetchSiteIcon,
+  iconCandidates,
+  imageSize,
+  isPublicHttps,
+  manifestIcons,
+  sniffImageType,
+} from "./site-icon.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const ICO = Buffer.from([0x00, 0x00, 0x01, 0x00, 1, 0]);
@@ -114,6 +121,92 @@ describe("fetchSiteIcon", () => {
       }),
     );
     expect(icon).toBeNull();
+  });
+});
+
+/** A PNG header claiming this many pixels square. */
+function png(size: number): Buffer {
+  const header = Buffer.alloc(33);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header);
+  header.writeUInt32BE(13, 8);
+  header.write("IHDR", 12);
+  header.writeUInt32BE(size, 16);
+  header.writeUInt32BE(size, 20);
+  return header;
+}
+
+describe("sharp icons", () => {
+  it("reads the pixel size of the kinds of image a tile shows", () => {
+    expect(imageSize(png(192), "image/png")).toBe(192);
+    const ico = Buffer.from([
+      0, 0, 1, 0, 2, 0, 16, 16, 0, 0, 1, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 32, 0,
+      0, 0, 0, 0, 0, 0,
+    ]);
+    expect(imageSize(ico, "image/x-icon")).toBe(256);
+    expect(imageSize(Buffer.from("<svg/>"), "image/svg+xml")).toBe(1024);
+    expect(imageSize(Buffer.from("GIF89a\x20\x00\x10\x00"), "image/gif")).toBe(32);
+    expect(imageSize(Buffer.alloc(3), "image/jpeg")).toBeNull();
+  });
+
+  it("lists a manifest's icons largest first, leaving maskable-only ones out", () => {
+    const icons = manifestIcons(
+      JSON.stringify({
+        icons: [
+          { src: "/icons/32.png", sizes: "32x32" },
+          { src: "/icons/512.png", sizes: "512x512", purpose: "maskable" },
+          { src: "https://cdn.example.com/192.png", sizes: "192x192" },
+          { src: "/icons/any.svg", sizes: "any", type: "image/svg+xml" },
+          { sizes: "64x64" },
+        ],
+      }),
+      new URL("https://example.com/manifest.json"),
+    ).map((url) => url.href);
+    expect(icons).toEqual([
+      "https://example.com/icons/any.svg",
+      "https://cdn.example.com/192.png",
+      "https://example.com/icons/32.png",
+    ]);
+    expect(manifestIcons("not json", site)).toEqual([]);
+  });
+
+  it("takes the manifest's sharp icon over a small favicon, and the largest when none is sharp", async () => {
+    const html = `<link rel="manifest" href="/site.webmanifest"><link rel="icon" href="/favicon-16.png" sizes="16x16">`;
+    const manifest = JSON.stringify({ icons: [{ src: "/icons/192.png", sizes: "192x192" }] });
+    const sharp = await fetchSiteIcon(
+      site,
+      fakeFetch({
+        "https://example.com/": () => new Response(html, { status: 200 }),
+        "https://example.com/site.webmanifest": () => new Response(manifest, { status: 200 }),
+        "https://example.com/icons/192.png": () => new Response(png(192), { status: 200 }),
+        "https://example.com/favicon-16.png": () => new Response(png(16), { status: 200 }),
+      }),
+    );
+    expect(sharp && imageSize(sharp.bytes, sharp.type)).toBe(192);
+
+    const dull = await fetchSiteIcon(
+      site,
+      fakeFetch({
+        "https://example.com/": () => new Response(html, { status: 200 }),
+        "https://example.com/favicon-16.png": () => new Response(png(16), { status: 200 }),
+        "https://example.com/apple-touch-icon.png": () => new Response(png(60), { status: 200 }),
+      }),
+    );
+    expect(dull && imageSize(dull.bytes, dull.type)).toBe(60);
+  });
+});
+
+describe("long pages", () => {
+  it("reads the head of a page longer than the cap, where the icons are named", async () => {
+    const html = `<link rel="icon" href="/big.png" sizes="192x192">${"<p>filler</p>".repeat(60_000)}`;
+    const icon = await fetchSiteIcon(
+      site,
+      fakeFetch({
+        "https://example.com/": () =>
+          new Response(html, { status: 200, headers: { "content-length": String(html.length) } }),
+        "https://example.com/big.png": () => new Response(png(192), { status: 200 }),
+      }),
+    );
+    expect(icon && imageSize(icon.bytes, icon.type)).toBe(192);
   });
 });
 
