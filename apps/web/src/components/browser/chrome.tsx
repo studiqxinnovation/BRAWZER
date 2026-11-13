@@ -1047,7 +1047,7 @@ export function NavigationErrorPage({
               Search for it
             </Button>
           )}
-          {text.kind === "blocked" && (
+          {(text.kind === "blocked" || text.kind === "relay") && (
             <Button variant="ghost" onClick={onReport}>
               <Flag aria-hidden="true" />
               Report it
