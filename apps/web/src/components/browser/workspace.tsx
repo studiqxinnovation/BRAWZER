@@ -5,6 +5,7 @@ import {
   type BrowserOverview,
   type BrowserSession,
   type ClientMessageInput,
+  engineDetails,
   type FrameHeader,
   type Profile,
   type RefusedAction,
@@ -16,21 +17,6 @@ import { Button } from "@brawzer/ui/components/button";
 import { FormMessage } from "@brawzer/ui/components/form-message";
 import { Spinner } from "@brawzer/ui/components/spinner";
 import { useToast } from "@brawzer/ui/components/toast";
-import { Tooltip } from "@brawzer/ui/components/tooltip";
-import { cn } from "@brawzer/ui/lib/cn";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Keyboard,
-  Lock,
-  LockOpen,
-  Maximize2,
-  Plus,
-  Printer,
-  RotateCw,
-  Square,
-  X,
-} from "lucide-react";
 import {
   type SubmitEvent,
   useCallback,
@@ -44,7 +30,19 @@ import { endBrowserSession, requestStreamTicket, startBrowserSession } from "@/l
 import { displayUrl, hostOf, resolveTyped } from "@/lib/browser/input";
 import { BrowserStream, describeClose, type StreamEvent } from "@/lib/browser/stream";
 import { leaveSignedInArea, onSessionMessage } from "@/lib/session-channel";
-import { EndSessionDialog, PageDialog, type PageDialogState, ShortcutsPopover } from "./dialogs";
+import {
+  AddressBar,
+  DownloadsButton,
+  IsolatedBadge,
+  isStartPage,
+  MoreMenu,
+  NavButtons,
+  ProfileChip,
+  type RecentTransfer,
+  StatusBar,
+  TabStrip,
+} from "./chrome";
+import { EndSessionDialog, PageDialog, type PageDialogState, ShortcutsDialog } from "./dialogs";
 import { type ChooserRequest, DrivePicker } from "./drive-picker";
 import { StartPanel } from "./start-panel";
 import { BrowserViewport, type Shortcut, type ViewportHandle } from "./viewport";
@@ -155,7 +153,7 @@ export function BrowserWorkspace({
   initial: BrowserOverview;
   profiles: readonly Profile[];
   /** The account's saved proxies, for naming the one a session uses. */
-  proxies: readonly { id: string; name: string }[];
+  proxies: readonly { id: string; name: string; protocol: string }[];
 }) {
   const toast = useToast();
   const [phase, setPhase] = useState<Phase>(
@@ -169,6 +167,9 @@ export function BrowserWorkspace({
   const [engine, setEngine] = useState("");
   const [dialog, setDialog] = useState<PageDialogState | null>(null);
   const [chooser, setChooser] = useState<ChooserRequest | null>(null);
+  const [transfers, setTransfers] = useState<RecentTransfer[]>([]);
+  const [unseenTransfers, setUnseenTransfers] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [address, setAddress] = useState<string | null>(null);
   const [ending, setEnding] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -229,7 +230,9 @@ export function BrowserWorkspace({
     switch (message.type) {
       case "welcome":
         attempts.current = 0;
-        setEngine(message.engine.version);
+        setEngine(
+          `${engineDetails[message.engine.name].name} · ${message.engine.version.replace(/^Chrome\//, "Chromium ")}`,
+        );
         setTabs(message.tabs);
         setActiveTabId(message.activeTabId);
         setPhase((current) =>
@@ -250,19 +253,24 @@ export function BrowserWorkspace({
         toast.add({ ...REFUSALS[message.action], type: "error" });
         return;
       case "transfer": {
-        const described = describeTransfer(message);
-        if (!described) return;
-        toast.add({
-          ...described,
-          ...(message.state === "saved" || message.state === "quarantined"
-            ? {
-                actionProps: {
-                  children: "Open Drive",
-                  onClick: () => window.open("/app/drive", "_blank", "noopener"),
-                },
-              }
-            : {}),
+        // The downloads panel keeps the session's files; a toast says when one is done.
+        setTransfers((current) => {
+          const entry: RecentTransfer = {
+            id: message.transferId,
+            filename: message.filename,
+            kind: message.kind,
+            state: message.state,
+            bytes: message.bytes ?? 0,
+            reason: message.reason,
+          };
+          const index = current.findIndex((candidate) => candidate.id === entry.id);
+          if (index === -1) return [entry, ...current].slice(0, 20);
+          return current.map((candidate) => (candidate.id === entry.id ? entry : candidate));
         });
+        if (message.state !== "started" && message.state !== "received") setUnseenTransfers(true);
+        const described = describeTransfer(message);
+        if (!described || message.state === "started") return;
+        toast.add(described);
         return;
       }
       case "file-chooser": {
@@ -498,9 +506,10 @@ export function BrowserWorkspace({
   }
 
   const session = phase.session;
-  const profileName = profiles.find((profile) => profile.id === session.profileId)?.name;
-  const proxyName = proxies.find((proxy) => proxy.id === session.proxyId)?.name;
-  const shownAddress = address ?? displayUrl(activeTab?.url ?? "");
+  const sessionProfile = profiles.find((profile) => profile.id === session.profileId) ?? null;
+  const sessionProxy = proxies.find((proxy) => proxy.id === session.proxyId) ?? null;
+  const currentAddress = isStartPage(activeTab?.url ?? "") ? "" : displayUrl(activeTab?.url ?? "");
+  const shownAddress = address ?? currentAddress;
 
   return (
     <div
@@ -508,203 +517,86 @@ export function BrowserWorkspace({
       className="fullscreen:bg-canvas flex h-full min-h-0 flex-col bg-canvas"
       data-testid="browser-workspace"
     >
-      {/* Tabs */}
-      <div className="flex items-end gap-1 overflow-x-auto border-b border-line bg-surface px-2 pt-2">
-        <div role="tablist" aria-label="Tabs" className="flex min-w-0 items-end gap-1">
-          {tabs.map((tab) => {
-            const selected = tab.id === activeTabId;
-            const title =
-              tab.url === "about:blank" ? "New tab" : tab.title || hostOf(tab.url) || "New tab";
-            return (
-              // The tab itself carries the role; the close control sits inside it.
-              <div
-                key={tab.id}
-                role="tab"
-                tabIndex={selected ? 0 : -1}
-                aria-selected={selected}
-                aria-controls="browser-viewport"
-                title={title}
-                className={cn(
-                  "group flex h-9 max-w-56 min-w-28 cursor-default items-center gap-1 rounded-t-lg border border-b-0 pr-1 pl-3 outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus",
-                  selected
-                    ? "border-line bg-canvas text-ink"
-                    : "border-transparent text-ink-secondary hover:bg-hover",
-                )}
-                onClick={(event) => {
-                  if ((event.target as HTMLElement).closest("[data-tab-close]")) {
-                    send({ type: "close-tab", tabId: tab.id });
-                  } else if (!selected) {
-                    send({ type: "activate-tab", tabId: tab.id });
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    if (!selected) send({ type: "activate-tab", tabId: tab.id });
-                  } else if (event.key === "Delete" || event.key === "Backspace") {
-                    event.preventDefault();
-                    send({ type: "close-tab", tabId: tab.id });
-                  }
-                }}
-              >
-                <span className="min-w-0 flex-1 truncate text-left text-footnote">
-                  {tab.loading && <Spinner className="mr-1.5 inline size-3 align-[-2px]" />}
-                  {title}
-                </span>
-                {/* A mouse target only: keyboard users close the focused tab with Delete or Alt+W. */}
-                <span
-                  aria-hidden="true"
-                  data-tab-close
-                  data-testid="tab-close"
-                  className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-tertiary opacity-70 group-hover:opacity-100 hover:bg-hover hover:text-ink"
-                >
-                  <X className="size-3.5" />
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        <Tooltip content="New tab (Alt+T)">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="New tab"
-            className="mb-0.5"
-            onClick={() => {
-              send({ type: "new-tab" });
-            }}
-          >
-            <Plus aria-hidden="true" />
-          </Button>
-        </Tooltip>
-      </div>
+      <TabStrip
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onActivate={(id) => {
+          send({ type: "activate-tab", tabId: id });
+        }}
+        onClose={(id) => {
+          send({ type: "close-tab", tabId: id });
+        }}
+        onNew={() => {
+          send({ type: "new-tab" });
+        }}
+      />
 
-      {/* Address bar and controls */}
-      <div className="flex items-center gap-1 border-b border-line bg-surface px-2 py-1.5">
-        <Tooltip content="Back (Alt+←)">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Back"
-            disabled={!activeTab?.canGoBack}
-            onClick={() => {
-              onShortcut("back");
-            }}
-          >
-            <ArrowLeft aria-hidden="true" />
-          </Button>
-        </Tooltip>
-        <Tooltip content="Forward (Alt+→)">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Forward"
-            disabled={!activeTab?.canGoForward}
-            onClick={() => {
-              onShortcut("forward");
-            }}
-          >
-            <ArrowRight aria-hidden="true" />
-          </Button>
-        </Tooltip>
-        <Tooltip content={activeTab?.loading ? "Stop" : "Reload (Alt+R)"}>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={activeTab?.loading ? "Stop loading" : "Reload"}
-            disabled={!activeTab}
-            onClick={() => {
-              if (!activeTab) return;
-              send({ type: activeTab.loading ? "stop" : "reload", tabId: activeTab.id });
-            }}
-          >
-            {activeTab?.loading ? <Square aria-hidden="true" /> : <RotateCw aria-hidden="true" />}
-          </Button>
-        </Tooltip>
-        <form method="post" onSubmit={submitAddress} className="flex min-w-0 flex-1 items-center">
-          <label htmlFor="browser-address" className="sr-only">
-            Address or search
-          </label>
-          <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-canvas px-3 focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--bw-accent-soft)]">
-            {activeTab?.security === "secure" ? (
-              <Lock aria-label="Secure connection" className="size-3.5 shrink-0 text-success" />
-            ) : activeTab?.security === "insecure" ? (
-              <LockOpen aria-label="Not secure" className="size-3.5 shrink-0 text-warning" />
-            ) : null}
-            <input
-              ref={addressRef}
-              id="browser-address"
-              name="address"
-              type="text"
-              inputMode="url"
-              autoComplete="off"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              placeholder="Search or type an address"
-              className="min-w-0 flex-1 bg-transparent text-callout text-ink outline-none placeholder:text-ink-tertiary"
-              value={shownAddress}
-              onChange={(event) => {
-                setAddress(event.target.value);
-              }}
-              onFocus={(event) => {
-                event.target.select();
-              }}
-              onBlur={() => {
-                setAddress(null);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  setAddress(null);
-                  viewportRef.current?.focus();
-                }
-              }}
-            />
-          </div>
-        </form>
-        <Tooltip content="Save as PDF in Drive (Alt+P)">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Save page as PDF in Drive"
-            disabled={!activeTab || activeTab.url === "about:blank"}
-            onClick={() => {
-              onShortcut("print");
-            }}
-          >
-            <Printer aria-hidden="true" />
-          </Button>
-        </Tooltip>
-        {coarsePointer && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Type into the page"
-            onClick={() => viewportRef.current?.focusKeyboard()}
-          >
-            <Keyboard aria-hidden="true" />
-          </Button>
-        )}
-        {!coarsePointer && <ShortcutsPopover />}
-        <Tooltip content="Full screen">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Full screen"
-            onClick={() => void fullScreen()}
-          >
-            <Maximize2 aria-hidden="true" />
-          </Button>
-        </Tooltip>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
+      <div className="flex items-center gap-2 border-b border-line bg-canvas px-3 py-2">
+        <NavButtons
+          tab={activeTab}
+          onBack={() => {
+            onShortcut("back");
+          }}
+          onForward={() => {
+            onShortcut("forward");
+          }}
+          onReload={() => {
+            onShortcut("reload");
+          }}
+          onStop={() => {
+            if (activeTab) send({ type: "stop", tabId: activeTab.id });
+          }}
+        />
+        <AddressBar
+          tab={activeTab}
+          value={shownAddress}
+          editing={address !== null}
+          inputRef={addressRef}
+          onChange={setAddress}
+          onSubmit={submitAddress}
+          onFocus={() => {
+            setAddress(currentAddress);
+          }}
+          onBlur={() => {
+            setAddress(null);
+          }}
+          onEscape={() => {
+            setAddress(null);
+            viewportRef.current?.focus();
+          }}
+        />
+        <IsolatedBadge />
+        <ProfileChip
+          profile={sessionProfile}
+          onEnd={() => {
             setConfirmEnd(true);
           }}
-        >
-          End session
-        </Button>
+        />
+        <DownloadsButton
+          transfers={transfers}
+          unseen={unseenTransfers}
+          onOpen={() => {
+            setUnseenTransfers(false);
+          }}
+        />
+        <MoreMenu
+          canPrint={Boolean(activeTab) && !isStartPage(activeTab?.url ?? "")}
+          coarsePointer={coarsePointer}
+          onNewTab={() => {
+            send({ type: "new-tab" });
+          }}
+          onPrint={() => {
+            onShortcut("print");
+          }}
+          onFullScreen={() => void fullScreen()}
+          onKeyboard={() => viewportRef.current?.focusKeyboard()}
+          onShortcuts={() => {
+            setShortcutsOpen(true);
+          }}
+          onEnd={() => {
+            setConfirmEnd(true);
+          }}
+        />
       </div>
 
       {/* The page */}
@@ -733,16 +625,15 @@ export function BrowserWorkspace({
         )}
       </div>
 
-      {/* Status */}
-      <div className="flex items-center gap-3 border-t border-line bg-surface px-3 py-1 text-caption text-ink-tertiary">
-        <span>Streaming from Brawzer’s cloud{engine ? ` · ${engine}` : ""}</span>
-        {profileName && <span>· {profileName}</span>}
-        <span>· {proxyName ? `via ${proxyName}` : "direct connection"}</span>
-        <span className="ml-auto" aria-live="polite">
-          Ends in {remainingLabel(session.expiresAt, now)} at most
-        </span>
-      </div>
+      <StatusBar
+        region={initial.region}
+        engine={engine}
+        proxy={sessionProxy}
+        profile={sessionProfile}
+        remaining={remainingLabel(session.expiresAt, now)}
+      />
 
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <PageDialog
         dialog={dialog}
         onAnswer={(accept, text) => {

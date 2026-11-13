@@ -19,13 +19,6 @@ import {
 } from "@brawzer/ui/components/dialog";
 import { Field, FieldLabel, Input } from "@brawzer/ui/components/field";
 import { Kbd } from "@brawzer/ui/components/kbd";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTitle,
-  PopoverTrigger,
-} from "@brawzer/ui/components/popover";
-import { Keyboard } from "lucide-react";
 import { type SubmitEvent, useState } from "react";
 
 export interface PageDialogState {
@@ -159,17 +152,18 @@ const SHORTCUTS: readonly { keys: readonly string[]; does: string }[] = [
   { keys: ["Shift", "Esc"], does: "Leave the page, back to Brawzer’s controls" },
 ];
 
-/** Brawzer's shortcuts. The ones the local browser reserves (⌘/Ctrl+T, W, N) aren't available. */
-export function ShortcutsPopover() {
+/** Brawzer's shortcuts, from the "…" menu. The local browser reserves ⌘/Ctrl+T, W and N. */
+export function ShortcutsDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   return (
-    <Popover>
-      <PopoverTrigger
-        render={<Button variant="ghost" size="icon-sm" aria-label="Keyboard shortcuts" />}
-      >
-        <Keyboard aria-hidden="true" />
-      </PopoverTrigger>
-      <PopoverContent>
-        <PopoverTitle>Keyboard shortcuts</PopoverTitle>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogTitle>Keyboard shortcuts</DialogTitle>
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-footnote">
           {SHORTCUTS.map((shortcut) => (
             <div key={shortcut.does} className="contents">
@@ -182,11 +176,11 @@ export function ShortcutsPopover() {
             </div>
           ))}
         </dl>
-        <p className="mt-3 max-w-64 text-caption text-ink-tertiary">
+        <p className="mt-3 text-caption text-ink-tertiary">
           Everything else goes to the page. Full screen also sends ⌘/Ctrl shortcuts where the local
           browser allows it.
         </p>
-      </PopoverContent>
-    </Popover>
+      </DialogContent>
+    </Dialog>
   );
 }

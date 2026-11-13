@@ -19,16 +19,23 @@ export const profileColors = [
 export const profileColorSchema = z.enum(profileColors, { error: "Choose a colour." });
 
 /**
- * Browser engines. Must match the database enum `browser_engine`. Only
- * Chromium runs today; Firefox arrives with WebRTC streaming in Phase 3b.
+ * Browser engines. Must match the database enum `browser_engine`. Bee is
+ * Brawzer's own browser, built on Chromium; Firefox is the second engine.
  */
-export const browserEngines = ["chromium", "firefox"] as const;
-export const browserEngineSchema = z.enum(browserEngines);
+export const browserEngines = ["bee", "firefox"] as const;
+export const browserEngineSchema = z.enum(browserEngines, { error: "Choose Bee or Firefox." });
 
-/** What can be chosen now. */
-const availableEngineSchema = z.literal("chromium", {
-  error: "Chromium is the only engine available today.",
-});
+/** What each engine is, in the words the pages use. */
+export const engineDetails = {
+  bee: {
+    name: "Bee Browser",
+    basis: "Brawzer’s own browser, built on Chromium",
+  },
+  firefox: {
+    name: "Firefox",
+    basis: "Mozilla’s engine, for sites and extensions that need it",
+  },
+} as const satisfies Record<(typeof browserEngines)[number], { name: string; basis: string }>;
 
 /** Temporary limit until plans exist (Phase 6). */
 export const MAX_PROFILES = 10;
@@ -78,7 +85,7 @@ export const profileListSchema = z.object({
 export const createProfileRequestSchema = z.object({
   name: profileNameSchema,
   color: profileColorSchema,
-  engine: availableEngineSchema.default("chromium"),
+  engine: browserEngineSchema.default("bee"),
 });
 
 export const updateProfileRequestSchema = z

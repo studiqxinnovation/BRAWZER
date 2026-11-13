@@ -8,7 +8,7 @@ import {
   STREAM_CLOSE_CODES,
 } from "@brawzer/contracts";
 import { WebSocket, WebSocketServer } from "ws";
-import type { BrowserEngine, Viewer } from "./engine.ts";
+import type { Engine, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
 
 /** How much may queue on the viewer's socket before frames are dropped instead. */
@@ -40,7 +40,7 @@ export type AgentState = "waiting" | "starting" | "running" | "stopped";
 /** What the HTTP routes drive: the engine's life and the profile data around it. */
 export interface AgentLifecycle {
   state(): AgentState;
-  engine(): BrowserEngine | null;
+  engine(): Engine | null;
   /** Unpacks a profile archive before the engine starts. */
   restore(archive: Readable): Promise<void>;
   /** Starts the engine; resolves once it is ready. */

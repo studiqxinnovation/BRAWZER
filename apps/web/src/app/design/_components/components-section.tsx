@@ -213,9 +213,9 @@ function SelectionControls() {
     >
       <Select
         label="Browser engine"
-        defaultValue="chromium"
+        defaultValue="bee"
         options={[
-          { value: "chromium", label: "Chromium" },
+          { value: "bee", label: "Bee Browser" },
           { value: "firefox", label: "Firefox (coming later)", disabled: true },
         ]}
       />
@@ -467,7 +467,7 @@ function StatusDemo() {
         <Badge tone="accent">Default profile</Badge>
         <Badge tone="warning">Proxy off</Badge>
         <Badge tone="danger">Blocked</Badge>
-        <Badge>Chromium</Badge>
+        <Badge>Bee Browser</Badge>
       </div>
     </Specimen>
   );

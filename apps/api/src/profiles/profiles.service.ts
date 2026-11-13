@@ -1,4 +1,4 @@
-import { type Profile, type ProfileColor } from "@brawzer/contracts";
+import { type BrowserEngine, type Profile, type ProfileColor } from "@brawzer/contracts";
 import {
   and,
   asc,
@@ -88,7 +88,7 @@ export class ProfilesService {
 
   async create(
     auth: AuthContext,
-    input: { name: string; color: ProfileColor; engine: "chromium" },
+    input: { name: string; color: ProfileColor; engine: BrowserEngine },
     meta: RequestMeta,
   ): Promise<Profile> {
     const userId = auth.user.id;

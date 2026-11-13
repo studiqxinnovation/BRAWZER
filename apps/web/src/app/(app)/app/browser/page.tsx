@@ -36,7 +36,7 @@ async function Workspace() {
     <BrowserWorkspace
       initial={overview.data}
       profiles={profiles.data.profiles}
-      proxies={proxies.data.proxies.map(({ id, name }) => ({ id, name }))}
+      proxies={proxies.data.proxies.map(({ id, name, protocol }) => ({ id, name, protocol }))}
     />
   );
 }

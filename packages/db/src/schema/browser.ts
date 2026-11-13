@@ -30,7 +30,7 @@ export const browserSessions = pgTable(
     profileId: uuid().references(() => profiles.id, { onDelete: "set null" }),
     /** The profile's proxy when the session started; its traffic goes through it (ADR 0014). */
     proxyId: uuid().references(() => proxies.id, { onDelete: "set null" }),
-    engine: browserEngine().notNull().default("chromium"),
+    engine: browserEngine().notNull().default("bee"),
     status: browserSessionStatus().notNull().default("starting"),
     /** The runtime container, once created. */
     containerId: text(),

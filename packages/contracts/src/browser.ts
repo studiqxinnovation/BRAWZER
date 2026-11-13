@@ -67,6 +67,8 @@ export const browserOverviewSchema = z.object({
   }),
   /** Whether the service that starts cloud browsers can be reached right now. */
   runtime: z.enum(["available", "unavailable"]),
+  /** Where sessions run, as the installation names it (a city or a region), or null. */
+  region: z.string().max(80).nullable(),
 });
 
 export const startBrowserSessionRequestSchema = z.object({

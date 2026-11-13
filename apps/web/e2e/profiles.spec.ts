@@ -41,8 +41,8 @@ test.describe("profiles", () => {
     // Create, with a name that's already taken first.
     await page.getByRole("button", { name: "New profile" }).click();
     const dialog = page.getByRole("dialog", { name: "New profile" });
-    await expect(dialog.getByRole("radio", { name: "Firefox" })).toBeDisabled();
-    await expect(dialog.getByRole("radio", { name: "Chromium" })).toBeChecked();
+    await expect(dialog.getByRole("radio", { name: "Bee Browser" })).toBeChecked();
+    await expect(dialog.getByRole("radio", { name: "Firefox" })).toBeEnabled();
     await dialog.getByRole("textbox", { name: "Name" }).fill("personal");
     await dialog.getByRole("button", { name: "Create profile" }).click();
     await expect(dialog.getByText("You already have a profile with that name.")).toBeVisible();

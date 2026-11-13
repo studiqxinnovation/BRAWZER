@@ -5,6 +5,7 @@ import {
   type Profile,
   type ProfileColor,
   profileColors,
+  engineDetails,
   updateProfileRequestSchema,
 } from "@brawzer/contracts";
 import {
@@ -50,7 +51,7 @@ import { initialOf, profileColorShades } from "@/lib/profiles";
 import { leaveSignedInArea } from "@/lib/session-channel";
 import { EngineChoice, ProfileNameAndColor } from "./profile-fields";
 
-const engineLabels = { chromium: "Chromium", firefox: "Firefox" } as const;
+const engineLabels = { bee: engineDetails.bee.name, firefox: engineDetails.firefox.name } as const;
 
 /** What a failed save means for the form: field errors, a message, or signing in again. */
 function handleFailure(

@@ -128,6 +128,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       session: live ? describe(live) : null,
       limits: { idleMinutes: BROWSER_LIMITS.idleMinutes, maxHours: BROWSER_LIMITS.maxHours },
       runtime,
+      region: this.config.browser.region,
     };
   }
 
@@ -241,7 +242,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
           authSessionId: auth.session.id,
           profileId,
           proxyId: profile?.proxyId ?? null,
-          engine: "chromium",
+          engine: profile?.engine ?? "bee",
           status: "starting",
           // Sealed once the row id exists; a placeholder keeps the column non-null meanwhile.
           agentSecret: "",
@@ -261,7 +262,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       // and browses through its proxy (ADR 0014).
       const restore = profile?.keepData ? await this.profileData.open(profile) : null;
       const upstream = await this.proxies.forEgress(userId, profile?.proxyId ?? null);
-      started = await this.orchestrator.start(row.id, secret, restore, upstream);
+      started = await this.orchestrator.start(row.id, secret, restore, upstream, row.engine);
     } catch (error) {
       logger.warn(
         `Runtime for session ${row.id} failed to start: ${error instanceof Error ? error.message : ""}`,

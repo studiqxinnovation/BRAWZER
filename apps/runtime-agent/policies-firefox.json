@@ -1,0 +1,58 @@
+{
+  "policies": {
+    "DisableAppUpdate": true,
+    "DisableTelemetry": true,
+    "DisableFirefoxStudies": true,
+    "DisableFirefoxAccounts": true,
+    "DisablePocket": true,
+    "DisableFormHistory": true,
+    "DisableMasterPasswordCreation": true,
+    "DisablePrivateBrowsing": true,
+    "DisableProfileImport": true,
+    "DisableSetDesktopBackground": true,
+    "DontCheckDefaultBrowser": true,
+    "OfferToSaveLogins": false,
+    "PasswordManagerEnabled": false,
+    "ExtensionSettings": {
+      "*": {
+        "installation_mode": "blocked"
+      }
+    },
+    "NoDefaultBookmarks": true,
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "CaptivePortal": false,
+    "NetworkPrediction": false,
+    "DNSOverHTTPS": {
+      "Enabled": false,
+      "Locked": true
+    },
+    "Permissions": {
+      "Camera": {
+        "BlockNewRequests": true,
+        "Locked": true
+      },
+      "Microphone": {
+        "BlockNewRequests": true,
+        "Locked": true
+      },
+      "Location": {
+        "BlockNewRequests": true,
+        "Locked": true
+      },
+      "Notifications": {
+        "BlockNewRequests": true,
+        "Locked": true
+      }
+    },
+    "SearchSuggestEnabled": false,
+    "UserMessaging": {
+      "WhatsNew": false,
+      "ExtensionRecommendations": false,
+      "FeatureRecommendations": false,
+      "UrlbarInterventions": false,
+      "SkipOnboarding": true,
+      "MoreFromMozilla": false
+    }
+  }
+}
