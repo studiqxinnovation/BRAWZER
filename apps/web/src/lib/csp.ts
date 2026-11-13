@@ -36,8 +36,9 @@ export function generateNonce(): string {
  */
 export function strictContentSecurityPolicy(
   nonce: string,
-  options: { development: boolean; https: boolean },
+  options: { development: boolean; https: boolean; streamOrigin?: string },
 ): string {
+  const stream = options.streamOrigin ? ` ${options.streamOrigin}` : "";
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' ${themeScriptHash}${options.development ? " 'unsafe-eval'" : ""}`,
@@ -45,7 +46,8 @@ export function strictContentSecurityPolicy(
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self'",
-    `connect-src 'self'${options.development ? " ws: wss:" : ""}`,
+    // The cloud browser stream is a WebSocket on the API's public address.
+    `connect-src 'self'${stream}${options.development ? " ws: wss:" : ""}`,
     "frame-ancestors 'none'",
     "base-uri 'none'",
     "form-action 'self'",

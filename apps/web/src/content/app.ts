@@ -32,7 +32,7 @@ export const appNav: readonly AppNavGroup[] = [
   {
     label: "Browse",
     items: [
-      { href: "/app/browser", label: "Browser", icon: AppWindow, status: "planned" },
+      { href: "/app/browser", label: "Browser", icon: AppWindow, status: "available" },
       { href: "/app/profiles", label: "Profiles", icon: Layers, status: "available" },
       { href: "/app/drive", label: "Drive", icon: HardDriveDownload, status: "available" },
       { href: "/app/proxy", label: "Proxy", icon: Globe, status: "available" },
@@ -62,21 +62,6 @@ export interface PlannedModule {
 }
 
 export const plannedModules = {
-  browser: {
-    title: "Browser",
-    lede: "A real browser that runs in Brawzer’s cloud and appears in this page, with Brawzer’s own tabs, address bar and menus.",
-    milestone: "Phase 3",
-    plans: [
-      "Chromium first, then Firefox, each running in its own isolated container per session.",
-      "Tabs, bookmarks, history, downloads and keyboard shortcuts in Brawzer’s interface.",
-      "Pages streamed as pixels: websites never run on the computer you’re using.",
-    ],
-    requires: [
-      "Session gateway with single-use stream tickets that expire within 60 seconds",
-      "Orchestrator that starts one container per session (Docker locally, Kubernetes later)",
-      "Chromium runtime streamed over a secure WebSocket (3a), then WebRTC with a TURN server (3b)",
-    ],
-  },
   extensions: {
     title: "Extensions",
     lede: "Supported browser extensions, installed separately for each profile.",
@@ -86,8 +71,7 @@ export const plannedModules = {
       "Extensions run in the cloud browser, never on the computer you’re using.",
     ],
     requires: [
-      "The cloud browser (Phase 3)",
-      "Persistent, encrypted profiles (Phase 4)",
+      "Persistent, encrypted profiles (planned after Phase 3)",
       "A reviewed extension catalogue",
     ],
   },
@@ -174,6 +158,24 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
       return { title: "Proxy changed", tone: "neutral" };
     case "proxy.deleted":
       return { title: "Proxy removed", tone: "neutral" };
+    case "browser.session_started":
+      return { title: "Cloud browser session started", tone: "neutral" };
+    case "browser.session_ended":
+      switch (details.reason) {
+        case "idle":
+          return {
+            title: "Cloud browser session ended after 15 minutes unwatched",
+            tone: "neutral",
+          };
+        case "max_lifetime":
+          return { title: "Cloud browser session ended after 4 hours", tone: "neutral" };
+        case "signed_out":
+          return { title: "Cloud browser session ended with the sign-out", tone: "neutral" };
+        case "runtime_failed":
+          return { title: "Cloud browser session stopped unexpectedly", tone: "warning" };
+        default:
+          return { title: "Cloud browser session ended", tone: "neutral" };
+      }
     case "drive.file_uploaded":
       return { title: "File uploaded to Drive", tone: "neutral" };
     case "drive.file_quarantined":

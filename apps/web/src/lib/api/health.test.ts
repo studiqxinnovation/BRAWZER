@@ -13,6 +13,7 @@ const report = {
     redis: { status: "up", latencyMs: 1 },
     storage: { status: "up", latencyMs: 2 },
     scanner: { status: "up", latencyMs: 1 },
+    runtime: { status: "up", latencyMs: 2 },
   },
 };
 

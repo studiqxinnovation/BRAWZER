@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isIP } from "node:net";
 import path from "node:path";
 import { DRIVE_LIMITS } from "@brawzer/contracts";
+import { homedir } from "node:os";
 import { z } from "zod";
 
 const logLevels = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
@@ -95,6 +96,27 @@ export const envSchema = z.object({
   CLAMAV_PORT: z.coerce.number().int().min(1).max(65_535).default(3310),
   /** Lowers Drive's per-file limit so tests can hit it quickly. Development and tests only. */
   DRIVE_MAX_FILE_BYTES: z.coerce.number().int().min(1).max(DRIVE_LIMITS.maxFileBytes).optional(),
+  /**
+   * The Docker engine that runs cloud browser containers: a socket path or
+   * unix:// URL. Defaults to the usual socket locations.
+   */
+  DOCKER_HOST: z.string().min(1).optional(),
+  /** The runtime image (apps/runtime-agent/Dockerfile). */
+  BROWSER_RUNTIME_IMAGE: z.string().min(1).default("brawzer-runtime:dev"),
+  /** The Docker network runtime containers join; created if missing. */
+  BROWSER_RUNTIME_NETWORK: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_.-]{0,63}$/, "must be a Docker network name")
+    .default("brawzer-runtime"),
+  /**
+   * Public base URL of this API for the browser stream (ws:// or wss://).
+   * Defaults to this API's own address; production must set wss://.
+   */
+  BROWSER_STREAM_URL: z
+    .url({ protocol: /^wss?$/, error: "must be a ws:// or wss:// URL" })
+    .optional(),
+  /** Serves testsite.invalid (HTTP and HTTPS) inside each runtime for the browser tests. Development and tests only. */
+  BROWSER_TEST_SITE: z.stringbool().default(false),
   BUILD_SHA: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/, "must be a git commit SHA")
@@ -182,6 +204,16 @@ export interface AppConfig {
   readonly drive: {
     /** Per-file limit in bytes; the contract's value unless lowered for tests. */
     readonly maxFileBytes: number;
+  };
+  readonly browser: {
+    /** Path of the Docker engine's Unix socket. */
+    readonly dockerSocket: string;
+    readonly image: string;
+    readonly network: string;
+    /** Base URL (ws:// or wss://) the Browser page opens the stream on. */
+    readonly streamUrl: string;
+    /** Never true in production. */
+    readonly testSite: boolean;
   };
   readonly proxyTests: {
     /** The fixed destination of every proxy test. */
@@ -328,6 +360,13 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
   if (isProduction && values.DRIVE_MAX_FILE_BYTES !== undefined) {
     issues.push("DRIVE_MAX_FILE_BYTES: must not be set in production");
   }
+  const streamUrl = values.BROWSER_STREAM_URL ?? `ws://${echoHost}:${String(values.API_PORT)}`;
+  if (isProduction && !streamUrl.startsWith("wss://")) {
+    issues.push("BROWSER_STREAM_URL: must be set to a wss:// URL in production");
+  }
+  if (isProduction && values.BROWSER_TEST_SITE) {
+    issues.push("BROWSER_TEST_SITE: must not be enabled in production");
+  }
   if (issues.length > 0) throw new ConfigError(issues);
 
   return Object.freeze({
@@ -373,6 +412,13 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
     drive: Object.freeze({
       maxFileBytes: values.DRIVE_MAX_FILE_BYTES ?? DRIVE_LIMITS.maxFileBytes,
     }),
+    browser: Object.freeze({
+      dockerSocket: dockerSocketPath(values.DOCKER_HOST),
+      image: values.BROWSER_RUNTIME_IMAGE,
+      network: values.BROWSER_RUNTIME_NETWORK,
+      streamUrl: streamUrl.replace(/\/$/, ""),
+      testSite: values.BROWSER_TEST_SITE,
+    }),
     webauthn: Object.freeze({
       rpId,
       rpName: values.WEBAUTHN_RP_NAME,
@@ -391,6 +437,17 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       resendApiKey: values.RESEND_API_KEY,
     }),
   });
+}
+
+/** DOCKER_HOST as a socket path; without it, the first usual location that exists. */
+export function dockerSocketPath(value: string | undefined): string {
+  if (value) return value.startsWith("unix://") ? value.slice("unix://".length) : value;
+  const candidates = [
+    "/var/run/docker.sock",
+    path.join(homedir(), ".docker", "run", "docker.sock"),
+    path.join(homedir(), ".colima", "default", "docker.sock"),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0] ?? "";
 }
 
 /** Loads the local .env file (development only), then validates the environment. */

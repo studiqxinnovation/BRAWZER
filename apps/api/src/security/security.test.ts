@@ -1,5 +1,6 @@
 import {
   browserEngines,
+  browserSessionStatuses,
   profileColors,
   driveFileSources,
   driveFileStatuses,
@@ -19,6 +20,7 @@ describe("enums shared by the database and the contracts", () => {
   it("list the same profile colours and browser engines", () => {
     expect([...schema.profileColor.enumValues]).toEqual([...profileColors]);
     expect([...schema.browserEngine.enumValues]).toEqual([...browserEngines]);
+    expect([...schema.browserSessionStatus.enumValues]).toEqual([...browserSessionStatuses]);
   });
 
   it("list the same proxy protocols, kinds and rotations", () => {

@@ -1,9 +1,36 @@
+import { browserOverviewSchema, profileListSchema } from "@brawzer/contracts";
+import { Skeleton } from "@brawzer/ui/components/skeleton";
 import type { Metadata } from "next";
-import { PlannedModulePage } from "@/components/app-shell/planned-module-page";
-import { plannedModules } from "@/content/app";
+import { Suspense } from "react";
+import { Unavailable } from "@/components/app-shell/page";
+import { BrowserWorkspace } from "@/components/browser/workspace";
+import { serverGet, signInAgain } from "@/lib/server-api";
 
 export const metadata: Metadata = { title: "Browser", robots: { index: false, follow: false } };
 
+async function Workspace() {
+  const [overview, profiles] = await Promise.all([
+    serverGet("/browser", browserOverviewSchema),
+    serverGet("/profiles", profileListSchema),
+  ]);
+  if (overview.kind === "signed-out" || profiles.kind === "signed-out") signInAgain("/app/browser");
+  if (overview.kind === "unavailable" || profiles.kind === "unavailable") {
+    return (
+      <div className="mx-auto w-full max-w-2xl px-5 py-8 sm:px-8">
+        <Unavailable />
+      </div>
+    );
+  }
+  return <BrowserWorkspace initial={overview.data} profiles={profiles.data.profiles} />;
+}
+
+/** Full-height: the streamed page takes everything below the app's header. */
 export default function BrowserPage() {
-  return <PlannedModulePage plan={plannedModules.browser} />;
+  return (
+    <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col lg:h-dvh">
+      <Suspense fallback={<Skeleton className="m-5 h-64 rounded-xl" />}>
+        <Workspace />
+      </Suspense>
+    </div>
+  );
 }

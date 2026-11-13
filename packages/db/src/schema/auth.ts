@@ -134,6 +134,8 @@ export const securityEventType = pgEnum("security_event_type", [
   "drive.file_deleted",
   "drive.file_saved",
   "drive.folder_deleted",
+  "browser.session_started",
+  "browser.session_ended",
   "phone_sign_in.approved",
   "sign_in.new_device",
 ]);

@@ -49,6 +49,12 @@ function rowsFor(state: State): Row[] {
         tone: "neutral",
         status: "Checking…",
       },
+      {
+        name: "Browser runtime",
+        detail: "Docker engine · cloud browser containers",
+        tone: "neutral",
+        status: "Checking…",
+      },
     ];
   }
 
@@ -63,6 +69,12 @@ function rowsFor(state: State): Row[] {
       {
         name: "Malware scanner",
         detail: "ClamAV · Drive uploads",
+        tone: "neutral",
+        status: "Unknown",
+      },
+      {
+        name: "Browser runtime",
+        detail: "Docker engine · cloud browser containers",
         tone: "neutral",
         status: "Unknown",
       },
@@ -81,6 +93,11 @@ function rowsFor(state: State): Row[] {
     dependencyRow("Redis", "Valkey · sessions and queues", result.report.checks?.redis),
     dependencyRow("Object store", "Drive files", result.report.checks?.storage),
     dependencyRow("Malware scanner", "ClamAV · Drive uploads", result.report.checks?.scanner),
+    dependencyRow(
+      "Browser runtime",
+      "Docker engine · cloud browser containers",
+      result.report.checks?.runtime,
+    ),
   ];
 }
 
@@ -169,8 +186,9 @@ export function SystemStatus({ className }: { className?: string }) {
             </>
           ) : (
             <>
-              Start the local services with <code className="text-ink">pnpm infra:up</code>, then
-              check again.
+              Start the local services with <code className="text-ink">pnpm infra:up</code> (and
+              build the runtime image with <code className="text-ink">pnpm runtime:build</code>),
+              then check again.
             </>
           )}
         </p>

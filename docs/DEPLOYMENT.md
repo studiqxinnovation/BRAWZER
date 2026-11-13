@@ -95,11 +95,21 @@ Drive needs two services the API can't do without:
 - **An S3-compatible object store** (`STORAGE_*`): AWS S3, Cloudflare R2 or similar. The bucket must exist in production (development creates it); its only client is the API, with credentials from the secret manager or an IAM role. Objects are ciphertext (ADR 0011), so bucket-level encryption and versioning are optional extras, not controls Brawzer relies on. Custom endpoints must be `https`.
 - **ClamAV's `clamd`** (`CLAMAV_HOST`, `CLAMAV_PORT`): reachable only from the API. Uploads are refused while it is down, so run it with a health check and keep signatures updated with `freshclam` (the compose files disable updates and use the image's bundled signatures). Set `StreamMaxLength` to at least 100M, as the compose files do with `CLAMD_CONF_StreamMaxLength`.
 
+## Cloud browser runtime
+
+Browser sessions run as containers started by the API through the Docker
+Engine API ([ADR 0012](adr/0012-cloud-browser-runtime-isolation.md)):
+
+- **The runtime image** is built from the repository root with `pnpm runtime:build` (`apps/runtime-agent/Dockerfile`: Debian's Chromium plus the agent, non-root). The API expects it under `BROWSER_RUNTIME_IMAGE` (default `brawzer-runtime:dev`); rebuild it for Chromium security updates.
+- **The engine socket** (`DOCKER_HOST`, or the usual socket locations) must be reachable by the API, which is root-equivalent on that host. The staging compose doesn't mount it into the API container, so the Browser page reports the runtime as unavailable there; how production starts sessions (and splits the orchestrator out of the API) is decided in Phase 7.
+- **The stream URL** (`BROWSER_STREAM_URL`) is where the Browser page opens its WebSocket. It defaults to the API's own address, which works in development; in production it must be a `wss://` URL on the site's own origin, routed to the API by the edge (the web server's `/api/v1` rewrite doesn't carry WebSockets). A different origin needs `NEXT_PUBLIC_STREAM_ORIGIN` in the web app's build so the page's `connect-src` allows it.
+- **The test site** (`BROWSER_TEST_SITE`) serves `testsite.invalid` over HTTP and HTTPS inside each runtime for the browser tests (the HTTPS certificate is made per container and trusted only by that container's engine, for that one key). Development and CI only; refused in production.
+
 ## Not done yet
 
 - **Image registry, production hosting and a managed key service:** chosen in Phase 7.
 - **A verified Resend sending domain.** It needs the website domain.
-- **The cloud browser runtime and its TURN servers:** see `docs/plans/phase-3.md`.
+- **Production hosting for cloud browser sessions** (where containers run, a warm pool, capacity limits, orphan reconciliation across instances) and the TURN servers for WebRTC streaming (Phase 3b): Phase 7.
 - **Automated image rebuilds for base-image security updates:** Phase 7.
 - **A reconciliation job for orphaned Drive objects** (a store failure during deletion): Phase 7.
 

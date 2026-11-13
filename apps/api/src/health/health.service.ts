@@ -2,6 +2,7 @@ import type { DependencyCheck, HealthResponse } from "@brawzer/contracts";
 import type { DatabaseHandle } from "@brawzer/db";
 import { Inject, Injectable } from "@nestjs/common";
 import type { Redis } from "ioredis";
+import { OrchestratorService } from "../browser/orchestrator.service.js";
 import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 import { DATABASE } from "../database/database.module.js";
@@ -40,6 +41,7 @@ type Pingable = Pick<DatabaseHandle, "ping">;
 type RedisPingable = Pick<Redis, "ping">;
 type StorePingable = Pick<ObjectStore, "ping">;
 type ScannerPingable = Pick<Scanner, "ping">;
+type RuntimePingable = Pick<OrchestratorService, "ping">;
 
 @Injectable()
 export class HealthService {
@@ -51,16 +53,18 @@ export class HealthService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(OBJECT_STORE) private readonly store: StorePingable,
     @Inject(SCANNER) private readonly scanner: ScannerPingable,
+    @Inject(OrchestratorService) private readonly runtime: RuntimePingable,
   ) {}
 
   async check(): Promise<HealthResponse> {
-    const [database, redis, storage, scanner] = await Promise.all([
+    const [database, redis, storage, scanner, runtime] = await Promise.all([
       probe(() => this.database.ping()),
       probe(() => this.redis.ping()),
       probe(() => this.store.ping()),
       probe(() => this.scanner.ping()),
+      probe(() => this.runtime.ping()),
     ]);
-    const checks = { database, redis, storage, scanner };
+    const checks = { database, redis, storage, scanner, runtime };
 
     return {
       status: Object.values(checks).every((check) => check.status === "up") ? "ok" : "degraded",

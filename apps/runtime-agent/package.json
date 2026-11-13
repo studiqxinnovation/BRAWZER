@@ -1,0 +1,27 @@
+{
+  "name": "@brawzer/runtime-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runs inside each cloud browser container: drives Chromium, streams page pixels, applies input and refuses what the page may not do.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@brawzer/contracts": "workspace:*",
+    "@brawzer/net-policy": "workspace:*",
+    "ws": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/ws": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

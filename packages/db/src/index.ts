@@ -13,6 +13,7 @@ export type {
   AuthChallenge,
   AuthChallengePurpose,
   AuthSession,
+  BrowserSessionRow,
   DriveFileRow,
   DriveFolderRow,
   EmailToken,

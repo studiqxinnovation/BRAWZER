@@ -52,8 +52,8 @@ test.describe("navigation", () => {
       "page",
     );
 
-    await nav.getByRole("link", { name: /^Browser/ }).click();
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Browser");
+    await nav.getByRole("link", { name: /^Extensions/ }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Extensions");
     await expect(page.getByRole("note", { name: /Development state/ })).toBeVisible();
     // A planned module has no controls that could pretend to work.
     await expect(page.getByRole("main").locator("button, input, select, textarea")).toHaveCount(0);

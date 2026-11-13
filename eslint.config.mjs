@@ -90,7 +90,7 @@ export default defineConfig([
 
   // NestJS API and Node packages.
   {
-    files: ["apps/api/**/*.ts", "packages/{contracts,db}/**/*.ts"],
+    files: ["apps/{api,runtime-agent}/**/*.ts", "packages/{contracts,db,net-policy}/**/*.ts"],
     languageOptions: { globals: globals.node },
     rules: {
       // Nest modules are decorated, intentionally empty classes.

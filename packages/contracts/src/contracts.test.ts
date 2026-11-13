@@ -13,6 +13,7 @@ const healthy = {
     redis: { status: "up", latencyMs: 0.4 },
     storage: { status: "up", latencyMs: 3.1 },
     scanner: { status: "up", latencyMs: 0.9 },
+    runtime: { status: "up", latencyMs: 4.4 },
   },
 };
 

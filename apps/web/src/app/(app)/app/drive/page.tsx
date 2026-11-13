@@ -95,9 +95,9 @@ export default function DrivePage({ searchParams }: PageProps<"/app/drive">) {
         </Suspense>
         <DevState
           title="Downloads from the cloud browser don’t land here yet"
-          milestone="Phase 3"
+          milestone="After Phase 3"
           requires={[
-            "The cloud browser (Phase 3), which will send its downloads and printed pages to Drive",
+            "A hand-off from the cloud browser to Drive for downloads and printed pages (today the cloud browser refuses downloads)",
             "A Drive file picker for websites that ask for an upload",
           ]}
         >

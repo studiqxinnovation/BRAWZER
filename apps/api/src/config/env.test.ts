@@ -20,6 +20,7 @@ const production = {
   VAULT_ADDR: "https://vault.internal:8200",
   VAULT_TOKEN: "not-a-real-token",
   PROXY_TEST_URL: "https://echo.brawzer.example/ip",
+  BROWSER_STREAM_URL: "wss://brawzer.example",
 };
 
 function issuesOf(env: NodeJS.ProcessEnv): readonly string[] {
@@ -164,6 +165,7 @@ describe("parseConfig", () => {
       "EMAIL_TRANSPORT: must be resend in production",
       "KEY_PROVIDER: must be a key management service (vault) in production",
       "PROXY_TEST_URL: must be set to an https URL in production",
+      "BROWSER_STREAM_URL: must be set to a wss:// URL in production",
     ]);
     expect(issuesOf({ ...production, RESEND_API_KEY: undefined })).toEqual([
       "RESEND_API_KEY: is required when EMAIL_TRANSPORT is resend",
@@ -215,6 +217,28 @@ describe("parseConfig", () => {
     );
     expect(issuesOf({ ...production, DRIVE_MAX_FILE_BYTES: "4096" })).toEqual([
       "DRIVE_MAX_FILE_BYTES: must not be set in production",
+    ]);
+  });
+
+  it("configures the cloud browser runtime, with development-only knobs refused in production", () => {
+    const config = parseConfig(minimal, "1");
+    expect(config.browser.image).toBe("brawzer-runtime:dev");
+    expect(config.browser.streamUrl).toBe("ws://127.0.0.1:4100");
+    expect(config.browser.testSite).toBe(false);
+    expect(
+      parseConfig(
+        { ...minimal, BROWSER_STREAM_URL: "ws://localhost:4100/", BROWSER_TEST_SITE: "true" },
+        "1",
+      ).browser,
+    ).toMatchObject({ streamUrl: "ws://localhost:4100", testSite: true });
+    expect(
+      parseConfig({ ...minimal, DOCKER_HOST: "unix:///tmp/d.sock" }, "1").browser.dockerSocket,
+    ).toBe("/tmp/d.sock");
+    expect(issuesOf({ ...production, BROWSER_TEST_SITE: "true" })).toEqual([
+      "BROWSER_TEST_SITE: must not be enabled in production",
+    ]);
+    expect(issuesOf({ ...production, BROWSER_STREAM_URL: "ws://api.example/" })).toEqual([
+      "BROWSER_STREAM_URL: must be set to a wss:// URL in production",
     ]);
   });
 
