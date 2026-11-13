@@ -208,6 +208,16 @@ describe("parseConfig", () => {
     ]);
   });
 
+  it("lets tests lower Drive's per-file limit, but never production", () => {
+    expect(parseConfig(minimal, "1").drive.maxFileBytes).toBe(100 * 1024 * 1024);
+    expect(parseConfig({ ...minimal, DRIVE_MAX_FILE_BYTES: "4096" }, "1").drive.maxFileBytes).toBe(
+      4096,
+    );
+    expect(issuesOf({ ...production, DRIVE_MAX_FILE_BYTES: "4096" })).toEqual([
+      "DRIVE_MAX_FILE_BYTES: must not be set in production",
+    ]);
+  });
+
   it("keeps every protection on in a complete production configuration", () => {
     const config = parseConfig(production, "1");
     expect(config).toMatchObject({
@@ -228,6 +238,41 @@ describe("parseConfig", () => {
     expect(issuesOf({ ...production, KEY_PROVIDER: "local" })).toContain(
       "KEY_PROVIDER: must be a key management service (vault) in production",
     );
+  });
+
+  it("configures Drive's store and scanner, with production rules", () => {
+    const local = parseConfig(minimal, "1");
+    expect(local.storage).toEqual({
+      endpoint: undefined,
+      region: "us-east-1",
+      bucket: "brawzer-drive",
+      credentials: undefined,
+      forcePathStyle: false,
+      createBucket: true,
+    });
+    expect(local.scanner).toEqual({ host: "127.0.0.1", port: 3310 });
+    const selfHosted = parseConfig(
+      {
+        ...minimal,
+        STORAGE_ENDPOINT: "http://127.0.0.1:9100",
+        STORAGE_ACCESS_KEY_ID: "key",
+        STORAGE_SECRET_ACCESS_KEY: "secret",
+      },
+      "1",
+    );
+    expect(selfHosted.storage.forcePathStyle).toBe(true);
+    expect(selfHosted.storage.credentials).toEqual({
+      accessKeyId: "key",
+      secretAccessKey: "secret",
+    });
+    expect(parseConfig(production, "1").storage.createBucket).toBe(false);
+    expect(issuesOf({ ...production, STORAGE_ENDPOINT: "http://store.internal:9000" })).toEqual([
+      "STORAGE_ENDPOINT: must use https in production",
+    ]);
+    expect(issuesOf({ ...minimal, STORAGE_ACCESS_KEY_ID: "key" })).toEqual([
+      "STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY: set both or neither",
+    ]);
+    expect(issuesOf({ ...minimal, STORAGE_BUCKET: "Bad_Bucket" })[0]).toMatch(/^STORAGE_BUCKET:/);
   });
 
   it("delivers email to Mailpit by default in development", () => {

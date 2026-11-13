@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { emailLinkTokenSchema, emailSchema, newPasswordSchema } from "./auth.ts";
+import { driveFileStatusSchema } from "./drive.ts";
 import { browserEngineSchema, profileColorSchema } from "./profiles.ts";
 import { proxyKindSchema, proxyProtocolSchema, proxyRotationSchema } from "./proxies.ts";
 import { securityEventSchema } from "./security.ts";
@@ -76,6 +77,19 @@ export const accountExportSchema = z.object({
       updatedAt: z.iso.datetime(),
     }),
   ),
+  /** Drive's records only; the files themselves are saved from Drive. */
+  drive: z.object({
+    folders: z.array(z.object({ path: z.string(), createdAt: z.iso.datetime() })),
+    files: z.array(
+      z.object({
+        path: z.string(),
+        size: z.number().int().nonnegative(),
+        contentType: z.string(),
+        status: driveFileStatusSchema,
+        createdAt: z.iso.datetime(),
+      }),
+    ),
+  }),
 });
 
 export const recommendationSchema = z.object({

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { sessionCookieName } from "@brawzer/contracts";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
+import multipart from "@fastify/multipart";
 import {
   StandardSchemaSerializerInterceptor,
   StandardSchemaValidationPipe,
@@ -73,6 +74,19 @@ export async function createApp(
   // Session tokens are random and checked against the database, so cookies
   // don't need signing.
   await app.register(cookie);
+
+  // Drive uploads: one file per request, streamed (never buffered in full).
+  // The size limit is enforced by the upload pipeline, which knows the message
+  // to give; busboy's own limit sits above it so it never fires first.
+  await app.register(multipart, {
+    limits: {
+      files: 1,
+      fields: 5,
+      fieldSize: 1024,
+      fileSize: config.drive.maxFileBytes + 1024,
+      headerPairs: 200,
+    },
+  });
 
   const fastify = app.getHttpAdapter().getInstance();
 

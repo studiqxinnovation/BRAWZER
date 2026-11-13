@@ -13,6 +13,8 @@ export type {
   AuthChallenge,
   AuthChallengePurpose,
   AuthSession,
+  DriveFileRow,
+  DriveFolderRow,
   EmailToken,
   EmailTokenPurpose,
   ProfileRow,
@@ -25,4 +27,18 @@ export type {
 } from "./schema/index.ts";
 // Query operators, re-exported so every service builds queries with the same
 // drizzle-orm instance as the schema (two copies would not type-check together).
-export { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
+export {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";

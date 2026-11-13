@@ -11,6 +11,8 @@ const healthy = {
   checks: {
     database: { status: "up", latencyMs: 1.2 },
     redis: { status: "up", latencyMs: 0.4 },
+    storage: { status: "up", latencyMs: 3.1 },
+    scanner: { status: "up", latencyMs: 0.9 },
   },
 };
 

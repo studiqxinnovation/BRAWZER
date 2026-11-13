@@ -8,7 +8,12 @@ const report = {
   environment: "development",
   uptimeSeconds: 4,
   timestamp: "2026-11-06T12:00:00.000Z",
-  checks: { database: { status: "up", latencyMs: 1 }, redis: { status: "up", latencyMs: 1 } },
+  checks: {
+    database: { status: "up", latencyMs: 1 },
+    redis: { status: "up", latencyMs: 1 },
+    storage: { status: "up", latencyMs: 2 },
+    scanner: { status: "up", latencyMs: 1 },
+  },
 };
 
 function respondWith(body: unknown, status = 200) {

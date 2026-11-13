@@ -32,6 +32,11 @@ export const securityEventTypes = [
   "proxy.created",
   "proxy.updated",
   "proxy.deleted",
+  "drive.file_uploaded",
+  "drive.file_quarantined",
+  "drive.file_deleted",
+  "drive.file_saved",
+  "drive.folder_deleted",
   "phone_sign_in.approved",
   "sign_in.new_device",
 ] as const;

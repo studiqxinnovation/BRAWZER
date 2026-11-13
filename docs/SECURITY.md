@@ -25,7 +25,7 @@ exposure; it cannot remove these risks:
 Brawzer's marketing and interface must never claim to be "100% invisible",
 "zero footprint" or "immune to malware".
 
-## Controls in place today (Phases 1 and 2)
+## Controls in place today (Phases 1, 2 and 4)
 
 ### Web app
 
@@ -160,6 +160,16 @@ passkey and sign-in challenges a day after they expire; and known devices not
 seen for 90 days.
 A database lock ensures only one API instance runs it at a time.
 
+### Drive (Phase 4, [ADR 0011](adr/0011-drive-encryption-and-scanning.md))
+
+- **The object store sees only ciphertext.** Every file has its own random 256-bit key, wrapped by the key service and bound to the account and object. Content is encrypted in 1 MiB AES-256-GCM chunks whose index, file ID and last-chunk flag are authenticated, so chunks can't be dropped, reordered or swapped between files. Downloads verify each chunk before sending it.
+- **Every upload is scanned by ClamAV as it streams**, at the same time as it is encrypted. An infected file is quarantined: listed with the signature name, deletable, never openable or downloadable. If the scanner can't be reached, the upload is refused and nothing is stored.
+- **Types come from bytes, not names.** The content type is sniffed from the first 4100 bytes. Only PNG, JPEG, GIF, WebP, AVIF, PDF and plain text can be previewed; everything else is download-only. HTML and SVG sniff as plain text and are shown as text.
+- **Previews can't act as pages.** Inline responses carry `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` and `Content-Security-Policy: default-src 'none'; sandbox; frame-ancestors 'self'` (PDFs get the same without `sandbox`, which Chromium's viewer needs; a PDF still can't reach the embedding page). Filenames in `Content-Disposition` are sanitised and encoded (RFC 8187).
+- **Saving to a computer is deliberate.** It needs a sign-in or confirmation from the last 10 minutes, then a single-use ticket valid for 60 seconds, stored hashed in Redis. The content URL takes the ticket, not the session cookie, so a copied link dies quickly and download managers never hold the session. The page warns on shared-computer sessions, and every ticket is recorded in the security history.
+- **Names and limits.** File and folder names are one path segment without control or direction-override characters. Limits (100 MiB per file, 2 GiB and 2,000 files per account, 500 folders) are enforced while streaming and under an account lock, so parallel uploads can't exceed them. Uploads, tickets and content fetches are rate-limited.
+- **Deletion is immediate** and removes the stored object; deleting a folder removes everything below it; deleting the account removes every object. The data download lists files' paths, sizes, types and states, never keys or object names.
+
 ### Local infrastructure
 
 - **Network exposure:** services bind to `127.0.0.1` only.
@@ -173,7 +183,7 @@ A database lock ensures only one API instance runs it at a time.
 - **CI:** every GitHub Action is pinned to a full commit SHA, the workflow token is read-only, checkout keeps no credentials, and pnpm comes from npm at the pinned version. CI fails on high or critical advisories.
 - **Images:** base images are pinned by digest; the API and web images run as an unprivileged user and are built from the lockfile ([DEPLOYMENT.md](DEPLOYMENT.md)).
 
-## Remaining risks (reviewed in milestones 1.6 and 2.8)
+## Remaining risks (reviewed in milestones 1.6, 2.8 and 4.5)
 
 The Phase 1 and Phase 2 security reviews ([phase 1](reviews/phase-1.md),
 [phase 2](reviews/phase-2.md)) closed most earlier gaps. These remain,
@@ -185,6 +195,9 @@ deliberately:
 - **Email delivery has no retry queue.** A failed send is logged; the person can request another email.
 - **Rate limits during a Redis outage are per API instance.** Each instance falls back to its own counters, so with several instances the effective limit multiplies until Redis returns.
 - **Client addresses in production.** The web server's rewrite keeps a client-supplied `X-Forwarded-For`, so it must not be listed in `TRUST_PROXY`. Production should route `/api/v1` to the API at the edge and trust only the edge (Phase 7).
+- **No scanner catches everything.** ClamAV runs with bundled signatures locally and in CI; production must keep them updated (`freshclam`). Drive says so where files are saved to a computer.
+- **A store failure after a record is deleted leaves an orphaned object.** Deletion removes the database row first and the object second; a store outage in between is logged, not retried. The object is ciphertext without its key, so nothing is readable; a reconciliation job (Phase 7) will remove orphans.
+- **PDF previews aren't sandboxed by CSP** because Chromium's viewer doesn't render inside a sandboxed response. The viewer's own scripting can't reach Brawzer's page, and the PDF is served with `nosniff` from its own URL.
 - **Dependency advisories.** Three moderate advisories in transitive dependencies, none reachable: `esbuild` inside the development-only `drizzle-kit` (affects esbuild's own dev server, never started), and `glob`/`minimatch` inside `@fastify/static` (need attacker-controlled glob patterns; it only serves the API docs' assets, which are off in production). Patched versions are too new for the 7-day policy; re-check on 2026-11-13.
 - **New-device detection can be imitated.** The key comes from the self-reported user agent and the network prefix, so someone who copies both looks like a known device. It informs; it never blocks a sign-in.
 - **Proxy tests run inside the API.** The address rules are the only barrier between a test and Brawzer's own network until Phase 5 moves tests and browsing traffic into an isolated egress service, which is required before launch ([ADR 0010](adr/0010-proxy-tests-and-ssrf.md)).

@@ -34,7 +34,7 @@ export const appNav: readonly AppNavGroup[] = [
     items: [
       { href: "/app/browser", label: "Browser", icon: AppWindow, status: "planned" },
       { href: "/app/profiles", label: "Profiles", icon: Layers, status: "available" },
-      { href: "/app/drive", label: "Drive", icon: HardDriveDownload, status: "planned" },
+      { href: "/app/drive", label: "Drive", icon: HardDriveDownload, status: "available" },
       { href: "/app/proxy", label: "Proxy", icon: Globe, status: "available" },
       { href: "/app/extensions", label: "Extensions", icon: Puzzle, status: "planned" },
     ],
@@ -75,21 +75,6 @@ export const plannedModules = {
       "Session gateway with single-use stream tickets that expire within 60 seconds",
       "Orchestrator that starts one container per session (Docker locally, Kubernetes later)",
       "Chromium runtime streamed over a secure WebSocket (3a), then WebRTC with a TURN server (3b)",
-    ],
-  },
-  drive: {
-    title: "Drive",
-    lede: "Every download saved to your account in the cloud instead of the computer in front of you.",
-    milestone: "Phase 4",
-    plans: [
-      "Downloads from the cloud browser land in Drive, scanned for malware.",
-      "Previews, folders and search.",
-      "Saving a file to this computer is a deliberate action that asks you to confirm it’s you.",
-    ],
-    requires: [
-      "S3-compatible object storage (bucket and credentials, server-side only)",
-      "Download interception in the browser runtime (Phase 3)",
-      "A malware-scanning service",
     ],
   },
   extensions: {
@@ -189,6 +174,28 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
       return { title: "Proxy changed", tone: "neutral" };
     case "proxy.deleted":
       return { title: "Proxy removed", tone: "neutral" };
+    case "drive.file_uploaded":
+      return { title: "File uploaded to Drive", tone: "neutral" };
+    case "drive.file_quarantined":
+      return { title: "Uploaded file quarantined: malware found", tone: "warning" };
+    case "drive.file_deleted":
+      return { title: "File deleted from Drive", tone: "neutral" };
+    case "drive.file_saved":
+      return {
+        title:
+          details.persistent === false
+            ? "File saved to a shared computer from Drive"
+            : "File saved to a computer from Drive",
+        tone: "neutral",
+      };
+    case "drive.folder_deleted":
+      return {
+        title:
+          count === 0
+            ? "Folder deleted from Drive"
+            : `Folder deleted from Drive with ${count === 1 ? "1 file" : `${String(count)} files`}`,
+        tone: "neutral",
+      };
     case "phone_sign_in.approved":
       return { title: "Approved a sign-in from your phone", tone: "neutral" };
     case "sign_in.new_device":

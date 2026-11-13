@@ -8,7 +8,7 @@ test.describe("development console (/dev)", () => {
 
     const status = page.getByRole("region", { name: "Local system status" });
     await expect(status.getByText("Running")).toHaveCount(2); // web app and API
-    await expect(status.getByText(/^\d+(\.\d+)? ms$/)).toHaveCount(2); // PostgreSQL and Redis
+    await expect(status.getByText(/^\d+(\.\d+)? ms$/)).toHaveCount(4); // PostgreSQL, Redis, object store, scanner
   });
 
   test("meets WCAG 2.2 AA in light and dark", async ({ page }) => {

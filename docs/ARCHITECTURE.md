@@ -79,7 +79,7 @@ In production the edge should route `/api/v1` straight to the API, so that
 `TRUST_PROXY` can name the edge as the only source of client addresses (see
 [SECURITY.md](SECURITY.md)).
 
-### API modules (milestones 1.4–2.6)
+### API modules (milestones 1.4–4.4)
 
 | Module            | Responsibility                                                                                                                                                                                                                                               |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -89,11 +89,14 @@ In production the edge should route `/api/v1` straight to the API, so that
 | `account`         | Changing the email address, deleting the account, downloading its data (`/account/*`)                                                                                                                                                                        |
 | `profiles`        | Browser profiles: create, rename, recolour, reorder, delete (`/profiles`); the first profile, "Personal", is created when an account is confirmed                                                                                                            |
 | `proxies`         | Proxy settings with encrypted, write-only credentials (`/proxies`); the SSRF-safe tester (ADR 0010); the echo endpoint proxy tests fetch (`/network/echo`)                                                                                                   |
+| `storage`         | Drive's object store client and the encrypted object format (ADR 0011); creates the bucket in development                                                                                                                                                    |
+| `scanning`        | ClamAV (`clamd`) client that every Drive upload goes through                                                                                                                                                                                                 |
+| `drive`           | Brawzer Drive (`/drive`): folders and files, streaming uploads scanned and encrypted as they arrive, content types sniffed from bytes, quarantine, search, limits, previews of safe types, single-use download tickets behind `RecentAuthGuard`              |
 | `maintenance`     | Retention job: deletes expired security history, ended sessions, used links, expired challenges, stale known devices and abandoned sign-ups                                                                                                                  |
 | `rate-limit`      | Fixed-window counters in Redis, keyed by hashed subjects                                                                                                                                                                                                     |
 | `email`           | Templates (HTML + text, escaped) and transports: Mailpit, Resend, log                                                                                                                                                                                        |
 | `security-events` | The account's security history; recording never fails a request                                                                                                                                                                                              |
-| `health`          | Database and Redis reachability                                                                                                                                                                                                                              |
+| `health`          | Database, Redis, object store and scanner reachability                                                                                                                                                                                                       |
 
 ## Key decisions
 
@@ -134,20 +137,20 @@ common in public places.
 
 ## Phases
 
-| Phase | Scope                                                                                              | Status                             |
-| ----- | -------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| 1.1   | Workspace, tooling, API foundation, local services, docs                                           | **Done**                           |
-| 1.2   | Brand concepts, design tokens, components, `/design` review page                                   | **Done**, awaiting brand decisions |
-| 1.3   | Public website: Home, Product, Security, Profiles, Drive, Pricing, About                           | **Done**                           |
-| 1.4   | Authentication end to end (register, verify, sign in/out, reset)                                   | **Done**                           |
-| 1.5   | Signed-in app shell and navigation                                                                 | **Done**                           |
-| 1.6   | Phase review and security review ([review](reviews/phase-1.md))                                    | **Done**                           |
-| 2     | Passkeys and MFA, profiles, proxies, sessions, security centre, account ([plan](plans/phase-2.md)) | Next                               |
-| 3     | Cloud browser: gateway, orchestrator, runtime, Chromium (3a), WebRTC (3b), Firefox                 | Planned                            |
-| 4     | Persistent profiles, Brawzer Drive, downloads, previews, extensions                                | Planned                            |
-| 5     | Proxy engine, encryption, egress controls, device security                                         | Planned                            |
-| 6     | Subscriptions (Stripe), limits, administration                                                     | Planned                            |
-| 7     | Load, isolation and security testing; deployment                                                   | Planned                            |
+| Phase | Scope                                                                                                                            | Status                                                        |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 1.1   | Workspace, tooling, API foundation, local services, docs                                                                         | **Done**                                                      |
+| 1.2   | Brand concepts, design tokens, components, `/design` review page                                                                 | **Done**, awaiting brand decisions                            |
+| 1.3   | Public website: Home, Product, Security, Profiles, Drive, Pricing, About                                                         | **Done**                                                      |
+| 1.4   | Authentication end to end (register, verify, sign in/out, reset)                                                                 | **Done**                                                      |
+| 1.5   | Signed-in app shell and navigation                                                                                               | **Done**                                                      |
+| 1.6   | Phase review and security review ([review](reviews/phase-1.md))                                                                  | **Done**                                                      |
+| 2     | Passkeys and MFA, profiles, proxies, sessions, security centre, account ([plan](plans/phase-2.md))                               | **Done** except 2.7 (phone QR sign-in)                        |
+| 3     | Cloud browser: gateway, orchestrator, runtime, Chromium (3a), WebRTC (3b), Firefox                                               | Plan and screencast spike done; runtime not built             |
+| 4     | Brawzer Drive: uploads, encryption, scanning, folders, previews, saving ([plan](plans/phase-4.md), [review](reviews/phase-4.md)) | **Done**; persistent profiles and extensions wait for Phase 3 |
+| 5     | Proxy engine, encryption, egress controls, device security                                                                       | Planned                                                       |
+| 6     | Subscriptions (Stripe), limits, administration                                                                                   | Planned                                                       |
+| 7     | Load, isolation and security testing; deployment                                                                                 | Planned                                                       |
 
 ## Decision records
 

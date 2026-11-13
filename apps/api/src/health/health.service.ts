@@ -6,6 +6,10 @@ import { APP_CONFIG } from "../config/config.module.js";
 import type { AppConfig } from "../config/env.js";
 import { DATABASE } from "../database/database.module.js";
 import { REDIS } from "../redis/redis.module.js";
+import type { Scanner } from "../scanning/clamd.js";
+import { SCANNER } from "../scanning/scanning.module.js";
+import type { ObjectStore } from "../storage/object-store.js";
+import { OBJECT_STORE } from "../storage/storage.module.js";
 
 const PROBE_TIMEOUT_MS = 1_500;
 
@@ -34,6 +38,8 @@ export async function probe(
 
 type Pingable = Pick<DatabaseHandle, "ping">;
 type RedisPingable = Pick<Redis, "ping">;
+type StorePingable = Pick<ObjectStore, "ping">;
+type ScannerPingable = Pick<Scanner, "ping">;
 
 @Injectable()
 export class HealthService {
@@ -43,23 +49,28 @@ export class HealthService {
     @Inject(DATABASE) private readonly database: Pingable,
     @Inject(REDIS) private readonly redis: RedisPingable,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(OBJECT_STORE) private readonly store: StorePingable,
+    @Inject(SCANNER) private readonly scanner: ScannerPingable,
   ) {}
 
   async check(): Promise<HealthResponse> {
-    const [database, redis] = await Promise.all([
+    const [database, redis, storage, scanner] = await Promise.all([
       probe(() => this.database.ping()),
       probe(() => this.redis.ping()),
+      probe(() => this.store.ping()),
+      probe(() => this.scanner.ping()),
     ]);
+    const checks = { database, redis, storage, scanner };
 
     return {
-      status: database.status === "up" && redis.status === "up" ? "ok" : "degraded",
+      status: Object.values(checks).every((check) => check.status === "up") ? "ok" : "degraded",
       service: "brawzer-api",
       version: this.config.version,
       environment: this.config.env,
       uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1000),
       timestamp: new Date().toISOString(),
       // Dependency details describe internal topology: development only.
-      ...(this.config.isProduction ? {} : { checks: { database, redis } }),
+      ...(this.config.isProduction ? {} : { checks }),
     };
   }
 }

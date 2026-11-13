@@ -13,11 +13,14 @@
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "catalog:",
+    "@aws-sdk/lib-storage": "catalog:",
     "@brawzer/contracts": "workspace:*",
     "@brawzer/db": "workspace:*",
     "@brawzer/net-policy": "workspace:*",
     "@fastify/cookie": "catalog:",
     "@fastify/helmet": "catalog:",
+    "@fastify/multipart": "catalog:",
     "@fastify/static": "catalog:",
     "@nestjs/common": "catalog:",
     "@nestjs/core": "catalog:",
@@ -27,6 +30,7 @@
     "@simplewebauthn/server": "catalog:",
     "fastify": "catalog:",
     "ioredis": "catalog:",
+    "file-type": "catalog:",
     "otplib": "catalog:",
     "pino": "catalog:",
     "qrcode": "catalog:",

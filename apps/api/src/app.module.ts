@@ -5,6 +5,7 @@ import { ProxiesModule } from "./proxies/proxies.module.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { ConfigModule } from "./config/config.module.js";
 import { CryptoModule } from "./crypto/crypto.module.js";
+import { DriveModule } from "./drive/drive.module.js";
 import type { AppConfig } from "./config/env.js";
 import { HealthModule } from "./health/health.module.js";
 import { MaintenanceModule } from "./maintenance/retention.js";
@@ -25,6 +26,7 @@ export class AppModule {
         AccountModule,
         ProfilesModule,
         ProxiesModule,
+        DriveModule,
         MaintenanceModule,
       ],
     };

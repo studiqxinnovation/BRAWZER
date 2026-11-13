@@ -42,6 +42,13 @@ function rowsFor(state: State): Row[] {
         tone: "neutral",
         status: "Checking…",
       },
+      { name: "Object store", detail: "Drive files", tone: "neutral", status: "Checking…" },
+      {
+        name: "Malware scanner",
+        detail: "ClamAV · Drive uploads",
+        tone: "neutral",
+        status: "Checking…",
+      },
     ];
   }
 
@@ -52,6 +59,13 @@ function rowsFor(state: State): Row[] {
       { name: "API", detail: "NestJS · port 4100", tone: "danger", status: "Unreachable" },
       { name: "PostgreSQL", detail: "Application data", tone: "neutral", status: "Unknown" },
       { name: "Redis", detail: "Valkey · sessions and queues", tone: "neutral", status: "Unknown" },
+      { name: "Object store", detail: "Drive files", tone: "neutral", status: "Unknown" },
+      {
+        name: "Malware scanner",
+        detail: "ClamAV · Drive uploads",
+        tone: "neutral",
+        status: "Unknown",
+      },
     ];
   }
 
@@ -65,6 +79,8 @@ function rowsFor(state: State): Row[] {
     },
     dependencyRow("PostgreSQL", "Application data", result.report.checks?.database),
     dependencyRow("Redis", "Valkey · sessions and queues", result.report.checks?.redis),
+    dependencyRow("Object store", "Drive files", result.report.checks?.storage),
+    dependencyRow("Malware scanner", "ClamAV · Drive uploads", result.report.checks?.scanner),
   ];
 }
 
