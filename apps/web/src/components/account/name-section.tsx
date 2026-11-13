@@ -67,7 +67,7 @@ export function NameSection({ name }: { name: string | null }) {
   }
 
   return (
-    <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-3">
+    <form method="post" noValidate onSubmit={handleSubmit} className="flex flex-col gap-3">
       {failure && <FormMessage tone="danger">{failure}</FormMessage>}
       <Field name="name" invalid={Boolean(error)}>
         <FieldLabel>Name</FieldLabel>

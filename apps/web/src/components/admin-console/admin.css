@@ -71,9 +71,9 @@
       --pbg: rgba(191, 90, 242, 0.15);
       --gfg: #30d158;
       --ofg: #ff9f0a;
-      --rfg: #ff453a;
+      --rfg: #ff6961;
       --bfg: #409cff;
-      --pfg: #bf5af2;
+      --pfg: #da8fff;
       --side: rgba(28, 28, 30, 0.75);
       --shadow: none;
     }
@@ -100,9 +100,9 @@
     --pbg: rgba(191, 90, 242, 0.15);
     --gfg: #30d158;
     --ofg: #ff9f0a;
-    --rfg: #ff453a;
+    --rfg: #ff6961;
     --bfg: #409cff;
-    --pfg: #bf5af2;
+    --pfg: #da8fff;
     --side: rgba(28, 28, 30, 0.75);
     --shadow: none;
   }
@@ -506,8 +506,9 @@
   .adm .btn.pri:hover {
     filter: brightness(1.08);
   }
+  /* Red text, not the red mark: it has to read on the card and on the hover tint. */
   .adm .btn.dng {
-    color: var(--red);
+    color: var(--rfg);
   }
   .adm .btn.sm {
     height: 26px;

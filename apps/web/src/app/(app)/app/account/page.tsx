@@ -59,7 +59,11 @@ async function ProfileCard() {
             {account.emailVerified && <Pill tone="green">Confirmed</Pill>}
           </p>
           <p className="ad-li-sub">
-            {account.name && <>{account.email} · </>}
+            {account.name && (
+              <>
+                <span>{account.email}</span> ·{" "}
+              </>
+            )}
             Since <LocalDate iso={account.createdAt} />
           </p>
         </div>
