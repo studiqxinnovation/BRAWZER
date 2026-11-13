@@ -688,8 +688,62 @@ export function ticketReplyMessage(
   });
 }
 
+// ── Account recovery ────────────────────────────────────────────────────
+
+export function recoveryConfirmMessage(url: string): EmailContent {
+  return compose("Confirm your Brawzer account recovery", {
+    preheader: "Someone asked to recover your account. Confirm it was you.",
+    heading: "Recover your account?",
+    paragraphs: [
+      "Someone asked to recover the Brawzer account with this address, for when every way of signing in is lost. If that was you, confirm it below. Then there is a 48-hour wait, during which you can cancel from an email we’ll send you, before Brawzer’s team can release the account.",
+      "If it wasn’t you, do nothing: nothing changes without this confirmation, and the link stops working in 24 hours.",
+    ],
+    action: { label: "Yes, recover my account", url },
+    footnote: "Brawzer’s team will never ask you for your password or your codes.",
+  });
+}
+
+export function recoveryWaitingMessage(releaseAt: string, cancelUrl: string): EmailContent {
+  return compose("Your account recovery is confirmed: 48-hour wait", {
+    preheader: `Brawzer can release the account from ${releaseAt}. Cancel any time before.`,
+    heading: "Recovery confirmed",
+    paragraphs: [
+      `Brawzer’s team is checking the request. The account can be released at the earliest on ${releaseAt}. Releasing removes the lost passkeys and authenticator and sends a link to choose a new password. Files and settings stay as they are.`,
+      "If you didn’t ask for this, cancel now. Cancelling tells our security team that someone else tried.",
+    ],
+    action: { label: "This wasn’t me: cancel the recovery", url: cancelUrl },
+    footnote: "The cancel link works for 7 days. Nothing changes before the wait ends.",
+  });
+}
+
+export function recoveryCancelledMessage(): EmailContent {
+  return compose("Your account recovery was cancelled", {
+    preheader: "Nothing changed. Our security team has been told.",
+    heading: "Recovery cancelled",
+    paragraphs: [
+      "The recovery request for your account was cancelled, so nothing changes. Our security team has been told that someone may have tried to get in.",
+      "If you can still sign in, now is a good moment to change your password from Shield.",
+    ],
+    footnote:
+      "If you did ask for recovery and cancelled by mistake, start again from the sign-in page.",
+  });
+}
+
+export function recoveryReleasedMessage(url: string): EmailContent {
+  return compose("Your Brawzer account is released", {
+    preheader: "Choose a new password; the lost sign-in methods are gone.",
+    heading: "Welcome back",
+    paragraphs: [
+      "Brawzer’s team released your account. The lost passkeys and authenticator have been removed and every device has been signed out. Choose a new password with the link below, then set up a passkey or an authenticator again from Shield.",
+    ],
+    action: { label: "Choose a new password", url },
+    footnote:
+      "The link works once and expires in 30 minutes. Your files and settings are as you left them.",
+  });
+}
+
 export function adminNoticeMessage(
-  kind: "sign-up" | "subscription" | "report" | "quarantine" | "ticket",
+  kind: "sign-up" | "subscription" | "report" | "quarantine" | "ticket" | "recovery",
   facts: readonly (readonly [string, string])[],
   url: string,
 ): EmailContent {
@@ -702,7 +756,9 @@ export function adminNoticeMessage(
           ? "A page was reported"
           : kind === "ticket"
             ? "A support request came in"
-            : "A file was quarantined";
+            : kind === "recovery"
+              ? "An account recovery needs a look"
+              : "A file was quarantined";
   return compose(`Brawzer: ${title.toLowerCase()}`, {
     preheader: facts.map(([label, value]) => `${label}: ${value}`).join(" · "),
     heading: title,
@@ -715,10 +771,20 @@ export function adminNoticeMessage(
             ? "Someone reported a page from a cloud browser. The report, with its picture if one was attached, is on the Admin page."
             : kind === "ticket"
               ? "Someone asked Brawzer’s team for help from their account. The request is in the console’s Support inbox."
-              : "The malware scan caught a file on its way into a Drive. It is isolated; nothing ran.",
+              : kind === "recovery"
+                ? "An account recovery case changed. Recovery is how accounts get stolen, so look at it in the console."
+                : "The malware scan caught a file on its way into a Drive. It is isolated; nothing ran.",
     ],
     facts,
-    action: { label: kind === "ticket" ? "Open the inbox" : "Open the Admin page", url },
+    action: {
+      label:
+        kind === "ticket"
+          ? "Open the inbox"
+          : kind === "recovery"
+            ? "Open recovery"
+            : "Open the Admin page",
+      url,
+    },
     footnote:
       "You get these because your address is in ADMIN_EMAILS. Set ADMIN_NOTIFICATIONS=none to stop them.",
   });

@@ -245,6 +245,9 @@ export function SignInForm({ screen = false }: { screen?: boolean }) {
           <Link href="/forgot-password" className="lg-link">
             Forgot password?
           </Link>
+          <Link href="/recover" className="lg-link">
+            Lost your passkey or authenticator?
+          </Link>
           <Link href="/create-account" className="lg-link">
             Create an account
           </Link>

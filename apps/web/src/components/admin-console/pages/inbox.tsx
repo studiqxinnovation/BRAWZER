@@ -373,8 +373,9 @@ function Conversation({
         <div className="infobox">
           This looks like someone locked out. Check their sign-in methods before resetting anything
           by hand:{" "}
-          <Link href={`/admin/customers/${ticket.customer.id}` as never}>open the account</Link>.
-          Account recovery with its waiting period comes with 11.2.
+          <Link href={`/admin/customers/${ticket.customer.id}` as never}>open the account</Link>. If
+          they lost every way in, <Link href="/admin/recovery">start account recovery</Link> rather
+          than resetting anything by hand.
         </div>
       )}
       {ticket.category === "drive" && (

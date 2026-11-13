@@ -37,6 +37,9 @@ import {
   type IncidentUpdateRequest,
   publicStatusSchema,
   staffAnnouncementListSchema,
+  recoveryCaseListSchema,
+  type RecoveryCheckRequest,
+  type RecoveryReleaseRequest,
 } from "@brawzer/contracts";
 import { z } from "zod";
 import { apiRequest } from "./client";
@@ -239,3 +242,37 @@ export const declareIncident = (body: DeclareIncidentRequest) =>
 export const postIncidentUpdate = (id: string, body: IncidentUpdateRequest) =>
   apiRequest(path(["incidents", id, "updates"]), { method: "POST", body, schema: incidentSchema });
 export const fetchPublicStatus = () => apiRequest("/status", { schema: publicStatusSchema });
+
+/* ── Account recovery (11.2) ── */
+
+export const fetchRecoveryCases = () =>
+  apiRequest("/console/recovery", { schema: recoveryCaseListSchema });
+export const startRecoveryFor = (customerId: string) =>
+  apiRequest("/console/recovery", {
+    method: "POST",
+    body: { customerId },
+    schema: recoveryCaseListSchema,
+  });
+export const recordRecoveryCheck = (id: string, body: RecoveryCheckRequest) =>
+  apiRequest(path(["recovery", id, "checks"]), {
+    method: "POST",
+    body,
+    schema: recoveryCaseListSchema,
+  });
+export const markRecoveryReviewed = (id: string) =>
+  apiRequest(path(["recovery", id, "reviewed"]), {
+    method: "POST",
+    schema: recoveryCaseListSchema,
+  });
+export const releaseRecovery = (id: string, body: RecoveryReleaseRequest) =>
+  apiRequest(path(["recovery", id, "release"]), {
+    method: "POST",
+    body,
+    schema: recoveryCaseListSchema,
+  });
+export const denyRecovery = (id: string, reason: string) =>
+  apiRequest(path(["recovery", id, "deny"]), {
+    method: "POST",
+    body: { reason },
+    schema: recoveryCaseListSchema,
+  });

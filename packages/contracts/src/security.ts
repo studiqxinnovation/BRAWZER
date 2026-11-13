@@ -62,6 +62,10 @@ export const securityEventTypes = [
   "profile.history_cleared",
   "session.locked",
   "session.unlocked",
+  "recovery.requested",
+  "recovery.cancelled",
+  "recovery.released",
+  "recovery.denied",
 ] as const;
 
 export const securityEventTypeSchema = z.enum(securityEventTypes);

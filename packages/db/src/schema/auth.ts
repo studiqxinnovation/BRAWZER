@@ -124,6 +124,9 @@ export const emailTokenPurpose = pgEnum("email_token_purpose", [
   "undo_email_change",
   /** One-click "stop these emails" from an optional notice's footer. */
   "unsubscribe",
+  /** Account recovery: confirm the request, or cancel it as the real owner. */
+  "recovery_confirm",
+  "recovery_cancel",
 ]);
 
 /** Single-use links sent by email. Only the token's hash is stored. */
@@ -211,6 +214,10 @@ export const securityEventType = pgEnum("security_event_type", [
   "profile.history_cleared",
   "session.locked",
   "session.unlocked",
+  "recovery.requested",
+  "recovery.cancelled",
+  "recovery.released",
+  "recovery.denied",
 ]);
 
 /**

@@ -43,6 +43,10 @@ import {
   resetPasswordMessage,
   type SignedOutScope,
   verifyEmailMessage,
+  recoveryCancelledMessage,
+  recoveryConfirmMessage,
+  recoveryReleasedMessage,
+  recoveryWaitingMessage,
   ticketReceivedMessage,
   ticketReplyMessage,
 } from "./templates.js";
@@ -196,7 +200,7 @@ export class EmailService {
   // ── The project's own notices, to its administrators ─────────────────
 
   notifyAdmins(
-    kind: "sign-up" | "subscription" | "report" | "quarantine" | "ticket",
+    kind: "sign-up" | "subscription" | "report" | "quarantine" | "ticket" | "recovery",
     facts: readonly (readonly [string, string])[],
     idempotencyKey?: string,
   ): void {
@@ -204,7 +208,9 @@ export class EmailService {
     const content = adminNoticeMessage(
       kind,
       facts,
-      this.link(kind === "ticket" ? "/admin/inbox" : "/app/admin"),
+      this.link(
+        kind === "ticket" ? "/admin/inbox" : kind === "recovery" ? "/admin/recovery" : "/app/admin",
+      ),
     );
     for (const admin of this.config.adminEmails) {
       this.dispatch(admin, content, {
@@ -212,6 +218,32 @@ export class EmailService {
         ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${admin}` } : {}),
       });
     }
+  }
+
+  // ── Account recovery ─────────────────────────────────────────────────
+
+  sendRecoveryConfirm(to: string, token: string): void {
+    this.dispatch(to, recoveryConfirmMessage(this.link("/recover/confirm", token)));
+  }
+
+  sendRecoveryWaiting(to: string, releaseAt: Date, cancelToken: string): void {
+    const when = new Intl.DateTimeFormat("en-GB", {
+      dateStyle: "long",
+      timeStyle: "short",
+      timeZone: "UTC",
+    }).format(releaseAt);
+    this.dispatch(
+      to,
+      recoveryWaitingMessage(`${when} UTC`, this.link("/recover/cancel", cancelToken)),
+    );
+  }
+
+  sendRecoveryCancelled(to: string): void {
+    this.dispatch(to, recoveryCancelledMessage());
+  }
+
+  sendRecoveryReleased(to: string, resetToken: string): void {
+    this.dispatch(to, recoveryReleasedMessage(this.link("/reset-password", resetToken)));
   }
 
   // ── Support requests ─────────────────────────────────────────────────

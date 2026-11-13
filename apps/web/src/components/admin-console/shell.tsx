@@ -30,6 +30,7 @@ import {
   Inbox,
   Megaphone,
   TriangleAlert,
+  LifeBuoy,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -63,6 +64,7 @@ const ICONS: Record<string, typeof Gauge> = {
   inbox: Inbox,
   replies: BookOpen,
   carestats: ChartColumn,
+  recovery: LifeBuoy,
   announce: Megaphone,
   incidents: TriangleAlert,
 };

@@ -124,6 +124,14 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
         default:
           return { title: `Signed out ${devices}`, tone: "neutral" };
       }
+    case "recovery.requested":
+      return { title: "Account recovery requested and confirmed by email", tone: "warning" };
+    case "recovery.cancelled":
+      return { title: "Account recovery cancelled", tone: "warning" };
+    case "recovery.released":
+      return { title: "Account released by Brawzer’s team after recovery", tone: "warning" };
+    case "recovery.denied":
+      return { title: "Account recovery denied", tone: "neutral" };
     case "password.reset_requested":
       return { title: "Password reset requested", tone: "neutral" };
     case "password.reset":

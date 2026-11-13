@@ -19,13 +19,13 @@ buttons, nothing on the device.
 
 ## Milestones
 
-| #    | Milestone                                                                                                                              | Status                                                                                                                       |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 11.1 | The console: shell, staff roles and permissions, the audit log, company overview, customers and the customer 360, organisations, team  | Done                                                                                                                         |
-| 11.2 | Customer care: support tickets (a Help app for customers, the inbox for staff), account recovery, announcements, incidents and status  | In progress: tickets, saved replies, support performance, announcements, incidents and `/status` done; account recovery next |
-| 11.3 | Billing: subscriptions, invoices and refunds through Stripe, coupons, finance reports, approvals                                       | Planned                                                                                                                      |
-| 11.4 | Technical: fleet and runtime hosts, live sessions, browser images, the extension catalogue, network, queues and health                 | Planned                                                                                                                      |
-| 11.5 | Security and compliance: threats and sign-ins, blocked addresses, abuse reports and suspension, privacy and legal requests, compliance | Planned                                                                                                                      |
+| #    | Milestone                                                                                                                              | Status  |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 11.1 | The console: shell, staff roles and permissions, the audit log, company overview, customers and the customer 360, organisations, team  | Done    |
+| 11.2 | Customer care: support tickets (a Help app for customers, the inbox for staff), account recovery, announcements, incidents and status  | Done    |
+| 11.3 | Billing: subscriptions, invoices and refunds through Stripe, coupons, finance reports, approvals                                       | Planned |
+| 11.4 | Technical: fleet and runtime hosts, live sessions, browser images, the extension catalogue, network, queues and health                 | Planned |
+| 11.5 | Security and compliance: threats and sign-ins, blocked addresses, abuse reports and suspension, privacy and legal requests, compliance | Planned |
 
 ## The prototype's pages, and what each one is here
 
@@ -95,3 +95,5 @@ buttons, nothing on the device.
 - **Incidents and status** (`incidents`, `incident_updates`): declared with a severity, the parts affected and a first update; updates change the status; resolving records the time and turns the incident’s banner off. The public page `/status` (API `GET /status`, no sign-in) shows each part’s state from the API’s own health checks (database, cache, store, scanner, runtime) plus open public incidents, the last 7 days of resolved ones, and maintenance banners. Nothing personal leaves: no owners, no authors. Permission `incident` (founder, technical); care reads.
 - **Honest omissions**: one region (the installation’s), so no per-region states; no “email affected customers” (banners and the status page carry the word, and email to everyone would be spam); maintenance is an announcement of kind Maintenance, not a scheduler.
 - **Tests**: `apps/api/test/care.integration.test.ts` and `apps/web/e2e/care.spec.ts`.
+- **Account recovery** (`recovery_cases`, token purposes `recovery_confirm` and `recovery_cancel`, events `recovery.*`): from the sign-in page (“Lost your passkey or authenticator?”) or started by staff for a customer who asked another way. The owner confirms from their email, which starts the 48-hour wait and sends a cancel link that works for 7 days (cancelling marks the case “possible takeover” and tells the founders). Brawzer records whether the confirming device had signed in before; staff record invoice, card and identity-document checks, each worth points. One member of staff marks the checks complete; a different one with `recoveryApprove` releases, early only with a reason that the audit log keeps as EARLY. Releasing removes every passkey, turns the authenticator off, signs out every device and emails a 30-minute password link. The answer to “recover this address” never says whether an account exists.
+- **Tests**: `apps/api/test/recovery.integration.test.ts`, `apps/web/e2e/recovery.spec.ts`.

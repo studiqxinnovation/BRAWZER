@@ -58,6 +58,8 @@ export const staffPermissions = {
   twofaReset: ["admin", "care", "security"],
   emailChange: ["admin", "care"],
   recoveryApprove: ["admin", "security"],
+  /** Account recovery cases: start one, record checks, deny. Releasing needs recoveryApprove. */
+  recovery: ["admin", "care", "security"],
   orgPolicy: ["admin", "sales"],
   seats: ["admin", "sales", "billing"],
   sso: ["admin", "sales", "technical"],
@@ -154,6 +156,13 @@ export const adminPages: readonly AdminPage[] = [
     group: "Customer care",
     roles: ["admin", "care"],
     path: "carestats",
+  },
+  {
+    key: "recovery",
+    title: "Account recovery",
+    group: "Customer care",
+    roles: ["admin", "care", "security"],
+    path: "recovery",
   },
   {
     key: "announce",

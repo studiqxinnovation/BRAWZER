@@ -1,4 +1,13 @@
-import { boolean, index, pgEnum, pgTable, primaryKey, text, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  jsonb,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { users } from "./auth.ts";
 import { id, timestamptz } from "./columns.ts";
 
@@ -98,4 +107,62 @@ export const announcementViews = pgTable(
     clickedAt: timestamptz(),
   },
   (table) => [primaryKey({ columns: [table.announcementId, table.userId] })],
+);
+
+/* Must match `recoveryStatuses` in @brawzer/contracts (recovery.ts). */
+export const recoveryStatus = pgEnum("recovery_status", [
+  "verifying",
+  "waiting",
+  "released",
+  "denied",
+]);
+
+/** A check staff recorded on a recovery case: did it pass, who looked, when, and a note. */
+export interface RecoveryCheck {
+  ok: boolean;
+  by: string;
+  at: string;
+  note: string;
+}
+
+/**
+ * Account recovery (Phase 11.2): how someone gets back in after losing every
+ * sign-in method. The person confirms the request from their email, waits 48
+ * hours (and can cancel at any time from the same email), staff record
+ * identity checks, and a second member of staff releases the account, which
+ * removes the lost passkeys and authenticator and sends a password link.
+ */
+export const recoveryCases = pgTable(
+  "recovery_cases",
+  {
+    id: id(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: recoveryStatus().notNull().default("verifying"),
+    /** Staff who started it for the customer, if staff did. */
+    openedById: uuid().references(() => users.id, { onDelete: "set null" }),
+    openedAt: timestamptz().notNull().defaultNow(),
+    requestIp: text(),
+    requestUserAgent: text(),
+    emailConfirmedAt: timestamptz(),
+    /** Whether the confirming device matched one that had signed in before. */
+    deviceKnown: boolean(),
+    /** When the 48-hour wait ends. */
+    releaseAt: timestamptz(),
+    checks: jsonb().$type<Partial<Record<string, RecoveryCheck>>>().notNull().default({}),
+    reviewedById: uuid().references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamptz(),
+    closedById: uuid().references(() => users.id, { onDelete: "set null" }),
+    closedAt: timestamptz(),
+    closedByOwner: boolean().notNull().default(false),
+    closedReason: text(),
+    /** Released before the wait ended, with the approver's reason. */
+    releasedEarly: boolean().notNull().default(false),
+    updatedAt: timestamptz().notNull().defaultNow(),
+  },
+  (table) => [
+    index("recovery_cases_status_idx").on(table.status, table.openedAt),
+    index("recovery_cases_user_idx").on(table.userId),
+  ],
 );
