@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
+import { BillingModule } from "../billing/billing.module.js";
 import { CryptoModule } from "../crypto/crypto.module.js";
 import { DatabaseModule } from "../database/database.module.js";
 import { DriveModule } from "../drive/drive.module.js";
@@ -32,6 +33,7 @@ import { StreamTickets } from "./stream-tickets.js";
     DriveModule,
     EgressModule,
     ProxiesModule,
+    BillingModule,
   ],
   controllers: [BrowserController],
   providers: [OrchestratorService, StreamTickets, BrowserService, StreamGateway],

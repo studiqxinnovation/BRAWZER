@@ -160,6 +160,13 @@ passkey and sign-in challenges a day after they expire; and known devices not
 seen for 90 days.
 A database lock ensures only one API instance runs it at a time.
 
+### Plans, billing and administration (Phase 6, [ADR 0015](adr/0015-plans-and-billing.md))
+
+- **Payment is Stripe's.** Checkout and the billing portal are Stripe-hosted pages that the API creates for the account's own Stripe customer, behind a recent sign-in; card data never reaches Brawzer. Prices are read from Stripe and shown in the signed-in app only; none exist in code or on the public site.
+- **Webhooks are verified and applied once.** Stripe's signature is checked over the raw body with the installation's secret (required whenever a key is set); every event id is recorded before it is applied, so redeliveries do nothing twice. A subscription can only change the account whose checkout created the customer.
+- **Limits follow the plan** from one reader; downgrades delete nothing. The monthly browsing cap is checked when a session starts.
+- **Administrators are configuration.** `ADMIN_EMAILS` grants the role at account creation and at every start; nothing in the API can grant it. Every admin route needs a recent sign-in; the Admin page is a 404 for everyone else. A plan set by hand carries a reason and is recorded in the target account's security history, where the person sees it. Administrators see addresses, plans and usage, nothing more.
+
 ### Drive (Phase 4, [ADR 0011](adr/0011-drive-encryption-and-scanning.md))
 
 - **The object store sees only ciphertext.** Every file has its own random 256-bit key, wrapped by the key service and bound to the account and object. Content is encrypted in 1 MiB AES-256-GCM chunks whose index, file ID and last-chunk flag are authenticated, so chunks can't be dropped, reordered or swapped between files. Downloads verify each chunk before sending it.
@@ -195,7 +202,7 @@ A database lock ensures only one API instance runs it at a time.
 - **CI:** every GitHub Action is pinned to a full commit SHA, the workflow token is read-only, checkout keeps no credentials, and pnpm comes from npm at the pinned version. CI fails on high or critical advisories.
 - **Images:** base images are pinned by digest; the API and web images run as an unprivileged user and are built from the lockfile ([DEPLOYMENT.md](DEPLOYMENT.md)).
 
-## Remaining risks (reviewed in milestones 1.6, 2.8, 4.5, 3.6, 3.9 and 5.5)
+## Remaining risks (reviewed in milestones 1.6, 2.8, 4.5, 3.6, 3.9, 5.5 and 6.5)
 
 The Phase 1 and Phase 2 security reviews ([phase 1](reviews/phase-1.md),
 [phase 2](reviews/phase-2.md)) closed most earlier gaps. These remain,
@@ -216,6 +223,8 @@ deliberately:
 - **Containers share the host kernel.** Chromium's sandbox, the capability drop and the seccomp profile reduce the escape surface; gVisor or micro-VMs are evaluated before production (Phase 7).
 - **The cloud browser can reach any public address.** The egress enforces the address rules, a port policy and a block list of the engine's services, not a per-account allow-list of destinations; that is a product decision for later.
 - **SOCKS4 proxies see names resolved by the egress** because the protocol can't carry a name; SOCKS4a, SOCKS5 and HTTP proxies get names unresolved.
+- **A running browser session isn't cut when the monthly cap is reached**; the cap applies at the next start.
+- **The webhook route has no rate limit of its own**; a flood of forged events costs one signature check each.
 - **The egress sidecar starts as root** to install its firewall, then drops to an unprivileged user before it listens (checked in CI); it holds `CAP_NET_ADMIN`, `SETUID` and `SETGID` until then. It runs no page content.
 - **The Docker socket is root-equivalent.** The API process that starts runtime containers must be trusted on that machine; the orchestrator is split out before production (Phase 7).
 - **One API instance.** Revocation events that cut streams are in-process and each instance runs its own reaper; several instances need shared infrastructure (Phase 7).

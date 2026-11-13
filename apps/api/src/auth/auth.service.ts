@@ -10,6 +10,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { ApiException, rateLimited } from "../common/api-exception.js";
 import type { RequestMeta } from "../common/request-meta.js";
+import { APP_CONFIG } from "../config/config.module.js";
+import type { AppConfig } from "../config/env.js";
 import { DATABASE } from "../database/database.module.js";
 import { createDefaultProfile } from "../profiles/default-profile.js";
 import { EmailService } from "../email/email.js";
@@ -73,6 +75,7 @@ export class AuthService {
     @Inject(BreachedPasswordCheck) private readonly breached: BreachedPasswordCheck,
     @Inject(MfaService) private readonly mfa: MfaService,
     @Inject(NewDeviceService) private readonly newDevices: NewDeviceService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   private async findUserByEmail(email: string): Promise<User | undefined> {
@@ -103,7 +106,11 @@ export class AuthService {
 
     const [created] = await this.database.db
       .insert(schema.users)
-      .values({ email: input.email })
+      .values({
+        email: input.email,
+        // Administrators are named by the installation (ADMIN_EMAILS), never by a request.
+        role: this.config.adminEmails.includes(input.email) ? "admin" : "user",
+      })
       .onConflictDoNothing({ target: schema.users.email })
       .returning();
 

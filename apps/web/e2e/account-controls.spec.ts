@@ -69,6 +69,22 @@ test.describe("account controls", () => {
     ).toBeVisible();
   });
 
+  test("shows the plan, its limits and usage, and says when paid plans aren't set up", async ({
+    page,
+    baseURL,
+  }) => {
+    await signedIn(page, baseURL, "plan");
+    await page.goto("/app/account");
+    const plan = page.getByRole("region", { name: "Plan" });
+    await expect(plan.getByText("Free plan", { exact: true })).toBeVisible();
+    await expect(plan.getByText("1 of 10")).toBeVisible();
+    await expect(plan.getByText("No monthly cap")).toBeVisible();
+    await expect(plan.getByText("Paid plans aren’t set up on this installation yet")).toBeVisible();
+    // No administrator here: no Admin page, no navigation entry.
+    await expect(page.getByRole("link", { name: "Admin" })).toHaveCount(0);
+    expect(await wcagViolations(page)).toEqual([]);
+  });
+
   test("download your data, with a warning on a shared computer", async ({ page, baseURL }) => {
     const email = await signedIn(page, baseURL, "export");
     await page.goto("/app/account");

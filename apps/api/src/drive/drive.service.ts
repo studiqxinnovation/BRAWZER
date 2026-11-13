@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 import {
-  DRIVE_LIMITS,
   type DriveFile,
   type DriveFileSource,
   type DriveFolder,
@@ -37,6 +36,7 @@ import { DATABASE } from "../database/database.module.js";
 import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { type Scanner, ScannerUnavailableError } from "../scanning/clamd.js";
 import { SCANNER } from "../scanning/scanning.module.js";
+import { BillingService } from "../billing/billing.service.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { createDecryptStream, generateFileKey } from "../storage/encrypted-chunks.js";
 import type { ObjectStore } from "../storage/object-store.js";
@@ -133,6 +133,7 @@ export class DriveService {
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
     @Inject(DownloadTickets) private readonly tickets: DownloadTickets,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(BillingService) private readonly billing: BillingService,
   ) {}
 
   // ── Reading ────────────────────────────────────────────────────────────
@@ -163,13 +164,14 @@ export class DriveService {
       .select({ count: sql<number>`count(*)::int` })
       .from(schema.driveFolders)
       .where(eq(schema.driveFolders.userId, userId));
+    const limits = await this.billing.limitsFor(userId);
     return {
       usedBytes: files ? Number(files.bytes) : 0,
-      limitBytes: DRIVE_LIMITS.maxAccountBytes,
+      limitBytes: limits.driveBytes,
       fileCount: files?.count ?? 0,
-      fileLimit: DRIVE_LIMITS.maxFiles,
+      fileLimit: limits.driveFiles,
       folderCount: folders?.count ?? 0,
-      folderLimit: DRIVE_LIMITS.maxFolders,
+      folderLimit: limits.driveFolders,
       maxFileBytes: this.config.drive.maxFileBytes,
     };
   }
@@ -253,11 +255,11 @@ export class DriveService {
         await lockAccount(tx, userId);
         if (input.parentId) await this.findFolder(userId, input.parentId, tx);
         const usage = await this.usage(userId, tx);
-        if (usage.folderCount >= DRIVE_LIMITS.maxFolders) {
+        if (usage.folderCount >= usage.folderLimit) {
           throw new ApiException(
             "limit_reached",
             409,
-            `You can have up to ${String(DRIVE_LIMITS.maxFolders)} folders while Brawzer is in development.`,
+            `Your plan allows ${String(usage.folderLimit)} folders. Delete one, or move to a plan with more.`,
           );
         }
         const [inserted] = await tx
@@ -392,8 +394,8 @@ export class DriveService {
 
     // Cheap checks first, so a full Drive doesn't receive a whole file for nothing.
     const before = await this.usage(userId);
-    if (before.fileCount >= DRIVE_LIMITS.maxFiles) throw this.tooManyFiles();
-    if (before.usedBytes >= DRIVE_LIMITS.maxAccountBytes) throw this.driveFull();
+    if (before.fileCount >= before.fileLimit) throw this.tooManyFiles(before.fileLimit);
+    if (before.usedBytes >= before.limitBytes) throw this.driveFull(before.limitBytes);
 
     const objectId = randomUUID();
     const objectKey = objectKeyFor(userId, objectId);
@@ -438,8 +440,9 @@ export class DriveService {
       row = await this.database.db.transaction(async (tx) => {
         await lockAccount(tx, userId);
         const usage = await this.usage(userId, tx);
-        if (usage.fileCount >= DRIVE_LIMITS.maxFiles) throw this.tooManyFiles();
-        if (usage.usedBytes + stored.size > DRIVE_LIMITS.maxAccountBytes) throw this.driveFull();
+        if (usage.fileCount >= usage.fileLimit) throw this.tooManyFiles(usage.fileLimit);
+        if (usage.usedBytes + stored.size > usage.limitBytes)
+          throw this.driveFull(usage.limitBytes);
         const [inserted] = await tx
           .insert(schema.driveFiles)
           .values({
@@ -532,19 +535,19 @@ export class DriveService {
     return opened;
   }
 
-  private tooManyFiles() {
+  private tooManyFiles(limit: number) {
     return new ApiException(
       "limit_reached",
       409,
-      `Drive can hold up to ${String(DRIVE_LIMITS.maxFiles)} files while Brawzer is in development. Delete some files to make room.`,
+      `Your plan's Drive holds up to ${String(limit)} files. Delete some files to make room, or move to a plan with more.`,
     );
   }
 
-  private driveFull() {
+  private driveFull(limitBytes: number) {
     return new ApiException(
       "limit_reached",
       409,
-      `Drive can hold up to ${formatBytes(DRIVE_LIMITS.maxAccountBytes)} while Brawzer is in development. Delete some files to make room.`,
+      `Your plan's Drive holds up to ${formatBytes(limitBytes)}. Delete some files to make room, or move to a plan with more.`,
     );
   }
 

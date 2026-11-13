@@ -88,6 +88,16 @@ Every action is pinned to a full commit SHA, the token is read-only,
 checkout doesn't keep credentials, and pnpm is installed from npm at the
 version in `package.json`. The workflow passes `actionlint`. The browser tests run against the production build (below), because `next dev` compiles routes on demand and is too slow on a shared runner.
 
+## Plans and billing
+
+Without `STRIPE_SECRET_KEY`, only the free plan exists and the Account page
+says paid plans aren't set up; that is a valid production state. To offer
+plans ([ADR 0015](adr/0015-plans-and-billing.md)):
+
+- Create the Prices in Stripe and describe the plans in `BILLING_PLANS` (code, name, Stripe price id, limits); the amounts shown come from Stripe.
+- Set `STRIPE_SECRET_KEY` (a live key in production) and `STRIPE_WEBHOOK_SECRET`, and point a Stripe webhook at `POST /api/v1/billing/webhook` for `checkout.session.completed` and `customer.subscription.*`. The route takes the raw body; the reverse proxy must pass it through unchanged.
+- Name administrators in `ADMIN_EMAILS`; they get the Admin page after their next start of the API (or at account creation).
+
 ## Drive storage and scanning
 
 Drive needs two services the API can't do without:

@@ -344,6 +344,9 @@ catalogs:
     socks:
       specifier: 2.8.10
       version: 2.8.10
+    stripe:
+      specifier: 23.1.0
+      version: 23.1.0
     tailwind-merge:
       specifier: 3.7.0
       version: 3.7.0
@@ -490,6 +493,9 @@ importers:
       socks:
         specifier: 'catalog:'
         version: 2.8.10
+      stripe:
+        specifier: 'catalog:'
+        version: 23.1.0(@types/node@26.6.6)
       ws:
         specifier: 'catalog:'
         version: 8.22.0
@@ -5180,6 +5186,15 @@ packages:
     resolution: {integrity: sha512-1tB5mhVo7U+ETBKNf92xT4hrQa3pm0MZ0PQvuDnWgAAGHDsfp4lPSpiS6psrSiet87wyGPh9ft6wmhOMQ0hDiw==}
     engines: {node: '>=14.16'}
 
+  stripe@23.1.0:
+    resolution: {integrity: sha512-fVUfMSfTPoukfoV//MUKAx2+YxyKmYaYtnAL9VkfnHfaPNQylFdWZMD+zgUFerI8rjbaiER8Vzj2XEUQ2AhAsQ==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@types/node': '>=20'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+
   strtok3@10.6.3:
     resolution: {integrity: sha512-MD8mENgyXMr2mDaDfzP3RWYDSyYQxIIou7HhCiCJiBekrsoDtUG0id3vYnjDfY9ndOEbazFXe13Qw6u/1AB8ew==}
     engines: {node: '>=18'}
@@ -9809,6 +9824,10 @@ snapshots:
   strip-json-comments@3.1.1: {}
 
   strip-json-comments@5.0.3: {}
+
+  stripe@23.1.0(@types/node@26.6.6):
+    optionalDependencies:
+      '@types/node': 26.6.6
 
   strtok3@10.6.3:
     dependencies:

@@ -26,6 +26,7 @@ import {
   type OnApplicationShutdown,
 } from "@nestjs/common";
 import { SessionService } from "../auth/session.service.js";
+import { BillingService } from "../billing/billing.service.js";
 import { lockAccount } from "../common/account-lock.js";
 import { ApiException } from "../common/api-exception.js";
 import type { RequestMeta } from "../common/request-meta.js";
@@ -84,6 +85,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
     @Inject(ProfilesService) private readonly profiles: ProfilesService,
     @Inject(ProfileDataService) private readonly profileData: ProfileDataService,
     @Inject(ProxiesService) private readonly proxies: ProxiesService,
+    @Inject(BillingService) private readonly billing: BillingService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -180,6 +182,17 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
       });
     }
     const secret = randomBytes(32).toString("base64url");
+    const limits = await this.billing.limitsFor(userId);
+    if (limits.browsingMinutesPerMonth !== null) {
+      const used = await this.billing.browsingMinutesThisMonth(userId);
+      if (used >= limits.browsingMinutesPerMonth) {
+        throw new ApiException(
+          "limit_reached",
+          403,
+          `Your plan's ${String(Math.round(limits.browsingMinutesPerMonth / 60))} browsing hours for this month are used up. They reset on the 1st; a plan with more hours is on the Account page.`,
+        );
+      }
+    }
 
     const row = await this.database.db.transaction(async (tx) => {
       await lockAccount(tx, userId);
@@ -192,7 +205,7 @@ export class BrowserService implements OnApplicationBootstrap, OnApplicationShut
             inArray(schema.browserSessions.status, [...LIVE]),
           ),
         );
-      if (live.length >= BROWSER_LIMITS.liveSessions) {
+      if (live.length >= limits.liveSessions) {
         throw new ApiException("conflict", 409, "A browser session is already running.");
       }
       const [created] = await tx

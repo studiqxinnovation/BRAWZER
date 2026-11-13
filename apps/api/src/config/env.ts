@@ -4,6 +4,7 @@ import path from "node:path";
 import { DRIVE_LIMITS } from "@brawzer/contracts";
 import { homedir } from "node:os";
 import { z } from "zod";
+import { parsePlanDefinitions, type PlanDefinition } from "../billing/plans.js";
 
 const logLevels = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof logLevels)[number];
@@ -134,11 +135,27 @@ export const envSchema = z.object({
     .string()
     .regex(/^[a-z0-9.-]{1,253}$/i, "must be a host name")
     .optional(),
+  /** Stripe (Phase 6, ADR 0015). Without a key, paid plans are unavailable and only the free plan exists. */
+  STRIPE_SECRET_KEY: z.string().min(1).optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
+  /** Tests only: a fake Stripe API. Refused in production. */
+  STRIPE_API_BASE: z.url({ protocol: /^https?$/ }).optional(),
+  /** The paid plans this installation offers, as JSON (see apps/api/src/billing/plans.ts). */
+  BILLING_PLANS: z.string().optional(),
+  /** Comma-separated addresses that are administrators when their accounts exist. */
+  ADMIN_EMAILS: z.string().optional(),
   BUILD_SHA: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/, "must be a git commit SHA")
     .optional(),
 });
+
+export interface BillingConfig {
+  readonly stripeSecretKey: string | null;
+  readonly webhookSecret: string | null;
+  readonly stripeApiBase: string | null;
+  readonly plans: readonly PlanDefinition[];
+}
 
 export interface EmailConfig {
   readonly transport: EmailTransportName;
@@ -236,6 +253,9 @@ export interface AppConfig {
     readonly image: string;
     readonly loopbackHost: string | null;
   };
+  readonly billing: BillingConfig;
+  /** Lower-cased addresses of administrators. */
+  readonly adminEmails: readonly string[];
   readonly proxyTests: {
     readonly runner: "egress" | "inline";
     /** The fixed destination of every proxy test. */
@@ -376,6 +396,29 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
   if (isProduction && values.EGRESS_LOOPBACK_HOST) {
     issues.push("EGRESS_LOOPBACK_HOST: must not be set in production");
   }
+  if (values.STRIPE_SECRET_KEY && !values.STRIPE_WEBHOOK_SECRET) {
+    issues.push("STRIPE_WEBHOOK_SECRET: is required when STRIPE_SECRET_KEY is set");
+  }
+  if (isProduction && values.STRIPE_API_BASE) {
+    issues.push("STRIPE_API_BASE: must not be set in production");
+  }
+  if (
+    isProduction &&
+    values.STRIPE_SECRET_KEY &&
+    !values.STRIPE_SECRET_KEY.startsWith("sk_live_")
+  ) {
+    issues.push("STRIPE_SECRET_KEY: must be a live key in production");
+  }
+  let plans: PlanDefinition[] = [];
+  try {
+    plans = parsePlanDefinitions(values.BILLING_PLANS);
+  } catch (error) {
+    issues.push(error instanceof Error ? error.message : "BILLING_PLANS: invalid");
+  }
+  const adminEmails = (values.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter((email) => email.length > 0);
   if (isProduction && values.STORAGE_ENDPOINT && !values.STORAGE_ENDPOINT.startsWith("https://")) {
     issues.push("STORAGE_ENDPOINT: must use https in production");
   }
@@ -429,6 +472,13 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       image: values.EGRESS_IMAGE,
       loopbackHost: values.EGRESS_LOOPBACK_HOST ?? null,
     }),
+    billing: Object.freeze({
+      stripeSecretKey: values.STRIPE_SECRET_KEY ?? null,
+      webhookSecret: values.STRIPE_WEBHOOK_SECRET ?? null,
+      stripeApiBase: values.STRIPE_API_BASE ?? null,
+      plans,
+    }),
+    adminEmails,
     storage: Object.freeze({
       endpoint: values.STORAGE_ENDPOINT,
       region: values.STORAGE_REGION,

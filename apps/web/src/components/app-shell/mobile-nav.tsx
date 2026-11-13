@@ -8,7 +8,7 @@ import { type ReactNode, useState } from "react";
 import { AppNav } from "./nav";
 
 /** Phones and small windows: the same navigation in a drawer. */
-export function MobileNav({ account }: { account: ReactNode }) {
+export function MobileNav({ account, admin = false }: { account: ReactNode; admin?: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -24,6 +24,7 @@ export function MobileNav({ account }: { account: ReactNode }) {
         <div className="-mx-2">
           <AppNav
             label="Brawzer"
+            admin={admin}
             onNavigate={() => {
               setOpen(false);
             }}

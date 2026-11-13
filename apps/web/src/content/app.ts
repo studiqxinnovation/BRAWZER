@@ -10,6 +10,7 @@ import {
   MonitorSmartphone,
   Puzzle,
   ShieldCheck,
+  ShieldEllipsis,
 } from "lucide-react";
 import type { Route } from "next";
 
@@ -50,6 +51,12 @@ export const appNav: readonly AppNavGroup[] = [
     items: [{ href: "/app/account", label: "Account", icon: CircleUserRound, status: "available" }],
   },
 ];
+
+/** Shown to administrators only (the API decides who those are). */
+export const adminNav: AppNavGroup = {
+  label: "Administration",
+  items: [{ href: "/app/admin", label: "Admin", icon: ShieldEllipsis, status: "available" }],
+};
 
 export interface PlannedModule {
   title: string;
@@ -151,6 +158,20 @@ export function describeEvent(event: Pick<SecurityEvent, "type" | "details">): {
       return { title: "Profile deleted", tone: "neutral" };
     case "profile.data_cleared":
       return { title: "A profile’s browsing data was cleared", tone: "neutral" };
+    case "billing.subscription_started":
+      return { title: `Subscription started: ${details.plan ?? "a paid plan"}`, tone: "neutral" };
+    case "billing.subscription_changed":
+      return {
+        title: `Subscription changed to ${details.plan ?? "another plan"}`,
+        tone: "neutral",
+      };
+    case "billing.subscription_ended":
+      return { title: "Subscription ended; back on the free plan", tone: "neutral" };
+    case "admin.plan_changed":
+      return {
+        title: `Plan set to ${details.plan ?? "another plan"} by Brawzer${details.reason ? `: ${details.reason}` : ""}`,
+        tone: "neutral",
+      };
     case "browser.file_saved":
       return {
         title:

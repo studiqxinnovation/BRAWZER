@@ -9,6 +9,7 @@ import { AppNav } from "@/components/app-shell/nav";
 import { SessionKeeperLoader } from "@/components/app-shell/session-keeper-loader";
 import { SignOutButton } from "@/components/app-shell/sign-out-button";
 import { SkipLink } from "@/components/site/site-chrome";
+import { getSession } from "@/lib/session";
 
 /**
  * Rendered for every request, not prerendered, so each response carries its
@@ -19,6 +20,8 @@ export const instant = false;
 /** The signed-in app: sidebar on wide screens, a top bar with a drawer on small ones. */
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   await connection();
+  const session = await getSession();
+  const admin = session.kind === "ok" && session.data.account.role === "admin";
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
       <SkipLink />
@@ -30,7 +33,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           </Link>
         </div>
         <div className="flex-1 overflow-y-auto px-3 pb-4">
-          <AppNav label="Main" />
+          <AppNav label="Main" admin={admin} />
         </div>
         <div className="flex flex-col gap-1 border-t border-line p-3">
           <Suspense fallback={<AccountPanelSkeleton />}>
@@ -43,6 +46,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       <div className="flex min-w-0 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-surface px-3 lg:hidden">
           <MobileNav
+            admin={admin}
             account={
               <Suspense fallback={<AccountPanelSkeleton />}>
                 <AccountPanel />

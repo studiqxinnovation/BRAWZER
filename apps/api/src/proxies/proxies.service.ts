@@ -1,5 +1,4 @@
 import {
-  MAX_PROXIES,
   type ProxyKind,
   type ProxyProtocol,
   type ProxyRotation,
@@ -34,6 +33,7 @@ import { RATE_LIMITS, RateLimiter } from "../rate-limit/rate-limiter.js";
 import { SecurityEventsService } from "../security-events/security-events.js";
 import { isObviouslyLocal, parseHost } from "@brawzer/net-policy";
 import type { ProxyTarget, ProxyTester } from "@brawzer/proxy-client";
+import { BillingService } from "../billing/billing.service.js";
 import { EgressService } from "../egress/egress.service.js";
 
 const logger = new Logger("Proxies");
@@ -145,6 +145,7 @@ export class ProxiesService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(PROXY_TESTER) private readonly tester: ProxyTester,
     @Inject(EgressService) private readonly egress: EgressService,
+    @Inject(BillingService) private readonly billing: BillingService,
   ) {}
 
   /** A profile's proxy as the egress needs it, credentials included; null without one. */
@@ -245,11 +246,12 @@ export class ProxiesService {
           .select({ count: sql<number>`count(*)::int` })
           .from(schema.proxies)
           .where(eq(schema.proxies.userId, userId));
-        if ((stats?.count ?? 0) >= MAX_PROXIES) {
+        const limit = (await this.billing.limitsFor(userId)).proxies;
+        if ((stats?.count ?? 0) >= limit) {
           throw new ApiException(
             "limit_reached",
             409,
-            `You can have up to ${String(MAX_PROXIES)} proxies while Brawzer is in development.`,
+            `Your plan allows ${String(limit)} proxies. Delete one, or move to a plan with more.`,
           );
         }
         const [inserted] = await tx

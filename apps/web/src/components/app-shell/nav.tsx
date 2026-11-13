@@ -4,20 +4,30 @@ import { cn } from "@brawzer/ui/lib/cn";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useId } from "react";
-import { type AppNavItem, appNav } from "@/content/app";
+import { adminNav, type AppNavItem, appNav } from "@/content/app";
 
 function isActive(item: AppNavItem, pathname: string): boolean {
   return item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
 }
 
 /** The signed-in navigation, shared by the sidebar and the phone menu. */
-export function AppNav({ label, onNavigate }: { label: string; onNavigate?: () => void }) {
+export function AppNav({
+  label,
+  admin = false,
+  onNavigate,
+}: {
+  label: string;
+  /** Adds the administration group. */
+  admin?: boolean;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
   const idPrefix = useId();
+  const groups = admin ? [...appNav, adminNav] : appNav;
 
   return (
     <nav aria-label={label} className="flex flex-col gap-4">
-      {appNav.map((group, index) => {
+      {groups.map((group, index) => {
         const headingId = `${idPrefix}-group-${String(index)}`;
         return (
           <div key={group.label ?? headingId}>

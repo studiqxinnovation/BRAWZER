@@ -12,10 +12,11 @@ import {
 import { NestFactory, Reflector } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
-import { LogController } from "fastify";
+import { type FastifyRequest, LogController } from "fastify";
 import type { Logger } from "pino";
 import { AppModule } from "./app.module.js";
 import { SESSION_AUTH } from "./auth/auth.controller.js";
+import { BillingService } from "./billing/billing.service.js";
 import { StreamGateway } from "./browser/stream-gateway.js";
 import { ApiExceptionFilter, errorBody } from "./common/api-exception.filter.js";
 import { isAllowedOrigin, isUnsafeMethod } from "./common/request-meta.js";
@@ -30,6 +31,9 @@ export interface CreateAppOptions {
 const ONE_MEGABYTE = 1_048_576;
 
 /** Builds a fully configured API application without starting to listen. */
+/** Stripe's webhook, outside Nest's routing so the raw body can be checked. */
+const WEBHOOK_PATH = "/api/v1/billing/webhook";
+
 export async function createApp(
   config: AppConfig,
   options: CreateAppOptions = {},
@@ -51,6 +55,8 @@ export async function createApp(
     {
       logger: new NestPinoLogger(logger),
       abortOnError: false,
+      // Stripe signs the exact bytes it sends: the webhook needs the raw body.
+      rawBody: true,
     },
   );
 
@@ -91,6 +97,14 @@ export async function createApp(
   });
 
   const fastify = app.getHttpAdapter().getInstance();
+
+  const billing = app.get(BillingService);
+  void fastify.post(WEBHOOK_PATH, { config: { rateLimit: false } }, async (request, reply) => {
+    const raw = (request as FastifyRequest & { rawBody?: Buffer }).rawBody?.toString("utf8") ?? "";
+    const signature = request.headers["stripe-signature"];
+    await billing.handleWebhook(raw, Array.isArray(signature) ? signature[0] : signature);
+    return reply.code(204).send();
+  });
 
   // The cloud browser stream: a WebSocket outside Nest's routing, relayed to
   // the session's runtime by the gateway (see browser/stream-gateway.ts).

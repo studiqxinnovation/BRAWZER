@@ -37,6 +37,7 @@
     "pino": "catalog:",
     "qrcode": "catalog:",
     "socks": "catalog:",
+    "stripe": "catalog:",
     "ws": "catalog:",
     "reflect-metadata": "catalog:",
     "rxjs": "catalog:",
