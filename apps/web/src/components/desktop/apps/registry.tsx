@@ -28,6 +28,7 @@ export const appIds = [
   "web-store",
   "passwords",
   "usage",
+  "help",
   "screenshot",
   "send-to-phone",
   "terminal",
@@ -226,6 +227,18 @@ export const apps: Readonly<Record<AppId, AppDefinition>> = {
     height: 600,
     single: true,
     component: dynamic(() => import("./usage"), { loading }),
+  },
+  help: {
+    id: "help",
+    name: "Help",
+    description: "Ask Brawzer’s team for help and follow the replies.",
+    category: "Brawzer",
+    glyph: "life",
+    colour: "indigo",
+    width: 640,
+    height: 620,
+    single: true,
+    component: dynamic(() => import("./help"), { loading }),
   },
   screenshot: {
     id: "screenshot",
@@ -452,6 +465,7 @@ export const launchpadOrder: readonly AppId[] = [
   "templates",
   "web-store",
   "usage",
+  "help",
 ];
 
 /** Always at the Dock's end: Launchpad, then these, then Trash. */

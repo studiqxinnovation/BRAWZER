@@ -22,6 +22,14 @@ import {
   type StaffNoteRequest,
   staffNoteSchema,
   type StaffRole,
+  type SavedReplyRequest,
+  savedReplyListSchema,
+  type StaffReplyRequest,
+  staffTicketListSchema,
+  staffTicketSchema,
+  supportStatsSchema,
+  type TicketView,
+  type UpdateTicketRequest,
 } from "@brawzer/contracts";
 import { z } from "zod";
 import { apiRequest } from "./client";
@@ -144,3 +152,48 @@ export const endCustomerSession = (id: string, sessionId: string, reason: string
   });
 export const deleteCustomer = (id: string, reason: string) =>
   apiRequest<undefined>(path(["customers", id, "delete"]), { method: "POST", body: { reason } });
+
+/* ── Customer care (11.2) ── */
+
+export const fetchInbox = (query: { view?: TicketView; mine?: boolean; q?: string } = {}) => {
+  const params = new URLSearchParams();
+  if (query.view) params.set("view", query.view);
+  if (query.mine) params.set("mine", "true");
+  if (query.q) params.set("q", query.q);
+  const search = params.toString();
+  return apiRequest(`/console/support/tickets${search ? `?${search}` : ""}`, {
+    schema: staffTicketListSchema,
+  });
+};
+export const fetchAssignees = () =>
+  apiRequest("/console/support/assignees", {
+    schema: z.object({ assignees: z.array(z.object({ id: z.uuid(), email: z.string() })) }),
+  });
+export const fetchStaffTicket = (id: string) =>
+  apiRequest(path(["support", "tickets", id]), { schema: staffTicketSchema });
+export const updateTicket = (id: string, body: UpdateTicketRequest) =>
+  apiRequest(path(["support", "tickets", id]), {
+    method: "PATCH",
+    body,
+    schema: staffTicketSchema,
+  });
+export const replyAsStaff = (id: string, body: StaffReplyRequest) =>
+  apiRequest(path(["support", "tickets", id, "messages"]), {
+    method: "POST",
+    body,
+    schema: staffTicketSchema,
+  });
+export const fetchSavedReplies = () =>
+  apiRequest("/console/support/replies", { schema: savedReplyListSchema });
+export const addSavedReply = (body: SavedReplyRequest) =>
+  apiRequest("/console/support/replies", { method: "POST", body, schema: savedReplyListSchema });
+export const editSavedReply = (id: string, body: SavedReplyRequest) =>
+  apiRequest(path(["support", "replies", id]), {
+    method: "PUT",
+    body,
+    schema: savedReplyListSchema,
+  });
+export const deleteSavedReply = (id: string) =>
+  apiRequest(path(["support", "replies", id]), { method: "DELETE", schema: savedReplyListSchema });
+export const fetchSupportStats = () =>
+  apiRequest("/console/support/stats", { schema: supportStatsSchema });

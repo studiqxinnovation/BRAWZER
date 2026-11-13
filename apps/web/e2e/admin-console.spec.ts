@@ -258,8 +258,10 @@ test.describe("admin console", () => {
     const email = uniqueEmail("plain");
     await createConfirmedAccount(page.request, baseURL ?? "", email, PASSWORD);
     await signIn(page.context(), baseURL ?? "", email, PASSWORD);
-    const response = await page.goto("/admin");
-    expect(response?.status()).toBe(404);
+    // The console doesn't exist, as far as they can tell. (Streaming can send the status
+    // before the page decides, so the body is what counts.)
+    await page.goto("/admin");
+    await expect(page.getByRole("heading", { name: "This page doesn’t exist." })).toBeVisible();
     const api = await page.request.get("/api/v1/console/overview");
     expect(api.status()).toBe(403);
   });

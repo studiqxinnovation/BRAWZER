@@ -43,6 +43,8 @@ import {
   resetPasswordMessage,
   type SignedOutScope,
   verifyEmailMessage,
+  ticketReceivedMessage,
+  ticketReplyMessage,
 } from "./templates.js";
 import { createTransport, type EmailTransport, maskEmail } from "./transports.js";
 
@@ -194,18 +196,47 @@ export class EmailService {
   // ── The project's own notices, to its administrators ─────────────────
 
   notifyAdmins(
-    kind: "sign-up" | "subscription" | "report" | "quarantine",
+    kind: "sign-up" | "subscription" | "report" | "quarantine" | "ticket",
     facts: readonly (readonly [string, string])[],
     idempotencyKey?: string,
   ): void {
     if (this.config.email.adminNotifications === "none") return;
-    const content = adminNoticeMessage(kind, facts, this.link("/app/admin"));
+    const content = adminNoticeMessage(
+      kind,
+      facts,
+      this.link(kind === "ticket" ? "/admin/inbox" : "/app/admin"),
+    );
     for (const admin of this.config.adminEmails) {
       this.dispatch(admin, content, {
         category: `admin-${kind}`,
         ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${admin}` } : {}),
       });
     }
+  }
+
+  // ── Support requests ─────────────────────────────────────────────────
+
+  sendTicketReceived(to: string, number: number, subject: string, ticketId: string): void {
+    this.dispatch(
+      to,
+      ticketReceivedMessage(number, subject, this.link(`/app/help?ticket=${ticketId}`)),
+      { category: "support" },
+    );
+  }
+
+  sendTicketReply(
+    to: string,
+    number: number,
+    subject: string,
+    reply: string,
+    solved: boolean,
+    ticketId: string,
+  ): void {
+    this.dispatch(
+      to,
+      ticketReplyMessage(number, subject, reply, solved, this.link(`/app/help?ticket=${ticketId}`)),
+      { category: "support" },
+    );
   }
 
   // ── After sign-up, billing, Drive and teams ──────────────────────────

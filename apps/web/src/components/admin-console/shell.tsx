@@ -26,6 +26,8 @@ import {
   Settings2,
   Users,
   X,
+  BookOpen,
+  Inbox,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -56,6 +58,9 @@ const ICONS: Record<string, typeof Gauge> = {
   customers: Users,
   orgs: Building2,
   audit: List,
+  inbox: Inbox,
+  replies: BookOpen,
+  carestats: ChartColumn,
 };
 
 /** Which page a path is on, for the title and the sidebar. */

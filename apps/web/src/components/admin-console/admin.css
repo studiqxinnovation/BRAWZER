@@ -1008,4 +1008,74 @@
       padding: 0 16px;
     }
   }
+
+  /* ── Support inbox ── */
+  .adm .ticket-layout {
+    display: grid;
+    grid-template-columns: 380px 1fr 280px;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 1250px) {
+    .adm .ticket-layout {
+      grid-template-columns: 340px 1fr;
+    }
+    .adm .ticket-layout .cside {
+      display: none;
+    }
+  }
+  @media (max-width: 860px) {
+    .adm .ticket-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+  .adm .tq {
+    max-height: calc(100vh - 180px);
+    overflow: auto;
+  }
+  .adm .tq .t {
+    border-bottom: 1px solid var(--line);
+  }
+  .adm .tq .t-open {
+    display: block;
+    width: 100%;
+    padding: 12px 16px;
+    border: none;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+  }
+  .adm .tq .t:hover {
+    background: var(--hover);
+  }
+  .adm .tq .t.on {
+    background: var(--bbg);
+  }
+  .adm .tq .t b {
+    font-size: 13.5px;
+    font-weight: 600;
+    display: block;
+    margin: 3px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .adm .msg.me {
+    background: var(--bbg);
+    margin-left: 40px;
+  }
+  .adm .msg.sys {
+    background: none;
+    color: var(--sub);
+    font-size: 12px;
+    text-align: center;
+    padding: 4px 14px;
+  }
+  .adm .announce {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
 }

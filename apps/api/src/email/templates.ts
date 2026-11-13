@@ -650,8 +650,46 @@ export function teamOwnershipTransferredMessage(
 
 // ── For the people who run Brawzer ──────────────────────────────────────
 
+// ── Support requests ────────────────────────────────────────────────────
+
+export function ticketReceivedMessage(number: number, subject: string, url: string): EmailContent {
+  return compose(`We’ve got your request #${String(number)}: ${subject}`, {
+    preheader: "Brawzer’s team will reply by email and in Help.",
+    heading: "We’ve got your request",
+    paragraphs: [
+      `Thanks for writing. Your request is number ${String(number)}, “${subject}”. Someone from Brawzer’s team will reply here and in Help, where you can add anything you forgot.`,
+    ],
+    action: { label: "Open the request", url },
+    footnote: "You get this because you asked Brawzer for help from your account.",
+  });
+}
+
+export function ticketReplyMessage(
+  number: number,
+  subject: string,
+  reply: string,
+  solved: boolean,
+  url: string,
+): EmailContent {
+  return compose(`Re: #${String(number)} ${subject}`, {
+    preheader: reply.slice(0, 120),
+    heading: solved ? "Your request is solved" : "A reply from Brawzer",
+    paragraphs: [
+      ...reply
+        .split(/\n{2,}/)
+        .map((part) => part.trim())
+        .filter(Boolean),
+      solved
+        ? "We’ve marked this request as solved. If it isn’t, reply from Help and it opens again. You can also rate how we did there."
+        : "Reply from Help; this address doesn’t read replies.",
+    ],
+    action: { label: "Open the request", url },
+    footnote: `Request #${String(number)} · ${subject}`,
+  });
+}
+
 export function adminNoticeMessage(
-  kind: "sign-up" | "subscription" | "report" | "quarantine",
+  kind: "sign-up" | "subscription" | "report" | "quarantine" | "ticket",
   facts: readonly (readonly [string, string])[],
   url: string,
 ): EmailContent {
@@ -662,7 +700,9 @@ export function adminNoticeMessage(
         ? "A subscription changed"
         : kind === "report"
           ? "A page was reported"
-          : "A file was quarantined";
+          : kind === "ticket"
+            ? "A support request came in"
+            : "A file was quarantined";
   return compose(`Brawzer: ${title.toLowerCase()}`, {
     preheader: facts.map(([label, value]) => `${label}: ${value}`).join(" · "),
     heading: title,
@@ -673,10 +713,12 @@ export function adminNoticeMessage(
           ? "The payment provider reported a change to an account’s plan."
           : kind === "report"
             ? "Someone reported a page from a cloud browser. The report, with its picture if one was attached, is on the Admin page."
-            : "The malware scan caught a file on its way into a Drive. It is isolated; nothing ran.",
+            : kind === "ticket"
+              ? "Someone asked Brawzer’s team for help from their account. The request is in the console’s Support inbox."
+              : "The malware scan caught a file on its way into a Drive. It is isolated; nothing ran.",
     ],
     facts,
-    action: { label: "Open the Admin page", url },
+    action: { label: kind === "ticket" ? "Open the inbox" : "Open the Admin page", url },
     footnote:
       "You get these because your address is in ADMIN_EMAILS. Set ADMIN_NOTIFICATIONS=none to stop them.",
   });

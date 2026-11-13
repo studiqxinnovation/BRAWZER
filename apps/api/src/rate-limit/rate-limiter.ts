@@ -37,6 +37,8 @@ export const RATE_LIMITS = {
   phonePollsPerIp: { name: "phone-poll-ip", limit: 600, windowSeconds: 15 * 60 },
   phoneApprovalsPerAccount: { name: "phone-approve", limit: 20, windowSeconds: 15 * 60 },
   pageReportsPerAccount: { name: "page-report", limit: 10, windowSeconds: 60 * 60 },
+  supportTicketsPerAccount: { name: "support-ticket", limit: 10, windowSeconds: 60 * 60 },
+  supportMessagesPerAccount: { name: "support-message", limit: 60, windowSeconds: 15 * 60 },
   /** The Assistant and Study Notes: each request costs the operator. */
   assistantPerAccount: { name: "assistant", limit: 60, windowSeconds: 60 * 60 },
   /** Desktop apps' records: sliders and auto-save are debounced in the page; a loop is not. */

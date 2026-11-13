@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   ShieldEllipsis,
   Users,
+  LifeBuoy,
 } from "lucide-react";
 import type { Route } from "next";
 
@@ -55,6 +56,7 @@ export const appNav: readonly AppNavGroup[] = [
     items: [
       { href: "/app/team", label: "Team", icon: Users, status: "available" },
       { href: "/app/account", label: "Account", icon: CircleUserRound, status: "available" },
+      { href: "/app/help", label: "Help", icon: LifeBuoy, status: "available" },
     ],
   },
 ];

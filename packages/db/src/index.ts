@@ -44,6 +44,7 @@ export {
   isNull,
   like,
   lt,
+  lte,
   ne,
   or,
   sql,

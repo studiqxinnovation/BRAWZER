@@ -72,6 +72,10 @@ export const staffPermissions = {
   dsar: ["admin", "security"],
   legal: ["admin", "security"],
   priceEdit: ["admin"],
+  /** Support requests: answer, assign, set priority and status. */
+  tickets: ["admin", "care"],
+  /** Saved replies the team shares. */
+  replies: ["admin", "care"],
   staff: ["admin"],
   announce: ["admin", "care", "technical"],
   coupon: ["admin", "billing"],
@@ -130,6 +134,27 @@ export const adminPages: readonly AdminPage[] = [
     path: "customers",
   },
   { key: "orgs", title: "Organisations", group: "Customers", roles: CUSTOMER_FACING, path: "orgs" },
+  {
+    key: "inbox",
+    title: "Support inbox",
+    group: "Customer care",
+    roles: ["admin", "care"],
+    path: "inbox",
+  },
+  {
+    key: "replies",
+    title: "Saved replies",
+    group: "Customer care",
+    roles: ["admin", "care"],
+    path: "replies",
+  },
+  {
+    key: "carestats",
+    title: "Support performance",
+    group: "Customer care",
+    roles: ["admin", "care"],
+    path: "carestats",
+  },
   {
     key: "audit",
     title: "Audit log",
