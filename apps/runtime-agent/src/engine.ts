@@ -174,6 +174,13 @@ const VIDEO_LEAN_MS = 60_000;
 /** No frame for this long means the page has stopped moving. */
 const STILL_MS = 300;
 /**
+ * A page between two documents (a navigation going through) can't be asked
+ * for its frames: the engine answers "Not attached to an active page". It is
+ * asked again this often, this many times.
+ */
+const CAST_RETRY_MS = 100;
+const CAST_ATTEMPTS = 20;
+/**
  * What counts as the page moving once the viewer shows a picture of it: this
  * many frames within the window. A lone frame now and then (a typed letter,
  * a blinking cursor, a clock) is shown as a picture too, instead of trading
@@ -194,6 +201,13 @@ const FULL_MOTION_FRAMES = 5;
  * video shows the change sooner.
  */
 const PICTURE_LAG_MS = 120;
+/**
+ * A picture waits for video of the page from before it stopped to leave the
+ * encoder (a new one takes a while to start), or the viewer would be left
+ * showing that video over the picture. Looked at this often, for this long.
+ */
+const VIDEO_DRAIN_MS = 30;
+const VIDEO_DRAIN_MAX_MS = 1_500;
 /** Pictures taken again for lone frames come no closer together than this. */
 const SHARP_MIN_INTERVAL_MS = 1_000;
 /** What follows the header when the viewer is told to show a kept picture again: nothing. */
@@ -390,8 +404,19 @@ export class BrowserEngine implements Engine {
   /** A picture is what the viewer shows: a lone frame becomes one too, rather than video. */
   private sharpHold = false;
   private sharpSentAt = 0;
+  /** When the encoder was last given a frame. */
+  private videoPushedAt = 0;
   /** When the last few screencast frames arrived, to tell sustained movement from a lone frame. */
   private frameTimes: number[] = [];
+  /**
+   * The engine's frames are asked for at the page's own size: the page is
+   * moving, and frames as dense as the viewer's screen would slow it down.
+   */
+  private reduced = false;
+  /** Between stopping the frames at one size and starting them at the other: what arrives is neither. */
+  private recasting = false;
+  /** Counts each stop of the frames, so a change of size knows when it was overtaken. */
+  private castTurn = 0;
   /** Until when sharp frames are skipped because the last one was slow to arrive, and how many were. */
   private sharpBackoffUntil = 0;
   private sharpSlowCount = 0;
@@ -692,7 +717,7 @@ export class BrowserEngine implements Engine {
   private videoEncoder(): FrameEncoder | null {
     if (!this.videoWanted) return null;
     const lean = Date.now() < this.videoLeanUntil;
-    const { width, height } = videoSize(this.viewport, lean);
+    const { width, height } = videoSize(this.viewport);
     if (
       this.encoder &&
       (this.encoder.width !== width || this.encoder.height !== height || this.encoder.lean !== lean)
@@ -725,6 +750,12 @@ export class BrowserEngine implements Engine {
       encodeVideoChunk({ seq: this.videoSeq, codec: "vp8", key, width, height }, data),
     );
     this.videoSeq = (this.videoSeq + 1) % 1_000_000_000;
+    if (sent && this.sharpDone) {
+      // It left the encoder after the page's picture went out, and covers it:
+      // the picture is shown again (the viewer still holds it).
+      this.sharpDone = false;
+      this.armStill(0);
+    }
     // The viewer couldn't take it: the frames that follow build on it, so they wait for a key.
     this.videoNeedsKey = !sent;
     if (!sent) this.goLean("a video frame could not be sent");
@@ -1571,8 +1602,8 @@ export class BrowserEngine implements Engine {
               width: viewport.width,
               height: viewport.height,
               // The page is laid out and painted at the viewer's own pixel
-              // ratio: its moving frames and its sharp frame are both taken
-              // as painted (moving ones as far as the encoder keeps up).
+              // ratio: its picture is taken as painted. While it moves its
+              // frames are asked for at its own size instead (see recast).
               deviceScaleFactor: viewport.scale,
               mobile: false,
             },
@@ -1595,33 +1626,81 @@ export class BrowserEngine implements Engine {
       const wanted = this.viewer !== null && tab.id === this.activeId;
       if (wanted && !tab.screencasting) {
         tab.screencasting = true;
-        const cast = this.videoWanted ? frameSize(this.viewport) : this.viewport;
-        await this.cdp
-          .send(
-            "Page.startScreencast",
-            {
-              format: "jpeg",
-              quality: JPEG_QUALITY,
-              // For a viewer that takes video, frames at its own pixel ratio:
-              // the encoder's while the page moves, the picture once it stops.
-              // As pictures only (it can't decode video), at the page's size.
-              maxWidth: cast.width,
-              maxHeight: cast.height,
-              everyNthFrame: 1,
-            },
-            tab.sessionId,
-          )
-          .catch(() => {
-            tab.screencasting = false;
-          });
+        await this.startCast(tab);
       } else if (!wanted && tab.screencasting) {
         await this.stopScreencast(tab);
       }
     }
   }
 
+  /**
+   * Asks a tab for its frames. For a viewer that takes video, at its own
+   * pixel ratio while the page is still or changes a little (each frame is
+   * then its picture), and at the page's own size while it moves (the
+   * encoder's). As pictures only (it can't decode video), at the page's size.
+   */
+  private async startCast(tab: Tab): Promise<void> {
+    const turn = this.castTurn;
+    for (let attempt = 0; attempt < CAST_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, CAST_RETRY_MS));
+        // Stopped, or asked for at another size, meanwhile.
+        if (turn !== this.castTurn || !this.tabs.has(tab.id)) return;
+      }
+      const cast = this.videoWanted && !this.reduced ? frameSize(this.viewport) : this.viewport;
+      const started = await this.cdp
+        .send(
+          "Page.startScreencast",
+          {
+            format: "jpeg",
+            quality: JPEG_QUALITY,
+            maxWidth: cast.width,
+            maxHeight: cast.height,
+            everyNthFrame: 1,
+          },
+          tab.sessionId,
+        )
+        .then(
+          () => true,
+          () => false,
+        );
+      if (started) return;
+      // Whatever kept them from starting, frames of another size are not left running.
+      await this.cdp.send("Page.stopScreencast", {}, tab.sessionId).catch(() => undefined);
+    }
+    if (turn === this.castTurn) tab.screencasting = false;
+  }
+
+  /**
+   * Changes the size the active tab's frames come at: the page's own once it
+   * moves, the viewer's pixel ratio again once it stops. The engine fixes
+   * the size when the frames start, so they are stopped and started; it
+   * sends one at once, which for a page that stopped is its picture.
+   */
+  private async recast(reduced: boolean): Promise<void> {
+    const tab = this.activeTab();
+    if (this.reduced === reduced || this.recasting || !tab?.screencasting) return;
+    const turn = ++this.castTurn;
+    this.reduced = reduced;
+    this.recasting = true;
+    await this.cdp.send("Page.stopScreencast", {}, tab.sessionId).catch(() => undefined);
+    if (turn !== this.castTurn) return;
+    this.recasting = false;
+    if (!reduced) {
+      this.lastFrame = null;
+      this.frameTimes = [];
+      this.sharpHold = true;
+      // Should the engine send no frame, a picture is taken instead.
+      this.armStill();
+    }
+    await this.startCast(tab);
+  }
+
   private async stopScreencast(tab: Tab): Promise<void> {
     tab.screencasting = false;
+    this.castTurn += 1;
+    this.reduced = false;
+    this.recasting = false;
     tab.inFlight.clear();
     if (this.sharpInFlight?.tabId === tab.id) this.sharpInFlight = null;
     this.sharpHold = false;
@@ -1639,7 +1718,11 @@ export class BrowserEngine implements Engine {
    * costing the engine nothing; otherwise one is taken of it.
    */
   private get framesFull(): boolean {
-    return this.videoWanted && framesAreFull(this.viewport, this.options.engineScale ?? 1);
+    return (
+      this.videoWanted &&
+      !this.reduced &&
+      framesAreFull(this.viewport, this.options.engineScale ?? 1)
+    );
   }
 
   private clearStill(): void {
@@ -1660,7 +1743,11 @@ export class BrowserEngine implements Engine {
     const wait = Math.max(delayMs, this.sharpBackoffUntil - Date.now());
     this.stillTimer = setTimeout(() => {
       this.stillTimer = null;
-      if (full) this.sendStill();
+      // The frames are changing size just now: looked at again once they have.
+      if (this.recasting) this.armStill();
+      // A page that was moving stopped: its frames at the viewer's pixel ratio again.
+      else if (this.reduced) void this.recast(false);
+      else if (full) this.sendStill();
       else void this.sendSharp();
     }, wait);
   }
@@ -1684,6 +1771,11 @@ export class BrowserEngine implements Engine {
     );
   }
 
+  /** Whether video of the page from before it stopped is still on its way out of the encoder. */
+  private get videoDraining(): boolean {
+    return (this.encoder?.busy ?? false) && Date.now() - this.videoPushedAt < VIDEO_DRAIN_MAX_MS;
+  }
+
   /** Enough frames close together: the page is moving, not blinking a cursor. */
   private get moving(): boolean {
     const now = Date.now();
@@ -1695,7 +1787,17 @@ export class BrowserEngine implements Engine {
     const viewer = this.viewer;
     const tab = this.activeTab();
     const frame = this.lastFrame;
-    if (!viewer || !tab || !frame || !this.sharpWanted(viewer, tab)) return;
+    if (!viewer || !tab) return;
+    if (this.videoDraining) {
+      this.armStill(VIDEO_DRAIN_MS);
+      return;
+    }
+    if (!frame) {
+      // The engine sent no frame of the page as it is: a picture is taken of it.
+      void this.sendSharp();
+      return;
+    }
+    if (!this.sharpWanted(viewer, tab)) return;
     const wait = this.pictureNotBefore - Date.now();
     if (wait > 0) {
       this.armStill(wait);
@@ -1744,6 +1846,10 @@ export class BrowserEngine implements Engine {
     const viewer = this.viewer;
     const tab = this.activeTab();
     if (!viewer || !tab || !this.sharpWanted(viewer, tab)) return;
+    if (this.videoDraining) {
+      this.armStill(VIDEO_DRAIN_MS);
+      return;
+    }
     const { width, height, scale } = this.viewport;
     let shot: { data: string };
     try {
@@ -1808,6 +1914,11 @@ export class BrowserEngine implements Engine {
       void this.ack(tab, frame.sessionId);
       return;
     }
+    if (this.recasting) {
+      // The frames are changing size: this one is of the size being left.
+      void this.ack(tab, frame.sessionId);
+      return;
+    }
     const image = Buffer.from(frame.data, "base64");
     if (this.lastFrame?.equals(image)) {
       // The engine drew again and nothing changed (taking a picture makes it):
@@ -1822,24 +1933,32 @@ export class BrowserEngine implements Engine {
     this.frameTimes = this.frameTimes.filter((at) => now - at < MOTION_WINDOW_MS);
     this.frameTimes.push(now);
     const full = this.framesFull;
+    // A frame by itself is a picture whatever it weighs (it waits its turn);
+    // a few close together are, while the pictures' share of the link keeps up.
     const lone = full
-      ? this.frameTimes.length < FULL_MOTION_FRAMES && this.pictureNotBefore - now <= PICTURE_LAG_MS
+      ? this.frameTimes.length === 1 ||
+        (this.frameTimes.length < FULL_MOTION_FRAMES &&
+          this.pictureNotBefore - now <= PICTURE_LAG_MS)
       : this.viewport.scale > 1 && this.frameTimes.length < MOTION_FRAMES;
-    if (this.sharpHold && lone && now >= this.sharpBackoffUntil) {
-      // A lone frame while a picture is up (a typed letter, a blinking cursor,
-      // a clock tick): the viewer keeps a picture rather than getting video
-      // and then a picture, over and over. The frame itself when it is as
-      // dense as the viewer's screen, at once; otherwise a fresh one, shortly.
+    if ((this.sharpHold || full) && lone && now >= this.sharpBackoffUntil) {
+      // A lone frame (a page's first, a typed letter, a blinking cursor, a
+      // clock tick): the viewer gets or keeps a picture rather than video and
+      // then a picture, over and over. The frame itself when it is as dense
+      // as the viewer's screen, at once; otherwise, while a picture is up, a
+      // fresh one, shortly.
       void this.ack(tab, frame.sessionId);
       this.armStill(full ? 0 : Math.max(STILL_MS, this.sharpSentAt + SHARP_MIN_INTERVAL_MS - now));
       return;
     }
     this.sharpHold = false;
+    // The page is moving: from here its frames come at its own size, which
+    // the engine and the encoder keep up with.
+    if (full && this.viewport.scale > 1) void this.recast(true);
     const encoder = this.videoEncoder();
     if (encoder) {
       // As video: the encoder takes the picture (or skips it when behind) and the
       // engine is freed at once; the viewer never acknowledges video.
-      encoder.push(image);
+      if (encoder.push(image)) this.videoPushedAt = now;
       void this.ack(tab, frame.sessionId);
       this.armStill();
       return;

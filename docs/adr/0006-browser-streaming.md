@@ -207,3 +207,56 @@ Session containers take their processors and memory from the API's settings
 (`BROWSER_SESSION_CPUS`, `BROWSER_SESSION_MEMORY_MB`), which the deploy
 derives from the size of the runtime host; the encoder is told how many
 threads it has (`BRAWZER_CPUS`).
+
+## Addendum (2026-11-13): a moving page at its own size
+
+Deployed, the addendum above gave a still page its sharp picture at once
+and a blinking cursor for nothing (the new tab page at 2560x1600 sent only
+repeats). A moving page it made worse: 5 to 6 video frames a second at a
+pixel ratio of 2, where the upscaled video before it had about 10.
+
+Measured on the production runtime host (4 shared processors, no hardware
+virtualisation, gVisor), a 1280x800 page of text scrolling, 2 processors
+for the session, frames a second:
+
+| Engine launched at | Frames only | Frames and video |
+| ------------------ | ----------- | ---------------- |
+| 1x                 | 25          | 17 (1x video)    |
+| 2x, frames at 2x   | 9           | 4 (2x video)     |
+| 2x, frames at 1x   | 17          | 13 (1x video)    |
+
+- The cost is the engine's own: drawing in software, reading the frame
+  back and making a JPEG of four times the pixels (433 kB a frame). The
+  same engine on a laptop gives 28 a second at 2x.
+- It is not gVisor (runc: 13 and 5), not the number of processors (4
+  instead of 2: 14 and 7), not the JPEG quality, the raster threads or
+  LCD text. Faster processors would help; more of these do not.
+- An engine launched at 2x and asked for frames no larger than the page's
+  CSS size gives them at nearly the speed of one launched at 1x.
+
+So the two are no longer the same size:
+
+- While the page is still or changes a little, its frames are asked for at
+  the viewer's pixel ratio, as above: each is a sharp picture.
+- Once it moves (the fifth frame in 700 ms, or the pictures' budget spent),
+  the frames are asked for at the page's own size and encoded at that size.
+  The engine fixes the size when the frames start ("Screencast is already
+  active" otherwise), so they are stopped and started; the first frame of
+  the new size comes within about 30 ms, and ffmpeg takes pictures of both
+  sizes in one stream.
+- 300 ms after the last frame they are stopped and started at the viewer's
+  ratio again. The engine sends one frame at once, and that frame is the
+  page's picture. Should none come, a screenshot is taken.
+- A page between two documents (a navigation going through) answers "Not
+  attached to an active page" to the start; it is asked again every 100 ms.
+- A picture waits until the encoder has given back everything it was
+  given (it counts pictures in and frames out; a new ffmpeg takes a few
+  hundred milliseconds to start). Otherwise video of the page from before
+  it stopped arrived after the picture and stayed on the screen. Video that
+  still gets out late is followed by the picture again.
+- A page's first frame is a picture too, not video and then a picture.
+
+What it costs: while a page moves on a dense screen it is as sharp as on an
+ordinary one, and sharp at the screen's ratio a third of a second after it
+stops. Video at the screen's ratio needs processors that draw four times
+the pixels fast enough, which this host's are not.

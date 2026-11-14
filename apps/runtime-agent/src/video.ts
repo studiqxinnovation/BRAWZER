@@ -5,11 +5,6 @@ import { log } from "./log.ts";
 /** Where Debian puts ffmpeg; without it the stream stays pictures only. */
 const FFMPEG = "/usr/bin/ffmpeg";
 /**
- * The most pixels a moving page is encoded at: beyond a 2560×1440 screen's
- * worth the encoder would fall behind the page, and smooth matters more.
- */
-const VIDEO_MAX_PIXELS = 2560 * 1440;
-/**
  * The most pixels the engine's frames of the page are taken at. Up to here a
  * frame is as dense as the viewer's screen, so the last one of a page that
  * stopped is itself its picture; beyond, taking them would slow the page down.
@@ -73,22 +68,20 @@ function fittedScale(
 }
 
 /**
- * The size a moving page is encoded at: the viewer's own pixel ratio, so a
- * page looks the same moving as still, down to what the encoder can keep up
- * with; the page's own size (scale 1) for a connection that fell behind.
+ * The size a moving page is drawn and encoded at: its own, whatever the
+ * viewer's pixel ratio. Measured on the production host, an engine drawing
+ * a scrolling page at twice the density gives a third of the frames, and
+ * the encoder halves what is left: smooth matters more while a page moves,
+ * and it has its picture at the screen's ratio the moment it stops.
  */
-export function videoSize(
-  viewport: { width: number; height: number; scale: number },
-  lean: boolean,
-): { width: number; height: number } {
-  const scale = lean ? 1 : fittedScale(viewport, VIDEO_MAX_PIXELS);
-  return {
-    width: Math.round(viewport.width * scale),
-    height: Math.round(viewport.height * scale),
-  };
+export function videoSize(viewport: { width: number; height: number }): {
+  width: number;
+  height: number;
+} {
+  return { width: viewport.width, height: viewport.height };
 }
 
-/** The size the engine's frames of the page are asked for at: the viewer's pixel ratio, within bounds. */
+/** The size the engine's frames of a page that isn't moving are asked for at: the viewer's pixel ratio, within bounds. */
 export function frameSize(viewport: { width: number; height: number; scale: number }): {
   width: number;
   height: number;
@@ -208,6 +201,9 @@ export class FrameEncoder {
   private reported = false;
   private last: Buffer | null = null;
   private flush: NodeJS.Timeout | null = null;
+  /** Pictures given to ffmpeg, and frames it has given back. */
+  private written = 0;
+  private emitted = 0;
 
   constructor(
     readonly width: number,
@@ -324,7 +320,17 @@ export class FrameEncoder {
     const stdin = this.child?.stdin;
     if (!stdin || !this.writable || stdin.destroyed) return false;
     this.writable = stdin.write(jpeg);
+    this.written += 1;
     return true;
+  }
+
+  /**
+   * Whether video of a picture it was given is still to come out. ffmpeg
+   * hands a picture on as the next begins, so the last one written (the
+   * repeat that flushes) is always still inside.
+   */
+  get busy(): boolean {
+    return this.child !== null && (this.flush !== null || this.written - this.emitted > 1);
   }
 
   stop(): void {
@@ -363,6 +369,7 @@ export class FrameEncoder {
         this.reported = true;
         log("info", "video encoder producing", { bytes: frame.length, key });
       }
+      this.emitted += 1;
       this.onFrame({ key, data: frame });
     }
   }

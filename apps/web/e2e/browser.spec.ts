@@ -903,6 +903,26 @@ test.describe("browser on a dense screen", () => {
       .poll(async () => Number(await viewport.getAttribute("data-frames")))
       .toBeGreaterThan(before);
     await sharp();
+    // A long scroll is video at the page's own size, which the engine keeps up
+    // with; once it stops the page is a picture at twice the density again.
+    await address.fill("http://testsite.invalid/long");
+    await address.press("Enter");
+    await expect(tab(page, "Long page")).toBeVisible({ timeout: 30_000 });
+    await sharp();
+    await viewport.locator("canvas").hover({ position: { x: 400, y: 300 } });
+    const moving: { shown: string | null; density: number }[] = [];
+    for (let step = 0; step < 30; step += 1) {
+      await page.mouse.wheel(0, 120);
+      await page.waitForTimeout(50);
+      moving.push({
+        shown: await viewport.getAttribute("data-shown"),
+        density: await density(page),
+      });
+    }
+    const video = moving.filter((sample) => sample.shown === "video");
+    expect(video.length).toBeGreaterThan(0);
+    expect(Math.min(...video.map((sample) => sample.density))).toBeCloseTo(1, 1);
+    await sharp();
 
     // Firefox is captured the same way.
     await page.getByRole("button", { name: /^Bee Browser · .*Switch browser$/ }).click();

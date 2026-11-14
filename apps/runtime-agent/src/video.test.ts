@@ -11,32 +11,9 @@ import {
 } from "./video.ts";
 
 describe("the size a moving page is encoded at", () => {
-  it("is the viewer's own pixel ratio, so moving looks like still", () => {
-    expect(videoSize({ width: 1180, height: 596, scale: 2 }, false)).toEqual({
-      width: 2360,
-      height: 1192,
-    });
-    expect(videoSize({ width: 1016, height: 512, scale: 1 }, false)).toEqual({
-      width: 1016,
-      height: 512,
-    });
-  });
-
-  it("stops at what the encoder keeps up with, and never goes under the page's own size", () => {
-    const big = videoSize({ width: 1920, height: 1080, scale: 3 }, false);
-    expect(big.width * big.height).toBeLessThanOrEqual(2560 * 1440 + 2560);
-    expect(big.width / big.height).toBeCloseTo(1920 / 1080, 2);
-    expect(videoSize({ width: 3840, height: 2160, scale: 2 }, false)).toEqual({
-      width: 3840,
-      height: 2160,
-    });
-  });
-
-  it("is the page's own size for a connection that fell behind", () => {
-    expect(videoSize({ width: 1180, height: 596, scale: 2 }, true)).toEqual({
-      width: 1180,
-      height: 596,
-    });
+  it("is the page's own, whatever the viewer's pixel ratio", () => {
+    expect(videoSize({ width: 1180, height: 596 })).toEqual({ width: 1180, height: 596 });
+    expect(videoSize({ width: 1920, height: 1080 })).toEqual({ width: 1920, height: 1080 });
   });
 });
 
