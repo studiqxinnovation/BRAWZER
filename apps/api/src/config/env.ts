@@ -141,6 +141,13 @@ export const envSchema = z.object({
   /** Live cloud browser sessions across the installation; starting more waits for one to end. */
   BROWSER_MAX_LIVE_SESSIONS: z.coerce.number().int().min(1).max(100_000).default(200),
   /**
+   * What one session's runtime container may use at most: processors (the
+   * engine paints and the encoder works side by side, so a dense moving page
+   * wants four) and memory. A ceiling, not a reservation.
+   */
+  BROWSER_SESSION_CPUS: z.coerce.number().int().min(1).max(32).default(2),
+  BROWSER_SESSION_MEMORY_MB: z.coerce.number().int().min(1024).max(65_536).default(2048),
+  /**
    * The engines this installation offers, comma-separated: bee, chrome,
    * firefox, edge, chromium. Leave Chrome or Edge out where their makers'
    * terms for hosting them aren't met. Edge runs only where the runtime image
@@ -331,6 +338,9 @@ export interface AppConfig {
     readonly hosts: readonly RuntimeHostConfig[];
     readonly containerRuntime: string | null;
     readonly maxLiveSessions: number;
+    /** The most one session's runtime container may use. */
+    readonly sessionCpus: number;
+    readonly sessionMemoryMb: number;
     readonly warmPool: number;
     /** The engines offered here (`BROWSER_ENGINES`). */
     readonly engines: readonly BrowserEngine[];
@@ -663,6 +673,8 @@ export function parseConfig(env: NodeJS.ProcessEnv, version = readPackageVersion
       hosts: Object.freeze(hosts),
       containerRuntime: values.BROWSER_CONTAINER_RUNTIME ?? null,
       maxLiveSessions: values.BROWSER_MAX_LIVE_SESSIONS,
+      sessionCpus: values.BROWSER_SESSION_CPUS,
+      sessionMemoryMb: values.BROWSER_SESSION_MEMORY_MB,
       warmPool: values.BROWSER_WARM_POOL,
       engines: Object.freeze(values.BROWSER_ENGINES),
       region: values.BROWSER_REGION ?? null,

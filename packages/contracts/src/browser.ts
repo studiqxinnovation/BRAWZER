@@ -129,6 +129,11 @@ export const startBrowserSessionRequestSchema = z.object({
   resume: z.boolean().default(false),
   /** For a temporary session (no profile): which browser. A profile brings its own. */
   engine: browserEngineSchema.optional(),
+  /**
+   * The pixel ratio of the screen that opens the session. The engine draws
+   * its pages at it, so what it sends is as sharp as that screen; 1 if not said.
+   */
+  scale: z.number().min(1).max(BROWSER_LIMITS.viewport.maxScale).optional(),
 });
 
 /** Where and how to open the stream. The ticket is sent as the first message, never in the URL. */

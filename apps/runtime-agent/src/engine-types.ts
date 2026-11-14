@@ -39,6 +39,11 @@ export interface EngineOptions {
   fetchImage: (url: string, maxBytes: number) => Promise<{ type: string; bytes: Buffer } | null>;
   /** Whether a moving page may be sent as video (the container has an encoder). */
   video: boolean;
+  /**
+   * The pixel ratio the engine composes its pages at, when it was started at
+   * one (Chromium): its frames are that dense. Not said: 1.
+   */
+  engineScale?: number;
   /** Catalogue extensions to install for this session, with where their builds are in the image. */
   extensions: readonly InstallableExtension[];
   /**
@@ -99,7 +104,13 @@ export class RefusalLog {
 export interface Engine {
   readonly isReady: boolean;
   start(): Promise<void>;
-  attachViewer(viewer: Viewer, viewport: Viewport, codecs: readonly VideoCodec[]): void;
+  /** `repeats`: the viewer keeps the last pictures marked for it and can show one again. */
+  attachViewer(
+    viewer: Viewer,
+    viewport: Viewport,
+    codecs: readonly VideoCodec[],
+    repeats?: boolean,
+  ): void;
   detachViewer(viewer: Viewer): void;
   handle(message: RelayMessage): Promise<void>;
   receiveChunk(header: TransferChunkHeader, data: Uint8Array): Promise<void>;

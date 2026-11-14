@@ -26,6 +26,8 @@ wait_for_server() {
 # The CLI prints JSON over several lines; flatten before matching.
 flat() { tr -d '\n' | tr -s ' '; }
 json_field() { flat | sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" | head -n 1; }
+# A number's digits: the CLI prints durations such as a token's period unquoted.
+json_number() { flat | sed -n "s/.*\"$1\": *\([0-9][0-9]*\).*/\1/p" | head -n 1; }
 json_array_first() { flat | sed -n "s/.*\"$1\": *\[ *\"\([^\"]*\)\".*/\1/p" | head -n 1; }
 
 unseal_key() { json_array_first unseal_keys_b64 < "$KEYS/init.json"; }
@@ -91,9 +93,12 @@ reconcile() {
   umask 077
   export BAO_TOKEN="$(root_token)"
   write_policy >/dev/null
-  period="$(BAO_TOKEN="$(cat "$KEYS/api-token")" bao token lookup -format=json 2>/dev/null | json_field period)"
+  # The period is a number of seconds (0, or absent, on a token that isn't
+  # periodic). Read as a string it never matched, and every start of this
+  # keeper minted another token.
+  period="$(BAO_TOKEN="$(cat "$KEYS/api-token")" bao token lookup -format=json 2>/dev/null | json_number period)"
   case "$period" in
-    "" | 0 | 0s)
+    "" | 0)
       log "API token is not periodic (it would expire); replacing it"
       create_api_token
       log "API token replaced: deploy again so the API uses the new one"

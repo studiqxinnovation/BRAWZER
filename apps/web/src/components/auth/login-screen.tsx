@@ -51,9 +51,18 @@ export function LoginScreen({ children, notice }: { children: ReactNode; notice?
       <div className="lg-scroll">
         <Clock />
         <div className="lg-me">
-          <span className="lg-av" aria-hidden="true">
+          {/* The screen covers the layout's header, so the mark is the way back to the home page.
+              A plain link, not next/link: leaving the strict-policy pages must be a full load
+              (see content/site.ts), and a client-side move keeps this page's DOM alongside. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- a full load, on purpose */}
+          <a
+            href="/"
+            className="lg-av"
+            aria-label="Brawzer home"
+            title="Back to the Brawzer home page"
+          >
             <Mark size={44} />
-          </span>
+          </a>
           <p className="lg-welcome" aria-live="polite" />
           {notice}
           {children}

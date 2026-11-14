@@ -52,6 +52,37 @@ const PACK_TIMEOUT_MS = 120_000;
  * Chromium's own sandbox working, memory, CPU and process limits, and a
  * network of its own where containers can't see each other.
  */
+/**
+ * Whether the egress sidecar still answers once the runtime runs beside it.
+ * A container runtime with a network stack of its own (gVisor without
+ * `--network=host`) takes the shared namespace's interface when the runtime
+ * starts. The agent stays reachable, so the session looks healthy and its
+ * picture streams, but the egress is cut off and no page can ever load.
+ * A session that failed to start is honest; that one is not.
+ */
+export async function egressAnswers(
+  host: Pick<RuntimeHost, "docker" | "agentHost">,
+  egressId: string,
+  attempts = 3,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 300));
+    const state = await host.docker.inspect(egressId);
+    if (!state?.running) return false;
+    const hostPort = state.hostPorts[EGRESS_HEALTH_PORT];
+    if (!hostPort) continue;
+    try {
+      const response = await fetch(`http://${host.agentHost}:${String(hostPort)}/healthz`, {
+        signal: AbortSignal.timeout(1_500),
+      });
+      if (response.ok) return true;
+    } catch {
+      // Unreachable: tried again, then reported.
+    }
+  }
+  return false;
+}
+
 @Injectable()
 export class OrchestratorService {
   constructor(
@@ -89,10 +120,12 @@ export class OrchestratorService {
       siteRules?: SiteRulesForEgress | null;
       extensions?: readonly string[];
       browserAccount?: boolean;
+      /** The pixel ratio the engine draws at: that of the screen opening the session. */
+      scale?: number;
     } = { privateViaUpstream: false },
   ): Promise<StartedRuntime> {
     const pair = await this.createPair(host, sessionId, secret, upstream, engine, options);
-    return this.launch(pair, secret, profileData);
+    return this.launch(pair, secret, profileData, options.scale);
   }
 
   /**
@@ -161,6 +194,7 @@ export class OrchestratorService {
           `BRAWZER_MAX_FILE_BYTES=${String(this.config.drive.maxFileBytes)}`,
           `BRAWZER_EGRESS_PROXY=127.0.0.1:${String(EGRESS_PROXY_PORT)}`,
           `BRAWZER_ENGINE=${engine}`,
+          `BRAWZER_CPUS=${String(browser.sessionCpus)}`,
           ...(options.privateViaUpstream ? ["BRAWZER_PRIVATE_VIA_EGRESS=true"] : []),
           ...(options.browserAccount ? ["BRAWZER_BROWSER_ACCOUNT=true"] : []),
           ...(options.extensions?.length
@@ -173,8 +207,8 @@ export class OrchestratorService {
         publishHostIp: host.agentBind,
         network: `container:${egressId}`,
         seccompProfile,
-        memoryBytes: 2048 * MiB,
-        cpus: 2,
+        memoryBytes: browser.sessionMemoryMb * MiB,
+        cpus: browser.sessionCpus,
         pidsLimit: 1024,
         shmBytes: 512 * MiB,
         tmpfsBytes: 1024 * MiB,
@@ -183,6 +217,13 @@ export class OrchestratorService {
       });
       await docker.startContainer(containerId);
       const agentAddress = await this.waitUntilReady(host, containerId, egressId);
+      if (!(await egressAnswers(host, egressId))) {
+        throw new Error(
+          "The egress sidecar stopped answering once the runtime started, so the session could not load any page. " +
+            "The container runtime took the shared network namespace: on a gVisor host, runsc must be registered " +
+            "with --network=host (infra/production/runtime-host/README.md)",
+        );
+      }
       return { host: host.name, sessionId, egressId, containerId, agentAddress, engine };
     } catch (error) {
       if (containerId) await this.stop(host, containerId);
@@ -196,6 +237,11 @@ export class OrchestratorService {
     pair: RuntimePair,
     secret: string,
     profileData: Readable | null = null,
+    /**
+     * The pixel ratio the engine draws at. It is said here, at the start, not
+     * when the pair is made: a warm pair waits before anyone's screen is known.
+     */
+    scale = 1,
   ): Promise<StartedRuntime> {
     const { containerId, agentAddress, egressId } = pair;
     try {
@@ -213,7 +259,8 @@ export class OrchestratorService {
       }
       const started = await fetch(`http://${agentAddress}/start`, {
         method: "POST",
-        headers,
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ scale }),
         signal: AbortSignal.timeout(BROWSER_LIMITS.startTimeoutSeconds * 1000),
       });
       if (!started.ok) {

@@ -180,7 +180,7 @@ const lifecycle: AgentLifecycle = {
   state: () => state,
   engine: () => engine,
   restore: (archive: Readable) => restoreProfile(config.scratchDir, archive),
-  async start() {
+  async start(scale: number) {
     state = "starting";
     // The engines' policies for this session: written first, or no engine starts (ADR 0021).
     writePolicies({ scratchDir: config.scratchDir, browserAccount: config.browserAccount });
@@ -231,6 +231,7 @@ const lifecycle: AgentLifecycle = {
         extraEnv: soundReady ? audio.env() : {},
         proxyPort: config.proxyPort,
         viewport: config.initialViewport,
+        scale,
         startUrl: BEE_HOME_URL,
         trustedSpkiHashes,
         browserAccount: config.browserAccount,
@@ -238,6 +239,7 @@ const lifecycle: AgentLifecycle = {
       started = new BrowserEngine(launched.cdp, config.initialViewport, {
         ...engineOptions,
         brand: config.engine,
+        engineScale: scale,
       });
       chromium = launched;
       launched.cdp.onClose(onGone);
@@ -250,7 +252,7 @@ const lifecycle: AgentLifecycle = {
       throw error;
     }
     state = "running";
-    log("info", "engine ready", { engine: config.engine });
+    log("info", "engine ready", { engine: config.engine, scale });
   },
   async pack() {
     state = "stopped";

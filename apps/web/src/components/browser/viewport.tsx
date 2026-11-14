@@ -187,6 +187,8 @@ export function BrowserViewport({
   const [frames, setFrames] = useState(0);
   /** Set once video frames arrive: the moving page comes as video, the still page as a picture. */
   const [video, setVideo] = useState<string | null>(null);
+  /** What was drawn last: a picture (the still page, sharp) or a video frame (the moving page). */
+  const [shown, setShown] = useState<"picture" | "video" | null>(null);
   const pending = useRef<{ header: FrameHeader; image: Blob } | null>(null);
   const drawing = useRef(false);
   const readyRef = useRef(false);
@@ -221,6 +223,7 @@ export function BrowserViewport({
         bitmap.close();
         drawing.current = false;
         setFrames((count) => count + 1);
+        setShown("picture");
         if (!readyRef.current) {
           readyRef.current = true;
           onReady?.();
@@ -265,7 +268,8 @@ export function BrowserViewport({
           frame.close();
           return;
         }
-        // A video frame is at scale 1: the page's own size on screen.
+        // A video frame may be denser than the page (the screen's pixel ratio): the
+        // canvas takes the frame's size, the page keeps its own size on screen.
         if (canvas.width !== frame.codedWidth || canvas.height !== frame.codedHeight) {
           canvas.width = frame.codedWidth;
           canvas.height = frame.codedHeight;
@@ -279,6 +283,7 @@ export function BrowserViewport({
         frame.close();
         setFrames((count) => count + 1);
         setVideo((current) => current ?? header.codec);
+        setShown("video");
         if (!readyRef.current) {
           readyRef.current = true;
           onReady?.();
@@ -576,6 +581,7 @@ export function BrowserViewport({
       tabIndex={0}
       data-frames={frames}
       data-video={video ?? undefined}
+      data-shown={shown ?? undefined}
       data-testid="browser-viewport"
       className={cn(
         "relative flex min-h-0 flex-1 touch-none items-start justify-center overflow-hidden bg-[#fff] outline-none",

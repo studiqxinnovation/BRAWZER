@@ -368,6 +368,8 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
     meta: RequestMeta,
     resume = false,
     requestedEngine?: BrowserEngine,
+    /** The pixel ratio of the screen opening the session: the engine draws at it. */
+    scale = 1,
   ): Promise<BrowserSession> {
     const userId = auth.user.id;
     const profile = profileId ? await this.profiles.find(userId, profileId) : undefined;
@@ -529,7 +531,7 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
       // and browses through its proxy (ADR 0014).
       const restore = profile?.keepData ? await this.profileData.open(profile) : null;
       started = pair
-        ? await this.orchestrator.launch(pair, pair.secret, restore)
+        ? await this.orchestrator.launch(pair, pair.secret, restore, scale)
         : await this.orchestrator.start(
             this.hosts.byName(row.runtimeHost),
             row.id,
@@ -543,6 +545,7 @@ export class BrowserService implements OnModuleInit, OnApplicationBootstrap, OnA
               siteRules,
               extensions,
               browserAccount,
+              scale,
             },
           );
     } catch (error) {

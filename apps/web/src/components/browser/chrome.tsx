@@ -365,43 +365,49 @@ export function AddressBar({
         {tab && !newTab && tab.security === "insecure" && (
           <LockOpen aria-label="Not secure" className="size-3.5 shrink-0 text-warning" />
         )}
-        {!editing && !newTab && (
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 left-9 flex items-center gap-1 truncate text-callout"
-          >
-            <span className="text-ink">{host}</span>
-            <span className="truncate text-ink-tertiary">{shownPath}</span>
-          </span>
-        )}
-        <input
-          ref={inputRef}
-          id="browser-address"
-          name="address"
-          type="text"
-          inputMode="url"
-          autoComplete="off"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          placeholder={newTab ? "Search or type an address" : ""}
-          className={cn(
-            "min-w-0 flex-1 bg-transparent text-callout text-ink outline-none placeholder:text-ink-tertiary",
-            !editing && !newTab && "text-transparent caret-transparent",
+        {/* The shown address lies over the field itself, so it ends where the
+            field does: a long address is cut short there, never drawn on over
+            the buttons beside it. */}
+        <div className="relative flex min-w-0 flex-1 items-center">
+          {!editing && !newTab && (
+            <span
+              aria-hidden="true"
+              data-address-shown=""
+              className="pointer-events-none absolute inset-0 flex items-center gap-1 overflow-hidden text-callout whitespace-nowrap"
+            >
+              <span className="max-w-full shrink-0 truncate text-ink">{host}</span>
+              <span className="min-w-0 truncate text-ink-tertiary">{shownPath}</span>
+            </span>
           )}
-          value={value}
-          onChange={(event) => {
-            onChange(event.target.value);
-          }}
-          onFocus={(event) => {
-            onFocus();
-            event.target.select();
-          }}
-          onBlur={onBlur}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") onEscape();
-          }}
-        />
+          <input
+            ref={inputRef}
+            id="browser-address"
+            name="address"
+            type="text"
+            inputMode="url"
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder={newTab ? "Search or type an address" : ""}
+            className={cn(
+              "min-w-0 flex-1 bg-transparent text-callout text-ink outline-none placeholder:text-ink-tertiary",
+              !editing && !newTab && "text-transparent caret-transparent",
+            )}
+            value={value}
+            onChange={(event) => {
+              onChange(event.target.value);
+            }}
+            onFocus={(event) => {
+              onFocus();
+              event.target.select();
+            }}
+            onBlur={onBlur}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") onEscape();
+            }}
+          />
+        </div>
         {tab?.reader && (
           <Tooltip content="Reader view: the article without the rest of the page. Click to leave.">
             <button
@@ -1047,7 +1053,7 @@ export function NavigationErrorPage({
               Search for it
             </Button>
           )}
-          {text.kind === "blocked" && (
+          {(text.kind === "blocked" || text.kind === "relay") && (
             <Button variant="ghost" onClick={onReport}>
               <Flag aria-hidden="true" />
               Report it

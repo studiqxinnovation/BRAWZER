@@ -144,6 +144,21 @@ function checks() {
   }).stdout;
   for (const h of ["strict-transport-security", "content-security-policy", "x-frame-options"])
     console.log(`  ${h}: ${headers.toLowerCase().includes(h) ? "present" : "MISSING"}`);
+  // Read only. Without this setting sessions start and stream but cannot load
+  // a page (runtime-host/README.md, step 1); nothing else here would notice.
+  try {
+    const runsc = ssh(runtime.publicIp, "docker info --format '{{json .Runtimes.runsc}}'", {
+      quiet: true,
+    });
+    console.log(
+      runsc.includes("--network=host")
+        ? "  runtime host: runsc uses the kernel network stack"
+        : `  runtime host: runsc is NOT set to --network=host, so sessions cannot browse.
+    Fix: ssh root@${runtime.publicIp} 'bash -s' < infra/production/runtime-host/runsc-host-network.sh`,
+    );
+  } catch (error) {
+    console.log(`  runtime host: could not be asked (${error.message})`);
+  }
 }
 
 if (onlyCheck) {
@@ -262,6 +277,28 @@ console.log("\n4. Production settings");
 const vaultToken = ssh(app.publicIp, "cat /etc/brawzer/openbao/api-token", { quiet: true }).trim();
 // Production-only settings live in secrets.env, not in the development .env.
 const optional = (name) => (secrets[name] ? `${name}=${secrets[name]}\n` : "");
+// What a session may use follows the runtime host's size. A dense moving page
+// keeps the engine and the encoder both busy, so a session gets four
+// processors where the host has eight or more. Most sessions sit still most
+// of the time: three are admitted for every one the host could run flat out,
+// and their memory ceilings together stay under the host's memory.
+const [runtimeCores, runtimeMemoryMb] = ssh(
+  runtime.publicIp,
+  "nproc; awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo",
+  { quiet: true },
+)
+  .trim()
+  .split(/\s+/)
+  .map(Number);
+const sessionCpus = runtimeCores >= 8 ? 4 : 2;
+const maxLiveSessions = Math.max(2, Math.floor((runtimeCores / sessionCpus) * 3));
+const sessionMemoryMb = Math.min(
+  4096,
+  Math.max(2048, Math.floor((runtimeMemoryMb * 0.9) / maxLiveSessions / 512) * 512),
+);
+console.log(
+  `  runtime host: ${String(runtimeCores)} processors, ${String(runtimeMemoryMb)} MB: up to ${String(maxLiveSessions)} sessions, each up to ${String(sessionCpus)} processors and ${String(sessionMemoryMb)} MB`,
+);
 const productionEnv = `# Written by infra/hostman/deploy.mjs on ${new Date().toISOString()}. Not in git.
 API_IMAGE=brawzer-api:local
 WEB_IMAGE=brawzer-web:local
@@ -295,7 +332,9 @@ DOCKER_TLS_KEY=/run/docker-tls/key.pem
 BROWSER_RUNTIME_IMAGE=brawzer-runtime:local
 EGRESS_IMAGE=brawzer-egress:local
 BROWSER_CONTAINER_RUNTIME=runsc
-BROWSER_MAX_LIVE_SESSIONS=6
+BROWSER_MAX_LIVE_SESSIONS=${String(maxLiveSessions)}
+BROWSER_SESSION_CPUS=${String(sessionCpus)}
+BROWSER_SESSION_MEMORY_MB=${String(sessionMemoryMb)}
 BROWSER_STREAM_URL=wss://${SITE_HOST}
 METRICS_TOKEN=${secrets.METRICS_TOKEN}
 STAFF_SECOND_FACTOR=required

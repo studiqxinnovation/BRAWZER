@@ -69,12 +69,9 @@ export class VideoPlayer {
         if (this.decoder === decoder) this.lose();
       },
     });
-    decoder.configure({
-      codec: header.codec,
-      codedWidth: header.width,
-      codedHeight: header.height,
-      optimizeForLatency: true,
-    });
+    // No size is given: the header's is the page's on screen, and the frames
+    // may be denser than that. The decoder reads theirs from the key frame.
+    decoder.configure({ codec: header.codec, optimizeForLatency: true });
     this.decoder = decoder;
     this.configured = { codec: header.codec, width: header.width, height: header.height };
     this.waitingForKey = true;

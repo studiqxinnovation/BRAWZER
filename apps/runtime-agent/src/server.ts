@@ -11,6 +11,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { Engine, Viewer } from "./engine-types.ts";
 import { type AudioSink, type SessionAudio } from "./audio.ts";
 import { log } from "./log.ts";
+import { startScale } from "./video.ts";
 
 /** How much may queue on the viewer's socket before frames are dropped instead. */
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
@@ -18,6 +19,8 @@ const MAX_TEXT_MESSAGE_BYTES = 64 * 1024;
 /** Transfer chunks: the chunk itself plus its header. */
 const MAX_MESSAGE_BYTES = 512 * 1024;
 const MAX_BAD_MESSAGES = 20;
+/** The start request's body: `{ "scale": 2 }` and nothing more. */
+const MAX_START_BODY_BYTES = 256;
 
 function rawText(data: Buffer | ArrayBuffer | Buffer[]): string {
   return rawBytes(data).toString("utf8");
@@ -44,8 +47,8 @@ export interface AgentLifecycle {
   engine(): Engine | null;
   /** Unpacks a profile archive before the engine starts. */
   restore(archive: Readable): Promise<void>;
-  /** Starts the engine; resolves once it is ready. */
-  start(): Promise<void>;
+  /** Starts the engine, drawing at this pixel ratio; resolves once it is ready. */
+  start(scale: number): Promise<void>;
   /** Stops the engine cleanly and streams the profile archive. */
   pack(): Promise<Readable>;
 }
@@ -102,12 +105,26 @@ export function createAgentServer(
         json(res, 409, { error: `The engine is ${lifecycle.state()}.` });
         return;
       }
-      lifecycle.start().then(
-        () => json(res, 200, { state: lifecycle.state() }),
-        (error: unknown) => {
-          json(res, 500, { error: error instanceof Error ? error.message : "start failed" });
-        },
-      );
+      // The body says the pixel ratio to draw at: a few bytes, or it is ignored.
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk: string) => {
+        if (body.length <= MAX_START_BODY_BYTES) body += chunk;
+      });
+      req.on("error", () => res.destroy());
+      req.on("end", () => {
+        if (lifecycle.state() !== "waiting") {
+          json(res, 409, { error: `The engine is ${lifecycle.state()}.` });
+          return;
+        }
+        const scale = body.length <= MAX_START_BODY_BYTES ? startScale(body) : 1;
+        lifecycle.start(scale).then(
+          () => json(res, 200, { state: lifecycle.state() }),
+          (error: unknown) => {
+            json(res, 500, { error: error instanceof Error ? error.message : "start failed" });
+          },
+        );
+      });
       return;
     }
     if (req.method === "POST" && req.url === "/pack") {
@@ -230,7 +247,12 @@ export function createAgentServer(
         if (message.data.type === "hello") {
           if (!attached) {
             attached = true;
-            engine.attachViewer(viewer, message.data.viewport, message.data.codecs);
+            engine.attachViewer(
+              viewer,
+              message.data.viewport,
+              message.data.codecs,
+              message.data.repeats,
+            );
             audio?.attach(audioSink);
           }
           return;

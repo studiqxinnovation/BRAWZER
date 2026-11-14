@@ -5,8 +5,10 @@ describe("navigation errors", () => {
   it("sorts both engines' codes into what they mean", () => {
     expect(navigationErrorKind("ERR_NAME_NOT_RESOLVED")).toBe("unresolved");
     expect(navigationErrorKind("dnsNotFound")).toBe("unresolved");
-    expect(navigationErrorKind("ERR_TUNNEL_CONNECTION_FAILED")).toBe("blocked");
-    expect(navigationErrorKind("proxyConnectFailure")).toBe("blocked");
+    expect(navigationErrorKind("ERR_TUNNEL_CONNECTION_FAILED")).toBe("relay");
+    expect(navigationErrorKind("ERR_PROXY_CONNECTION_FAILED")).toBe("relay");
+    expect(navigationErrorKind("proxyConnectFailure")).toBe("relay");
+    expect(navigationErrorKind("ERR_BLOCKED_BY_CLIENT")).toBe("blocked");
     expect(navigationErrorKind("ERR_CONNECTION_REFUSED")).toBe("unreachable");
     expect(navigationErrorKind("ERR_CONNECTION_TIMED_OUT")).toBe("timeout");
     expect(navigationErrorKind("netTimeout")).toBe("timeout");
@@ -32,6 +34,17 @@ describe("navigation errors", () => {
     expect(text.title).toBe("A secure connection couldn’t be made");
     expect(text.detail).toContain("“whoer.net”");
     expect(text.detail).not.toMatch(/certificate/i);
+  });
+
+  it("doesn’t call a public website private when Brawzer’s own connection failed", () => {
+    const text = describeNavigationError(
+      "ERR_TUNNEL_CONNECTION_FAILED",
+      "https://www.youtube.com/",
+    );
+    expect(text.title).toBe("Brawzer couldn’t make this connection");
+    expect(text.detail).toContain("“www.youtube.com”");
+    expect(text.detail).toContain("the fault is on Brawzer’s side");
+    expect(text.detail).not.toMatch(/private|internal|port/i);
   });
 
   it("names the host and never the engine", () => {

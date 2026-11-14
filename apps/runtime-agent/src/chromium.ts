@@ -10,6 +10,14 @@ export interface LaunchOptions {
   scratchDir: string;
   proxyPort: number;
   viewport: { width: number; height: number };
+  /**
+   * The pixel ratio pages are drawn at: that of the screen the session was
+   * opened on. The engine then composes every page with that many pixels,
+   * which is what makes its frames as sharp as that screen; telling a page
+   * its screen's ratio afterwards (the viewport's scale) changes what the
+   * page sees, not how many pixels the engine draws.
+   */
+  scale?: number;
   /** The first tab's page: Brawzer's own start page, through the proxy override. */
   startUrl: string;
   /** Sound: where the engine finds the session's audio server. */
@@ -46,6 +54,9 @@ export function launchChromium(options: LaunchOptions): LaunchedChromium {
     "--remote-debugging-pipe",
     `--user-data-dir=${userDataDir}`,
     `--window-size=${String(options.viewport.width)},${String(options.viewport.height)}`,
+    ...(options.scale && options.scale > 1
+      ? [`--force-device-scale-factor=${String(options.scale)}`]
+      : []),
     `--proxy-server=http://127.0.0.1:${String(options.proxyPort)}`,
     // Even loopback goes through the proxy, which refuses it.
     "--proxy-bypass-list=<-loopback>",

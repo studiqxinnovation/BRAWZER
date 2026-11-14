@@ -3,6 +3,7 @@ import { hostOf } from "./input";
 export type NavigationErrorKind =
   | "unresolved"
   | "blocked"
+  | "relay"
   | "policy"
   | "unreachable"
   | "timeout"
@@ -31,8 +32,13 @@ const KINDS: readonly [NavigationErrorKind, RegExp][] = [
   ],
   [
     "blocked",
-    /^(BRAWZER_REFUSED_|ERR_TUNNEL_CONNECTION_FAILED|ERR_PROXY_|ERR_BLOCKED_BY|ERR_UNSAFE_PORT|proxyConnectFailure|proxyResolveFailure|blockedByPolicy|deniedPortAccess|cspBlocked)/,
+    /^(BRAWZER_REFUSED_|ERR_BLOCKED_BY|ERR_UNSAFE_PORT|blockedByPolicy|deniedPortAccess|cspBlocked)/,
   ],
+  // The engine's connection through Brawzer's own proxy failed, and the proxy
+  // gave no reason. A refusal always carries one (`BRAWZER_REFUSED_…`), so
+  // this is not a block: the fault lies between Brawzer and the website, and
+  // calling the address private would be untrue.
+  ["relay", /^(ERR_TUNNEL_CONNECTION_FAILED|ERR_PROXY_|proxyConnectFailure|proxyResolveFailure)/],
   ["timeout", /^(ERR_CONNECTION_TIMED_OUT|ERR_TIMED_OUT|netTimeout)/],
   [
     "unreachable",
@@ -82,6 +88,12 @@ export function describeNavigationError(code: string, url: string): NavigationEr
               : code === "BRAWZER_REFUSED_ENGINE"
                 ? `${site} is one of the engine’s own services, which Brawzer keeps switched off.`
                 : `${site} is a private or internal address, a port Brawzer doesn’t carry, or one of the engine’s own services. Brawzer only connects to public websites.`,
+      };
+    case "relay":
+      return {
+        kind,
+        title: "Brawzer couldn’t make this connection",
+        detail: `The connection to ${site} failed on its way out of Brawzer’s network. The website may be down; if other websites fail the same way, the fault is on Brawzer’s side, not with your device or your connection.`,
       };
     case "policy":
       return {

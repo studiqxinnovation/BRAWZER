@@ -10,6 +10,7 @@ import {
   encodeTransferChunk,
   TRANSFER_CHUNK_BYTES,
 } from "./browser-protocol.ts";
+import { startBrowserSessionRequestSchema } from "./browser.ts";
 
 describe("browser URLs", () => {
   it("accepts only http and https", () => {
@@ -25,6 +26,17 @@ describe("browser URLs", () => {
       "",
     ]) {
       expect(browserUrlSchema.safeParse(bad).success, bad).toBe(false);
+    }
+  });
+});
+
+describe("opening a session", () => {
+  it("may say the pixel ratio of the screen it is opened on, within what the stream carries", () => {
+    expect(startBrowserSessionRequestSchema.parse({})).toEqual({ resume: false });
+    expect(startBrowserSessionRequestSchema.parse({ scale: 2 }).scale).toBe(2);
+    expect(startBrowserSessionRequestSchema.parse({ scale: 1.25 }).scale).toBe(1.25);
+    for (const bad of [0.5, 2.5, "2", Number.NaN]) {
+      expect(startBrowserSessionRequestSchema.safeParse({ scale: bad }).success).toBe(false);
     }
   });
 });

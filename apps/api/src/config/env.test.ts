@@ -229,6 +229,14 @@ describe("parseConfig", () => {
     expect(local.agentHost).toBe("127.0.0.1");
     expect(local.containerRuntime).toBeNull();
     expect(local.maxLiveSessions).toBe(200);
+    expect(local.sessionCpus).toBe(2);
+    expect(local.sessionMemoryMb).toBe(2048);
+    const roomy = parseConfig(
+      { ...minimal, BROWSER_SESSION_CPUS: "4", BROWSER_SESSION_MEMORY_MB: "3072" },
+      "1",
+    ).browser;
+    expect(roomy.sessionCpus).toBe(4);
+    expect(roomy.sessionMemoryMb).toBe(3072);
 
     const remote = parseConfig(
       {

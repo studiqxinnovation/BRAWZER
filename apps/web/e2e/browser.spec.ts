@@ -78,6 +78,20 @@ test.describe("browser", () => {
     await address.press("Enter");
     await expect(page.getByLabel("Not secure")).toBeVisible();
 
+    // A long address is cut short inside its field: it is never drawn on over
+    // the star, the Isolated badge and the buttons beside the field.
+    await address.fill(`http://testsite.invalid/?q=${"a-long-address-".repeat(40)}`);
+    await address.press("Enter");
+    const shownPath = page.locator("[data-address-shown] > span").last();
+    await expect(shownPath).toContainText("a-long-address-", { timeout: 30_000 });
+    const edges = await Promise.all(
+      [shownPath, address].map(async (part) => {
+        const box = await part.boundingBox();
+        return box ? box.x + box.width : Number.NaN;
+      }),
+    );
+    expect(edges[0]).toBeLessThanOrEqual((edges[1] ?? 0) + 1);
+
     // A connection Brawzer refuses (a private address) gets Brawzer's own
     // error page, not the engine's, with the address kept and a way back.
     await address.fill("https://10.0.0.1/");
@@ -336,6 +350,85 @@ test.describe("browser", () => {
     await address.press("Enter");
     await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
     await clickPage(page, 100, 100);
+
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "End session" }).click();
+    await page
+      .getByRole("alertdialog", { name: "End this browser session?" })
+      .getByRole("button", { name: "End session" })
+      .click();
+    await expect(page.getByText("You ended this browser session.")).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
+  test("waits out a restart of the service, and says the connection was lost rather than the session over", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The streamed page is driven with a mouse; one run covers it.");
+    test.setTimeout(150_000);
+    const streams: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/browser\/sessions\/[^/]+\/stream$/, (socket) => {
+      socket.connectToServer();
+      streams.push(socket);
+    });
+    // The service as the page sees it: answering, restarting behind its gateway, or refusing.
+    let service: "up" | "restarting" | "refusing" = "up";
+    let asked = 0;
+    await page.route(/\/api\/v1\/browser\/sessions\/[^/]+\/ticket$/, async (route) => {
+      if (service === "up") return route.fallback();
+      asked += 1;
+      await route.fulfill({
+        status: service === "restarting" ? 502 : 429,
+        contentType: "text/plain",
+        body: "",
+      });
+    });
+    await signedIn(page, baseURL, "browser-restart");
+    await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
+    const viewport = page.getByTestId("browser-viewport");
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 60_000 })
+      .not.toBe("0");
+    const address = page.getByRole("textbox", { name: "Address or search" });
+    await address.fill("http://testsite.invalid/");
+    await address.press("Enter");
+    await expect(tab(page, "Brawzer test site")).toBeVisible({ timeout: 30_000 });
+
+    // The service restarts: the stream drops and nothing answers for a while.
+    // The window keeps asking; it never calls the session over.
+    service = "restarting";
+    await streams.at(-1)?.close({ code: 1012, reason: "service restart" });
+    await expect(page.getByText("Reconnecting to your browser…")).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => asked, { timeout: 30_000 }).toBeGreaterThanOrEqual(3);
+    await expect(page.getByText("Session over")).toBeHidden();
+    await expect(page.getByText("Connection lost")).toBeHidden();
+
+    // It comes back: the same session, with its tab, in the same window.
+    service = "up";
+    await expect.poll(() => streams.length, { timeout: 30_000 }).toBe(2);
+    await expect(page.getByText("Reconnecting to your browser…")).toBeHidden({ timeout: 30_000 });
+    await expect(tab(page, "Brawzer test site")).toBeVisible();
+    await address.fill("http://testsite.invalid/second");
+    await address.press("Enter");
+    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
+
+    // An answer that isn't about the session (here: too many requests): the
+    // window says its connection was lost, not that the session ended or was
+    // saved, and can be asked to try again.
+    service = "refusing";
+    await streams.at(-1)?.close({ code: 1012, reason: "service restart" });
+    const lost = page.getByText("Connection lost");
+    await expect(lost).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("the session wasn’t ended")).toBeVisible();
+    await expect(page.getByText("Session over")).toBeHidden();
+    expect(await wcagViolations(page)).toEqual([]);
+    service = "up";
+    await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+    await expect.poll(() => streams.length, { timeout: 30_000 }).toBe(3);
+    await expect(tab(page, "Second page")).toBeVisible({ timeout: 30_000 });
 
     await page.getByRole("button", { name: "More" }).click();
     await page.getByRole("menuitem", { name: "End session" }).click();
@@ -723,6 +816,47 @@ test.describe("browser on a dense screen", () => {
       .locator("canvas")
       .evaluate((canvas: HTMLCanvasElement) => canvas.width / canvas.getBoundingClientRect().width);
 
+  test("a page with a blinking cursor keeps its sharp picture, with no video in between", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The streamed page is driven with a mouse; phones get the launcher test.");
+    test.setTimeout(180_000);
+    await signedIn(page, baseURL, "browser-cursor");
+    // What the stream carries: pictures of the page (their first byte is "B") and their sizes.
+    const pictures: number[] = [];
+    page.on("websocket", (socket) => {
+      socket.on("framereceived", ({ payload }) => {
+        if (typeof payload !== "string" && payload[0] === 0x42) pictures.push(payload.length);
+      });
+    });
+    const viewport = page.getByTestId("browser-viewport");
+    await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 90_000 })
+      .not.toBe("0");
+    // The new tab page's search box has the cursor, and the cursor blinks: the
+    // page never quite stops. Each blink is one more sharp picture.
+    await expect(viewport).toHaveAttribute("data-shown", "picture", { timeout: 20_000 });
+    await page.waitForTimeout(2_000);
+    const before = Number(await viewport.getAttribute("data-frames"));
+    const sent = pictures.length;
+    const shown = new Set<string | null>();
+    for (let sample = 0; sample < 50; sample += 1) {
+      shown.add(await viewport.getAttribute("data-shown"));
+      await page.waitForTimeout(100);
+    }
+    expect([...shown]).toEqual(["picture"]);
+    expect(Number(await viewport.getAttribute("data-frames"))).toBeGreaterThan(before + 3);
+    expect(await density(page)).toBeCloseTo(2, 1);
+    // The cursor on and the cursor off are two pictures taking turns: each was
+    // sent once, and from then on the viewer is only told which one to show.
+    const blinks = pictures.slice(sent);
+    expect(blinks.length).toBeGreaterThan(3);
+    expect(Math.max(...blinks)).toBeLessThan(1_000);
+  });
+
   test("a still page is shown sharp at the screen's pixel ratio, on both engines", async ({
     page,
     baseURL,
@@ -738,7 +872,9 @@ test.describe("browser on a dense screen", () => {
         .poll(() => viewport.getAttribute("data-frames"), { timeout: 90_000 })
         .not.toBe("0");
     };
+    // A picture, not video (which is as dense while the page moves), at twice the density.
     const sharp = async () => {
+      await expect(viewport).toHaveAttribute("data-shown", "picture", { timeout: 20_000 });
       await expect.poll(() => density(page), { timeout: 20_000 }).toBeCloseTo(2, 1);
     };
 
@@ -766,6 +902,26 @@ test.describe("browser on a dense screen", () => {
     await expect
       .poll(async () => Number(await viewport.getAttribute("data-frames")))
       .toBeGreaterThan(before);
+    await sharp();
+    // A long scroll is video at the page's own size, which the engine keeps up
+    // with; once it stops the page is a picture at twice the density again.
+    await address.fill("http://testsite.invalid/long");
+    await address.press("Enter");
+    await expect(tab(page, "Long page")).toBeVisible({ timeout: 30_000 });
+    await sharp();
+    await viewport.locator("canvas").hover({ position: { x: 400, y: 300 } });
+    const moving: { shown: string | null; density: number }[] = [];
+    for (let step = 0; step < 30; step += 1) {
+      await page.mouse.wheel(0, 120);
+      await page.waitForTimeout(50);
+      moving.push({
+        shown: await viewport.getAttribute("data-shown"),
+        density: await density(page),
+      });
+    }
+    const video = moving.filter((sample) => sample.shown === "video");
+    expect(video.length).toBeGreaterThan(0);
+    expect(Math.min(...video.map((sample) => sample.density))).toBeCloseTo(1, 1);
     await sharp();
 
     // Firefox is captured the same way.

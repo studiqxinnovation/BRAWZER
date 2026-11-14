@@ -95,9 +95,9 @@ const FOCUS_KEYS = new Set([
   "End",
 ]);
 /** Frames of a moving page: at scale 1, small enough to keep up. */
-const JPEG_QUALITY = 0.6;
+const JPEG_QUALITY = 0.8;
 /** The one frame of a page that has stopped: at the viewer's pixel ratio, for reading. */
-const SHARP_QUALITY = 0.85;
+const SHARP_QUALITY = 0.92;
 /** No change for this long means the page has stopped moving. */
 const STILL_MS = 300;
 /** What counts as the page moving once it has its sharp picture: this many changed captures within the window. */
@@ -565,6 +565,8 @@ export class FirefoxEngine implements Engine {
         return;
       case "video-lost":
         this.stopVideo();
+        return;
+      case "picture-lost":
         return;
       case "resize":
         await this.setViewport(message.viewport);

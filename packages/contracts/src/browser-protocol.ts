@@ -66,9 +66,16 @@ const baseClientMessages = [
     viewport: viewportSchema,
     /** Video codecs the viewer can decode; none means frames as pictures only. */
     codecs: z.array(videoCodecSchema).max(4).default([]),
+    /**
+     * The viewer keeps the last PICTURES_KEPT pictures marked `keep`, and can
+     * show one again when told to rather than be sent it a second time.
+     */
+    repeats: z.boolean().default(false),
   }),
   /** The viewer's decoder lost its place (a chunk missed): it needs a key frame. */
   z.object({ type: z.literal("video-lost") }),
+  /** The viewer was told to show a kept picture again and doesn't have it: it needs the picture itself. */
+  z.object({ type: z.literal("picture-lost") }),
   z.object({ type: z.literal("resize"), viewport: viewportSchema }),
   z.object({ type: z.literal("navigate"), tabId: tabIdSchema, url: browserUrlSchema }),
   z.object({ type: z.literal("back"), tabId: tabIdSchema }),
@@ -456,7 +463,18 @@ export const frameHeaderSchema = z.object({
     .max(viewport.maxHeight * viewport.maxScale),
   /** Device pixels per CSS pixel: 1 for a frame of a moving page, more for a sharp one. */
   scale: scaleSchema,
+  /** The viewer keeps this picture: it may be asked to show it again (`again`). */
+  keep: z.boolean().optional(),
+  /**
+   * The page looks exactly as it did in the kept picture with this frame id:
+   * no image follows, the viewer shows that one again. A blinking cursor is
+   * two pictures taking turns, sent once each.
+   */
+  again: z.number().int().min(0).optional(),
 });
+
+/** How many kept pictures a viewer holds: the newest ones, in the order they were sent. */
+export const PICTURES_KEPT = 4;
 
 export type FrameHeader = z.infer<typeof frameHeaderSchema>;
 

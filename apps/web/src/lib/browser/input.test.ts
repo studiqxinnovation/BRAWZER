@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { displayUrl, fitViewport, keyMessage, modifiersOf, resolveTyped, textOf } from "./input";
+import {
+  displayUrl,
+  engineScale,
+  fitViewport,
+  keyMessage,
+  modifiersOf,
+  resolveTyped,
+  textOf,
+} from "./input";
 
 describe("resolveTyped", () => {
   it("opens addresses and hosts, searches everything else", () => {
@@ -8,16 +16,18 @@ describe("resolveTyped", () => {
     expect(resolveTyped("example.com")).toBe("https://example.com");
     expect(resolveTyped("news.example.org/path?x=1")).toBe("https://news.example.org/path?x=1");
     expect(resolveTyped("localhost:3000")).toBe("https://localhost:3000");
-    expect(resolveTyped("how to tie a knot")).toBe("https://duckduckgo.com/?q=how+to+tie+a+knot");
-    expect(resolveTyped("brawzer")).toBe("https://duckduckgo.com/?q=brawzer");
+    expect(resolveTyped("how to tie a knot")).toBe(
+      "https://www.google.com/search?q=how+to+tie+a+knot",
+    );
+    expect(resolveTyped("brawzer")).toBe("https://www.google.com/search?q=brawzer");
     expect(resolveTyped("")).toBe("about:blank");
   });
 
   it("never opens other schemes", () => {
     expect(resolveTyped("javascript:alert(1)")).toBe(
-      "https://duckduckgo.com/?q=javascript%3Aalert%281%29",
+      "https://www.google.com/search?q=javascript%3Aalert%281%29",
     );
-    expect(resolveTyped("file:///etc/passwd")).toMatch(/^https:\/\/duckduckgo\.com\//);
+    expect(resolveTyped("file:///etc/passwd")).toMatch(/^https:\/\/www\.google\.com\/search\?/);
   });
 });
 
@@ -66,6 +76,20 @@ describe("input helpers", () => {
     expect(fitViewport(1280, 800, Number.NaN)).toEqual({ width: 1280, height: 800, scale: 1 });
     // 1920 × 1080 at 2 would be 8.3 million pixels: the budget allows 1.7.
     expect(fitViewport(1920, 1080, 2)).toEqual({ width: 1920, height: 1080, scale: 1.7 });
+  });
+
+  it("opens a browser that draws at the screen's pixel ratio, up to what the stream carries", () => {
+    expect(engineScale(1)).toBe(1);
+    expect(engineScale(2)).toBe(2);
+    expect(engineScale(3)).toBe(2);
+    expect(engineScale(1.25)).toBe(1.25);
+    expect(engineScale(1.3333333)).toBe(1.33);
+    expect(engineScale(0.8)).toBe(1);
+    expect(engineScale(Number.NaN)).toBe(1);
+    // Never under what a viewport of this screen then asks for.
+    for (const ratio of [1.1, 1.254, 1.755, 1.999, 2.2]) {
+      expect(engineScale(ratio)).toBeGreaterThanOrEqual(fitViewport(800, 600, ratio).scale);
+    }
   });
 
   it("shortens addresses for display", () => {
