@@ -44,7 +44,7 @@ import {
 } from "@/lib/api/browser";
 import { addBookmark, fetchBookmarks, removeBookmark } from "@/lib/api/history";
 import { uploadDriveFile } from "@/lib/api/drive";
-import { displayUrl, hostOf, resolveTyped, searchUrl } from "@/lib/browser/input";
+import { displayUrl, engineScale, hostOf, resolveTyped, searchUrl } from "@/lib/browser/input";
 import { nextZoom } from "@/lib/browser/zoom";
 import { encodeCanvas, screenshotName } from "@/lib/browser/picture";
 import { AudioPlayer } from "@/lib/browser/audio";
@@ -745,8 +745,9 @@ export function BrowserWorkspace({
       return;
     }
     setPhase({ kind: "starting" });
+    const scale = engineScale(window.devicePixelRatio);
     const result = await startBrowserSession(
-      profileId ? { profileId, resume } : engine ? { engine } : {},
+      profileId ? { profileId, resume, scale } : engine ? { engine, scale } : { scale },
     );
     if (!result.ok) {
       if (result.status === 401) {

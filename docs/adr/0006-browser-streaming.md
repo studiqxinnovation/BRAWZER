@@ -158,3 +158,52 @@ Measured on the long test page at 1280×800, scrolling without pause for
 1.6 Mbit/s (pictures: 21 at 13–19 Mbit/s), Firefox 21 at 1.2 Mbit/s
 (pictures: 9 at about 5 Mbit/s); a still page sends one frame and then
 nothing. ffmpeg adds about 300 MB to the image (2.9 GB).
+
+## Addendum (2026-11-13): the engine drawn at the screen's pixel ratio
+
+On a dense screen the page was soft whenever anything moved, and a page with
+a blinking cursor never settled: each blink was a frame, three frames were
+"moving", so the picture went sharp picture, video, sharp picture, without
+end. Measured in the image, with the network off:
+
+- Chromium's screencast frames are always the page's CSS size times the
+  device scale factor the engine was _launched_ with. The emulated ratio
+  (`Emulation.setDeviceMetricsOverride`) changes what the page is told and
+  what a screenshot gives, never the frames. So the "dense" video of the
+  addendum above was 1x frames made larger.
+- Launched with `--force-device-scale-factor`, the frames are truly dense,
+  and clicks, pointer movement and scrolling are exact. Chrome's own
+  reduction of 2x frames to a smaller ratio (the screencast's `maxWidth`
+  and `maxHeight`) looks right.
+- A blinking cursor's frames alternate between two pictures that are the
+  same bytes each time.
+
+What changed (Chromium engines; Firefox is as it was):
+
+- The screen that opens a session says its pixel ratio (`scale` in the
+  start request, 1 to 2). It goes to the agent in the body of `/start`,
+  not the container's environment, because warm pairs are made before
+  anyone is known to be watching. The engine is launched at that ratio.
+- While the engine's ratio is at least the viewer's (and the page fits the
+  6M pixel cap), a frame is already the sharp picture. The still page's
+  picture is the last frame, sent as it is: no screenshot, no wait. A
+  viewer on a denser screen than the one that opened the session gets the
+  screenshot path of the "sharp when still" addendum.
+- Frames go as pictures while fewer than five arrive in 700 ms and the
+  pictures' byte budget (750 kB a second) keeps up; past either, the page
+  is moving and goes as video. A cursor, a clock or a hover never reaches
+  video.
+- A viewer that says `repeats` in `hello` keeps the last four pictures
+  marked `keep`. When a frame is the same bytes as one of them the agent
+  sends only its number (`again`) and no picture. A viewer that no longer
+  has it says `picture-lost` and is sent the picture whole. A blink then
+  costs under 1 kB.
+
+One thing is not exact: when the viewer's ratio differs from the launch
+ratio, a page's script sees wheel deltas scaled by one over the other; the
+distance scrolled is right.
+
+Session containers take their processors and memory from the API's settings
+(`BROWSER_SESSION_CPUS`, `BROWSER_SESSION_MEMORY_MB`), which the deploy
+derives from the size of the runtime host; the encoder is told how many
+threads it has (`BRAWZER_CPUS`).

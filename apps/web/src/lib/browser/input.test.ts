@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { displayUrl, fitViewport, keyMessage, modifiersOf, resolveTyped, textOf } from "./input";
+import {
+  displayUrl,
+  engineScale,
+  fitViewport,
+  keyMessage,
+  modifiersOf,
+  resolveTyped,
+  textOf,
+} from "./input";
 
 describe("resolveTyped", () => {
   it("opens addresses and hosts, searches everything else", () => {
@@ -68,6 +76,20 @@ describe("input helpers", () => {
     expect(fitViewport(1280, 800, Number.NaN)).toEqual({ width: 1280, height: 800, scale: 1 });
     // 1920 × 1080 at 2 would be 8.3 million pixels: the budget allows 1.7.
     expect(fitViewport(1920, 1080, 2)).toEqual({ width: 1920, height: 1080, scale: 1.7 });
+  });
+
+  it("opens a browser that draws at the screen's pixel ratio, up to what the stream carries", () => {
+    expect(engineScale(1)).toBe(1);
+    expect(engineScale(2)).toBe(2);
+    expect(engineScale(3)).toBe(2);
+    expect(engineScale(1.25)).toBe(1.25);
+    expect(engineScale(1.3333333)).toBe(1.33);
+    expect(engineScale(0.8)).toBe(1);
+    expect(engineScale(Number.NaN)).toBe(1);
+    // Never under what a viewport of this screen then asks for.
+    for (const ratio of [1.1, 1.254, 1.755, 1.999, 2.2]) {
+      expect(engineScale(ratio)).toBeGreaterThanOrEqual(fitViewport(800, 600, ratio).scale);
+    }
   });
 
   it("shortens addresses for display", () => {

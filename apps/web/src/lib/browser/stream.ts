@@ -13,6 +13,7 @@ import {
   type VideoCodec,
   type Viewport,
 } from "@brawzer/contracts";
+import { KeptPictures } from "./kept-pictures";
 
 export type StreamEvent =
   | { kind: "message"; message: AgentMessage }
@@ -36,17 +37,20 @@ export class BrowserStream {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   /** When the ping still unanswered was sent, if any. */
   private pingSentAt: number | null = null;
+  /** Pictures the agent asked to have kept, for this connection. */
+  private readonly pictures = new KeptPictures();
 
   constructor(private readonly onEvent: (event: StreamEvent) => void) {}
 
   open(url: string, ticket: string, viewport: Viewport, codecs: readonly VideoCodec[] = []): void {
     this.close();
+    this.pictures.clear();
     const socket = new WebSocket(url);
     socket.binaryType = "arraybuffer";
     this.socket = socket;
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify({ type: "ticket", ticket }));
-      this.send({ type: "hello", viewport, codecs: [...codecs] });
+      this.send({ type: "hello", viewport, codecs: [...codecs], repeats: true });
       this.pingTimer = setInterval(() => this.ping(), PING_INTERVAL_MS);
       this.ping();
     });
@@ -83,10 +87,14 @@ export class BrowserStream {
       }
       const frame = decodeFrame(bytes);
       if (!frame) return;
+      const image = this.pictures.take(frame.header, frame.image.slice());
+      // A picture to show again that never got here: the agent sends the picture itself.
+      // The frame still goes on, with nothing to draw, so that it is acknowledged.
+      if (!image) this.send({ type: "picture-lost" });
       this.onEvent({
         kind: "frame",
         header: frame.header,
-        image: new Blob([frame.image.slice()], { type: "image/jpeg" }),
+        image: new Blob(image ? [image] : [], { type: "image/jpeg" }),
       });
     });
     socket.addEventListener("close", (event) => {

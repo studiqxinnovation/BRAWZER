@@ -120,10 +120,12 @@ export class OrchestratorService {
       siteRules?: SiteRulesForEgress | null;
       extensions?: readonly string[];
       browserAccount?: boolean;
+      /** The pixel ratio the engine draws at: that of the screen opening the session. */
+      scale?: number;
     } = { privateViaUpstream: false },
   ): Promise<StartedRuntime> {
     const pair = await this.createPair(host, sessionId, secret, upstream, engine, options);
-    return this.launch(pair, secret, profileData);
+    return this.launch(pair, secret, profileData, options.scale);
   }
 
   /**
@@ -192,6 +194,7 @@ export class OrchestratorService {
           `BRAWZER_MAX_FILE_BYTES=${String(this.config.drive.maxFileBytes)}`,
           `BRAWZER_EGRESS_PROXY=127.0.0.1:${String(EGRESS_PROXY_PORT)}`,
           `BRAWZER_ENGINE=${engine}`,
+          `BRAWZER_CPUS=${String(browser.sessionCpus)}`,
           ...(options.privateViaUpstream ? ["BRAWZER_PRIVATE_VIA_EGRESS=true"] : []),
           ...(options.browserAccount ? ["BRAWZER_BROWSER_ACCOUNT=true"] : []),
           ...(options.extensions?.length
@@ -204,8 +207,8 @@ export class OrchestratorService {
         publishHostIp: host.agentBind,
         network: `container:${egressId}`,
         seccompProfile,
-        memoryBytes: 2048 * MiB,
-        cpus: 2,
+        memoryBytes: browser.sessionMemoryMb * MiB,
+        cpus: browser.sessionCpus,
         pidsLimit: 1024,
         shmBytes: 512 * MiB,
         tmpfsBytes: 1024 * MiB,
@@ -234,6 +237,11 @@ export class OrchestratorService {
     pair: RuntimePair,
     secret: string,
     profileData: Readable | null = null,
+    /**
+     * The pixel ratio the engine draws at. It is said here, at the start, not
+     * when the pair is made: a warm pair waits before anyone's screen is known.
+     */
+    scale = 1,
   ): Promise<StartedRuntime> {
     const { containerId, agentAddress, egressId } = pair;
     try {
@@ -251,7 +259,8 @@ export class OrchestratorService {
       }
       const started = await fetch(`http://${agentAddress}/start`, {
         method: "POST",
-        headers,
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ scale }),
         signal: AbortSignal.timeout(BROWSER_LIMITS.startTimeoutSeconds * 1000),
       });
       if (!started.ok) {

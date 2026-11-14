@@ -12,6 +12,7 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { fetchBrowserOverview, startBrowserSession } from "@/lib/api/browser";
+import { engineScale } from "@/lib/browser/input";
 import { fetchProfiles } from "@/lib/api/profiles";
 import { profileForWebApp } from "./launch";
 import { type BrowserOpen, useDesktop } from "@/components/desktop/desktop-context";
@@ -146,7 +147,10 @@ export function useLaunchBrowser(
       }
       profile = created.data;
     }
-    const started = await startBrowserSession({ profileId: profile.id });
+    const started = await startBrowserSession({
+      profileId: profile.id,
+      scale: engineScale(window.devicePixelRatio),
+    });
     if (!started.ok) {
       failed(started.status, `${short} couldn’t open`, started.error.message);
       return;

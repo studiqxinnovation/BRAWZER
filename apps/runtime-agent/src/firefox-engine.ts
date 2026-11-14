@@ -566,6 +566,8 @@ export class FirefoxEngine implements Engine {
       case "video-lost":
         this.stopVideo();
         return;
+      case "picture-lost":
+        return;
       case "resize":
         await this.setViewport(message.viewport);
         return;

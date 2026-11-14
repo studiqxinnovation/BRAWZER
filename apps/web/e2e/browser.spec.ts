@@ -816,6 +816,47 @@ test.describe("browser on a dense screen", () => {
       .locator("canvas")
       .evaluate((canvas: HTMLCanvasElement) => canvas.width / canvas.getBoundingClientRect().width);
 
+  test("a page with a blinking cursor keeps its sharp picture, with no video in between", async ({
+    page,
+    baseURL,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "The streamed page is driven with a mouse; phones get the launcher test.");
+    test.setTimeout(180_000);
+    await signedIn(page, baseURL, "browser-cursor");
+    // What the stream carries: pictures of the page (their first byte is "B") and their sizes.
+    const pictures: number[] = [];
+    page.on("websocket", (socket) => {
+      socket.on("framereceived", ({ payload }) => {
+        if (typeof payload !== "string" && payload[0] === 0x42) pictures.push(payload.length);
+      });
+    });
+    const viewport = page.getByTestId("browser-viewport");
+    await page.getByRole("button", { name: "Open Bee Browser", exact: true }).click();
+    await expect
+      .poll(() => viewport.getAttribute("data-frames"), { timeout: 90_000 })
+      .not.toBe("0");
+    // The new tab page's search box has the cursor, and the cursor blinks: the
+    // page never quite stops. Each blink is one more sharp picture.
+    await expect(viewport).toHaveAttribute("data-shown", "picture", { timeout: 20_000 });
+    await page.waitForTimeout(2_000);
+    const before = Number(await viewport.getAttribute("data-frames"));
+    const sent = pictures.length;
+    const shown = new Set<string | null>();
+    for (let sample = 0; sample < 50; sample += 1) {
+      shown.add(await viewport.getAttribute("data-shown"));
+      await page.waitForTimeout(100);
+    }
+    expect([...shown]).toEqual(["picture"]);
+    expect(Number(await viewport.getAttribute("data-frames"))).toBeGreaterThan(before + 3);
+    expect(await density(page)).toBeCloseTo(2, 1);
+    // The cursor on and the cursor off are two pictures taking turns: each was
+    // sent once, and from then on the viewer is only told which one to show.
+    const blinks = pictures.slice(sent);
+    expect(blinks.length).toBeGreaterThan(3);
+    expect(Math.max(...blinks)).toBeLessThan(1_000);
+  });
+
   test("a still page is shown sharp at the screen's pixel ratio, on both engines", async ({
     page,
     baseURL,
@@ -831,7 +872,9 @@ test.describe("browser on a dense screen", () => {
         .poll(() => viewport.getAttribute("data-frames"), { timeout: 90_000 })
         .not.toBe("0");
     };
+    // A picture, not video (which is as dense while the page moves), at twice the density.
     const sharp = async () => {
+      await expect(viewport).toHaveAttribute("data-shown", "picture", { timeout: 20_000 });
       await expect.poll(() => density(page), { timeout: 20_000 }).toBeCloseTo(2, 1);
     };
 

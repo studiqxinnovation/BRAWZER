@@ -82,6 +82,7 @@ export class BrowserController {
       requestMeta(request),
       body.resume,
       body.engine,
+      body.scale,
     );
   }
 

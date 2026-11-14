@@ -9,6 +9,12 @@ const FFMPEG = "/usr/bin/ffmpeg";
  * worth the encoder would fall behind the page, and smooth matters more.
  */
 const VIDEO_MAX_PIXELS = 2560 * 1440;
+/**
+ * The most pixels the engine's frames of the page are taken at. Up to here a
+ * frame is as dense as the viewer's screen, so the last one of a page that
+ * stopped is itself its picture; beyond, taking them would slow the page down.
+ */
+const FRAME_MAX_PIXELS = 6_000_000;
 /** Bits per second for each pixel of the picture, within the bounds below. */
 const BITS_PER_PIXEL = 2.5;
 const MIN_BITRATE = 2_500_000;
@@ -27,6 +33,17 @@ const KEYFRAME_EVERY = 90;
  * another, the same picture is fed once more to let it through.
  */
 const FLUSH_AFTER_MS = 60;
+/**
+ * The encoder's threads: the processors the session's container may use
+ * (BRAWZER_CPUS, set by the orchestrator), four at most. VP8 only spreads
+ * over more than two when the picture is cut into as many partitions.
+ */
+export function encoderThreads(cpus: string | undefined): { threads: number; slices: number } {
+  const count = Number(cpus);
+  const threads = Number.isInteger(count) && count >= 1 ? Math.min(4, count) : 2;
+  return { threads, slices: threads >= 4 ? 4 : 1 };
+}
+const ENCODER = encoderThreads(process.env.BRAWZER_CPUS);
 /** The IVF container's file header, then a 12-byte header before each frame. */
 const IVF_FILE_HEADER = 32;
 const IVF_FRAME_HEADER = 12;
@@ -46,6 +63,15 @@ export function videoAvailable(): boolean {
   }
 }
 
+/** The viewer's pixel ratio, down to what keeps the picture within so many pixels; never under 1. */
+function fittedScale(
+  viewport: { width: number; height: number; scale: number },
+  maxPixels: number,
+): number {
+  const fits = Math.sqrt(maxPixels / Math.max(1, viewport.width * viewport.height));
+  return Math.max(1, Math.min(viewport.scale, fits));
+}
+
 /**
  * The size a moving page is encoded at: the viewer's own pixel ratio, so a
  * page looks the same moving as still, down to what the encoder can keep up
@@ -55,12 +81,100 @@ export function videoSize(
   viewport: { width: number; height: number; scale: number },
   lean: boolean,
 ): { width: number; height: number } {
-  const fits = Math.sqrt(VIDEO_MAX_PIXELS / Math.max(1, viewport.width * viewport.height));
-  const scale = lean ? 1 : Math.max(1, Math.min(viewport.scale, fits));
+  const scale = lean ? 1 : fittedScale(viewport, VIDEO_MAX_PIXELS);
   return {
     width: Math.round(viewport.width * scale),
     height: Math.round(viewport.height * scale),
   };
+}
+
+/** The size the engine's frames of the page are asked for at: the viewer's pixel ratio, within bounds. */
+export function frameSize(viewport: { width: number; height: number; scale: number }): {
+  width: number;
+  height: number;
+} {
+  const scale = fittedScale(viewport, FRAME_MAX_PIXELS);
+  return {
+    width: Math.round(viewport.width * scale),
+    height: Math.round(viewport.height * scale),
+  };
+}
+
+/** The most the engine may be asked to draw at: what the stream carries (BROWSER_LIMITS.viewport.maxScale). */
+const ENGINE_MAX_SCALE = 2;
+/** Two ratios this close are the same one: they are sent with two decimals. */
+const SCALE_TOLERANCE = 0.011;
+
+/**
+ * The pixel ratio the engine is started at, from the body of the start
+ * request: `{ "scale": 2 }`. Anything else, or none, is 1: the page's own size.
+ */
+export function startScale(body: string): number {
+  let scale: unknown;
+  try {
+    scale = (JSON.parse(body) as { scale?: unknown } | null)?.scale;
+  } catch {
+    return 1;
+  }
+  if (typeof scale !== "number" || !Number.isFinite(scale)) return 1;
+  return Math.min(ENGINE_MAX_SCALE, Math.max(1, Math.round(scale * 100) / 100));
+}
+
+/**
+ * Whether the engine's frames are as dense as the viewer's screen: one is
+ * then the still page's picture. The engine composes its pages at the ratio
+ * it was started with (`engineScale`), whatever a page is told its screen's
+ * is: its frames carry that many pixels and no more, so a viewer on a denser
+ * screen than the one that opened the session gets the page's picture taken
+ * separately instead.
+ */
+export function framesAreFull(
+  viewport: { width: number; height: number; scale: number },
+  engineScale: number,
+): boolean {
+  return (
+    engineScale + SCALE_TOLERANCE >= viewport.scale &&
+    fittedScale(viewport, FRAME_MAX_PIXELS) >= viewport.scale
+  );
+}
+
+/** A JPEG's size in pixels, read from its frame header; null if it has none. */
+export function jpegSize(jpeg: Buffer): { width: number; height: number } | null {
+  if (jpeg.length < 4 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) return null;
+  let at = 2;
+  while (at + 9 <= jpeg.length) {
+    if (jpeg[at] !== 0xff) return null;
+    const marker = jpeg[at + 1] ?? 0;
+    if (marker === 0xff) {
+      at += 1;
+      continue;
+    }
+    const length = jpeg.readUInt16BE(at + 2);
+    // A start-of-frame marker (not the tables that share its range).
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return { width: jpeg.readUInt16BE(at + 7), height: jpeg.readUInt16BE(at + 5) };
+    }
+    at += 2 + length;
+  }
+  return null;
+}
+
+/**
+ * The scale to send a picture of the page with: the viewer divides the
+ * picture's pixels by it for the size on screen, which has to come out as
+ * the page's own size exactly, whichever way the engine rounded.
+ */
+export function pictureScale(
+  picture: { width: number; height: number },
+  page: { width: number; height: number },
+): number {
+  const across = picture.width / Math.max(1, page.width);
+  const down = picture.height / Math.max(1, page.height);
+  const exact = (scale: number): boolean =>
+    Math.round(picture.width / scale) === page.width &&
+    Math.round(picture.height / scale) === page.height;
+  const scale = [across, down, (across + down) / 2].find(exact) ?? across;
+  return Math.max(1, scale);
 }
 
 /** What the encoder aims for, its ceiling and its buffer, in bits per second (and bits). */
@@ -134,7 +248,8 @@ export class FrameEncoder {
         "-cpu-used",
         "8",
         "-threads",
-        "2",
+        String(ENCODER.threads),
+        ...(ENCODER.slices > 1 ? ["-slices", String(ENCODER.slices)] : []),
         "-lag-in-frames",
         "0",
         "-error-resilient",
