@@ -78,6 +78,20 @@ test.describe("browser", () => {
     await address.press("Enter");
     await expect(page.getByLabel("Not secure")).toBeVisible();
 
+    // A long address is cut short inside its field: it is never drawn on over
+    // the star, the Isolated badge and the buttons beside the field.
+    await address.fill(`http://testsite.invalid/?q=${"a-long-address-".repeat(40)}`);
+    await address.press("Enter");
+    const shownPath = page.locator("[data-address-shown] > span").last();
+    await expect(shownPath).toContainText("a-long-address-", { timeout: 30_000 });
+    const edges = await Promise.all(
+      [shownPath, address].map(async (part) => {
+        const box = await part.boundingBox();
+        return box ? box.x + box.width : Number.NaN;
+      }),
+    );
+    expect(edges[0]).toBeLessThanOrEqual((edges[1] ?? 0) + 1);
+
     // A connection Brawzer refuses (a private address) gets Brawzer's own
     // error page, not the engine's, with the address kept and a way back.
     await address.fill("https://10.0.0.1/");
