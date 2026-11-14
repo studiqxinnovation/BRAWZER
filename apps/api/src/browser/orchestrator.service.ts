@@ -52,6 +52,37 @@ const PACK_TIMEOUT_MS = 120_000;
  * Chromium's own sandbox working, memory, CPU and process limits, and a
  * network of its own where containers can't see each other.
  */
+/**
+ * Whether the egress sidecar still answers once the runtime runs beside it.
+ * A container runtime with a network stack of its own (gVisor without
+ * `--network=host`) takes the shared namespace's interface when the runtime
+ * starts. The agent stays reachable, so the session looks healthy and its
+ * picture streams, but the egress is cut off and no page can ever load.
+ * A session that failed to start is honest; that one is not.
+ */
+export async function egressAnswers(
+  host: Pick<RuntimeHost, "docker" | "agentHost">,
+  egressId: string,
+  attempts = 3,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 300));
+    const state = await host.docker.inspect(egressId);
+    if (!state?.running) return false;
+    const hostPort = state.hostPorts[EGRESS_HEALTH_PORT];
+    if (!hostPort) continue;
+    try {
+      const response = await fetch(`http://${host.agentHost}:${String(hostPort)}/healthz`, {
+        signal: AbortSignal.timeout(1_500),
+      });
+      if (response.ok) return true;
+    } catch {
+      // Unreachable: tried again, then reported.
+    }
+  }
+  return false;
+}
+
 @Injectable()
 export class OrchestratorService {
   constructor(
@@ -183,6 +214,13 @@ export class OrchestratorService {
       });
       await docker.startContainer(containerId);
       const agentAddress = await this.waitUntilReady(host, containerId, egressId);
+      if (!(await egressAnswers(host, egressId))) {
+        throw new Error(
+          "The egress sidecar stopped answering once the runtime started, so the session could not load any page. " +
+            "The container runtime took the shared network namespace: on a gVisor host, runsc must be registered " +
+            "with --network=host (infra/production/runtime-host/README.md)",
+        );
+      }
       return { host: host.name, sessionId, egressId, containerId, agentAddress, engine };
     } catch (error) {
       if (containerId) await this.stop(host, containerId);
