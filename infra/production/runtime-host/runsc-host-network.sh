@@ -35,4 +35,4 @@ else
   echo "set; the previous file is $BACKUP"
 fi
 systemctl is-active --quiet docker || { echo "the Docker engine is not running" >&2; exit 1; }
-docker info --format '{{json .Runtimes.runsc}}'
+echo "runsc runtime arguments now: $(docker info --format '{{json .Runtimes.runsc.runtimeArgs}}')"
