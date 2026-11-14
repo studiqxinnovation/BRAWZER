@@ -265,7 +265,8 @@ export function BrowserViewport({
           frame.close();
           return;
         }
-        // A video frame is at scale 1: the page's own size on screen.
+        // A video frame may be denser than the page (the screen's pixel ratio): the
+        // canvas takes the frame's size, the page keeps its own size on screen.
         if (canvas.width !== frame.codedWidth || canvas.height !== frame.codedHeight) {
           canvas.width = frame.codedWidth;
           canvas.height = frame.codedHeight;

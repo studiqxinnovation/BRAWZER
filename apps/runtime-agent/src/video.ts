@@ -4,11 +4,23 @@ import { log } from "./log.ts";
 
 /** Where Debian puts ffmpeg; without it the stream stays pictures only. */
 const FFMPEG = "/usr/bin/ffmpeg";
-/** Bits per second the encoder aims for, and its ceiling; a page at rest costs nothing. */
-const BITRATE = "1600k";
-const MAX_BITRATE = "2600k";
-/** Frames between key frames: how long a viewer that missed one waits, at most. */
-const KEYFRAME_EVERY = 48;
+/**
+ * The most pixels a moving page is encoded at: beyond a 2560×1440 screen's
+ * worth the encoder would fall behind the page, and smooth matters more.
+ */
+const VIDEO_MAX_PIXELS = 2560 * 1440;
+/** Bits per second for each pixel of the picture, within the bounds below. */
+const BITS_PER_PIXEL = 2.5;
+const MIN_BITRATE = 2_500_000;
+const TOP_BITRATE = 8_000_000;
+/** A connection that fell behind gets the page at its own size and this much: it keeps up. */
+const LEAN_BITRATE = 1_600_000;
+/**
+ * Frames between key frames. A key frame looks different from the frames
+ * around it, so too many make the picture pulse; a viewer that lost one asks
+ * for another (the encoder is started again) rather than waiting.
+ */
+const KEYFRAME_EVERY = 90;
 /**
  * ffmpeg's JPEG parser hands a picture on only when the next one begins, so
  * the last picture before a pause would wait: after this long without
@@ -35,6 +47,39 @@ export function videoAvailable(): boolean {
 }
 
 /**
+ * The size a moving page is encoded at: the viewer's own pixel ratio, so a
+ * page looks the same moving as still, down to what the encoder can keep up
+ * with; the page's own size (scale 1) for a connection that fell behind.
+ */
+export function videoSize(
+  viewport: { width: number; height: number; scale: number },
+  lean: boolean,
+): { width: number; height: number } {
+  const fits = Math.sqrt(VIDEO_MAX_PIXELS / Math.max(1, viewport.width * viewport.height));
+  const scale = lean ? 1 : Math.max(1, Math.min(viewport.scale, fits));
+  return {
+    width: Math.round(viewport.width * scale),
+    height: Math.round(viewport.height * scale),
+  };
+}
+
+/** What the encoder aims for, its ceiling and its buffer, in bits per second (and bits). */
+export function videoRates(
+  width: number,
+  height: number,
+  lean: boolean,
+): { bitrate: number; ceiling: number; buffer: number } {
+  const bitrate = lean
+    ? LEAN_BITRATE
+    : Math.min(TOP_BITRATE, Math.max(MIN_BITRATE, Math.round(width * height * BITS_PER_PIXEL)));
+  return {
+    bitrate,
+    ceiling: Math.round(bitrate * 1.6),
+    buffer: Math.round(bitrate * 0.75),
+  };
+}
+
+/**
  * Turns the engine's pictures of a moving page into VP8, one ffmpeg per
  * page size: JPEG frames in, encoded frames out, parsed from the IVF it
  * writes. Realtime settings: it keeps up rather than looks its best, since
@@ -54,9 +99,12 @@ export class FrameEncoder {
     readonly width: number,
     readonly height: number,
     private readonly onFrame: (frame: EncodedFrame) => void,
+    /** For a connection that fell behind: less to send, so it keeps up. */
+    readonly lean = false,
   ) {}
 
   start(): void {
+    const rates = videoRates(this.width, this.height, this.lean);
     const child = spawn(
       FFMPEG,
       [
@@ -92,11 +140,16 @@ export class FrameEncoder {
         "-error-resilient",
         "1",
         "-b:v",
-        BITRATE,
+        String(rates.bitrate),
         "-maxrate",
-        MAX_BITRATE,
+        String(rates.ceiling),
         "-bufsize",
-        "1200k",
+        String(rates.buffer),
+        // Text stays readable: the encoder may not trade it away to save bits.
+        "-qmin",
+        "4",
+        "-qmax",
+        this.lean ? "56" : "46",
         "-g",
         String(KEYFRAME_EVERY),
         "-flush_packets",
@@ -129,7 +182,12 @@ export class FrameEncoder {
       log("warn", "video encoder could not start", { message: error.message });
     });
     this.child = child;
-    log("info", "video encoder started", { width: this.width, height: this.height });
+    log("info", "video encoder started", {
+      width: this.width,
+      height: this.height,
+      bitrate: rates.bitrate,
+      lean: this.lean,
+    });
   }
 
   /** One picture of the page; false if the encoder is behind and this one is skipped. */

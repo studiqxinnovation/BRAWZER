@@ -24,7 +24,7 @@ import type { CdpConnection } from "./cdp.ts";
 import type { Engine, EngineOptions, Viewer } from "./engine-types.ts";
 import { log } from "./log.ts";
 import { FocusReporter, IconReporter, PointerReporter } from "./page-reporters.ts";
-import { FrameEncoder } from "./video.ts";
+import { FrameEncoder, videoSize } from "./video.ts";
 import {
   fetchImageScript,
   FIND_STOP_SCRIPT,
@@ -147,10 +147,12 @@ interface TargetInfo {
 }
 
 const MAX_TABS = 16;
-/** Frames of a moving page: at scale 1, small enough to keep up. */
-const JPEG_QUALITY = 60;
+/** Frames of a moving page: what the video encoder is fed, so good enough not to show through. */
+const JPEG_QUALITY = 80;
 /** The one frame of a page that has stopped: at the viewer's pixel ratio, for reading. */
-const SHARP_QUALITY = 85;
+const SHARP_QUALITY = 92;
+/** How long video stays light after the viewer's connection fell behind. */
+const VIDEO_LEAN_MS = 60_000;
 /** No frame for this long means the page has stopped moving. */
 const STILL_MS = 300;
 /**
@@ -335,6 +337,8 @@ export class BrowserEngine implements Engine {
   private videoSeq = 0;
   /** After a dropped chunk, nothing goes until the next key frame: the viewer couldn't use it. */
   private videoNeedsKey = false;
+  /** Until then the moving page is sent light: the viewer's connection fell behind. */
+  private videoLeanUntil = 0;
   private viewerCodecs: readonly string[] = [];
   /** Counts down from the last frame of a moving page to its sharp frame. */
   private stillTimer: NodeJS.Timeout | null = null;
@@ -635,15 +639,24 @@ export class BrowserEngine implements Engine {
   /** The encoder for the page's current size, started as needed; a new size gets a new one. */
   private videoEncoder(): FrameEncoder | null {
     if (!this.videoWanted) return null;
-    const { width, height } = this.viewport;
-    if (this.encoder && (this.encoder.width !== width || this.encoder.height !== height)) {
+    const lean = Date.now() < this.videoLeanUntil;
+    const { width, height } = videoSize(this.viewport, lean);
+    if (
+      this.encoder &&
+      (this.encoder.width !== width || this.encoder.height !== height || this.encoder.lean !== lean)
+    ) {
       this.stopVideo();
     }
     if (!this.encoder) {
-      const encoder = new FrameEncoder(width, height, (frame) => {
-        if (this.encoder !== encoder) return;
-        this.sendVideo(frame.key, frame.data);
-      });
+      const encoder = new FrameEncoder(
+        width,
+        height,
+        (frame) => {
+          if (this.encoder !== encoder) return;
+          this.sendVideo(frame.key, frame.data);
+        },
+        lean,
+      );
       encoder.start();
       this.encoder = encoder;
       this.videoNeedsKey = true;
@@ -662,6 +675,13 @@ export class BrowserEngine implements Engine {
     this.videoSeq = (this.videoSeq + 1) % 1_000_000_000;
     // The viewer couldn't take it: the frames that follow build on it, so they wait for a key.
     this.videoNeedsKey = !sent;
+    if (!sent) this.goLean("a video frame could not be sent");
+  }
+
+  /** The viewer's connection fell behind: the moving page is sent light for a while. */
+  private goLean(reason: string): void {
+    if (Date.now() >= this.videoLeanUntil) log("info", "video goes light for a while", { reason });
+    this.videoLeanUntil = Date.now() + VIDEO_LEAN_MS;
   }
 
   private stopVideo(): void {
@@ -1473,9 +1493,10 @@ export class BrowserEngine implements Engine {
   // ── Viewport and frames ───────────────────────────────────────────────
 
   private async setViewport(viewport: Viewport): Promise<void> {
-    const resized =
-      viewport.width !== this.viewport.width || viewport.height !== this.viewport.height;
-    const changed = resized || viewport.scale !== this.viewport.scale;
+    const changed =
+      viewport.width !== this.viewport.width ||
+      viewport.height !== this.viewport.height ||
+      viewport.scale !== this.viewport.scale;
     this.viewport = viewport;
     if (!changed) return;
     this.sharpDone = false;
@@ -1489,8 +1510,8 @@ export class BrowserEngine implements Engine {
               width: viewport.width,
               height: viewport.height,
               // The page is laid out and painted at the viewer's own pixel
-              // ratio: its moving frames are scaled down to size on the way
-              // out, its sharp frame is captured as painted.
+              // ratio: its moving frames and its sharp frame are both taken
+              // as painted (moving ones as far as the encoder keeps up).
               deviceScaleFactor: viewport.scale,
               mobile: false,
             },
@@ -1501,7 +1522,7 @@ export class BrowserEngine implements Engine {
     );
     // The screencast's maximum size is fixed when it starts.
     const active = this.activeTab();
-    if (resized && active?.screencasting) {
+    if (active?.screencasting) {
       await this.stopScreencast(active);
       await this.syncScreencasts();
     }
@@ -1513,14 +1534,17 @@ export class BrowserEngine implements Engine {
       const wanted = this.viewer !== null && tab.id === this.activeId;
       if (wanted && !tab.screencasting) {
         tab.screencasting = true;
+        const cast = this.videoWanted ? videoSize(this.viewport, false) : this.viewport;
         await this.cdp
           .send(
             "Page.startScreencast",
             {
               format: "jpeg",
               quality: JPEG_QUALITY,
-              maxWidth: this.viewport.width,
-              maxHeight: this.viewport.height,
+              // As video the page moves at the viewer's own pixel ratio; as
+              // pictures (a viewer that can't decode video) at its own size.
+              maxWidth: cast.width,
+              maxHeight: cast.height,
               everyNthFrame: 1,
             },
             tab.sessionId,
@@ -1637,6 +1661,7 @@ export class BrowserEngine implements Engine {
         SHARP_BACKOFF_MS * 2 ** (this.sharpSlowCount - 1),
       );
       this.sharpBackoffUntil = Date.now() + pause;
+      this.goLean("a sharp frame was slow to arrive");
       log("info", "sharp frame was slow to arrive; pausing them", { ms: took, pause });
     } else {
       this.sharpSlowCount = 0;
